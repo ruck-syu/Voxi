@@ -27,6 +27,12 @@ Every push to `main` builds a new release (`.github/workflows/release.yml`).
 In Voxi, open **Settings → Check for updates**: it downloads the latest
 release with a progress bar, checks its signature, installs it, and restarts.
 
+## Website
+
+`website/` is a static site (no build step) for Vercel: import this repo in
+Vercel and set **Root Directory** to `website`. Pushes that only touch the
+website or docs don't trigger an app release.
+
 ## Develop
 
 ```bash

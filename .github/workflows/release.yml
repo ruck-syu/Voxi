@@ -7,6 +7,11 @@ name: Release
 on:
   push:
     branches: [main]
+    # The website and docs deploy on their own; they don't need a new app.
+    paths-ignore:
+      - "website/**"
+      - "**.md"
+      - ".claude/**"
   workflow_dispatch:
 
 permissions:

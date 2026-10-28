@@ -1,0 +1,644 @@
+/* Voxi site: the page is one long library index card. A red head rule runs
+   under the navigation; everything else is written on faint blue lines.
+   Tokens match the app (app/src/styles.css). */
+
+:root {
+  --card: #f7f9fc;
+  --desk: #e9eff8;
+  --ink: #1b2a4a;
+  --muted: #5d6b85;
+  --rule: #dde6f4;
+  --rule-strong: #a9c1e8;
+  --margin: #d2453b;
+  --line: 34px;
+  --settle: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --text: "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card: #172036;
+    --desk: #111a2e;
+    --ink: #e6ecf7;
+    --muted: #9aa8c2;
+    --rule: #1f2c4a;
+    --rule-strong: #34466b;
+    --margin: #ff6b5e;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--card);
+}
+
+body {
+  margin: 0;
+  background: var(--card);
+  /* The ruled card itself. */
+  background-image: linear-gradient(to bottom, transparent calc(var(--line) - 1px), var(--rule) calc(var(--line) - 1px));
+  background-size: 100% var(--line);
+  color: var(--ink);
+  font-family: var(--text);
+  font-size: 17px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--margin);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.wrap {
+  width: min(1080px, 100% - 32px);
+  margin: 0 auto;
+}
+
+/* ---- Navigation on the red head rule ---- */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 2px solid var(--margin);
+}
+
+.top .wrap {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 64px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.brand img {
+  width: 26px;
+  height: 26px;
+}
+
+.top nav {
+  display: flex;
+  gap: 22px;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.top nav a {
+  text-decoration: none;
+  color: var(--muted);
+}
+
+.top nav a:hover,
+.top nav a[aria-current="page"] {
+  color: var(--ink);
+}
+
+/* ---- Type ---- */
+
+h1,
+h2,
+h3 {
+  font-family: var(--display);
+  font-variation-settings: "wdth" 90;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(40px, 6.4vw, 72px);
+  line-height: 1.02;
+  font-weight: 650;
+}
+
+h2 {
+  font-size: clamp(28px, 3.6vw, 40px);
+  line-height: 1.1;
+  font-weight: 650;
+}
+
+h3 {
+  font-size: 20px;
+  line-height: 1.25;
+  font-weight: 650;
+}
+
+p {
+  margin: 0;
+  max-width: 62ch;
+}
+
+.lead {
+  font-size: 20px;
+  color: var(--muted);
+  max-width: 44ch;
+}
+
+kbd {
+  font-family: var(--text);
+  font-weight: 700;
+  padding: 1px 6px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  background: var(--desk);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+/* ---- Buttons ---- */
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 22px;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid var(--rule-strong);
+}
+
+.button.primary {
+  background: var(--ink);
+  color: var(--card);
+  border-color: var(--ink);
+}
+
+.button.primary:hover {
+  background: color-mix(in srgb, var(--ink) 88%, var(--margin));
+}
+
+.button:not(.primary):hover {
+  border-color: var(--ink);
+}
+
+.fine {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* ---- Hero ---- */
+
+.hero {
+  padding: calc(var(--line) * 2) 0 calc(var(--line) * 2);
+}
+
+.hero .wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.hero-copy {
+  display: grid;
+  gap: 24px;
+}
+
+@media (max-width: 880px) {
+  .hero .wrap {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+}
+
+/* The live demo: a replica of Voxi's floating window. */
+.demo {
+  position: relative;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card) 70%, var(--desk));
+  box-shadow:
+    inset 0 0 0 0.5px color-mix(in srgb, var(--ink) 22%, transparent),
+    0 24px 60px -18px rgb(10 20 45 / 0.45);
+  overflow: clip;
+  min-height: 312px;
+}
+
+.demo-head {
+  position: relative;
+  padding: 18px 22px 14px;
+  border-bottom: 2px solid var(--margin);
+}
+
+.demo-command {
+  min-height: 31px;
+  font-family: var(--display);
+  font-variation-settings: "wdth" 92;
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.demo-command:empty::before {
+  content: "Type or dictate a command";
+  color: var(--muted);
+  opacity: 0.7;
+  font-weight: 400;
+}
+
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--margin);
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.dictating {
+  position: absolute;
+  right: 18px;
+  top: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--card);
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.dictating[data-on] {
+  opacity: 1;
+}
+
+.dictating i {
+  width: 3px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
+  animation: level 0.7s ease-in-out infinite alternate;
+}
+
+.dictating i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dictating i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes level {
+  from {
+    transform: scaleY(0.35);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.demo-body {
+  padding: 12px 22px 6px;
+}
+
+.demo-said {
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 14px;
+}
+
+.demo-title {
+  margin: 2px 0 6px;
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.demo-title .tick {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  vertical-align: -3px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 22;
+  stroke-dashoffset: 22;
+  animation: tick 340ms var(--settle) 100ms forwards;
+}
+
+@keyframes tick {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.demo-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.demo-rows li {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 14px;
+  padding: 6px 0 5px;
+  font-size: 15px;
+}
+
+.demo-rows li::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--rule-strong);
+  transform-origin: 0 0;
+  animation: draw 260ms var(--settle) calc(var(--i) * 70ms) both;
+}
+
+.demo-rows li > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: ink 240ms var(--settle) calc(var(--i) * 70ms + 90ms) both;
+}
+
+.demo-rows b {
+  font-weight: 700;
+}
+
+.demo-rows span {
+  color: var(--muted);
+}
+
+.demo-rows li[data-trash] span {
+  color: var(--margin);
+}
+
+@keyframes draw {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes ink {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+
+.demo-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 22px 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---- Sections written on the lines ---- */
+
+section.block {
+  padding: calc(var(--line) * 2) 0;
+}
+
+.block-head {
+  display: grid;
+  gap: 12px;
+  margin-bottom: var(--line);
+}
+
+/* Three points as ruled entries, not cards. */
+.points {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 40px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 2px solid var(--ink);
+}
+
+.points li {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 18px 0 24px;
+}
+
+.points p {
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .points {
+    grid-template-columns: 1fr;
+  }
+  .points li + li {
+    border-top: 1px solid var(--rule-strong);
+  }
+}
+
+/* Example commands: what you say, on the left; what happens, on the right. */
+.say {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.say li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 6px 32px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.say q {
+  quotes: "“" "”";
+  font-family: var(--display);
+  font-variation-settings: "wdth" 92;
+  font-size: 19px;
+  font-weight: 550;
+}
+
+.say span {
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .say li {
+    grid-template-columns: 1fr;
+  }
+}
+
+.more {
+  margin-top: 20px;
+  font-weight: 700;
+}
+
+/* ---- Commands page ---- */
+
+.catalog {
+  display: grid;
+  gap: calc(var(--line) * 1.5);
+}
+
+.catalog h2 {
+  font-size: 26px;
+  margin-bottom: 10px;
+}
+
+.toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-weight: 700;
+}
+
+.toc a {
+  color: var(--muted);
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 4px;
+}
+
+.toc a:hover {
+  color: var(--ink);
+}
+
+/* ---- Install steps: a real sequence, so numbered ---- */
+
+.steps {
+  counter-reset: step;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 2px solid var(--ink);
+}
+
+.steps > li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.steps > li::before {
+  content: counter(step);
+  grid-row: span 3;
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--margin);
+}
+
+.steps p {
+  color: var(--muted);
+}
+
+.note {
+  margin-top: var(--line);
+  padding: 16px 20px;
+  border-left: 3px solid var(--margin);
+  background: color-mix(in srgb, var(--desk) 70%, transparent);
+}
+
+.note p + p {
+  margin-top: 8px;
+}
+
+/* ---- Footer ---- */
+
+footer {
+  margin-top: calc(var(--line) * 2);
+  padding: 28px 0 44px;
+  border-top: 2px solid var(--margin);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 15px;
+}
+
+footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  justify-content: space-between;
+}
+
+footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+}
+
+@media (max-width: 560px) {
+  .top nav {
+    gap: 16px;
+    font-size: 14px;
+  }
+  .brand {
+    font-size: 20px;
+  }
+  .lead {
+    font-size: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .demo-title .tick {
+    stroke-dashoffset: 0;
+  }
+}

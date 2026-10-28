@@ -8,7 +8,7 @@ pub fn patterns() -> Vec<Pattern> {
     vec![
         pat(
             "move_to_trash",
-            r"^(?:move|put|send|throw)\s+(.+?)\s+(?:to|into|in)\s+(?:trash|bin|_to_delete|to\s+delete)(?:\s+folder)?$",
+            r"^(?:move|put|send|throw|transfer|drop|shift|stash|store)\s+(.+?)\s+(?:to|into|in)\s+(?:trash|bin|_to_delete|to\s+delete)(?:\s+folder)?$",
             |c| Some(Intent::Trash { src: src(c, 1)? }),
         ),
         pat("delete", r"^(?:delete|trash|remove|bin|erase|throw\s+away|get\s+rid\s+of)\s+(.+)$", |c| {

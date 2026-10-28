@@ -1,0 +1,59 @@
+# Natural-language commands the organizer should handle. One per line:
+#   command => expected intent JSON (null fields left out), or ! to refuse.
+# Dates: "before X" = earlier than X starts; "after X" = from the day after X ends;
+# "since X" = from X's first day; "until X" = through X's last day.
+# corpus_tests.rs reads every file in this folder, in file-name order.
+
+# 1. Moves, copies, and renames in everyday words
+move the report.pdf file to my Documents folder => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+please move all the PDFs in Downloads over to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+could you copy notes.txt over to my Desktop => {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+put the screenshot from yesterday into Documents => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"yesterday"}},"to":"Documents"}
+send the invoice to Archive => {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+transfer all installers from Downloads to the Trash folder => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+drop screenshots from last week into Pictures => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":7}},"to":"Pictures"}
+shift the zip files from Downloads to Archives => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"archives"}},"to":"Archives"}
+move every screenshot from August into the Archive folder => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","month":8}},"to":"Archive"}
+copy my notes to Backup => {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+copy the whole Project folder to Backup => {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+move Downloads/invoice.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"Downloads/invoice.pdf"},"to":"Documents"}
+move ~/Desktop/shot.png to Pictures => {"intent":"move","src":{"kind":"item","name":"~/Desktop/shot.png"},"to":"Pictures"}
+move the file called taxes 2025.pdf into Documents => {"intent":"move","src":{"kind":"item","name":"taxes 2025.pdf"},"to":"Documents"}
+move all my PDFs from Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"pdfs"}},"to":"Documents"}
+copy every JPEG from Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["jpg","jpeg"]}},"to":"Backup"}
+move photos from Downloads into Pictures => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"images"}},"to":"Pictures"}
+move the PDF named invoice to Invoices => {"intent":"move","src":{"kind":"set","filter":{"type":"pdfs","nameContains":"invoice"}},"to":"Invoices"}
+move Q3 report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"Q3 report.pdf"},"to":"Documents"}
+rename the file report.pdf to final report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"final report.pdf"}
+
+# 2. Dates: screenshots and files taken on, before, or after a day or month
+show me the screenshots taken before July 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","before":"2026-07-01"}}}
+Show me the screenshots taken before July 2026. => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","before":"2026-07-01"}}}
+list screenshots taken after July 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-08-01"}}}
+find screenshots taken since March 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-03-01"}}}
+show PDFs created before 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","before":"2025-01-01"}}}
+list images made in 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"images","since":"2025-01-01","before":"2026-01-01"}}}
+count screenshots taken in July 2026 => {"intent":"count","src":{"kind":"set","filter":{"type":"screenshots","month":7,"year":2026}}}
+list screenshots taken in August => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","month":8}}}
+list screenshots from this month => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-01"}}}
+list screenshots from this week => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-26"}}}
+list screenshots from this year => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-01-01"}}}
+list screenshots from last month => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":30}}}
+show me what screenshots I took yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"yesterday"}}}
+find the screenshots from the last 3 days => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":3}}}
+list screenshots from the past two weeks => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":14}}}
+show PDFs older than a month => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","olderThanDays":30}}}
+list PDFs older than 6 months => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","olderThanDays":180}}}
+list screenshots taken on July 4 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-07-04","before":"2026-07-05"}}}
+list screenshots taken on the 4th of July => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-07-04","before":"2026-07-05"}}}
+list screenshots from 2026-07-04 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-07-04","before":"2026-07-05"}}}
+list screenshots taken before today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","before":"2026-10-28"}}}
+show screenshots since yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-27"}}}
+list screenshots before 3 days ago => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":3}}}
+list screenshots after yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-28"}}}
+list screenshots July 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","month":7,"year":2026}}}
+list screenshots taken until July 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","before":"2026-08-01"}}}
+list screenshots taken before 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","before":"2026-01-01"}}}
+show the screenshots I took today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+list the files I downloaded yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","day":"yesterday"}}}
+list screenshots taken in July, 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","month":7,"year":2026}}}

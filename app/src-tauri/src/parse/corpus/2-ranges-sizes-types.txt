@@ -1,0 +1,63 @@
+# 3. Date ranges, years, and relative phrases
+list PDFs from 2024 to 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","since":"2024-01-01","before":"2026-01-01"}}}
+list PDFs between 2024 and 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","since":"2024-01-01","before":"2026-01-01"}}}
+list screenshots from March to May 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-03-01","before":"2026-06-01"}}}
+list files between March and May 2026 in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-03-01","before":"2026-06-01"}}}
+list files created between July 4 and July 10, 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2026-07-04","before":"2026-07-11"}}}
+list files from June 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","month":6,"year":2025}}}
+list files taken in 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2025-01-01","before":"2026-01-01"}}}
+list files since 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2025-01-01"}}}
+list files after 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2026-01-01"}}}
+list files until March 15 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","before":"2026-03-16"}}}
+list files from last year => {"intent":"list","src":{"kind":"set","filter":{"type":"files","newerThanDays":365}}}
+list screenshots from the last 6 months => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":180}}}
+list files from the last two years => {"intent":"list","src":{"kind":"set","filter":{"type":"files","newerThanDays":730}}}
+list screenshots since last Monday => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-26"}}}
+list screenshots on Monday => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-26","before":"2026-10-27"}}}
+delete installers downloaded in Sept from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers","month":9}}}
+
+# 4. Sizes
+show me files in Downloads bigger than 2 gigs => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":2048.0}}}
+list files over 50 megs in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":50.0}}}
+list files at least 10 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":10.0}}}
+list files under 500 KB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","smallerThanMb":0.48828125}}}
+list files less than 1 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","smallerThanMb":1.0}}}
+list files between 10 and 50 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":10.0,"smallerThanMb":50.0}}}
+list files larger than 1.5 GB => {"intent":"list","src":{"kind":"set","filter":{"type":"files","largerThanMb":1536.0}}}
+list files larger than a gig in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+show me files heavier than 100 MB => {"intent":"list","src":{"kind":"set","filter":{"type":"files","largerThanMb":100.0}}}
+delete files over 10GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":10240.0}}}
+list files larger than 500mb in Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","largerThanMb":500.0}}}
+list files larger than 500 MB but smaller than 1 GB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0,"smallerThanMb":1024.0}}}
+list PDFs bigger than 5 megabytes => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","largerThanMb":5.0}}}
+move images smaller than 200 KB from Pictures to Archive => {"intent":"move","src":{"kind":"set","folder":"Pictures","filter":{"type":"images","smallerThanMb":0.1953125}},"to":"Archive"}
+list files up to 10 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","smallerThanMb":10.0}}}
+list files at most 2 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","smallerThanMb":2.0}}}
+list files more than 1 TB in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","largerThanMb":1048576.0}}}
+list files bigger than 2.5 GB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":2560.0}}}
+
+# 5. File types and extensions
+list the videos in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"videos"}}}
+show me all my movies from Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"videos"}}}
+count the audio files in Music => {"intent":"count","src":{"kind":"set","folder":"Music","filter":{"type":"audio"}}}
+list my songs in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"audio"}}}
+list all the HEIC photos in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}}}
+show me the RAW photos in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["raw","cr2","nef","arw","dng"]}}}
+delete all the GIFs older than a year => {"intent":"trash","src":{"kind":"set","filter":{"type":"files","ext":["gif"],"olderThanDays":365}}}
+list the zips in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"archives"}}}
+list all the .zip files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"archives"}}}
+show me Word documents in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["doc","docx"]}}}
+find the spreadsheets in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["xlsx","xls","csv","numbers"]}}}
+list presentations in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["pptx","ppt","key"]}}}
+move all text files from Downloads to Notes => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["txt"]}},"to":"Notes"}
+list the DMG files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+list all png files => {"intent":"list","src":{"kind":"set","filter":{"type":"files","ext":["png"]}}}
+list the JPG photos from last month => {"intent":"list","src":{"kind":"set","filter":{"type":"files","ext":["jpg","jpeg"],"newerThanDays":30}}}
+show the .heic files in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}}}
+show me the audio in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"audio"}}}
+list the stuff in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+list the installers in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+list documents in Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"documents"}}}
+list all the MP4s in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"files","ext":["mp4"]}}}
+count the HEIC files in Pictures => {"intent":"count","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}}}
+move the MOV files from Downloads to Videos => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["mov"]}},"to":"Videos"}

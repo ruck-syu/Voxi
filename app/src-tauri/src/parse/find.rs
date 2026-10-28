@@ -7,7 +7,7 @@ pub fn specific() -> Vec<Pattern> {
     vec![
         pat(
             "size_of",
-            r"^(?:show|what\s+is|what's|get|check|calculate|tell\s+me)\s+(?:me\s+)?(?:total\s+)?size\s+of\s+(.+)$",
+            r"^(?:(?:show|what\s+is|what's|get|check|calculate|tell\s+me)\s+(?:me\s+)?)?(?:total\s+)?size\s+of\s+(.+)$",
             |c| Some(Intent::Size { folder: clean_name(&cap(c, 1)?) }),
         ),
         pat("how_big", r"^how\s+big\s+is\s+(.+)$", |c| Some(Intent::Size { folder: clean_name(&cap(c, 1)?) })),
@@ -25,7 +25,10 @@ pub fn specific() -> Vec<Pattern> {
 }
 
 pub fn general() -> Vec<Pattern> {
-    vec![pat("list", r"^(?:list|find|show|search\s+for|search|look\s+for)\s+(?:me\s+)?(.+)$", |c| {
-        Some(Intent::List { src: src(c, 1)? })
-    })]
+    vec![
+        pat("list", r"^(?:list|find|show|search\s+for|search|look\s+for)\s+(?:me\s+)?(?:what\s+)?(?:contents?\s+of\s+|what'?s\s+(?:on|in)\s+)?(.+)$", |c| {
+            Some(Intent::List { src: src(c, 1)? })
+        }),
+        pat("whats_in", r"^(?:what'?s|what\s+is)\s+(?:on|in)\s+(.+)$", |c| Some(Intent::List { src: src(c, 1)? })),
+    ]
 }

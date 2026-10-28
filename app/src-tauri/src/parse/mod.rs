@@ -4,6 +4,7 @@
 
 mod archives;
 mod cleanup;
+mod dates;
 mod files;
 mod find;
 mod folders;
@@ -79,6 +80,9 @@ pub(crate) fn typed_src(c: &Captures, i: usize, t: FileType) -> Option<Source> {
         item => Some(item),
     }
 }
+
+#[cfg(test)]
+mod corpus_tests;
 
 #[cfg(test)]
 mod catalog_tests {

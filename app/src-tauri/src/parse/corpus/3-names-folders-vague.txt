@@ -1,0 +1,63 @@
+# 6. Names
+list files named budget in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"budget"}}}
+list files containing quarterly report in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"quarterly report"}}}
+find files called Final Draft.docx => {"intent":"list","src":{"kind":"item","name":"Final Draft.docx"}}
+list everything with 'draft' in the name => {"intent":"list","src":{"kind":"set","filter":{"type":"files","nameContains":"draft"}}}
+delete files that start with invoice from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameStartsWith":"invoice"}}}
+list files named *.pdf => !
+show files whose name contains Q3 from Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"Q3"}}}
+find the file named passport.pdf => {"intent":"list","src":{"kind":"item","name":"passport.pdf"}}
+list files with "tax return" in the name => {"intent":"list","src":{"kind":"set","filter":{"type":"files","nameContains":"tax return"}}}
+move the file 'Lease Agreement.pdf' to Documents => {"intent":"move","src":{"kind":"item","name":"Lease Agreement.pdf"},"to":"Documents"}
+rename the picture named cat to dog => !
+list files containing "2025" from Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"2025"}}}
+copy the Claude dmg to Desktop => {"intent":"copy","src":{"kind":"item","name":"Claude dmg"},"to":"Desktop"}
+list files named 'budget' in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"budget"}}}
+
+# 7. Folders
+list the files in my downloads folder => {"intent":"list","src":{"kind":"set","folder":"downloads","filter":{"type":"files"}}}
+what's in the Desktop folder => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}}}
+show me what's on my desktop => {"intent":"list","src":{"kind":"set","folder":"desktop","filter":{"type":"files"}}}
+open the Downloads folder => {"intent":"reveal","target":"Downloads"}
+take me to the Documents folder => !
+show me the Pictures folder in Finder => {"intent":"reveal","target":"Pictures"}
+list the contents of Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+how big is the Documents folder => {"intent":"size","folder":"Documents"}
+size of the Desktop folder => {"intent":"size","folder":"Desktop"}
+move the file report.pdf from the desktop to the downloads folder => {"intent":"move","src":{"kind":"item","name":"report.pdf","folder":"desktop"},"to":"downloads"}
+copy notes.txt from Documents to Pictures/Screenshots => {"intent":"copy","src":{"kind":"item","name":"notes.txt","folder":"Documents"},"to":"Pictures/Screenshots"}
+how big is my Music folder => {"intent":"size","folder":"Music"}
+check the size of my home folder => {"intent":"size","folder":"home"}
+move ~/Library/Caches to Documents => {"intent":"move","src":{"kind":"item","name":"~/Library/Caches"},"to":"Documents"}
+delete Documents folder => {"intent":"trash","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}}}
+list screenshots on my Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots"}}}
+reveal the Desktop folder => {"intent":"reveal","target":"Desktop"}
+show me the pictures folder => {"intent":"list","src":{"kind":"set","folder":"pictures","filter":{"type":"files"}}}
+
+# 8. Vague or underspecified
+organize my downloads => !
+sort my downloads => !
+tidy up my desktop => !
+clean up my desktop => {"intent":"trash","src":{"kind":"set","folder":"desktop","filter":{"type":"files"}}}
+delete the old ones => !
+get rid of the old stuff => !
+move them to Documents => !
+move it to Documents => !
+rename it to final.pdf => !
+throw that away => !
+send that to the bin => !
+make my desktop look nicer => !
+do the usual => !
+help me => !
+what can you do => !
+fix my screenshots => !
+move the big files to External => !
+move the recent files to Archive => !
+show me the newest files => !
+delete the biggest file in Downloads => !
+move the latest screenshot to Documents => !
+do something with the screenshots => !
+file the invoice under Archive => !
+clean the desktop => !
+find my passport scan => {"intent":"list","src":{"kind":"item","name":"passport scan"}}
+where is my passport scan => !

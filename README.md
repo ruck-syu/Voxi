@@ -35,7 +35,8 @@ Say **undo last**.
 | list files in Downloads larger than 500 MB | Shows matches, changes nothing |
 | run my usuals | Runs a shortcut you saved in Settings |
 
-There are 27 kinds of commands, with filters for type, date, size, and name.
+There are 27 kinds of commands, with filters for type, date (including months,
+like "in August"), size, and name.
 The full list is on the [Commands page](website/commands.html).
 
 ## Safe by design

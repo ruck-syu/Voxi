@@ -350,6 +350,26 @@ mod catalog_tests {
     }
 
     #[test]
+    fn month_filters() {
+        assert_eq!(
+            p("Find screenshots taken in the month of august."),
+            List { src: set(None, Filter { month: Some(8), ..of(Screenshots) }) }
+        );
+        assert_eq!(
+            p("move PDFs from March 2025 to Archive"),
+            Move { src: set(None, Filter { month: Some(3), year: Some(2025), ..of(Pdfs) }), to: "Archive".into() }
+        );
+        assert_eq!(
+            p("list screenshots taken last week"),
+            List { src: set(None, Filter { newer_than_days: Some(7), ..of(Screenshots) }) }
+        );
+        assert_eq!(
+            p("delete installers downloaded in Sept from Downloads"),
+            Trash { src: set(Some("Downloads"), Filter { month: Some(9), ..of(Installers) }) }
+        );
+    }
+
+    #[test]
     fn unrecognized_input_is_not_understood() {
         for s in ["", "hello there", "make me a sandwich", "what's the weather", "move", "rename report.pdf"] {
             assert!(parse(s).is_err(), "should not understand {s:?}");

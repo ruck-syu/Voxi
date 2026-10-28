@@ -110,6 +110,14 @@ static THIS_PERIOD: LazyLock<Regex> = re!(r"(?i)\b(?:from\s+)?this\s+(week|month
 static DAY: LazyLock<Regex> = re!(
     r"(?i)\b(?:(?:from|taken|created|made|modified|added|downloaded)\s+)?(today|yesterday)(?:'s)?\b"
 );
+static MONTH: LazyLock<Regex> = re!(
+    r"(?i)\b(?:(?:taken|created|made|modified|added|downloaded|saved|captured|recorded)\s+)?(?:from|in|during|of|on)\s+(?:month\s+of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b(?:\s*,?\s*(?:of\s+)?((?:19|20)\d{2}))?"
+);
+/// "taken", "downloaded", "that were saved": how files came to be says
+/// nothing about which ones, once the dates are read.
+static PARTICIPLE: LazyLock<Regex> = re!(
+    r"(?i)\b(?:(?:that|which)\s+were\s+|were\s+)?(?:taken|created|made|downloaded|saved|captured|added|modified|recorded|grabbed|snapped|received)\b"
+);
 static NAME: LazyLock<Regex> = re!(
     r#"(?i)\b(?:named|called|containing|that\s+contain|whose\s+names?\s+contains?|matching|with)\s+("[^"]+"|\S+)(?:\s+in\s+(?:their\s+|its\s+)?names?)?"#
 );
@@ -119,6 +127,12 @@ static FOLDER: LazyLock<Regex> = re!(r"(?i)^(.*?)\s*\b(?:from|in|on|inside|withi
 static WHO_CLAUSE: LazyLock<Regex> = re!(
     r"(?i)\b(?:that\s+|which\s+)?(?:i|i've|i\s+have|i'd|we|we've)\s+(?:have\s+|just\s+|recently\s+)?(?:took|taken|take|made|make|downloaded|download|saved|save|created|got|gotten|received|captured|grabbed|added|recorded|exported|scanned|snapped)\b"
 );
+
+fn month_number(name: &str) -> Option<u32> {
+    const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    let n = name.to_ascii_lowercase();
+    MONTHS.iter().position(|m| n.starts_with(m)).map(|i| i as u32 + 1)
+}
 
 fn to_mb(n: f64, unit: Option<&str>) -> f64 {
     match unit.map(|u| u.to_ascii_lowercase()) {
@@ -176,6 +190,11 @@ pub fn extract_filters(phrase: &str) -> (Filter, String) {
     take(&mut s, &DAY, |c| {
         f.day = Some(if c[1].eq_ignore_ascii_case("today") { DayRef::Today } else { DayRef::Yesterday })
     });
+    take(&mut s, &MONTH, |c| {
+        f.month = month_number(&c[1]);
+        f.year = c.get(2).and_then(|y| y.as_str().parse().ok());
+    });
+    take(&mut s, &PARTICIPLE, |_| {});
     take(&mut s, &SIZE_LARGER, |c| {
         f.larger_than_mb = Some(to_mb(c[1].parse().unwrap_or(0.0), c.get(2).map(|m| m.as_str())));
     });

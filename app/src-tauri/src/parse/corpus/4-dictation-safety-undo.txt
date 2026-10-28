@@ -1,0 +1,53 @@
+# 9. Dictation noise
+um can you move the report to Documents => {"intent":"move","src":{"kind":"item","name":"report"},"to":"Documents"}
+Hey Voxi, could you please move the report.pdf to Documents thanks => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+okay so move report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+move report.pdf to Documents period => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+move the report.pdf to documents, please. => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"documents"}
+move   report.pdf    to   Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+MOVE REPORT.PDF TO DOCUMENTS => {"intent":"move","src":{"kind":"item","name":"REPORT.PDF"},"to":"DOCUMENTS"}
+move report dot pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+move report-final dot PDF to Documents => {"intent":"move","src":{"kind":"item","name":"report-final.PDF"},"to":"Documents"}
+Please, move report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+I'd like you to move the report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+I need to move the report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+Voxi, move report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+move report pdf to documents => {"intent":"move","src":{"kind":"item","name":"report pdf"},"to":"documents"}
+move “report.pdf” to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+move 'report.pdf' to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+move screenshots from today to Screenshots! => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+Undo, please. => {"intent":"undo"}
+Could you undo the last change, please => {"intent":"undo"}
+um, uh, move the screenshots to Pictures => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots"}},"to":"Pictures"}
+
+# 10. Safety and out-of-bounds
+delete everything => {"intent":"trash","src":{"kind":"set","filter":{"type":"files"}}}
+delete everything in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+permanently delete all screenshots from Desktop => !
+erase the old screenshots => !
+move everything to the trash => {"intent":"trash","src":{"kind":"set","filter":{"type":"files"}}}
+delete ../../etc/passwd => {"intent":"trash","src":{"kind":"item","name":"../../etc/passwd"}}
+move ~/Library/Keychains to Documents => {"intent":"move","src":{"kind":"item","name":"~/Library/Keychains"},"to":"Documents"}
+move /etc/hosts to Documents => {"intent":"move","src":{"kind":"item","name":"/etc/hosts"},"to":"Documents"}
+copy /Applications/Safari.app to Desktop => {"intent":"copy","src":{"kind":"item","name":"/Applications/Safari.app"},"to":"Desktop"}
+overwrite report.pdf with final.pdf => !
+replace report.pdf with final.pdf => !
+upload all PDFs to Dropbox => !
+rm -rf Downloads => !
+delete the Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}}}
+make folder ../secret on Desktop => {"intent":"create_folders","names":["../secret"],"parent":"Desktop"}
+trash all PNG files older than 2 years in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["png"],"olderThanDays":730}}}
+
+# 11. Undo, history, and Finder
+undo => {"intent":"undo"}
+undo the last change => {"intent":"undo"}
+take that back => {"intent":"undo"}
+revert that => {"intent":"undo"}
+show my history => {"intent":"recent_actions"}
+list my recent changes => {"intent":"recent_actions"}
+open report.pdf => {"intent":"reveal","target":"report.pdf"}
+show me Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+reveal the report in Finder => {"intent":"reveal","target":"report"}
+open the file named notes.txt => {"intent":"reveal","target":"notes.txt"}
+undo the last two actions => !
+what did I just do => !

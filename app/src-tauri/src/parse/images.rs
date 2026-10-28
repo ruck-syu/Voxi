@@ -20,7 +20,7 @@ pub fn patterns() -> Vec<Pattern> {
         ),
         pat(
             "resize_image",
-            r"^(?:resize|scale|shrink)\s+(.+?)\s+(?:down\s+)?to\s+(\d+)\s*(?:px|pixels?)?(?:\s+(?:wide|width|across|in\s+width))?$",
+            r"^(?:resize|scale(?:\s+down)?|shrink)\s+(.+?)\s+(?:down\s+)?to\s+(\d+)\s*(?:px|pixels?)?(?:\s+(?:wide|width|across|in\s+width))?$",
             |c| {
                 let width: u32 = cap(c, 2)?.parse().ok().filter(|w| *w > 0)?;
                 Some(Intent::ResizeImage { src: typed_src(c, 1, FileType::Images)?, width })

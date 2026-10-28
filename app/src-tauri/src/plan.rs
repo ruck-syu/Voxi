@@ -948,6 +948,18 @@ pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
             return false;
         }
     }
+    if let Some(n) = &f.name_starts_with {
+        if !file_name(p).to_lowercase().starts_with(&n.to_lowercase()) {
+            return false;
+        }
+    }
+    if f.since.is_some() || f.before.is_some() {
+        let Some(t) = created(p) else { return false };
+        let day = t.date_naive();
+        if f.since.is_some_and(|s| day < s) || f.before.is_some_and(|b| day >= b) {
+            return false;
+        }
+    }
     if f.larger_than_mb.is_some() || f.smaller_than_mb.is_some() {
         let mb = fs::metadata(p).map_or(0.0, |m| m.len() as f64 / (1024.0 * 1024.0));
         if f.larger_than_mb.is_some_and(|l| mb <= l) || f.smaller_than_mb.is_some_and(|s| mb >= s) {
@@ -976,7 +988,7 @@ pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
 
 /// The year a month refers to: the one given, or else the most recent such
 /// month ("August" in October means this August; in March, last August).
-fn month_year(month: u32, year: Option<i32>, today: NaiveDate) -> i32 {
+pub(crate) fn month_year(month: u32, year: Option<i32>, today: NaiveDate) -> i32 {
     year.unwrap_or(if month <= today.month() { today.year() } else { today.year() - 1 })
 }
 
@@ -1288,6 +1300,43 @@ mod tests {
         assert_eq!(month_year(12, None, oct), 2025);
         assert_eq!(month_year(10, None, oct), 2026);
         assert_eq!(month_year(3, Some(2024), oct), 2024);
+    }
+
+    /// Sets a file's date as `touch -t` would. On macOS an earlier modified
+    /// time also moves the creation date, which is what the date filters read.
+    fn set_taken(p: &Path, (y, m, d): (i32, u32, u32)) {
+        let at = NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(12, 0, 0).unwrap().and_local_timezone(Local).unwrap();
+        fs::File::options().write(true).open(p).unwrap().set_modified(at.into()).unwrap();
+    }
+
+    #[test]
+    fn screenshots_before_and_after_a_month_are_split_by_date() {
+        let h = home();
+        let pics = h.roots.home.join("Pictures");
+        let june = pics.join("Screenshot 2026-06-10 at 09.00.00.png");
+        let august = pics.join("Screenshot 2026-08-02 at 09.00.00.png");
+        fs::write(&june, b"a").unwrap();
+        fs::write(&august, b"a").unwrap();
+        set_taken(&june, (2026, 6, 10));
+        set_taken(&august, (2026, 8, 2));
+        let Ok(Planned::Info { total, rows, .. }) = plan(&h, "Show me the screenshots taken before July 2026") else {
+            panic!("expected a list")
+        };
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].name, "Screenshot 2026-06-10 at 09.00.00.png");
+        let Ok(Planned::Info { total, rows, .. }) = plan(&h, "list screenshots taken after July 2026") else { panic!("expected a list") };
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].name, "Screenshot 2026-08-02 at 09.00.00.png");
+    }
+
+    #[test]
+    fn name_prefix_filter_matches_only_the_start_of_the_name() {
+        let h = home();
+        let dl = h.roots.home.join("Downloads");
+        fs::write(dl.join("invoice-june.pdf"), b"a").unwrap();
+        fs::write(dl.join("old invoice.pdf"), b"a").unwrap();
+        let a = steps(&h, "delete files that start with invoice from Downloads");
+        assert_eq!(a, vec![Action::Trash { path: dl.join("invoice-june.pdf") }]);
     }
 
     #[test]

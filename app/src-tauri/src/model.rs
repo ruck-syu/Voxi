@@ -1,6 +1,7 @@
 //! Shared data types: filters, parsed intents, concrete actions, and what the
 //! window receives back (plans, read-only results, errors).
 
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -45,12 +46,22 @@ pub struct Filter {
     /// The month's year; without one, the most recent such month.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<i32>,
+    /// Created on or after this day: "since March 2026", "after July 2026"
+    /// (which starts the day after July ends).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<NaiveDate>,
+    /// Created before this day: "before July 2026", "until March 15" (which
+    /// stops the day after March 15).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<NaiveDate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub larger_than_mb: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub smaller_than_mb: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name_contains: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_starts_with: Option<String>,
 }
 
 impl Filter {
@@ -62,9 +73,12 @@ impl Filter {
             || self.newer_than_days.is_some()
             || self.day.is_some()
             || self.month.is_some()
+            || self.since.is_some()
+            || self.before.is_some()
             || self.larger_than_mb.is_some()
             || self.smaller_than_mb.is_some()
             || self.name_contains.is_some()
+            || self.name_starts_with.is_some()
     }
 }
 

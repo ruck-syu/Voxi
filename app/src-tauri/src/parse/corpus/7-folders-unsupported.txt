@@ -1,0 +1,33 @@
+# 15. Creating and sorting folders
+make a folder called Taxes in Documents => {"intent":"create_folders","names":["Taxes"],"parent":"Documents"}
+create a new folder named Invoices on the desktop => {"intent":"create_folders","names":["Invoices"],"parent":"desktop"}
+new folder called Receipts => {"intent":"create_folders","names":["Receipts"]}
+create folders for 2024 and 2025 in Documents => {"intent":"create_folders","names":["2024","2025"],"parent":"Documents"}
+create folders Taxes, Receipts, and Photos in Documents => {"intent":"create_folders","names":["Taxes","Receipts","Photos"],"parent":"Documents"}
+make a folder called 'Tax 2025' in Documents => {"intent":"create_folders","names":["Tax 2025"],"parent":"Documents"}
+create folder Invoices/2026 in Documents => {"intent":"create_folders","names":["Invoices/2026"],"parent":"Documents"}
+create a folder on the desktop => !
+sort the screenshots by month => {"intent":"sort_by_month","folder":"screenshots"}
+organize Downloads by type => {"intent":"sort_by_type","folder":"Downloads"}
+sort Pictures by year => !
+sort my Desktop by date => {"intent":"sort_by_month","folder":"Desktop"}
+
+# 16. Compound, unsupported, and odd input
+move PDFs to Documents and screenshots to Pictures => !
+move PDFs and images from Downloads to Documents => !
+move everything except PDFs to Documents => !
+move everything but screenshots to Documents => !
+move all files not PDFs to Documents => !
+move the report.pdf to Documents, and then delete the screenshots => !
+move PDFs to Documents then screenshots to Pictures => !
+translate notes.txt to French => !
+summarize report.pdf => !
+what's the biggest file in Downloads => !
+is there anything in Downloads => !
+tell me how big Downloads is => !
+what is in report.pdf => {"intent":"list","src":{"kind":"item","name":"report.pdf"}}
+? => !
+123456 => !
+move => !
+move report.pdf => !
+to Documents => !

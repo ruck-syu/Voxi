@@ -11,11 +11,12 @@ pub fn patterns() -> Vec<Pattern> {
     vec![
         pat(
             "create_folders",
-            r"^(?:create|make|add|new)\s+(?:a\s+)?(?:new\s+)?folders?\s+(?:called\s+|named\s+)?(.+?)(?:\s+(?:in|on|inside|under)\s+(.+))?$",
+            r"^(?:create|make|add|new)\s+(?:a\s+)?(?:new\s+)?folders?\s+(?:called\s+|named\s+|for\s+)?(.+?)(?:\s+(?:in|on|inside|under)\s+(.+))?$",
             |c| {
                 let names: Vec<String> =
                     LIST_SEP.split(&cap(c, 1)?).map(clean_name).filter(|s| !s.is_empty()).collect();
-                if names.is_empty() {
+                // "create a folder on the desktop" names no folder: "on the desktop" is a place.
+                if names.is_empty() || names.iter().any(|n| n.to_lowercase().starts_with("on ") || n.to_lowercase().starts_with("in ")) {
                     return None;
                 }
                 Some(Intent::CreateFolders { names, parent: cap(c, 2).map(|p| clean_name(&p)) })

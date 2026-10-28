@@ -1,0 +1,29 @@
+# 12. Counts, sizes, and duplicates
+how many PDFs are in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+how many files are in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+count the files in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+count the screenshots from yesterday => {"intent":"count","src":{"kind":"set","filter":{"type":"screenshots","day":"yesterday"}}}
+how many photos are there in Pictures => {"intent":"count","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}}}
+how big is Downloads => {"intent":"size","folder":"Downloads"}
+size of my screenshots => {"intent":"size","folder":"screenshots"}
+list duplicates in Downloads => {"intent":"duplicates","folder":"Downloads"}
+find duplicate files on Desktop => {"intent":"duplicates","folder":"Desktop"}
+are there any duplicate PDFs in Documents => !
+
+# 13. Batch rules: renames
+replace spaces with underscores in names of files in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"_"}
+remove spaces from the file names in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":""}
+strip dashes from names in Documents => {"intent":"replace_in_names","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"find":"-","replace":""}
+lowercase all the file names in Desktop => {"intent":"lowercase","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}}}
+make the names of my PDFs lowercase => {"intent":"lowercase","src":{"kind":"set","filter":{"type":"pdfs"}}}
+add prefix Invoice- to all PDFs in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"prefix":"Invoice-"}
+add prefix 2026- to every file in Documents => {"intent":"add_prefix","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"prefix":"2026-"}
+add date prefix to screenshots in Pictures => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Pictures","filter":{"type":"screenshots"}}}
+number the photos in Trip as trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+rename report to Final Report => {"intent":"rename","src":{"kind":"item","name":"report"},"new_name":"Final Report"}
+rename report.pdf as summary.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"summary.pdf"}
+rename the Claude dmg to Claude => {"intent":"rename","src":{"kind":"item","name":"Claude dmg"},"new_name":"Claude"}
+change the name of notes.txt to meeting notes.txt => {"intent":"rename","src":{"kind":"item","name":"notes.txt"},"new_name":"meeting notes.txt"}
+rename all screenshots in Desktop to Shot-1 => !
+capitalize the file names in Downloads => !
+add today's date to report.pdf => !

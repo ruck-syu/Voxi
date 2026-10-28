@@ -366,11 +366,9 @@ impl<'a> Planner<'a> {
                 let label = file_name(&p);
                 Ok((vec![p], label))
             }
-            None if filter.file_type == Some(FileType::Screenshots) => {
-                let mut v = vec![self.roots.desktop()];
-                v.extend(self.roots.screenshots.clone());
-                Ok((v, "Desktop".into()))
-            }
+            // Screenshots can be anywhere: every allowed folder, plus one
+            // level of subfolders (see `expand`).
+            None if filter.file_type == Some(FileType::Screenshots) => Ok((self.roots.search_roots(), "your folders".into())),
             None => Ok((vec![self.roots.downloads(), self.roots.desktop()], "Downloads and Desktop".into())),
         }
     }
@@ -390,7 +388,8 @@ impl<'a> Planner<'a> {
                 let mut out = Vec::new();
                 let mut seen = HashSet::new();
                 for d in &dirs {
-                    let depth = if recursive { 12 } else { 0 };
+                    let screenshots_anywhere = folder.is_none() && filter.file_type == Some(FileType::Screenshots);
+                    let depth = if recursive { 12 } else if screenshots_anywhere { 1 } else { 0 };
                     walk(d, depth, &mut |p, is_dir| {
                         if !is_dir && seen.insert(p.to_path_buf()) && matches(p, filter, today) {
                             out.push(p.to_path_buf());
@@ -1190,6 +1189,17 @@ mod tests {
         assert_eq!(title, "Run my usuals: 2 commands");
         assert!(actions.iter().any(|a| matches!(a, Action::Move { to, .. } if to.ends_with("Screenshots/Screenshot 2026-10-28 at 10.00.00.png"))));
         assert!(warnings.iter().any(|w| w.starts_with("“delete installers from Downloads”")), "{warnings:?}");
+    }
+
+    #[test]
+    fn screenshots_are_found_outside_the_desktop() {
+        let h = home();
+        let pics = h.roots.home.join("Pictures/Screenshots");
+        fs::create_dir_all(&pics).unwrap();
+        fs::write(pics.join("Screenshot 2026-10-28 at 10.00.00.png"), b"a").unwrap();
+        fs::write(h.roots.home.join("Downloads/Screenshot 2026-10-27 at 09.00.00.png"), b"a").unwrap();
+        let Ok(Planned::Info { total, .. }) = plan(&h, "list screenshots") else { panic!("expected a list") };
+        assert_eq!(total, 2);
     }
 
     #[test]

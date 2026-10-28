@@ -1,0 +1,800 @@
+/* Voxi: a library index card. The command sits on the red head rule; the
+   preview is written on the card's blue ruled lines. */
+
+:root {
+  --card: #f7f9fc;
+  --ink: #1b2a4a;
+  --muted: #5d6b85;
+  --rule: #a9c1e8;
+  --margin: #d2453b;
+  --wash: #e9eff8;
+  --line: 34px;
+  --display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --text: "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
+  --settle: cubic-bezier(0.2, 0.8, 0.2, 1);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card: #172036;
+    --ink: #e6ecf7;
+    --muted: #9aa8c2;
+    --rule: #34466b;
+    --margin: #ff6b5e;
+    --wash: #1f2a44;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  padding: 0;
+  font-family: var(--text);
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* The window is frosted glass: macOS's Popover vibrancy, its shadow and
+   corner radius come from the window itself. The card is a thin paper tint
+   over it and fills the window. The glass can't fade, so opening and
+   closing animate the contents instead. */
+.card {
+  --glass-tint: 28%;
+  background: color-mix(in srgb, var(--card) var(--glass-tint), transparent);
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--ink) 22%, transparent);
+  /* clip, not hidden: the card must never become a scroll container, or
+     focusing a control mid-resize scrolls the command out of view. */
+  overflow: clip;
+}
+
+.card-inner {
+  opacity: 0;
+  transition: opacity 110ms ease-in;
+}
+
+.card[data-open] .card-inner {
+  opacity: 1;
+  transition: opacity 180ms var(--settle);
+}
+
+/* Browser preview only (`npm run dev`): a sample desktop behind the card,
+   CSS blur standing in for the native material, and a height glide in place
+   of the native window resize. */
+html:not([data-native]) body {
+  min-height: 100vh;
+  padding: 48px 40px;
+  background:
+    radial-gradient(60% 80% at 15% 20%, #3f7cc4 0, transparent 70%),
+    radial-gradient(50% 70% at 85% 30%, #e0894a 0, transparent 70%),
+    radial-gradient(70% 70% at 60% 100%, #2c8a6e 0, transparent 70%),
+    #23324d;
+}
+
+html:not([data-native]) .card {
+  --glass-tint: 62%;
+  -webkit-backdrop-filter: blur(30px) saturate(170%);
+  backdrop-filter: blur(30px) saturate(170%);
+  box-shadow:
+    inset 0 0 0 0.5px color-mix(in srgb, var(--ink) 22%, transparent),
+    0 18px 40px -10px rgb(0 0 0 / 0.45);
+}
+
+html:not([data-native]) .card[data-glide] {
+  transition: height 240ms var(--settle);
+}
+
+/* ---- Head: the command on the red rule ---- */
+
+.head {
+  position: relative;
+  padding: 18px 22px 14px;
+}
+
+/* The red head rule. It draws in when the card opens, presses on each
+   keystroke, and sweeps ink along itself when dictation lands. */
+.rule {
+  opacity: 0.9;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--margin) 0 45%, color-mix(in srgb, var(--margin) 35%, var(--card)) 50%, var(--margin) 55% 100%);
+  background-size: 220% 100%;
+  background-position: 0% 0;
+  transform-origin: 0 100%;
+}
+
+.card[data-open] .rule {
+  animation: draw-rule 320ms var(--settle) 60ms both;
+}
+
+@keyframes draw-rule {
+  from { scale: 0 1; }
+  to { scale: 1 1; }
+}
+
+.head[data-busy]::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 30%;
+  background: var(--ink);
+  animation: sweep 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes sweep {
+  from { transform: translateX(0); }
+  to { transform: translateX(233%); }
+}
+
+.command {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--margin);
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 500;
+  font-variation-settings: "wdth" 92;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  max-height: 140px;
+  user-select: text;
+}
+
+.command::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+  font-weight: 400;
+}
+
+/* ---- Body ---- */
+
+.body,
+.settings,
+.welcome {
+  padding: 14px 22px 4px;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.title.warn {
+  color: var(--margin);
+}
+
+/* Each new state settles in under the command. */
+.body {
+  animation: settle-in 200ms var(--settle) both;
+}
+
+@keyframes settle-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* One small nudge when Voxi can't do what was asked. */
+.nudge {
+  animation: nudge 260ms ease-out 80ms both;
+}
+
+@keyframes nudge {
+  0%, 100% { translate: 0; }
+  30% { translate: -3px; }
+  65% { translate: 2px; }
+}
+
+.tick {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  vertical-align: -3px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tick path {
+  stroke-dasharray: 22;
+  stroke-dashoffset: 22;
+  animation: tick 340ms var(--settle) 120ms forwards;
+}
+
+@keyframes tick {
+  to { stroke-dashoffset: 0; }
+}
+
+.quiet {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  max-width: 70ch;
+}
+
+/* Rows sit on the card's ruled lines. */
+.ruled {
+  list-style: none;
+  margin: 6px 0 4px;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.ruled li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  column-gap: 16px;
+  align-items: baseline;
+  position: relative;
+  min-height: var(--line);
+  padding: 6px 0 5px;
+}
+
+/* Each row's ruled line draws, then its text is inked in. */
+.ruled li::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--rule);
+  transform-origin: 0 0;
+  animation: draw-line 260ms var(--settle) calc(var(--i, 0) * 32ms) both;
+}
+
+.ruled li > * {
+  animation: ink-in 240ms var(--settle) calc(var(--i, 0) * 32ms + 90ms) both;
+}
+
+@keyframes draw-line {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes ink-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.ruled .primary {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ruled .detail {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ruled li[data-kind="trash"] .detail {
+  color: var(--margin);
+}
+
+.ruled li[data-kind="create_folder"] .primary::before {
+  content: "+ ";
+  color: var(--muted);
+}
+
+.ruled .note {
+  grid-column: 1 / -1;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-style: italic;
+  padding-top: 2px;
+}
+
+.ruled .more {
+  display: block;
+  color: var(--muted);
+  animation: ink-in 240ms var(--settle) calc(var(--i, 0) * 32ms + 90ms) both;
+}
+
+.scroll {
+  max-height: calc(var(--line) * 10);
+  overflow-y: auto;
+}
+
+.row-button {
+  all: unset;
+  display: contents;
+  cursor: pointer;
+}
+
+.ruled li:has(.row-button):hover,
+.ruled li:has(.row-button:focus-visible) {
+  background: var(--wash);
+}
+
+.examples {
+  list-style: none;
+  margin: 4px 0 6px;
+  padding: 0;
+}
+
+.example {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 15px;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--rule);
+}
+
+.example:hover,
+.example:focus-visible {
+  border-bottom-color: var(--ink);
+}
+
+/* ---- Buttons ---- */
+
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0 10px;
+}
+
+.actions:empty {
+  display: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.primary-button,
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.primary-button {
+  border: 0;
+  background: var(--ink);
+  color: var(--card);
+}
+
+.secondary {
+  border: 1px solid var(--rule);
+  background: transparent;
+}
+
+.primary-button:focus-visible,
+.secondary:focus-visible,
+.hotkey:focus-visible,
+.link:focus-visible,
+.example:focus-visible {
+  outline: 2px solid var(--margin);
+  outline-offset: 2px;
+}
+
+kbd {
+  font-family: var(--text);
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+/* ---- Footer ---- */
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 22px 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.link:hover {
+  color: var(--ink);
+}
+
+/* ---- Settings ---- */
+
+.hotkey {
+  min-width: 180px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--wash);
+  font-family: var(--display);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hotkey.recording {
+  border-color: var(--margin);
+  color: var(--margin);
+}
+
+.plain {
+  width: 100%;
+  resize: none;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--wash);
+  color: var(--ink);
+  font: inherit;
+  outline: 0;
+  user-select: text;
+}
+
+.plain:focus {
+  border-color: var(--ink);
+}
+
+/* ---- Welcome ---- */
+
+.welcome .title {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.steps {
+  counter-reset: step;
+}
+
+.steps li {
+  counter-increment: step;
+  grid-template-columns: 24px minmax(0, 1fr);
+  row-gap: 2px;
+  padding: 8px 0;
+}
+
+.steps li::before {
+  content: counter(step);
+  grid-row: 1 / 3;
+  font-family: var(--display);
+  font-weight: 700;
+  color: var(--margin);
+}
+
+.steps .detail {
+  white-space: normal;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .tick path {
+    stroke-dashoffset: 0;
+  }
+  .head[data-busy]::after {
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+/* ---- Which one? ---- */
+
+.choices li {
+  grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1.25fr);
+}
+
+.choices .num {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--margin);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The last command, echoed above its result once the box is cleared. */
+.said {
+  margin: 0;
+  padding: 12px 22px 0;
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 14px;
+  font-variation-settings: "wdth" 92;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: settle-in 200ms var(--settle) both;
+}
+
+.said + .body {
+  padding-top: 4px;
+}
+
+/* ---- Settings: one ruled row per setting; big ones fold away ---- */
+
+.settings {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.quiet.warn {
+  color: var(--margin);
+}
+
+.prefs {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.pref {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.pref-label {
+  font-weight: 700;
+}
+
+.pref-summary {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.disclosure {
+  display: block;
+}
+
+.pref-head {
+  all: unset;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  cursor: pointer;
+}
+
+.pref-head:focus-visible,
+.shortcut-row:focus-visible,
+.switch:focus-visible {
+  outline: 2px solid var(--margin);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.chevron {
+  width: 7px;
+  height: 7px;
+  margin: 0 4px 3px 2px;
+  border-right: 1.6px solid var(--muted);
+  border-bottom: 1.6px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 180ms var(--settle);
+}
+
+.disclosure[data-open] .chevron {
+  transform: rotate(-135deg);
+  margin-bottom: -3px;
+}
+
+.pref-body {
+  padding: 0 0 14px;
+  animation: settle-in 200ms var(--settle) both;
+}
+
+.hint {
+  display: block;
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.hotkey {
+  min-width: 0;
+  height: 30px;
+  font-size: 15px;
+  text-align: center;
+}
+
+/* Open at login: a switch rather than a checkbox. */
+.switch {
+  appearance: none;
+  position: relative;
+  width: 36px;
+  height: 22px;
+  margin: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.switch::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  transition: transform 180ms var(--settle);
+}
+
+.switch:checked {
+  background: var(--ink);
+}
+
+.switch:checked::before {
+  transform: translateX(14px);
+}
+
+/* Shortcuts fold to their phrase until opened. */
+.shortcut-row {
+  all: unset;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 0;
+  cursor: pointer;
+}
+
+.phrase-text {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  font-variation-settings: "wdth" 92;
+}
+
+.shortcut-row:hover .phrase-text {
+  text-decoration: underline;
+  text-decoration-color: var(--rule);
+  text-underline-offset: 3px;
+}
+
+.shortcut {
+  margin: 6px 0 10px;
+}
+
+.shortcut-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.phrase {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0 4px;
+  border: 0;
+  border-bottom: 2px solid var(--margin);
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 600;
+  font-variation-settings: "wdth" 92;
+  user-select: text;
+}
+
+.phrase::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+  font-weight: 500;
+}
+
+.link.remove {
+  margin-top: 6px;
+  color: var(--margin);
+}
+
+.link.add {
+  margin-top: 4px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* Updates: version, a button, and a progress bar while it downloads. */
+.updates {
+  flex-wrap: wrap;
+}
+
+.secondary.small {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.update-status {
+  flex-basis: 100%;
+  padding-bottom: 10px;
+}
+
+.hint.warn {
+  color: var(--margin);
+}
+
+.progress {
+  position: relative;
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--rule) 70%, transparent);
+  overflow: hidden;
+}
+
+.progress > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--margin);
+  transition: width 160ms linear;
+}
+
+.progress[data-indeterminate] > span {
+  animation: sweep 0.9s ease-in-out infinite alternate;
+}

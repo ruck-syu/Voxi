@@ -1,4 +1,5 @@
-# Builds Voxi on every push to main and publishes a GitHub release with:
+# Builds Voxi on every push to main and publishes a GitHub release whose notes
+# list the changes since the previous version, with:
 #   - Voxi_<version>_universal.dmg   for first installs
 #   - Voxi.app.tar.gz + .sig         the signed update the app downloads
 #   - latest.json                    what "Check for updates" reads
@@ -30,6 +31,8 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags and history, for the release notes
 
       - uses: actions/setup-node@v4
         with:
@@ -58,6 +61,40 @@ jobs:
           ' "$VERSION"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      # "What's new": commit subjects since the previous release's tag.
+      - name: Release notes
+        id: notes
+        run: |
+          PREV=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)
+          RANGE=${PREV:+$PREV..}HEAD
+          NOTES=$(git log --no-merges --pretty='- %s' "$RANGE" | sed 's/ \[skip ci\]//')
+          [ -n "$NOTES" ] || NOTES="- Maintenance release."
+          { echo "notes<<VOXI_NOTES"; echo "$NOTES"; echo "VOXI_NOTES"; } >> "$GITHUB_OUTPUT"
+
+      # Signs the whole app with Voxi's own certificate, so macOS keeps the
+      # same identity across versions and remembers folder access and the
+      # first-launch approval. Skipped until the certificate secrets exist.
+      - name: Import signing certificate
+        env:
+          CERT: ${{ secrets.VOXI_SIGNING_CERT }}
+          CERT_PASSWORD: ${{ secrets.VOXI_SIGNING_CERT_PASSWORD }}
+        run: |
+          if [ -z "$CERT" ]; then
+            echo "::warning::VOXI_SIGNING_CERT isn't set; building without a stable signature."
+            exit 0
+          fi
+          KC="$RUNNER_TEMP/voxi.keychain-db"
+          KC_PASSWORD=$(openssl rand -base64 18)
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/voxi.p12"
+          security create-keychain -p "$KC_PASSWORD" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PASSWORD" "$KC"
+          security import "$RUNNER_TEMP/voxi.p12" -k "$KC" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASSWORD" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/voxi.p12"
+          echo "APPLE_SIGNING_IDENTITY=Voxi Self-Signed" >> "$GITHUB_ENV"
+
       - run: npm ci
 
       - name: Test
@@ -74,10 +111,12 @@ jobs:
           tagName: v${{ env.VERSION }}
           releaseName: Voxi ${{ env.VERSION }}
           releaseBody: |
+            ## What's new
+            ${{ steps.notes.outputs.notes }}
+
+            ## Install
             Download **Voxi_${{ env.VERSION }}_universal.dmg** below, open it, and drag Voxi to Applications.
             Already installed? Open Voxi's Settings and click **Check for updates**.
-
-            Built from ${{ github.sha }}.
           releaseDraft: false
           prerelease: false
           args: --target universal-apple-darwin

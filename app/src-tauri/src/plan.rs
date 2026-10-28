@@ -328,26 +328,32 @@ impl<'a> Planner<'a> {
         out
     }
 
-    /// Fallback for a vague or dictated name. Collects every entry whose
-    /// name is close: same stem ("claude" -> Claude.dmg), same letters and
-    /// digits ("claude dmg" -> Claude.dmg), or containing the words
-    /// ("claude" -> Claude Setup.dmg). Closest first, then newest, so a
-    /// numbered list can be read out when there is more than one.
+    /// Fallback for a vague or dictated name. Collects every entry whose name is
+    /// close: same stem ("claude" -> Claude.dmg), same letters and digits
+    /// ("claude dmg" -> Claude.dmg), containing the words ("claude" -> Claude
+    /// Setup.dmg), or holding every word of a multi-word name in any order
+    /// ("anigen android zip" -> Anigen-Android-1.zip, which adds a version
+    /// number). Closest first, then newest, so a numbered list can be read out
+    /// when there is more than one.
     fn find_similar(&self, name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
         const MAX_CANDIDATES: usize = 9;
         let want = loose(name);
         if want.len() < 3 {
             return Vec::new();
         }
+        // The words of the name, skipping one-letter words, as they must appear in a file's name.
+        let words: Vec<String> = name.split_whitespace().map(loose).filter(|w| w.len() >= 2).collect();
         let mut scored: Vec<(u8, Option<DateTime<Local>>, PathBuf)> = Vec::new();
         let mut seen = HashSet::new();
         for d in dirs {
             walk(d, 2, &mut |p, _| {
                 let file = file_name(p);
                 let stem = split_name(&file).0;
-                let score = if loose(&file) == want || loose(stem) == want {
+                let letters = loose(&file);
+                let all_words = words.len() > 1 && words.iter().all(|w| letters.contains(w.as_str()));
+                let score = if letters == want || loose(stem) == want {
                     2
-                } else if loose(&file).contains(&want) {
+                } else if letters.contains(&want) || all_words {
                     1
                 } else {
                     return;
@@ -739,6 +745,10 @@ impl<'a> Planner<'a> {
                 return problem(format!("Voxi won't remove {} itself.", file_name(p)));
             }
             self.push(Action::Trash { path: p.clone() }, None);
+        }
+        // A named item is its own label, so "from <file>" would only repeat it.
+        if matches!(src, Source::Item { .. }) {
+            return Ok(format!("Move {} to the Trash", count_label(&paths)));
         }
         Ok(format!("Move {} from {label} to the Trash", count_label(&paths)))
     }
@@ -1333,6 +1343,36 @@ mod tests {
         fs::write(dl.join("old invoice.pdf"), b"a").unwrap();
         let a = steps(&h, "delete files that start with invoice from Downloads");
         assert_eq!(a, vec![Action::Trash { path: dl.join("invoice-june.pdf") }]);
+    }
+
+    #[test]
+    fn a_name_matches_a_file_that_adds_a_version_number() {
+        let h = home();
+        let dl = h.roots.home.join("Downloads");
+        fs::write(dl.join("Anigen-Android-1.zip"), b"a").unwrap();
+        fs::write(dl.join("notes.txt"), b"a").unwrap();
+        let a = steps(&h, "delete anigen android zip from downloads");
+        assert_eq!(a, vec![Action::Trash { path: dl.join("Anigen-Android-1.zip") }]);
+    }
+
+    #[test]
+    fn trashing_a_named_file_says_its_name_once() {
+        let h = home();
+        fs::write(h.roots.home.join("Downloads/setup.dmg"), b"a").unwrap();
+        let Ok(Planned::Steps { title, .. }) = plan(&h, "delete setup.dmg from downloads") else { panic!("expected a plan") };
+        assert_eq!(title, "Move setup.dmg to the Trash");
+    }
+
+    #[test]
+    fn a_name_that_fits_two_files_asks_which_one() {
+        let h = home();
+        let dl = h.roots.home.join("Downloads");
+        fs::write(dl.join("Anigen-Android-1.zip"), b"a").unwrap();
+        fs::write(dl.join("Anigen-Android-2.zip"), b"a").unwrap();
+        assert!(matches!(
+            plan(&h, "delete anigen android zip from downloads"),
+            Err(Stop::Ambiguous { candidates, .. }) if candidates.len() == 2
+        ));
     }
 
     #[test]

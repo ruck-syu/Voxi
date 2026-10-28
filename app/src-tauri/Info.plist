@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Menu-bar only: no Dock icon. -->
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Voxi organizes files on your Desktop when you ask it to.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Voxi organizes files in Documents when you ask it to.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Voxi organizes files in Downloads when you ask it to.</string>
+  <key>NSRemovableVolumesUsageDescription</key>
+  <string>Voxi moves files to external drives when you ask it to.</string>
+</dict>
+</plist>

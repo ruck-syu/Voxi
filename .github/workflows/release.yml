@@ -1,0 +1,78 @@
+# Builds Voxi on every push to main and publishes a GitHub release with:
+#   - Voxi_<version>_universal.dmg   for first installs
+#   - Voxi.app.tar.gz + .sig         the signed update the app downloads
+#   - latest.json                    what "Check for updates" reads
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release at a time, newest push wins the queue.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
+      # Every push gets a new version, so the updater always sees it as newer.
+      - name: Set version
+        run: |
+          VERSION="0.1.${{ github.run_number }}"
+          node -e '
+            const fs = require("fs");
+            const f = "src-tauri/tauri.conf.json";
+            const c = JSON.parse(fs.readFileSync(f, "utf8"));
+            c.version = process.argv[1];
+            fs.writeFileSync(f, JSON.stringify(c, null, 2) + "\n");
+          ' "$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - run: npm ci
+
+      - name: Test
+        working-directory: app/src-tauri
+        run: cargo test --lib
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: v${{ env.VERSION }}
+          releaseName: Voxi ${{ env.VERSION }}
+          releaseBody: |
+            Download **Voxi_${{ env.VERSION }}_universal.dmg** below, open it, and drag Voxi to Applications.
+            Already installed? Open Voxi's Settings and click **Check for updates**.
+
+            Built from ${{ github.sha }}.
+          releaseDraft: false
+          prerelease: false
+          args: --target universal-apple-darwin

@@ -37,10 +37,21 @@ impl Roots {
             allowed.push(canonical(p));
         }
         let mut roots = Roots { home: home.to_path_buf(), named, allowed, screenshots: None };
+        // Where screenshots land: the system setting if there is one, else
+        // the usual Screenshots folders. A custom location inside the home
+        // folder is allowed even outside the four standard folders.
         let screenshots = screenshots
-            .filter(|p| p.is_dir() && roots.is_allowed(p))
-            .or_else(|| Some(home.join("Desktop/Screenshots")).filter(|p| p.is_dir()));
+            .filter(|p| p.is_dir() && p.starts_with(home) && p != home)
+            .or_else(|| {
+                ["Desktop/Screenshots", "Pictures/Screenshots", "Documents/Screenshots"]
+                    .iter()
+                    .map(|d| home.join(d))
+                    .find(|p| p.is_dir())
+            });
         if let Some(s) = &screenshots {
+            if !roots.is_allowed(s) {
+                roots.allowed.push(canonical(s));
+            }
             roots.named.push(("screenshots".into(), s.clone()));
         }
         roots.screenshots = screenshots;
@@ -227,6 +238,16 @@ mod tests {
         let mut reserved = HashSet::new();
         assert_eq!(unique_path(dir.path(), "report.pdf", &mut reserved), dir.path().join("report 2.pdf"));
         assert_eq!(unique_path(dir.path(), "report.pdf", &mut reserved), dir.path().join("report 3.pdf"));
+    }
+
+    #[test]
+    fn finds_screenshots_folder_in_pictures() {
+        let home = tempfile::tempdir().unwrap();
+        for d in ["Desktop", "Downloads", "Documents", "Pictures", "Pictures/Screenshots"] {
+            fs::create_dir(home.path().join(d)).unwrap();
+        }
+        let roots = Roots::new(home.path(), None, &[]);
+        assert_eq!(roots.named("screenshots"), Some(&home.path().join("Pictures/Screenshots")));
     }
 
     #[test]

@@ -114,6 +114,11 @@ static NAME: LazyLock<Regex> = re!(
     r#"(?i)\b(?:named|called|containing|that\s+contain|whose\s+names?\s+contains?|matching|with)\s+("[^"]+"|\S+)(?:\s+in\s+(?:their\s+|its\s+)?names?)?"#
 );
 static FOLDER: LazyLock<Regex> = re!(r"(?i)^(.*?)\s*\b(?:from|in|on|inside|within)\s+(.+)$");
+/// "screenshots I took", "PDFs that I've downloaded", "files we saved":
+/// who made the files says nothing about which ones, so it's dropped.
+static WHO_CLAUSE: LazyLock<Regex> = re!(
+    r"(?i)\b(?:that\s+|which\s+)?(?:i|i've|i\s+have|i'd|we|we've)\s+(?:have\s+|just\s+|recently\s+)?(?:took|taken|take|made|make|downloaded|download|saved|save|created|got|gotten|received|captured|grabbed|added|recorded|exported|scanned|snapped)\b"
+);
 
 fn to_mb(n: f64, unit: Option<&str>) -> f64 {
     match unit.map(|u| u.to_ascii_lowercase()) {
@@ -158,6 +163,7 @@ fn take(s: &mut String, re: &Regex, mut f: impl FnMut(&regex::Captures)) {
 pub fn extract_filters(phrase: &str) -> (Filter, String) {
     let mut f = Filter::default();
     let mut s = phrase.trim().to_string();
+    take(&mut s, &WHO_CLAUSE, |_| {});
     take(&mut s, &NAME, |c| {
         f.name_contains = Some(c[1].trim_matches('"').to_string());
     });

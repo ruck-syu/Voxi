@@ -334,6 +334,22 @@ mod catalog_tests {
     }
 
     #[test]
+    fn who_did_it_clauses_are_ignored() {
+        assert_eq!(
+            p("List all the screenshots I took in the last week"),
+            List { src: set(None, Filter { newer_than_days: Some(7), ..of(Screenshots) }) }
+        );
+        assert_eq!(
+            p("Show me the PDFs I downloaded yesterday."),
+            List { src: set(None, Filter { day: Some(DayRef::Yesterday), ..of(Pdfs) }) }
+        );
+        assert_eq!(
+            p("delete the installers that I've downloaded from Downloads"),
+            Trash { src: set(Some("Downloads"), of(Installers)) }
+        );
+    }
+
+    #[test]
     fn unrecognized_input_is_not_understood() {
         for s in ["", "hello there", "make me a sandwich", "what's the weather", "move", "rename report.pdf"] {
             assert!(parse(s).is_err(), "should not understand {s:?}");

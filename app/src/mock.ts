@@ -3,7 +3,9 @@
 import type { Outcome, RunResult, Settings } from "./api";
 
 let settings: Settings = {
-  hotkey: "Control+Alt+Space", extraFolders: [], startAtLogin: false, onboarded: true,
+  hotkey: "Control+Alt+Space", extraFolders: [], startAtLogin: false,
+  // ?welcome previews the first-run page.
+  onboarded: !new URLSearchParams(location.search).has("welcome"),
   shortcuts: [{ phrase: "run my usuals", commands: ["move screenshots from today to Screenshots", "delete installers from Downloads"] }],
 };
 
@@ -79,6 +81,13 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         .filter((s) => s.phrase || s.commands.length);
       if (settings.shortcuts.some((s) => !s.phrase)) throw "Give each shortcut a phrase to say, like “run my usuals”.";
       return settings;
+    case "request_folder_access":
+      return [
+        { name: "Desktop", path: "~/Desktop", allowed: true },
+        { name: "Downloads", path: "~/Downloads", allowed: true },
+        { name: "Documents", path: "~/Documents", allowed: false },
+        { name: "Pictures", path: "~/Pictures", allowed: true },
+      ];
     case "allowed_folders":
       return ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"];
     default:

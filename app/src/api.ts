@@ -18,6 +18,8 @@ export type Outcome =
 
 export type RunResult = { done: number; total: number; error: string | null; undoable: boolean; summary: string };
 
+export type FolderAccess = { name: string; path: string; allowed: boolean };
+
 /** A saved phrase ("run my usuals") that runs several commands at once. */
 export type Shortcut = { phrase: string; commands: string[] };
 
@@ -31,6 +33,8 @@ export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   allowedFolders: () => invoke<string[]>("allowed_folders"),
+  requestFolderAccess: () => invoke<FolderAccess[]>("request_folder_access"),
+  openPrivacySettings: () => invoke<void>("open_privacy_settings"),
 };
 
 /** "~/Downloads/a.pdf" from an absolute path, for display. */

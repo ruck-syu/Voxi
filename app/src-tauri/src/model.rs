@@ -39,6 +39,12 @@ pub struct Filter {
     pub newer_than_days: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub day: Option<DayRef>,
+    /// A calendar month, 1 to 12 ("in August").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub month: Option<u32>,
+    /// The month's year; without one, the most recent such month.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub year: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub larger_than_mb: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,6 +61,7 @@ impl Filter {
             || self.older_than_days.is_some()
             || self.newer_than_days.is_some()
             || self.day.is_some()
+            || self.month.is_some()
             || self.larger_than_mb.is_some()
             || self.smaller_than_mb.is_some()
             || self.name_contains.is_some()

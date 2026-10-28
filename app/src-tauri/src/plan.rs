@@ -954,11 +954,16 @@ pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
             return false;
         }
     }
-    if f.older_than_days.is_some() || f.newer_than_days.is_some() || f.day.is_some() {
+    if f.older_than_days.is_some() || f.newer_than_days.is_some() || f.day.is_some() || f.month.is_some() {
         let Some(t) = created(p) else { return false };
         let age_days = (Local::now() - t).num_seconds() as f64 / 86_400.0;
         if f.older_than_days.is_some_and(|d| age_days <= d as f64) || f.newer_than_days.is_some_and(|d| age_days > d as f64) {
             return false;
+        }
+        if let Some(m) = f.month {
+            if (t.year(), t.month()) != (month_year(m, f.year, today), m) {
+                return false;
+            }
         }
         match f.day {
             Some(DayRef::Today) if t.date_naive() != today => return false,
@@ -967,6 +972,12 @@ pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
         }
     }
     true
+}
+
+/// The year a month refers to: the one given, or else the most recent such
+/// month ("August" in October means this August; in March, last August).
+fn month_year(month: u32, year: Option<i32>, today: NaiveDate) -> i32 {
+    year.unwrap_or(if month <= today.month() { today.year() } else { today.year() - 1 })
 }
 
 /// "report (1).pdf", "report 2.pdf", "report copy.pdf" -> "report.pdf".
@@ -1254,6 +1265,29 @@ mod tests {
         assert!(a.contains(&Action::Move { from: d.join("a.pdf"), to: d.join("PDFs/a.pdf") }));
         assert!(a.contains(&Action::Move { from: d.join("b.png"), to: d.join("Images/b.png") }));
         assert_eq!(a.iter().filter(|x| matches!(x, Action::Move { .. })).count(), 2);
+    }
+
+    #[test]
+    fn month_filter_matches_files_from_that_month() {
+        let h = home();
+        let pics = h.roots.home.join("Pictures");
+        let august = pics.join("Screenshot 2026-08-15 at 10.00.00.png");
+        fs::write(&august, b"a").unwrap();
+        fs::write(pics.join("Screenshot today.png"), b"a").unwrap();
+        let when = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_786_788_000); // 2026-08-15
+        fs::File::options().write(true).open(&august).unwrap().set_modified(when).unwrap();
+        let Ok(Planned::Info { total, rows, .. }) = plan(&h, "find screenshots taken in August 2026") else { panic!("expected a list") };
+        assert_eq!(total, 1);
+        assert_eq!(rows[0].name, "Screenshot 2026-08-15 at 10.00.00.png");
+    }
+
+    #[test]
+    fn month_without_a_year_is_the_most_recent_one() {
+        let oct = NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
+        assert_eq!(month_year(8, None, oct), 2026);
+        assert_eq!(month_year(12, None, oct), 2025);
+        assert_eq!(month_year(10, None, oct), 2026);
+        assert_eq!(month_year(3, Some(2024), oct), 2024);
     }
 
     #[test]

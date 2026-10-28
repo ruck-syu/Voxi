@@ -4,8 +4,25 @@
     {
       "name": "website",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "serve@14.2.4", "website", "-l", "4321"],
+      "runtimeArgs": [
+        "--yes",
+        "serve@14.2.4",
+        "website",
+        "-l",
+        "4321"
+      ],
       "port": 4321
+    },
+    {
+      "name": "app-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "run",
+        "dev"
+      ],
+      "port": 1420
     }
   ]
 }

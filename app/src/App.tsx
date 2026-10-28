@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, inTauri, tildify, type Outcome, type RunResult, type Settings, type Shortcut } from "./api";
+import { api, inTauri, tildify, type FolderAccess, type Outcome, type RunResult, type Settings, type Shortcut } from "./api";
 import { readChoice } from "./choice";
 import { appVersion, checkAndInstall, type UpdateState } from "./updates";
 
-type View = "command" | "settings" | "welcome";
+type View = "command" | "settings" | "welcome" | "access";
 type Phase =
   | { k: "ready" }
   | { k: "parsing" }
@@ -117,11 +117,21 @@ export default function App() {
             onSettings={() => setView("settings")}
           />}
         {view === "settings" && settings && (
-          <SettingsView settings={settings} onSaved={setSettings} onClose={() => setView("command")} />
+          <SettingsView
+            settings={settings}
+            onSaved={setSettings}
+            onClose={() => setView("command")}
+            onAccess={() => setView("access")}
+          />
+        )}
+        {view === "access" && settings && (
+          <AccessView settings={settings} firstRun={false} setBusy={setBusy} onDone={() => setView("settings")} />
         )}
         {view === "welcome" && settings && (
-          <WelcomeView
+          <AccessView
             settings={settings}
+            firstRun
+            setBusy={setBusy}
             onDone={async () => {
               const s = await api.saveSettings({ ...settings, onboarded: true });
               setSettings(s);
@@ -638,6 +648,33 @@ function Footer({ phase, asking, onSettings }: { phase: Phase; asking: boolean; 
   );
 }
 
+// ---- Shared frame ------------------------------------------------------------
+
+/** Every screen uses the command window's layout: a title on the red rule,
+ *  the content, and a quiet footer line. */
+function Sheet(props: {
+  title: string;
+  aside?: React.ReactNode;
+  foot: React.ReactNode;
+  footRight?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <>
+      <div className="head sheet-head">
+        <span className="rule" aria-hidden="true" />
+        <h1 className="sheet-title">{props.title}</h1>
+        {props.aside}
+      </div>
+      <section className="body sheet-body">{props.children}</section>
+      <footer className="foot">
+        <span>{props.foot}</span>
+        {props.footRight}
+      </footer>
+    </>
+  );
+}
+
 // ---- Settings ----------------------------------------------------------------
 
 const KEY_NAMES: Record<string, string> = { " ": "Space", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right" };
@@ -651,124 +688,133 @@ function comboFromEvent(e: React.KeyboardEvent): string | null {
   return [...mods, key].join("+");
 }
 
-function SettingsView({ settings, onSaved, onClose }: { settings: Settings; onSaved: (s: Settings) => void; onClose: () => void }) {
-  const [draft, setDraft] = useState(settings);
-  const [folders, setFolders] = useState<string[]>([]);
-  const [recording, setRecording] = useState(false);
-  // One section open at a time keeps the card short.
-  const [open, setOpen] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+type Tab = "general" | "shortcuts" | "folders";
+const TABS: [Tab, string][] = [
+  ["general", "General"],
+  ["shortcuts", "Shortcuts"],
+  ["folders", "Folders"],
+];
 
-  useEffect(() => {
-    api.allowedFolders().then(setFolders);
-  }, []);
+/** Settings save as they change: no Save button. */
+function SettingsView({
+  settings,
+  onSaved,
+  onClose,
+  onAccess,
+}: {
+  settings: Settings;
+  onSaved: (s: Settings) => void;
+  onClose: () => void;
+  onAccess: () => void;
+}) {
+  const [tab, setTab] = useState<Tab>("general");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !recording) {
+      if (e.key === "Escape") {
         e.preventDefault();
         onClose();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, recording]);
+  }, [onClose]);
 
-  const save = async () => {
+  const persist = async (next: Settings): Promise<boolean> => {
     try {
-      const s = await api.saveSettings(draft);
-      onSaved(s);
-      setDraft(s);
-      setFolders(await api.allowedFolders());
-      setMessage({ text: "Saved.", error: false });
+      onSaved(await api.saveSettings(next));
+      setError(null);
+      return true;
     } catch (e) {
-      setMessage({ text: String(e), error: true });
+      setError(String(e));
+      return false;
     }
   };
 
-  const toggle = (id: string) => setOpen((o) => (o === id ? null : id));
-  const extra = draft.extraFolders.filter((f) => f.trim());
-  const shortcuts = draft.shortcuts.length;
-
   return (
-    <section className="settings">
-      <p className="title">Settings</p>
-      <ul className="prefs">
-        <li className="pref">
-          <span className="pref-label">Open Voxi</span>
-          <button
-            className={recording ? "hotkey recording" : "hotkey"}
-            onClick={() => setRecording(true)}
-            onBlur={() => setRecording(false)}
-            title="Click, then press new keys. Avoid Fn, which Wispr Flow uses."
-            onKeyDown={(e) => {
-              if (!recording) return;
-              e.preventDefault();
-              if (e.key === "Escape") return setRecording(false);
-              const combo = comboFromEvent(e);
-              if (combo) {
-                setDraft({ ...draft, hotkey: combo });
-                setRecording(false);
-              }
-            }}
-          >
-            {recording ? "Press new keys" : prettyHotkey(draft.hotkey)}
-          </button>
-        </li>
-        <Disclosure
-          label="Shortcuts"
-          summary={shortcuts ? `${shortcuts} saved` : "None yet"}
-          open={open === "shortcuts"}
-          onToggle={() => toggle("shortcuts")}
-        >
-          <ShortcutsEditor shortcuts={draft.shortcuts} onChange={(next) => setDraft({ ...draft, shortcuts: next })} />
-        </Disclosure>
-        <Disclosure
-          label="More folders"
-          summary={extra.length ? `${extra.length} added` : "None"}
-          open={open === "folders"}
-          onToggle={() => toggle("folders")}
-        >
-          <textarea
-            className="plain"
-            rows={2}
-            placeholder="/Volumes/External"
-            value={draft.extraFolders.join("\n")}
-            onChange={(e) => setDraft({ ...draft, extraFolders: e.target.value.split("\n") })}
-          />
-          <small className="hint">One path per line, on top of {folders.join(", ")}.</small>
-        </Disclosure>
-        <UpdatesRow />
-        <li className="pref">
-          <label className="pref-label" htmlFor="login">
-            Open at login
-          </label>
-          <input
-            id="login"
-            className="switch"
-            type="checkbox"
-            checked={draft.startAtLogin}
-            onChange={(e) => setDraft({ ...draft, startAtLogin: e.target.checked })}
-          />
-        </li>
-      </ul>
-      <div className="actions">
-        <button className="primary-button" onClick={save}>
-          Save
+    <Sheet
+      title="Settings"
+      aside={
+        <div className="tabs" role="tablist">
+          {TABS.map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      }
+      foot={error ? <span className="warn">{error}</span> : "Changes save as you go. Esc to go back."}
+      footRight={
+        <button className="link" onClick={onClose}>
+          Done
         </button>
-        <button className="secondary" onClick={onClose}>
-          Back <kbd>esc</kbd>
-        </button>
-        {message && <span className={message.error ? "quiet warn" : "quiet"}>{message.text}</span>}
+      }
+    >
+      <div key={tab} className="tab-panel">
+        {tab === "general" && <GeneralTab settings={settings} persist={persist} onAccess={onAccess} />}
+        {tab === "shortcuts" && <ShortcutsTab settings={settings} persist={persist} />}
+        {tab === "folders" && <FoldersTab settings={settings} persist={persist} />}
       </div>
-    </section>
+    </Sheet>
+  );
+}
+
+type TabProps = { settings: Settings; persist: (s: Settings) => Promise<boolean> };
+
+function GeneralTab({ settings, persist, onAccess }: TabProps & { onAccess: () => void }) {
+  const [recording, setRecording] = useState(false);
+  return (
+    <ul className="prefs">
+      <li className="pref">
+        <span className="pref-label">Open Voxi</span>
+        <button
+          className={recording ? "hotkey recording" : "hotkey"}
+          onClick={() => setRecording(true)}
+          onBlur={() => setRecording(false)}
+          title="Click, then press new keys. Avoid Fn, which Wispr Flow uses."
+          onKeyDown={(e) => {
+            if (!recording) return;
+            e.preventDefault();
+            e.stopPropagation(); // Esc here cancels recording, not Settings.
+            if (e.key === "Escape") return setRecording(false);
+            const combo = comboFromEvent(e);
+            if (combo) {
+              setRecording(false);
+              persist({ ...settings, hotkey: combo });
+            }
+          }}
+        >
+          {recording ? "Press new keys" : prettyHotkey(settings.hotkey)}
+        </button>
+      </li>
+      <li className="pref">
+        <label className="pref-label" htmlFor="login">
+          Open at login
+        </label>
+        <input
+          id="login"
+          className="switch"
+          type="checkbox"
+          checked={settings.startAtLogin}
+          onChange={(e) => persist({ ...settings, startAtLogin: e.target.checked })}
+        />
+      </li>
+      <li className="pref">
+        <span className="pref-label">Folder access</span>
+        <button className="secondary small" onClick={onAccess}>
+          Review
+        </button>
+      </li>
+      <UpdatesRow />
+    </ul>
   );
 }
 
 const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1);
 
 /** The installed version, and a button that fetches and installs the latest
- *  release, with a progress bar while it downloads. */
+ *  release, with a progress bar and its notes while it downloads. */
 function UpdatesRow() {
   const [version, setVersion] = useState("");
   const [state, setState] = useState<UpdateState>({ k: "idle" });
@@ -793,6 +839,7 @@ function UpdatesRow() {
               ? state.message
               : null;
   const fraction = state.k === "downloading" && state.total ? Math.min(state.done / state.total, 1) : null;
+  const notes = state.k === "downloading" || state.k === "restarting" ? state.notes : [];
 
   return (
     <li className="pref updates">
@@ -815,121 +862,270 @@ function UpdatesRow() {
               <span style={{ width: `${state.k === "restarting" ? 100 : (fraction ?? 0.3) * 100}%` }} />
             </div>
           )}
+          {notes.length > 0 && (
+            <ul className="notes">
+              {notes.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </li>
   );
 }
 
-/** A settings row that expands in place. */
-function Disclosure(props: { label: string; summary: string; open: boolean; onToggle: () => void; children: React.ReactNode }) {
-  return (
-    <li className="pref disclosure" data-open={props.open || undefined}>
-      <button className="pref-head" aria-expanded={props.open} onClick={props.onToggle}>
-        <span className="pref-label">{props.label}</span>
-        <span className="pref-summary">{props.summary}</span>
-        <span className="chevron" aria-hidden="true" />
-      </button>
-      {props.open && <div className="pref-body">{props.children}</div>}
-    </li>
-  );
-}
-
 /** Saved phrases that run several commands at once, with one preview and one
  *  undo: "run my usuals" -> move today's screenshots, clear installers. Each
- *  shortcut stays folded to its phrase until opened. */
-function ShortcutsEditor({ shortcuts, onChange }: { shortcuts: Shortcut[]; onChange: (s: Shortcut[]) => void }) {
+ *  shortcut stays folded to its phrase until opened; Done saves it. */
+function ShortcutsTab({ settings, persist }: TabProps) {
+  const [list, setList] = useState<Shortcut[]>(settings.shortcuts);
   const [editing, setEditing] = useState<number | null>(null);
-  const update = (i: number, s: Shortcut) => onChange(shortcuts.map((x, j) => (j === i ? s : x)));
+  const update = (i: number, s: Shortcut) => setList((l) => l.map((x, j) => (j === i ? s : x)));
   const count = (s: Shortcut) => s.commands.filter((c) => c.trim()).length;
+
+  const commit = async (next: Shortcut[]) => {
+    if (await persist({ ...settings, shortcuts: next })) setEditing(null);
+  };
+
   return (
     <div className="shortcuts">
-      <small className="hint">Say a shortcut to run all its commands, with one preview and one undo.</small>
-      {shortcuts.map((s, i) =>
-        editing === i ? (
-          <div className="shortcut" key={i}>
-            <div className="shortcut-head">
-              <input
-                className="phrase"
-                value={s.phrase}
-                placeholder="run my usuals"
-                aria-label="Phrase to say"
-                autoFocus={!s.phrase}
-                onChange={(e) => update(i, { ...s, phrase: e.target.value })}
+      <p className="hint">Say a shortcut to run all its commands, with one preview and one undo.</p>
+      <ul className="prefs">
+        {list.map((s, i) =>
+          editing === i ? (
+            <li className="shortcut" key={i}>
+              <div className="shortcut-head">
+                <input
+                  className="phrase"
+                  value={s.phrase}
+                  placeholder="run my usuals"
+                  aria-label="Phrase to say"
+                  autoFocus={!s.phrase}
+                  onChange={(e) => update(i, { ...s, phrase: e.target.value })}
+                />
+                <button className="link strong" onClick={() => commit(list)}>
+                  Done
+                </button>
+              </div>
+              <textarea
+                className="plain"
+                rows={Math.max(2, s.commands.length)}
+                placeholder={"move screenshots from today to Screenshots\nclean up Downloads older than 90 days"}
+                aria-label="Commands, one per line"
+                value={s.commands.join("\n")}
+                onChange={(e) => update(i, { ...s, commands: e.target.value.split("\n") })}
               />
-              <button className="link" onClick={() => setEditing(null)}>
-                Done
+              <button
+                className="link remove"
+                onClick={() => {
+                  const next = list.filter((_, j) => j !== i);
+                  setList(next);
+                  commit(next);
+                }}
+              >
+                Remove shortcut
               </button>
-            </div>
-            <textarea
-              className="plain"
-              rows={Math.max(2, s.commands.length)}
-              placeholder={"move screenshots from today to Screenshots\nclean up Downloads older than 90 days"}
-              aria-label="Commands, one per line"
-              value={s.commands.join("\n")}
-              onChange={(e) => update(i, { ...s, commands: e.target.value.split("\n") })}
-            />
-            <button
-              className="link remove"
-              onClick={() => {
-                onChange(shortcuts.filter((_, j) => j !== i));
-                setEditing(null);
-              }}
-            >
-              Remove shortcut
-            </button>
-          </div>
-        ) : (
-          <button className="shortcut-row" key={i} onClick={() => setEditing(i)}>
-            <span className="phrase-text">{s.phrase || "Untitled"}</span>
-            <span className="pref-summary">
-              {count(s)} {count(s) === 1 ? "command" : "commands"}
-            </span>
-          </button>
-        ),
+            </li>
+          ) : (
+            <li className="pref" key={i}>
+              <button className="shortcut-row" onClick={() => setEditing(i)}>
+                <span className="phrase-text">{s.phrase || "Untitled"}</span>
+                <span className="pref-summary">
+                  {count(s)} {count(s) === 1 ? "command" : "commands"}
+                </span>
+              </button>
+            </li>
+          ),
+        )}
+      </ul>
+      {editing === null && (
+        <button
+          className="link strong add"
+          onClick={() => {
+            setList((l) => [...l, { phrase: "", commands: [] }]);
+            setEditing(list.length);
+          }}
+        >
+          + Add shortcut
+        </button>
       )}
-      <button
-        className="link add"
-        onClick={() => {
-          onChange([...shortcuts, { phrase: "", commands: [] }]);
-          setEditing(shortcuts.length);
-        }}
-      >
-        + Add shortcut
-      </button>
     </div>
   );
 }
 
-// ---- Welcome -----------------------------------------------------------------
+/** The four standard folders are always allowed; more can be added. */
+function FoldersTab({ settings, persist }: TabProps) {
+  const [folders, setFolders] = useState<string[]>([]);
+  const [adding, setAdding] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const extra = settings.extraFolders.filter((f) => f.trim());
 
-function WelcomeView({ settings, onDone }: { settings: Settings; onDone: () => void }) {
+  useEffect(() => {
+    api.allowedFolders().then(setFolders);
+  }, [settings]);
+
+  const add = async () => {
+    const path = adding.trim();
+    if (!path) return;
+    if (await persist({ ...settings, extraFolders: [...extra, path] })) {
+      const now = await api.allowedFolders();
+      setFolders(now);
+      setAdding("");
+      const shown = path.replace(/^\/Users\/[^/]+/, "~").replace(/\/$/, "");
+      setNote(now.includes(shown) ? null : `Couldn't find “${path}”. Check the path and try again.`);
+    }
+  };
+
+  const builtIn = folders.filter((f) => !extra.some((x) => x.replace(/^\/Users\/[^/]+/, "~").replace(/\/$/, "") === f));
+
   return (
-    <section className="welcome">
-      <p className="title">Voxi files things away when you tell it to.</p>
-      <ol className="ruled steps">
-        <li>
-          <span className="primary">Press {prettyHotkey(settings.hotkey)} anywhere</span>
-          <span className="detail">This box opens with the cursor ready.</span>
+    <div>
+      <p className="hint">Voxi only changes files inside these folders.</p>
+      <ul className="prefs">
+        {builtIn.map((f) => (
+          <li className="pref" key={f}>
+            <span>{f}</span>
+            <span className="pref-summary">Always</span>
+          </li>
+        ))}
+        {extra.map((f) => (
+          <li className="pref" key={f}>
+            <span>{f}</span>
+            <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
+              Remove
+            </button>
+          </li>
+        ))}
+        <li className="pref">
+          <input
+            className="path"
+            value={adding}
+            placeholder="Add a folder, like /Volumes/External"
+            aria-label="Folder path to add"
+            onChange={(e) => setAdding(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }}
+          />
+          <button className="secondary small" disabled={!adding.trim()} onClick={add}>
+            Add
+          </button>
         </li>
-        <li>
-          <span className="primary">Type, or dictate with Wispr Flow</span>
-          <span className="detail">“move all PDFs from Downloads to Documents”</span>
-        </li>
-        <li>
-          <span className="primary">Check the preview, then run it</span>
-          <span className="detail">Nothing changes before you confirm. “undo last” reverses it.</span>
-        </li>
-      </ol>
-      <p className="quiet">
-        Voxi only changes Desktop, Downloads, Documents, and Pictures. Deleting moves files to the Trash, so you can always get them back. macOS asks for
-        access to each folder the first time a command uses it.
-      </p>
-      <div className="actions">
-        <button className="primary-button" autoFocus onClick={onDone}>
-          Start using Voxi
-        </button>
-      </div>
-    </section>
+      </ul>
+      {note && <p className="hint warn">{note}</p>}
+    </div>
   );
 }
+
+// ---- Folder access ---------------------------------------------------------------
+
+/** Asks macOS for every folder up front, so commands never stop to ask. On
+ *  first launch this is the welcome page. */
+function AccessView({
+  settings,
+  firstRun,
+  onDone,
+  setBusy,
+}: {
+  settings: Settings;
+  firstRun: boolean;
+  onDone: () => void;
+  setBusy: (b: boolean) => void;
+}) {
+  const [folders, setFolders] = useState<FolderAccess[] | null>(null);
+  const [asking, setAsking] = useState(false);
+
+  useEffect(() => {
+    if (firstRun) return;
+    // From Settings: check right away. Granted folders don't prompt again.
+    request();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !firstRun) {
+        e.preventDefault();
+        onDone();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [firstRun, onDone]);
+
+  async function request() {
+    setAsking(true);
+    // macOS's prompts take focus; don't let that close the window.
+    setBusy(true);
+    try {
+      setFolders(await api.requestFolderAccess());
+    } finally {
+      setBusy(false);
+      setAsking(false);
+    }
+  }
+
+  const missing = folders?.filter((f) => !f.allowed) ?? [];
+  const allSet = folders !== null && missing.length === 0;
+
+  return (
+    <Sheet
+      title={firstRun ? "Welcome to Voxi" : "Folder access"}
+      foot={firstRun ? `Press ${prettyHotkey(settings.hotkey)} anywhere to open Voxi.` : "Esc to go back."}
+      footRight={
+        <button className="link" onClick={onDone}>
+          {firstRun && !allSet ? "Skip for now" : "Done"}
+        </button>
+      }
+    >
+      <p className="access-lead">
+        {firstRun
+          ? "Voxi moves, renames, and tidies files when you tell it to. macOS asks once for each folder; allow them now and commands won't stop to ask."
+          : "macOS asks once for each folder. Voxi never touches anything outside them."}
+      </p>
+      <ul className="prefs">
+        {(folders ?? DEFAULT_FOLDERS).map((f, i) => (
+          <li className="pref access-row" key={f.path} style={row(i)}>
+            <span>
+              <span className="pref-label">{f.name}</span> <span className="pref-path">{f.path}</span>
+            </span>
+            <span className={folders === null ? "pref-summary" : f.allowed ? "pref-summary ok" : "pref-summary warn"}>
+              {folders === null ? "Not asked yet" : f.allowed ? "Allowed" : "Not allowed"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {missing.length > 0 && (
+        <p className="hint warn">
+          Turn on Voxi for {missing.map((f) => f.name).join(", ")} in System Settings, under Files and Folders, then check again.
+        </p>
+      )}
+      <div className="actions">
+        {allSet ? (
+          <button className="primary-button" autoFocus onClick={onDone}>
+            {firstRun ? "Start using Voxi" : "Done"}
+          </button>
+        ) : (
+          <button className="primary-button" autoFocus disabled={asking} onClick={request}>
+            {asking ? "Waiting for macOS…" : folders === null ? "Allow access" : "Check again"}
+          </button>
+        )}
+        {missing.length > 0 && (
+          <button className="secondary" onClick={() => api.openPrivacySettings()}>
+            Open System Settings
+          </button>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
+const DEFAULT_FOLDERS: FolderAccess[] = ["Desktop", "Downloads", "Documents", "Pictures"].map((name) => ({
+  name,
+  path: `~/${name}`,
+  allowed: false,
+}));

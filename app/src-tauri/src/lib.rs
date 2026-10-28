@@ -327,6 +327,33 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     Ok(settings)
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderAccess {
+    name: String,
+    path: String,
+    allowed: bool,
+}
+
+/// Touches each folder macOS protects, so its "allow access" prompt appears
+/// now, on the permissions page, rather than in the middle of a command.
+/// Reading a folder is also how to learn whether access was granted.
+#[tauri::command(async)]
+fn request_folder_access(state: State<AppState>) -> Vec<FolderAccess> {
+    let roots = state.roots.read().unwrap().clone();
+    roots
+        .search_roots()
+        .into_iter()
+        .map(|p| FolderAccess { name: file_name(&p), path: roots.display(&p), allowed: std::fs::read_dir(&p).is_ok() })
+        .collect()
+}
+
+/// Opens System Settings at Privacy & Security, Files and Folders.
+#[tauri::command]
+fn open_privacy_settings() {
+    let _ = Command::new("/usr/bin/open").arg("x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders").status();
+}
+
 /// The folders Voxi may change, for the settings and welcome views.
 #[tauri::command]
 fn allowed_folders(state: State<AppState>) -> Vec<String> {
@@ -420,7 +447,9 @@ pub fn run() {
             fit_window,
             get_settings,
             save_settings,
-            allowed_folders
+            allowed_folders,
+            request_folder_access,
+            open_privacy_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running Voxi");

@@ -12,6 +12,8 @@
   --display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
   --text: "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
   --settle: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Inputs sit on the glass like the command box: a light tint, not a fill. */
+  --field: color-mix(in srgb, var(--card) 45%, transparent);
   color-scheme: light dark;
 }
 
@@ -174,9 +176,7 @@ html:not([data-native]) .card[data-glide] {
 
 /* ---- Body ---- */
 
-.body,
-.settings,
-.welcome {
+.body {
   padding: 14px 22px 4px;
 }
 
@@ -450,7 +450,7 @@ kbd {
   padding: 0 12px;
   border: 1px solid var(--rule);
   border-radius: 8px;
-  background: var(--wash);
+  background: var(--field);
   font-family: var(--display);
   font-size: 16px;
   text-align: left;
@@ -468,7 +468,7 @@ kbd {
   padding: 8px 10px;
   border: 1px solid var(--rule);
   border-radius: 8px;
-  background: var(--wash);
+  background: var(--field);
   color: var(--ink);
   font: inherit;
   outline: 0;
@@ -477,37 +477,6 @@ kbd {
 
 .plain:focus {
   border-color: var(--ink);
-}
-
-/* ---- Welcome ---- */
-
-.welcome .title {
-  font-size: 22px;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.steps {
-  counter-reset: step;
-}
-
-.steps li {
-  counter-increment: step;
-  grid-template-columns: 24px minmax(0, 1fr);
-  row-gap: 2px;
-  padding: 8px 0;
-}
-
-.steps li::before {
-  content: counter(step);
-  grid-row: 1 / 3;
-  font-family: var(--display);
-  font-weight: 700;
-  color: var(--margin);
-}
-
-.steps .detail {
-  white-space: normal;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -560,11 +529,6 @@ kbd {
 
 /* ---- Settings: one ruled row per setting; big ones fold away ---- */
 
-.settings {
-  max-height: 600px;
-  overflow-y: auto;
-}
-
 .quiet.warn {
   color: var(--margin);
 }
@@ -595,46 +559,11 @@ kbd {
   font-size: 14px;
 }
 
-.disclosure {
-  display: block;
-}
-
-.pref-head {
-  all: unset;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 46px;
-  cursor: pointer;
-}
-
-.pref-head:focus-visible,
 .shortcut-row:focus-visible,
 .switch:focus-visible {
   outline: 2px solid var(--margin);
   outline-offset: 2px;
   border-radius: 4px;
-}
-
-.chevron {
-  width: 7px;
-  height: 7px;
-  margin: 0 4px 3px 2px;
-  border-right: 1.6px solid var(--muted);
-  border-bottom: 1.6px solid var(--muted);
-  transform: rotate(45deg);
-  transition: transform 180ms var(--settle);
-}
-
-.disclosure[data-open] .chevron {
-  transform: rotate(-135deg);
-  margin-bottom: -3px;
-}
-
-.pref-body {
-  padding: 0 0 14px;
-  animation: settle-in 200ms var(--settle) both;
 }
 
 .hint {
@@ -797,4 +726,139 @@ kbd {
 
 .progress[data-indeterminate] > span {
   animation: sweep 0.9s ease-in-out infinite alternate;
+}
+
+/* ---- Sheets: Settings and Folder access share the command window's frame ---- */
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.sheet-title {
+  margin: 0;
+  margin-right: auto;
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 500;
+  font-variation-settings: "wdth" 92;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.sheet-body {
+  padding-top: 6px;
+  max-height: 470px;
+  overflow-y: auto;
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.tabs button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tabs button[aria-selected="true"] {
+  background: var(--ink);
+  color: var(--card);
+}
+
+.tabs button:focus-visible {
+  outline: 2px solid var(--margin);
+  outline-offset: 1px;
+}
+
+.tab-panel {
+  animation: settle-in 180ms var(--settle) both;
+}
+
+.tab-panel > .hint,
+.shortcuts > .hint {
+  margin: 0 0 8px;
+}
+
+.foot .warn,
+.pref-summary.warn {
+  color: var(--margin);
+}
+
+.pref-summary.ok {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.pref-path {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.access-lead {
+  margin: 0 0 10px;
+  max-width: 60ch;
+}
+
+.access-row {
+  animation: settle-in 200ms var(--settle) calc(var(--i, 0) * 40ms) both;
+}
+
+.link.strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.path {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--field);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  user-select: text;
+}
+
+.path:focus {
+  border-color: var(--ink);
+}
+
+.prefs .shortcut {
+  display: block;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.prefs .shortcut-row {
+  padding: 0;
+  min-height: 46px;
+}
+
+.notes {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.secondary {
+  background: var(--field);
 }

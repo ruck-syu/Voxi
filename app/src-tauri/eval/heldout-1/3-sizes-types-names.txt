@@ -1,0 +1,28 @@
+# Held-out set 3 of 4: sizes, file types, and names in new wording.
+# Status: spent. Its misses were used to choose fixes, so it no longer measures accuracy.
+# Format: command => expected JSON, or ! to refuse.
+show me files in Downloads bigger than 800 megabytes => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":800.0}}}
+list anything over a gig in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+find all the large PDFs in Documents => !
+list all the jpegs in Pictures bigger than 2 MB => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["jpg","jpeg"],"largerThanMb":2.0}}}
+count the zip files over 100 MB in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"archives","largerThanMb":100.0}}}
+show me the tiny files in Downloads => !
+list the heic images in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}}}
+delete all the mp4 videos older than 1 year in Movies => {"intent":"trash","src":{"kind":"set","folder":"Movies","filter":{"type":"files","ext":["mp4"],"olderThanDays":365}}}
+list all the Excel files in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["xlsx","xls"]}}}
+list the Word files in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["doc","docx"]}}}
+find the PowerPoint files in Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","ext":["pptx","ppt"]}}}
+list every JPEG and PNG in Pictures => !
+move Thumbs.db to the trash => {"intent":"trash","src":{"kind":"item","name":"Thumbs.db"}}
+list files named report in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"report"}}}
+find every file that has invoice in its name in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"invoice"}}}
+list files whose names start with IMG in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","nameStartsWith":"IMG"}}}
+list files with spaces in their names in Downloads => !
+delete files named untitled on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+list the files with 2025 in the name => {"intent":"list","src":{"kind":"set","filter":{"type":"files","nameContains":"2025"}}}
+show files named Invoice* => !
+list zip files in Downloads that are bigger than 50 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"archives","largerThanMb":50.0}}}
+list the GIFs bigger than 10 megs => {"intent":"list","src":{"kind":"set","filter":{"type":"files","ext":["gif"],"largerThanMb":10.0}}}
+show me all the photos bigger than 5 MB in my Pictures folder => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"images","largerThanMb":5.0}}}
+list files that are 1 GB or more in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+delete the old PDFs in Downloads => !

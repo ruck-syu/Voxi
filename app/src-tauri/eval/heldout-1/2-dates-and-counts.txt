@@ -1,0 +1,28 @@
+# Held-out set 2 of 4: dates, periods, and counts in new wording.
+# Status: spent. Its misses were used to choose fixes, so it no longer measures accuracy.
+# Format: command => expected JSON, or ! to refuse.
+show me the photos from last week => {"intent":"list","src":{"kind":"set","filter":{"type":"images","newerThanDays":7}}}
+what files did I download yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","day":"yesterday"}}}
+list the screenshots I took in the last two days => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":2}}}
+show me PDFs from before 2024 => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","before":"2024-01-01"}}}
+find images from 2023 => {"intent":"list","src":{"kind":"set","filter":{"type":"images","since":"2023-01-01","before":"2024-01-01"}}}
+show files created on the 1st of January 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2026-01-01","before":"2026-01-02"}}}
+list screenshots from the start of this month => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-01"}}}
+delete screenshots older than a year from Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots","olderThanDays":365}}}
+move files from last month to Archive => {"intent":"move","src":{"kind":"set","filter":{"type":"files","newerThanDays":30}},"to":"Archive"}
+count the PDFs I saved this year in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs","since":"2026-01-01"}}}
+how many screenshots did I take today => {"intent":"count","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+list files modified last Tuesday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2026-10-27","before":"2026-10-28"}}}
+list the PDFs older than 2 months and larger than 1 MB => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","olderThanDays":60,"largerThanMb":1.0}}}
+delete the screenshots taken before 2025 => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","before":"2025-01-01"}}}
+show me everything from March 3rd => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2026-03-03","before":"2026-03-04"}}}
+list the screenshots from the last 90 days => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":90}}}
+show screenshots I took in the past month => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":30}}}
+find files I made last year => {"intent":"list","src":{"kind":"set","filter":{"type":"files","newerThanDays":365}}}
+list the photos taken on December 25 => {"intent":"list","src":{"kind":"set","filter":{"type":"images","since":"2025-12-25","before":"2025-12-26"}}}
+show me files from before the 4th of July => {"intent":"list","src":{"kind":"set","filter":{"type":"files","before":"2026-07-04"}}}
+list PDFs from 2024 onward => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","since":"2024-01-01"}}}
+list screenshots from the week before last => !
+show me the screenshots from last weekend => !
+list files in Downloads from last Friday => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","since":"2026-10-23","before":"2026-10-24"}}}
+show me the screenshots taken this morning => !

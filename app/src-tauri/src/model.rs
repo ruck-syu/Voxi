@@ -19,6 +19,36 @@ pub enum FileType {
     Files,
 }
 
+/// Extensions that make up each file type, lowercase and without the dot. The
+/// parser and the planner both read these, so they agree on what a type is.
+pub const IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "tif", "bmp", "svg", "raw", "cr2", "nef", "arw", "dng",
+];
+pub const VIDEO_EXTS: &[&str] = &["mp4", "mov", "m4v", "avi", "mkv", "webm", "wmv", "flv"];
+pub const DOC_EXTS: &[&str] = &[
+    "doc", "docx", "txt", "rtf", "md", "pages", "odt", "xls", "xlsx", "csv", "numbers", "ppt", "pptx", "key", "odp", "epub",
+];
+pub const ARCHIVE_EXTS: &[&str] = &["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz"];
+pub const INSTALLER_EXTS: &[&str] = &["dmg", "pkg", "mpkg"];
+pub const AUDIO_EXTS: &[&str] = &["mp3", "wav", "m4a", "aac", "flac", "aiff", "ogg"];
+
+impl FileType {
+    /// Whether a file with this extension is of this type. Screenshots count as
+    /// images here; the planner also checks their names.
+    pub fn accepts_ext(self, ext: &str) -> bool {
+        match self {
+            FileType::Files => true,
+            FileType::Screenshots | FileType::Images => IMAGE_EXTS.contains(&ext),
+            FileType::Pdfs => ext == "pdf",
+            FileType::Videos => VIDEO_EXTS.contains(&ext),
+            FileType::Documents => DOC_EXTS.contains(&ext) || ext == "pdf",
+            FileType::Archives => ARCHIVE_EXTS.contains(&ext),
+            FileType::Installers => INSTALLER_EXTS.contains(&ext),
+            FileType::Audio => AUDIO_EXTS.contains(&ext),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DayRef {

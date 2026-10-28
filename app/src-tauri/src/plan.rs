@@ -4,7 +4,10 @@
 
 use crate::fsx::{self, Roots, file_name, human_size, split_name, unique_path};
 use crate::history::History;
-use crate::model::{Action, DayRef, FileType, Filter, ImageFormat, InfoRow, Intent, Source};
+use crate::model::{
+    Action, ARCHIVE_EXTS, AUDIO_EXTS, DayRef, DOC_EXTS, FileType, Filter, IMAGE_EXTS, ImageFormat, INSTALLER_EXTS, InfoRow,
+    Intent, Source, VIDEO_EXTS,
+};
 use crate::pdf;
 use chrono::{DateTime, Datelike, Local, NaiveDate};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -867,12 +870,6 @@ fn describe_path(a: &Action, roots: &Roots) -> String {
 
 // ---- Filters and file facts -------------------------------------------------
 
-const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "tif", "bmp", "svg", "raw", "cr2", "nef", "arw", "dng"];
-const VIDEO_EXTS: &[&str] = &["mp4", "mov", "m4v", "avi", "mkv", "webm", "wmv", "flv"];
-const DOC_EXTS: &[&str] = &["doc", "docx", "txt", "rtf", "md", "pages", "odt", "xls", "xlsx", "csv", "numbers", "ppt", "pptx", "key", "odp", "epub"];
-const ARCHIVE_EXTS: &[&str] = &["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz"];
-const INSTALLER_EXTS: &[&str] = &["dmg", "pkg", "mpkg"];
-const AUDIO_EXTS: &[&str] = &["mp3", "wav", "m4a", "aac", "flac", "aiff", "ogg"];
 
 fn is_ext(ext: &str, set: &[&str]) -> bool {
     set.contains(&ext)
@@ -925,40 +922,21 @@ pub fn created(p: &Path) -> Option<DateTime<Local>> {
 pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
     let e = ext_of(p);
     let type_ok = match f.file_type {
-        None | Some(FileType::Files) => true,
+        None => true,
         Some(FileType::Screenshots) => is_screenshot(p),
-        Some(FileType::Images) => is_ext(&e, IMAGE_EXTS),
-        Some(FileType::Pdfs) => e == "pdf",
-        Some(FileType::Videos) => is_ext(&e, VIDEO_EXTS),
-        Some(FileType::Documents) => is_ext(&e, DOC_EXTS) || e == "pdf",
-        Some(FileType::Archives) => is_ext(&e, ARCHIVE_EXTS),
-        Some(FileType::Installers) => is_ext(&e, INSTALLER_EXTS),
-        Some(FileType::Audio) => is_ext(&e, AUDIO_EXTS),
+        Some(t) => t.accepts_ext(&e),
     };
     if !type_ok {
         return false;
     }
-    if let Some(exts) = &f.ext {
-        if !exts.iter().any(|x| *x == e) {
-            return false;
-        }
+    if f.ext.as_ref().is_some_and(|exts| !exts.contains(&e)) {
+        return false;
     }
-    if let Some(n) = &f.name_contains {
-        if !file_name(p).to_lowercase().contains(&n.to_lowercase()) {
-            return false;
-        }
+    if f.name_contains.as_ref().is_some_and(|n| !file_name(p).to_lowercase().contains(&n.to_lowercase())) {
+        return false;
     }
-    if let Some(n) = &f.name_starts_with {
-        if !file_name(p).to_lowercase().starts_with(&n.to_lowercase()) {
-            return false;
-        }
-    }
-    if f.since.is_some() || f.before.is_some() {
-        let Some(t) = created(p) else { return false };
-        let day = t.date_naive();
-        if f.since.is_some_and(|s| day < s) || f.before.is_some_and(|b| day >= b) {
-            return false;
-        }
+    if f.name_starts_with.as_ref().is_some_and(|n| !file_name(p).to_lowercase().starts_with(&n.to_lowercase())) {
+        return false;
     }
     if f.larger_than_mb.is_some() || f.smaller_than_mb.is_some() {
         let mb = fs::metadata(p).map_or(0.0, |m| m.len() as f64 / (1024.0 * 1024.0));
@@ -966,24 +944,42 @@ pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
             return false;
         }
     }
-    if f.older_than_days.is_some() || f.newer_than_days.is_some() || f.day.is_some() || f.month.is_some() {
+    if has_date_filter(f) {
         let Some(t) = created(p) else { return false };
-        let age_days = (Local::now() - t).num_seconds() as f64 / 86_400.0;
-        if f.older_than_days.is_some_and(|d| age_days <= d as f64) || f.newer_than_days.is_some_and(|d| age_days > d as f64) {
-            return false;
-        }
-        if let Some(m) = f.month {
-            if (t.year(), t.month()) != (month_year(m, f.year, today), m) {
-                return false;
-            }
-        }
-        match f.day {
-            Some(DayRef::Today) if t.date_naive() != today => return false,
-            Some(DayRef::Yesterday) if t.date_naive() != today.pred_opt().unwrap_or(today) => return false,
-            _ => {}
-        }
+        return taken_matches(f, t, today);
     }
     true
+}
+
+/// Whether any filter looks at when the file was taken.
+fn has_date_filter(f: &Filter) -> bool {
+    f.since.is_some()
+        || f.before.is_some()
+        || f.older_than_days.is_some()
+        || f.newer_than_days.is_some()
+        || f.day.is_some()
+        || f.month.is_some()
+}
+
+/// Whether a file taken at `t` passes the date filters. The caller reads the
+/// creation date once per file, so every date check sees the same moment.
+fn taken_matches(f: &Filter, t: DateTime<Local>, today: NaiveDate) -> bool {
+    let day = t.date_naive();
+    if f.since.is_some_and(|s| day < s) || f.before.is_some_and(|b| day >= b) {
+        return false;
+    }
+    let age_days = (Local::now() - t).num_seconds() as f64 / 86_400.0;
+    if f.older_than_days.is_some_and(|d| age_days <= d as f64) || f.newer_than_days.is_some_and(|d| age_days > d as f64) {
+        return false;
+    }
+    if f.month.is_some_and(|m| (t.year(), t.month()) != (month_year(m, f.year, today), m)) {
+        return false;
+    }
+    match f.day {
+        Some(DayRef::Today) => day == today,
+        Some(DayRef::Yesterday) => day == today.pred_opt().unwrap_or(today),
+        None => true,
+    }
 }
 
 /// The year a month refers to: the one given, or else the most recent such

@@ -1,0 +1,28 @@
+# Held-out set 1 of 4: moves, copies, renames, and folders in new wording.
+# Status: spent. Its misses were used to choose fixes, so it no longer measures accuracy.
+# Format: command => expected JSON, or ! to refuse.
+put the tax form into Documents => {"intent":"move","src":{"kind":"item","name":"tax form"},"to":"Documents"}
+move every PDF from Downloads into the Archive folder => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Archive"}
+copy all my screenshots to Backup => {"intent":"copy","src":{"kind":"set","filter":{"type":"screenshots"}},"to":"Backup"}
+move Invoice 2026.pdf to Finance => {"intent":"move","src":{"kind":"item","name":"Invoice 2026.pdf"},"to":"Finance"}
+send all the JPGs in Pictures over to Backup => {"intent":"move","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["jpg","jpeg"]}},"to":"Backup"}
+move the latest PDF from Downloads to Documents => !
+shift the photos from Downloads to Pictures => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"images"}},"to":"Pictures"}
+move report final v2.docx to Documents => {"intent":"move","src":{"kind":"item","name":"report final v2.docx"},"to":"Documents"}
+relocate the zip files in Downloads to Archives => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"archives"}},"to":"Archives"}
+copy the Keynote file to Desktop => {"intent":"copy","src":{"kind":"item","name":"Keynote"},"to":"Desktop"}
+move the file notes from Desktop to Documents => {"intent":"move","src":{"kind":"item","name":"notes","folder":"Desktop"},"to":"Documents"}
+make a folder named Receipts in Documents => {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+create folders for Q1, Q2, Q3 and Q4 in Documents => {"intent":"create_folders","names":["Q1","Q2","Q3","Q4"],"parent":"Documents"}
+rename the file scan001.pdf to Lease agreement.pdf => {"intent":"rename","src":{"kind":"item","name":"scan001.pdf"},"new_name":"Lease agreement.pdf"}
+rename Holiday photos to Vacation => {"intent":"rename","src":{"kind":"item","name":"Holiday photos"},"new_name":"Vacation"}
+change the name of draft.docx to final.docx => {"intent":"rename","src":{"kind":"item","name":"draft.docx"},"new_name":"final.docx"}
+copy Downloads/receipt.pdf to Documents/Taxes => {"intent":"copy","src":{"kind":"item","name":"Downloads/receipt.pdf"},"to":"Documents/Taxes"}
+put every screenshot from this week into the Screenshots folder => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-26"}},"to":"Screenshots"}
+move the presentation files from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["pptx","ppt","key"]}},"to":"Documents"}
+move anything named budget from Downloads to Finance => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"budget"}},"to":"Finance"}
+move my installers to the trash => {"intent":"trash","src":{"kind":"set","filter":{"type":"installers"}}}
+copy the Invoices folder to Backup => {"intent":"copy","src":{"kind":"item","name":"Invoices"},"to":"Backup"}
+put the Desktop screenshots into Pictures => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots"}},"to":"Pictures"}
+move the screenshots on my desktop to Pictures => {"intent":"move","src":{"kind":"set","folder":"desktop","filter":{"type":"screenshots"}},"to":"Pictures"}
+make a new folder called Scans on the Desktop => {"intent":"create_folders","names":["Scans"],"parent":"Desktop"}

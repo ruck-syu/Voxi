@@ -1,0 +1,28 @@
+# Held-out set 4 of 4: undo, history, vague requests, Finder, and file operations in new wording.
+# Status: spent. Its misses were used to choose fixes, so it no longer measures accuracy.
+# Format: command => expected JSON, or ! to refuse.
+undo that last thing => {"intent":"undo"}
+can you please undo my last action => {"intent":"undo"}
+revert the last change => {"intent":"undo"}
+get rid of the screenshots in Desktop older than a week => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots","olderThanDays":7}}}
+delete everything in my Downloads folder older than 3 months => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+trash the screenshots from August 2024 => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","month":8,"year":2024}}}
+could you show me the recent actions => {"intent":"recent_actions"}
+what changed recently => {"intent":"recent_actions"}
+I want to undo the last thing I did => {"intent":"undo"}
+Hey Voxi, please delete the screenshots from yesterday => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","day":"yesterday"}}}
+move these screenshots to Pictures => !
+please tidy my desktop => !
+make the Desktop tidy => !
+delete the duplicates in Downloads => !
+find duplicates in Pictures => {"intent":"duplicates","folder":"Pictures"}
+how much space is Downloads using => {"intent":"size","folder":"Downloads"}
+how big is my screenshots folder => {"intent":"size","folder":"screenshots"}
+open my Downloads folder in Finder => {"intent":"reveal","target":"Downloads"}
+show me where report.pdf is => {"intent":"reveal","target":"report.pdf"}
+reveal Invoice.pdf => {"intent":"reveal","target":"Invoice.pdf"}
+delete the file that's on the desktop called tmp.txt => {"intent":"trash","src":{"kind":"item","name":"tmp.txt","folder":"desktop"}}
+zip up my Taxes folder into Taxes.zip => {"intent":"zip","src":{"kind":"item","name":"Taxes"},"output":"Taxes.zip"}
+unzip Downloads/archive.zip => {"intent":"unzip","src":{"kind":"item","name":"Downloads/archive.zip"}}
+convert all the HEIC files in Downloads to jpg => {"intent":"convert_image","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+split invoice.pdf into one file per page => {"intent":"split_pdf","src":{"kind":"item","name":"invoice.pdf"}}

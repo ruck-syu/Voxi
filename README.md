@@ -92,6 +92,13 @@ Tests cover one sentence per catalog row, safety rules, undo, and real runs of
 cd app/src-tauri && cargo test --lib
 ```
 
+The parser also runs a corpus of typed commands, one per line, in
+`app/src-tauri/src/parse/corpus/`, and every line must pass. Held-out sets in
+`app/src-tauri/eval/` measure how the parser handles phrasing it wasn't tuned
+on. Run one with `HELDOUT=heldout-3 cargo test --lib heldout -- --ignored --nocapture`.
+A set stops measuring accuracy once it has been used to fix something, so write
+a new one before changing the parser.
+
 `npm run dev` alone serves the window in a browser with a stand-in backend
 (`app/src/mock.ts`), useful for design work.
 

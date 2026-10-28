@@ -1,0 +1,28 @@
+# Held-out set 2 of 4: sizes, file types, and names.
+# Status: spent. Its misses were used to choose fixes, so it no longer measures accuracy.
+# Format: command => expected JSON, or ! to refuse.
+list files in Downloads over 5 GB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":5120.0}}}
+show me files under 2 MB in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","smallerThanMb":2.0}}}
+list files between 1 and 5 GB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0,"smallerThanMb":5120.0}}}
+find the PDFs that are bigger than 10 megabytes in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs","largerThanMb":10.0}}}
+list the mkv videos in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"files","ext":["mkv"]}}}
+show me all the .png and .jpg files in Pictures => !
+list the Photoshop files in Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","ext":["psd"]}}}
+list the mp3s in Music => {"intent":"list","src":{"kind":"set","folder":"Music","filter":{"type":"files","ext":["mp3"]}}}
+find every file named like invoice in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"invoice"}}}
+delete the files whose names contain draft in Documents => {"intent":"trash","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"draft"}}}
+list files with "budget" or "invoice" in the name => !
+show files starting with report in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameStartsWith":"report"}}}
+list the files that end with .pdf in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["pdf"]}}}
+count the files with IMG in the name in Pictures => {"intent":"count","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","nameContains":"IMG"}}}
+move every .mov file from Downloads to Videos => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["mov"]}},"to":"Videos"}
+find the screenshots with 2026 in the name => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","nameContains":"2026"}}}
+list all the audio files bigger than 20 MB in Music => {"intent":"list","src":{"kind":"set","folder":"Music","filter":{"type":"audio","largerThanMb":20.0}}}
+show me the .docx files in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["docx"]}}}
+list the old files in Downloads => !
+find screenshots bigger than 3 MB that have Mac in the name => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","nameContains":"Mac","largerThanMb":3.0}}}
+show me the files called draft.docx in Documents => {"intent":"list","src":{"kind":"item","name":"draft.docx","folder":"Documents"}}
+list .csv and .xlsx files in Finance => !
+list the HEIC and JPG files in Pictures => !
+list files over 100 kilobytes in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":0.09765625}}}
+list videos bigger than 1 GB => {"intent":"list","src":{"kind":"set","filter":{"type":"videos","largerThanMb":1024.0}}}

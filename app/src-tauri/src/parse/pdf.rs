@@ -26,7 +26,7 @@ pub fn patterns() -> Vec<Pattern> {
                 Some(Intent::ExtractPages { src: typed_src(c, 2, FileType::Pdfs)?, from: n, to: n, output: cap(c, 3).map(|s| clean_name(&s)) })
             },
         ),
-        pat("split_pdf", r"^split\s+(.+?)(?:\s+(?:into|to|by)\s+(?:separate\s+|individual\s+|single\s+)?pages?)?$", |c| {
+        pat("split_pdf", r"^split\s+(.+?)(?:\s+(?:into|to|by)\s+(?:(?:separate|individual|single)\s+|(?:one|1)\s+(?:file\s+)?per\s+)?pages?)?$", |c| {
             Some(Intent::SplitPdf { src: typed_src(c, 1, FileType::Pdfs)? })
         }),
         pat(

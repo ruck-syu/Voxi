@@ -1,0 +1,13 @@
+# 17. Refusals and fixes from the code review. Each of these used to drop a filter,
+# read a keyword as part of a name, or pick a wrong target without saying so.
+move photos from February 29 2026 to Archive => !
+move photos from February 29 to Archive => !
+list files older than 99999999999 days => !
+list photos named report.pdf => !
+list files named in Downloads => !
+list files with budget in Documents => !
+list files with budget in the name in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"budget"}}}
+move Mom with Dad.pdf to Archive => {"intent":"move","src":{"kind":"item","name":"Mom with Dad.pdf"},"to":"Archive"}
+delete the old one => !
+move the big folder from Downloads to External => !
+show screenshots from yesterday or today => !

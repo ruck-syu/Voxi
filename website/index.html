@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Voxi: organize your Mac by saying it</title>
+    <meta name="description" content="Press a hotkey, type or dictate what you want done with your files, check the preview, press Enter. A small menu-bar app for macOS." />
+    <meta property="og:title" content="Voxi: organize your Mac by saying it" />
+    <meta property="og:description" content="Press a hotkey, type or dictate what you want done with your files, check the preview, press Enter. A small menu-bar app for macOS." />
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&display=swap"
+    />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <script src="/assets/site.js" defer></script>
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap">
+        <a class="brand" href="/"><img src="/assets/favicon.svg" alt="" />Voxi</a>
+        <nav aria-label="Main">
+          <a href="/commands">Commands</a>
+          <a href="/install">Install</a>
+          <a href="https://github.com/ruck-syu/Voxi">GitHub</a>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <section class="hero">
+        <div class="wrap">
+          <div class="hero-copy">
+            <h1>Organize your Mac's files by saying what you want.</h1>
+            <p class="lead">
+              Press <kbd>⌃⌥Space</kbd>, type or dictate with Wispr Flow, check the preview, and press Enter.
+            </p>
+            <div class="buttons">
+            <a class="button primary" data-download href="https://github.com/ruck-syu/Voxi/releases/latest">Download for Mac</a>
+            <a class="button" href="https://github.com/ruck-syu/Voxi">View on GitHub</a>
+            </div>
+            <p class="fine" data-version>Free for macOS 12 or later.</p>
+          </div>
+          <div class="demo" data-demo aria-label="Voxi's window planning a command" role="img">
+            <div class="demo-head">
+              <span class="demo-command"></span><span class="caret"></span>
+              <span class="dictating" aria-hidden="true"><i></i><i></i><i></i>Dictating</span>
+            </div>
+            <div class="demo-body"></div>
+            <div class="demo-foot"><span>Enter to preview.</span><span>Settings</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap">
+          <ul class="points">
+            <li>
+              <h3>Nothing changes until you press Enter</h3>
+              <p>Every command shows exactly which files will move, get renamed, or go to the Trash before anything happens.</p>
+            </li>
+            <li>
+              <h3>Talk or type</h3>
+              <p>The box is ready the moment it opens, so Wispr Flow dictation lands right in it. No microphone access needed.</p>
+            </li>
+            <li>
+              <h3>Undo anything</h3>
+              <p>“Undo last” reverses the newest change. Deleting moves files to the Trash, never straight out of existence.</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap">
+          <div class="block-head">
+            <h2>Say it like this</h2>
+            <p class="lead">Plain sentences. Voxi ignores the “please” and the period Wispr adds.</p>
+          </div>
+          <ul class="say">
+            <li><q>move screenshots from today to Screenshots</q><span>Files today's screenshots, creating the folder if needed.</span></li>
+            <li><q>convert all HEIC in Pictures to jpg</q><span>Makes JPG copies next to the originals.</span></li>
+            <li><q>merge PDFs in Documents named scan into scan-all.pdf</q><span>Combines every matching PDF, in name order.</span></li>
+            <li><q>delete the Claude dmg from Downloads</q><span>Finds Claude.dmg even without the dot, then moves it to the Trash.</span></li>
+            <li><q>run my usuals</q><span>Runs a shortcut you saved in Settings, as one preview with one undo.</span></li>
+          </ul>
+          <p class="more"><a href="/commands">See everything Voxi understands</a></p>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap">
+          <div class="block-head">
+            <h2>Ready when you are</h2>
+            <p class="lead">Voxi lives in the menu bar and stays out of the way until you press the hotkey.</p>
+          </div>
+          <div class="buttons">
+            <a class="button primary" data-download href="https://github.com/ruck-syu/Voxi/releases/latest">Download for Mac</a>
+            <a class="button" href="https://github.com/ruck-syu/Voxi">View on GitHub</a>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap">
+        <p>
+          Voxi is open source on <a href="https://github.com/ruck-syu/Voxi">GitHub</a>. Built for No Hands: The Wispr
+          Challenge by <a href="https://www.wemakedevs.org">WeMakeDevs</a>.
+        </p>
+        <nav aria-label="Footer">
+          <a href="/commands">Commands</a>
+          <a href="/install">Install</a>
+          <a href="https://github.com/ruck-syu/Voxi/releases/latest">Releases</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

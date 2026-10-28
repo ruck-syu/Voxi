@@ -1,0 +1,28 @@
+# Held-out set 2 of 4: moves, copies, renames, and folders.
+# Status: spent. Its misses were used to choose fixes, so it no longer measures accuracy.
+# Format: command => expected JSON, or ! to refuse.
+move the tax return from Downloads into Taxes => {"intent":"move","src":{"kind":"item","name":"tax return","folder":"Downloads"},"to":"Taxes"}
+put every mp3 from Music into Downloads => {"intent":"move","src":{"kind":"set","folder":"Music","filter":{"type":"files","ext":["mp3"]}},"to":"Downloads"}
+copy invoice 1042.pdf to Finance => {"intent":"copy","src":{"kind":"item","name":"invoice 1042.pdf"},"to":"Finance"}
+move all of my screenshots from Desktop to Archive => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots"}},"to":"Archive"}
+move the newest file in Downloads to Documents => !
+put the spreadsheets from Downloads into Finance => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["xlsx","xls","csv","numbers"]}},"to":"Finance"}
+send every photo from the Trip folder to Pictures => {"intent":"move","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"to":"Pictures"}
+move the Keynote presentation to Documents => {"intent":"move","src":{"kind":"item","name":"Keynote presentation"},"to":"Documents"}
+make a folder called Medical Records in Documents => {"intent":"create_folders","names":["Medical Records"],"parent":"Documents"}
+create folders named 2023, 2024, and 2025 in Archive => {"intent":"create_folders","names":["2023","2024","2025"],"parent":"Archive"}
+rename IMG_0042.HEIC to beach.heic => {"intent":"rename","src":{"kind":"item","name":"IMG_0042.HEIC"},"new_name":"beach.heic"}
+rename the folder Scans to Scanned Documents => {"intent":"rename","src":{"kind":"item","name":"Scans"},"new_name":"Scanned Documents"}
+move the Invoices folder from Documents to Archive => {"intent":"move","src":{"kind":"item","name":"Invoices","folder":"Documents"},"to":"Archive"}
+copy all the images from Pictures into Backup/Pictures => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup/Pictures"}
+move the video called intro.mov to Videos => {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+put the big zip from Downloads in Archives => !
+move everything in Downloads that's older than a month into Archive => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":30}},"to":"Archive"}
+move the PDFs and the JPEGs from Downloads to Documents => !
+put the screenshots into a new folder called Shots in Pictures => !
+copy Downloads/report.pdf and Downloads/notes.txt to Backup => !
+move the invoice.pdf file to the Finance folder inside Documents => {"intent":"move","src":{"kind":"item","name":"invoice.pdf"},"to":"Documents/Finance"}
+move every file in Desktop larger than 1 GB to External => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","largerThanMb":1024.0}},"to":"External"}
+copy my resume.pdf to Desktop and Documents => !
+move pictures from my Desktop to Pictures => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"images"}},"to":"Pictures"}
+move the files called notes.txt and todo.txt to Desktop => !

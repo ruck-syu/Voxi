@@ -49,10 +49,10 @@ static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
 pub fn parse(text: &str) -> Result<Intent, String> {
     let cleaned = phrase::normalize(text);
     for p in PATTERNS.iter() {
-        if let Some(caps) = p.re.captures(&cleaned) {
-            if let Some(intent) = (p.build)(&caps) {
-                return Ok(intent);
-            }
+        if let Some(caps) = p.re.captures(&cleaned)
+            && let Some(intent) = (p.build)(&caps)
+        {
+            return Ok(intent);
         }
     }
     Err(text.trim().to_string())

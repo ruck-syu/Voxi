@@ -1,0 +1,13 @@
+# 18. Review fixes. A type word must fit the file name, "and" ends a name unless the
+# name has an extension, "named like" takes the word after "like", a singular type noun
+# is a type, and a destination with "inside" is refused instead of made into a folder.
+move the video called intro.mov to Videos => {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+list photos named report.pdf => !
+move the file called Terms and Conditions.pdf to Archive => {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+list files named budget and invoice in Downloads => !
+list files named like invoice in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"invoice"}}}
+send every photo from the Trip folder to Pictures => {"intent":"move","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"to":"Pictures"}
+move the invoice.pdf file to the Finance folder inside Documents => !
+list every zip in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"archives"}}}
+find PDFs bigger than 5 MB and older than 1 year in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs","olderThanDays":365,"largerThanMb":5.0}}}
+move the files called notes.txt and todo.txt to Desktop => !

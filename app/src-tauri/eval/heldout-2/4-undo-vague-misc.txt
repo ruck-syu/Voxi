@@ -1,0 +1,28 @@
+# Held-out set 2 of 4: undo, history, vague requests, sorting, Finder, and safety.
+# Status: spent. Its misses were used to choose fixes, so it no longer measures accuracy.
+# Format: command => expected JSON, or ! to refuse.
+undo the last move => {"intent":"undo"}
+please take back what you just did => {"intent":"undo"}
+show my recent actions please => {"intent":"recent_actions"}
+move my screenshots from today to the Archive => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Archive"}
+clean up my Downloads folder => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+delete the stuff in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+get rid of all the duplicate screenshots => !
+wipe all my screenshots older than 2 years => !
+help me organize my pictures by month => {"intent":"sort_by_month","folder":"pictures"}
+put my photos into folders by year => !
+tidy up the desktop by type => {"intent":"sort_by_type","folder":"desktop"}
+can you find the file called Passport in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"Passport"}}}
+open Documents in finder => {"intent":"reveal","target":"Documents"}
+put these files in the bin => !
+delete the old one => !
+undo everything from the last hour => !
+undo the last thing and then tidy Downloads => !
+zip all the screenshots from August => {"intent":"zip","src":{"kind":"set","filter":{"type":"screenshots","month":8}}}
+delete the tmp files from Desktop without asking => !
+move the big folder from Downloads to External => !
+sort the screenshots by year => !
+list the screenshots from the last quarter => !
+open my Pictures folder => {"intent":"reveal","target":"Pictures"}
+move the file report.pdf and send it to Archive => !
+rename all PDFs in Desktop with a Scan_ prefix => !

@@ -21,6 +21,13 @@ pub fn specific() -> Vec<Pattern> {
             let phrase = format!("{} in {}", cap(c, 1)?, cap(c, 3)?);
             Some(Intent::Count { src: super::phrase::parse_source(&phrase)? })
         }),
+        // "how many screenshots did I take today": a count of a set with a type or filter.
+        pat("how_many_any", r"^how\s+many\s+(.+)$", |c| Some(Intent::Count { src: super::phrase::set_source(&cap(c, 1)?)? })),
+        pat(
+            "how_much_space",
+            r"^how\s+much\s+(?:space|storage|room)\s+(?:is\s+|does\s+)?(.+?)\s+(?:is\s+)?(?:using|takes?(?:\s+up)?|uses?)$",
+            |c| Some(Intent::Size { folder: clean_name(&cap(c, 1)?) }),
+        ),
     ]
 }
 
@@ -30,5 +37,7 @@ pub fn general() -> Vec<Pattern> {
             Some(Intent::List { src: src(c, 1)? })
         }),
         pat("whats_in", r"^(?:what'?s|what\s+is)\s+(?:on|in)\s+(.+)$", |c| Some(Intent::List { src: src(c, 1)? })),
+        // "what files did I download yesterday": a question lists only a set of files.
+        pat("what_list", r"^what\s+(?:are\s+|is\s+)?(.+)$", |c| Some(Intent::List { src: super::phrase::set_source(&cap(c, 1)?)? })),
     ]
 }

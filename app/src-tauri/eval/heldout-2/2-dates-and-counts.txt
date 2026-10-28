@@ -1,0 +1,28 @@
+# Held-out set 2 of 4: dates, periods, and counts.
+# Status: spent. Its misses were used to choose fixes, so it no longer measures accuracy.
+# Format: command => expected JSON, or ! to refuse.
+show me the photos I took last month => {"intent":"list","src":{"kind":"set","filter":{"type":"images","newerThanDays":30}}}
+what PDFs are older than six months => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","olderThanDays":180}}}
+how many videos did I record in July 2026 => {"intent":"count","src":{"kind":"set","filter":{"type":"videos","month":7,"year":2026}}}
+list the screenshots from the first half of the month => !
+count the videos from the last 2 weeks => {"intent":"count","src":{"kind":"set","filter":{"type":"videos","newerThanDays":14}}}
+show me all files created after March 1 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2026-03-02"}}}
+list screenshots from the last 10 days => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":10}}}
+list documents I saved between March 1 and March 15 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"documents","since":"2026-03-01","before":"2026-03-16"}}}
+delete everything in Downloads taken before this year => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","before":"2026-01-01"}}}
+list screenshots I took this week => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-26"}}}
+how many PDFs are in Documents from last year => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs","newerThanDays":365}}}
+what did I download last Monday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2026-10-26","before":"2026-10-27"}}}
+list files from this morning => !
+how many files did I modify today => {"intent":"count","src":{"kind":"set","filter":{"type":"files","day":"today"}}}
+list the files from March 2026 that are bigger than 10 MB => {"intent":"list","src":{"kind":"set","filter":{"type":"files","month":3,"year":2026,"largerThanMb":10.0}}}
+delete screenshots older than 6 months in Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots","olderThanDays":180}}}
+show screenshots from yesterday or today => !
+list the photos I took on the weekend => !
+list the screenshots I took on Tuesday => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-27","before":"2026-10-28"}}}
+find PDFs bigger than 5 MB and older than 1 year in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs","olderThanDays":365,"largerThanMb":5.0}}}
+list the files with 'invoice' in the name from 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","nameContains":"invoice","since":"2025-01-01","before":"2026-01-01"}}}
+list photos from 2019 to 2021 => {"intent":"list","src":{"kind":"set","filter":{"type":"images","since":"2019-01-01","before":"2022-01-01"}}}
+show me the PDFs from late 2025 => !
+what changed in the last week => !
+list files I downloaded before 2025 and after 2023 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2024-01-01","before":"2025-01-01"}}}

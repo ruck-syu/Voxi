@@ -122,6 +122,7 @@ export default function App() {
             onSaved={setSettings}
             onClose={() => setView("command")}
             onAccess={() => setView("access")}
+            setBusy={setBusy}
           />
         )}
         {view === "access" && settings && (
@@ -701,11 +702,13 @@ function SettingsView({
   onSaved,
   onClose,
   onAccess,
+  setBusy,
 }: {
   settings: Settings;
   onSaved: (s: Settings) => void;
   onClose: () => void;
   onAccess: () => void;
+  setBusy: (b: boolean) => void;
 }) {
   const [tab, setTab] = useState<Tab>("general");
   const [error, setError] = useState<string | null>(null);
@@ -754,7 +757,7 @@ function SettingsView({
       <div key={tab} className="tab-panel">
         {tab === "general" && <GeneralTab settings={settings} persist={persist} onAccess={onAccess} />}
         {tab === "shortcuts" && <ShortcutsTab settings={settings} persist={persist} />}
-        {tab === "folders" && <FoldersTab settings={settings} persist={persist} />}
+        {tab === "folders" && <FoldersTab settings={settings} persist={persist} setBusy={setBusy} />}
       </div>
     </Sheet>
   );
@@ -955,7 +958,10 @@ function ShortcutsTab({ settings, persist }: TabProps) {
 }
 
 /** The four standard folders are always allowed; more can be added. */
-function FoldersTab({ settings, persist }: TabProps) {
+/** "~/Work" from "/Users/me/Work/", the form allowed_folders returns. */
+const shownFolder = (path: string) => path.replace(/^\/Users\/[^/]+/, "~").replace(/\/$/, "");
+
+function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
   const [folders, setFolders] = useState<string[]>([]);
   const [adding, setAdding] = useState("");
   const [note, setNote] = useState<string | null>(null);
@@ -965,19 +971,36 @@ function FoldersTab({ settings, persist }: TabProps) {
     api.allowedFolders().then(setFolders);
   }, [settings]);
 
-  const add = async () => {
-    const path = adding.trim();
+  const add = async (path: string) => {
     if (!path) return;
+    const shown = shownFolder(path);
+    if (folders.includes(shown) || extra.some((x) => shownFolder(x) === shown)) {
+      setAdding("");
+      setNote(`“${shown}” is already allowed.`);
+      return;
+    }
     if (await persist({ ...settings, extraFolders: [...extra, path] })) {
       const now = await api.allowedFolders();
       setFolders(now);
       setAdding("");
-      const shown = path.replace(/^\/Users\/[^/]+/, "~").replace(/\/$/, "");
       setNote(now.includes(shown) ? null : `Couldn't find “${path}”. Check the path and try again.`);
     }
   };
 
-  const builtIn = folders.filter((f) => !extra.some((x) => x.replace(/^\/Users\/[^/]+/, "~").replace(/\/$/, "") === f));
+  // The picker takes focus, which would otherwise close the window.
+  const choose = async () => {
+    setBusy(true);
+    try {
+      const path = await api.pickFolder();
+      if (path) await add(path);
+    } catch (e) {
+      setNote(`Couldn't open the folder picker: ${e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const builtIn = folders.filter((f) => !extra.some((x) => shownFolder(x) === f));
 
   return (
     <div>
@@ -1007,12 +1030,15 @@ function FoldersTab({ settings, persist }: TabProps) {
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                add();
+                add(adding.trim());
               }
             }}
           />
-          <button className="secondary small" disabled={!adding.trim()} onClick={add}>
+          <button className="secondary small" disabled={!adding.trim()} onClick={() => add(adding.trim())}>
             Add
+          </button>
+          <button className="secondary small" onClick={choose}>
+            Choose…
           </button>
         </li>
       </ul>

@@ -12,9 +12,11 @@ use crate::pdf;
 use chrono::{DateTime, Datelike, Local, NaiveDate};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::SystemTime;
+use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::time::{Duration, SystemTime};
 
 /// Why planning stopped early.
 #[derive(Debug)]
@@ -54,6 +56,9 @@ pub struct Planner<'a> {
 }
 
 const MAX_WALK: usize = 50_000;
+/// How many Spotlight answers to look at, and how long to wait for them.
+const MAX_INDEXED: usize = 5_000;
+const SPOTLIGHT_TIMEOUT: Duration = Duration::from_secs(2);
 
 impl<'a> Planner<'a> {
     pub fn new(roots: &'a Roots, choices: &'a HashMap<String, PathBuf>) -> Self {
@@ -292,6 +297,9 @@ impl<'a> Planner<'a> {
         if found.is_empty() {
             found = self.find_similar(name, &dirs);
         }
+        if found.is_empty() {
+            found = closest(name, self.usable_hits(spotlight(name, &dirs), &dirs));
+        }
         match found.len() {
             1 => Ok(found.into_iter().next().unwrap()),
             0 => {
@@ -328,43 +336,24 @@ impl<'a> Planner<'a> {
         out
     }
 
-    /// Fallback for a vague or dictated name. Collects every entry whose name is
-    /// close: same stem ("claude" -> Claude.dmg), same letters and digits
-    /// ("claude dmg" -> Claude.dmg), containing the words ("claude" -> Claude
-    /// Setup.dmg), or holding every word of a multi-word name in any order
-    /// ("anigen android zip" -> Anigen-Android-1.zip, which adds a version
-    /// number). Closest first, then newest, so a numbered list can be read out
-    /// when there is more than one.
+    /// Fallback for a vague or dictated name: the entries near the top of
+    /// `dirs` whose names are close to it.
     fn find_similar(&self, name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
-        const MAX_CANDIDATES: usize = 9;
-        let want = loose(name);
-        if want.len() < 3 {
-            return Vec::new();
-        }
-        // The words of the name, skipping one-letter words, as they must appear in a file's name.
-        let words: Vec<String> = name.split_whitespace().map(loose).filter(|w| w.len() >= 2).collect();
-        let mut scored: Vec<(u8, Option<DateTime<Local>>, PathBuf)> = Vec::new();
-        let mut seen = HashSet::new();
+        let mut entries = Vec::new();
         for d in dirs {
-            walk(d, 2, &mut |p, _| {
-                let file = file_name(p);
-                let stem = split_name(&file).0;
-                let letters = loose(&file);
-                let all_words = words.len() > 1 && words.iter().all(|w| letters.contains(w.as_str()));
-                let score = if letters == want || loose(stem) == want {
-                    2
-                } else if letters.contains(&want) || all_words {
-                    1
-                } else {
-                    return;
-                };
-                if seen.insert(fsx::canonical(p)) {
-                    scored.push((score, created(p), p.to_path_buf()));
-                }
-            });
+            walk(d, 2, &mut |p, _| entries.push(p.to_path_buf()));
         }
-        scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
-        scored.into_iter().take(MAX_CANDIDATES).map(|(_, _, p)| p).collect()
+        closest(name, entries)
+    }
+
+    /// Keeps the Spotlight answers Voxi could have reached itself. The index
+    /// can lag behind the disk and knows nothing of the allowed folders, so
+    /// each answer is checked like a typed path.
+    fn usable_hits(&self, hits: Vec<PathBuf>, dirs: &[PathBuf]) -> Vec<PathBuf> {
+        hits.into_iter()
+            .filter(|p| p.exists() && self.roots.is_allowed(p))
+            .filter(|p| dirs.iter().any(|d| p.strip_prefix(d).is_ok_and(walkable)))
+            .collect()
     }
 
     /// The folders a set looks in, and a short label for titles.
@@ -1060,6 +1049,89 @@ fn image_width(p: &Path) -> Option<u32> {
     String::from_utf8_lossy(&out.stdout).lines().find_map(|l| l.trim().strip_prefix("pixelWidth: ")?.parse().ok())
 }
 
+/// Picks the entries with a name close to `name`: same stem ("claude" ->
+/// Claude.dmg), same letters and digits ("claude dmg" -> Claude.dmg), containing
+/// the words ("claude" -> Claude Setup.dmg), or holding every word of a
+/// multi-word name in any order ("anigen android zip" -> Anigen-Android-1.zip,
+/// which adds a version number). Closest first, then newest, so a numbered list
+/// can be read out when there is more than one.
+fn closest(name: &str, entries: Vec<PathBuf>) -> Vec<PathBuf> {
+    const MAX_CANDIDATES: usize = 9;
+    let want = loose(name);
+    if want.len() < 3 {
+        return Vec::new();
+    }
+    // The words of the name, skipping one-letter words, as they must appear in a file's name.
+    let words: Vec<String> = name.split_whitespace().map(loose).filter(|w| w.len() >= 2).collect();
+    let mut scored: Vec<(u8, Option<DateTime<Local>>, PathBuf)> = Vec::new();
+    let mut seen = HashSet::new();
+    for p in entries {
+        let file = file_name(&p);
+        let stem = split_name(&file).0;
+        let letters = loose(&file);
+        let all_words = words.len() > 1 && words.iter().all(|w| letters.contains(w.as_str()));
+        let score = if letters == want || loose(stem) == want {
+            2
+        } else if letters.contains(&want) || all_words {
+            1
+        } else {
+            continue;
+        };
+        if seen.insert(fsx::canonical(&p)) {
+            scored.push((score, created(&p), p));
+        }
+    }
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+    scored.into_iter().take(MAX_CANDIDATES).map(|(_, _, p)| p).collect()
+}
+
+/// Asks Spotlight for entries below `dirs` with every word of `name` in their
+/// file name, which finds what the walks are too shallow to reach. Answers
+/// nothing if Spotlight is off or slow: searching just stops at the walks.
+fn spotlight(name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
+    // Letters and digits only, so a name can't break out of the quoted query.
+    let terms: Vec<String> = name
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.chars().count() >= 2)
+        .map(|t| format!("kMDItemFSName == \"*{}*\"c", t.to_lowercase()))
+        .collect();
+    if terms.is_empty() {
+        return Vec::new();
+    }
+    let mut cmd = Command::new("/usr/bin/mdfind");
+    for d in dirs {
+        cmd.arg("-onlyin").arg(d);
+    }
+    let Ok(mut child) = cmd.arg(terms.join(" && ")).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
+        return Vec::new();
+    };
+    let Some(mut out) = child.stdout.take() else {
+        return Vec::new();
+    };
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        let _ = out.read_to_string(&mut text);
+        let _ = tx.send(text);
+    });
+    let text = rx.recv_timeout(SPOTLIGHT_TIMEOUT).unwrap_or_default();
+    let _ = child.kill();
+    let _ = child.wait();
+    text.lines().take(MAX_INDEXED).map(PathBuf::from).collect()
+}
+
+/// True when a path below a searched folder is one the walks could have
+/// visited, leaving out `node_modules`, which Spotlight fills with lookalikes.
+fn walkable(rel: &Path) -> bool {
+    let parts: Vec<&Path> = rel.iter().map(Path::new).collect();
+    let (_, parents) = parts.split_last().unwrap_or((&Path::new(""), &[]));
+    parts.iter().all(|p| !fsx::is_hidden_or_internal(p) && p.as_os_str() != "node_modules") && !parents.iter().any(|p| is_bundle(p))
+}
+
+fn is_bundle(p: &Path) -> bool {
+    matches!(ext_of(p).as_str(), "app" | "photoslibrary" | "bundle" | "framework")
+}
+
 /// Visits entries below `dir` up to `depth` extra levels, skipping hidden
 /// files, `_to_delete/`, app bundles, and symlinked folders.
 pub fn walk(dir: &Path, depth: usize, f: &mut dyn FnMut(&Path, bool)) {
@@ -1083,8 +1155,7 @@ fn walk_inner(dir: &Path, depth: usize, f: &mut dyn FnMut(&Path, bool), budget: 
         let Ok(ft) = e.file_type() else { continue };
         let is_dir = ft.is_dir();
         f(&p, is_dir);
-        let is_bundle = matches!(ext_of(&p).as_str(), "app" | "photoslibrary" | "bundle" | "framework");
-        if is_dir && depth > 0 && !is_bundle {
+        if is_dir && depth > 0 && !is_bundle(&p) {
             walk_inner(&p, depth - 1, f, budget);
         }
     }
@@ -1183,6 +1254,32 @@ mod tests {
             }
             _ => panic!("expected a question"),
         }
+    }
+
+    #[test]
+    fn spotlight_hits_are_checked_against_the_disk() {
+        let h = home();
+        let docs = h.roots.home.join("Documents");
+        let choices = HashMap::new();
+        let planner = Planner::new(&h.roots, &choices);
+        let deep = docs.join("a/b/c/d/Tax Return.pdf");
+        let hidden = docs.join("a/.cache/Tax Return.pdf");
+        let packages = docs.join("node_modules/tax/Tax Return.pdf");
+        let bundle = docs.join("Tax.app/Tax Return.pdf");
+        for p in [&deep, &hidden, &packages, &bundle] {
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, b"a").unwrap();
+        }
+        let outside = h.roots.home.join("Tax Return.pdf");
+        fs::write(&outside, b"a").unwrap();
+        let gone = docs.join("Tax Return old.pdf");
+        let hits = vec![deep.clone(), hidden, packages, bundle, outside, gone];
+        assert_eq!(planner.usable_hits(hits, &[docs]), vec![deep]);
+    }
+
+    #[test]
+    fn spotlight_is_not_asked_for_empty_names() {
+        assert!(spotlight("a !", &[]).is_empty());
     }
 
     #[test]

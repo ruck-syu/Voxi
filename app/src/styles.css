@@ -685,6 +685,13 @@ kbd {
 /* Updates: version, a button, and a progress bar while it downloads. */
 .updates {
   flex-wrap: wrap;
+  row-gap: 0;
+}
+
+/* With the border, this adds up to the row's 46px, so the button stays put
+   when the status wraps in below it. */
+.updates > .secondary.small {
+  margin-block: 7.5px;
 }
 
 .secondary.small {
@@ -848,6 +855,7 @@ kbd {
 }
 
 .prefs .shortcut-row {
+  align-items: center;
   padding: 0;
   min-height: 46px;
 }

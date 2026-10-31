@@ -24,6 +24,10 @@ export function whatsNew(body: string | undefined): string[] {
     .slice(0, 6);
 }
 
+// Without these, a stalled connection leaves the button loading forever.
+const CHECK_TIMEOUT_MS = 20_000;
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
+
 export async function appVersion(): Promise<string> {
   return inTauri ? getVersion() : "0.1.0";
 }
@@ -34,7 +38,7 @@ export async function checkAndInstall(onState: (s: UpdateState) => void): Promis
   const { relaunch } = await import("@tauri-apps/plugin-process");
   onState({ k: "checking" });
   try {
-    const update = await check();
+    const update = await check({ timeout: CHECK_TIMEOUT_MS });
     if (!update) return onState({ k: "latest" });
     const notes = whatsNew(update.body);
     let done = 0;
@@ -44,7 +48,7 @@ export async function checkAndInstall(onState: (s: UpdateState) => void): Promis
       if (e.event === "Started") total = e.data.contentLength ?? null;
       if (e.event === "Progress") done += e.data.chunkLength;
       onState({ k: "downloading", version: update.version, notes, done, total });
-    });
+    }, { timeout: DOWNLOAD_TIMEOUT_MS });
     onState({ k: "restarting", version: update.version, notes });
     await relaunch();
   } catch (e) {

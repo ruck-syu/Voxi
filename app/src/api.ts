@@ -35,6 +35,12 @@ export const api = {
   allowedFolders: () => invoke<string[]>("allowed_folders"),
   requestFolderAccess: () => invoke<FolderAccess[]>("request_folder_access"),
   openPrivacySettings: () => invoke<void>("open_privacy_settings"),
+  /** The Finder folder picker. Resolves to null if the user cancels. */
+  pickFolder: async (): Promise<string | null> => {
+    if (!inTauri) return "/Volumes/External";
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    return open({ directory: true, title: "Add a folder" });
+  },
 };
 
 /** "~/Downloads/a.pdf" from an absolute path, for display. */

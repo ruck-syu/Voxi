@@ -178,6 +178,18 @@ kbd {
   align-items: center;
 }
 
+.download-options {
+  display: grid;
+  gap: 24px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.download-options .buttons,
+.download-options .brew-window {
+  width: 100%;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
@@ -600,16 +612,61 @@ section.block {
   color: var(--muted);
 }
 
-.install-command {
+.brew-window {
   width: fit-content;
   max-width: 100%;
-  margin: 0;
-  padding: 10px 14px;
-  overflow-x: auto;
-  border-left: 3px solid var(--margin);
-  background: color-mix(in srgb, var(--desk) 70%, transparent);
+  overflow: hidden;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card) 70%, var(--desk));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.brew-window-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 6px 8px 6px 13px;
+  border-bottom: 2px solid var(--margin);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.brew-window-head button {
+  padding: 3px 9px;
+  border: 1px solid var(--rule-strong);
+  border-radius: 6px;
+  background: var(--card);
   color: var(--ink);
-  font: 700 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: inherit;
+  cursor: pointer;
+}
+
+.brew-window-head button:hover {
+  border-color: var(--ink);
+}
+
+.brew-window > code {
+  display: block;
+  overflow-x: auto;
+  padding: 9px 13px 11px;
+  color: var(--ink);
+  font: 600 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .note {

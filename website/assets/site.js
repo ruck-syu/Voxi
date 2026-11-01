@@ -23,6 +23,30 @@ const REPO = "ruck-syu/Voxi";
   }
 })();
 
+// ---- Copy the Homebrew install command ---------------------------------------
+
+document.querySelectorAll("[data-copy-command]").forEach((panel) => {
+  const command = panel.querySelector("[data-copy-text]");
+  const button = panel.querySelector("[data-copy-button]");
+  const status = panel.querySelector("[data-copy-status]");
+  if (!command || !button || !status) return;
+
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(command.textContent.trim());
+      button.textContent = "Copied";
+      status.textContent = "Homebrew install command copied.";
+    } catch {
+      button.textContent = "Copy failed";
+      status.textContent = "Copy failed. Select the command and copy it.";
+    }
+
+    window.setTimeout(() => {
+      button.textContent = "Copy";
+    }, 1800);
+  });
+});
+
 // ---- Hero demo: a replica of Voxi's window --------------------------------------
 
 const SCENES = [

@@ -35,13 +35,19 @@
             <h1>Install Voxi</h1>
             <p class="lead">About two minutes, once. Voxi works on macOS 12 or later, on Apple silicon and Intel Macs.</p>
           </div>
+          <div class="homebrew-option" id="homebrew">
+            <h2>Install with Homebrew</h2>
+            <p>Run this in Terminal:</p>
+            <pre class="install-command"><code>brew install --cask ruck-syu/tap/voxi</code></pre>
+            <p>On first launch, macOS may block Voxi because it isn't notarized yet. Follow step 2 below to open it once.</p>
+          </div>
           <ol class="steps">
             <li>
               <h3>Download the app</h3>
               <p>Get the latest <a data-download href="https://github.com/ruck-syu/Voxi/releases/latest">Voxi .dmg</a>, open it, and drag Voxi to Applications.</p>
             </li>
             <li>
-              <h3>Open it the first time</h3>
+              <h3 id="first-launch">Open it the first time</h3>
               <p>Voxi isn't notarized by Apple yet, so macOS blocks the first launch. On macOS 15 or later, open System Settings, then Privacy &amp; Security, scroll down, and click Open Anyway next to Voxi. On macOS 14 or earlier, right-click Voxi in Applications and choose Open. macOS remembers this, so you only do it once.</p>
             </li>
             <li>

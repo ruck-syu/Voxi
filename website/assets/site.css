@@ -583,6 +583,35 @@ section.block {
   color: var(--muted);
 }
 
+.homebrew-option {
+  display: grid;
+  gap: 10px;
+  margin-bottom: calc(var(--line) * 1.5);
+  padding: 18px 0 20px;
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.homebrew-option h2 {
+  font-size: 26px;
+}
+
+.homebrew-option p {
+  color: var(--muted);
+}
+
+.install-command {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 10px 14px;
+  overflow-x: auto;
+  border-left: 3px solid var(--margin);
+  background: color-mix(in srgb, var(--desk) 70%, transparent);
+  color: var(--ink);
+  font: 700 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .note {
   margin-top: var(--line);
   padding: 16px 20px;

@@ -316,7 +316,7 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
             return Err(e);
         }
     }
-    if settings.start_at_login != old.start_at_login {
+    if settings.start_at_login != old.start_at_login && owns_login_item() {
         let al = app.autolaunch();
         let r = if settings.start_at_login { al.enable() } else { al.disable() };
         r.map_err(|e| format!("Couldn't change the login item: {e}"))?;
@@ -325,6 +325,16 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     *state.roots.write().unwrap() = build_roots(&settings);
     *state.settings.lock().unwrap() = settings.clone();
     Ok(settings)
+}
+
+/// macOS opens whichever copy of Voxi last turned on "Open at login". Only an
+/// installed app may: a development build opened at login shows an empty
+/// window, since the page it loads comes from a dev server that isn't running.
+fn owns_login_item() -> bool {
+    std::env::current_exe().is_ok_and(|p| {
+        let p = p.to_string_lossy();
+        p.contains(".app/Contents/MacOS/") && !p.contains("/AppTranslocation/")
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -398,6 +408,14 @@ pub fn run() {
                 next_plan: AtomicU64::new(1),
             };
             app.manage(state);
+
+            // Points the login item back at this copy, in case another
+            // copy (an older install, a development build) took it over.
+            if settings.start_at_login && owns_login_item() {
+                if let Err(e) = app.autolaunch().enable() {
+                    eprintln!("Couldn't update the login item: {e}");
+                }
+            }
 
             let handle = app.handle().clone();
             if let Err(e) = register_hotkey(&handle, &settings.hotkey) {

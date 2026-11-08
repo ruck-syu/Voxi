@@ -499,6 +499,22 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
                 return Some(Source::Set { folder, filter });
             }
         }
+        // "Aeroguard files" names a group, like "files containing Aeroguard".
+        // Known types above still win ("zip files"), and vague descriptions
+        // such as "recent files" must not become filename filters.
+        if let Some((name, noun)) = head.rsplit_once(' ')
+            && noun.eq_ignore_ascii_case("files")
+            && !vague(&head)
+            && !name.contains(['*', '?'])
+        {
+            let name = clean_name(name);
+            if name.is_empty() || vague(&name) || filter.name_contains.is_some() || filter.name_starts_with.is_some() {
+                return None;
+            }
+            filter.file_type = Some(FileType::Files);
+            filter.name_contains = Some(name);
+            return Some(Source::Set { folder, filter });
+        }
         let known = KNOWN_FOLDERS.contains(&head.to_ascii_lowercase().as_str());
         if folder.is_none() && (narrowed || known) {
             // An unknown phrase with filters names a folder only when it is one word.
@@ -646,6 +662,25 @@ mod tests {
             s,
             Source::set(Some("Downloads"), Filter { file_type: Some(FileType::Files), older_than_days: Some(90), ..Default::default() })
         );
+    }
+
+    #[test]
+    fn named_plural_files_are_a_filtered_set() {
+        assert_eq!(
+            parse_source("Aeroguard files from Downloads"),
+            Some(Source::set(Some("Downloads"), Filter {
+                file_type: Some(FileType::Files),
+                name_contains: Some("Aeroguard".into()),
+                ..Default::default()
+            }))
+        );
+        assert_eq!(parse_source("Aeroguard file from Downloads"), Some(Source::Item {
+            name: "Aeroguard".into(), folder: Some("Downloads".into())
+        }));
+        assert_eq!(parse_source("\"Aeroguard files\""), Some(Source::item("Aeroguard files")));
+        assert_eq!(parse_source("recent files"), None);
+        assert_eq!(parse_source("\"\" files"), None);
+        assert_eq!(parse_source("Aeroguard files named invoice"), None);
     }
 
     #[test]

@@ -56,6 +56,7 @@ pub struct Planner<'a> {
 }
 
 const MAX_WALK: usize = 50_000;
+const SEARCH_DEPTH: usize = 12;
 /// How many Spotlight answers to look at, and how long to wait for them.
 const MAX_INDEXED: usize = 5_000;
 const SPOTLIGHT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -249,7 +250,7 @@ impl<'a> Planner<'a> {
         let base = if let Some(p) = self.roots.named(first) {
             p.clone()
         } else {
-            let found = self.find_entries(first, true, &self.roots.search_roots(), 2);
+            let found = self.find_entries(first, true, &self.roots.search_roots());
             match found.len() {
                 1 => found.into_iter().next().unwrap(),
                 0 => match create_in {
@@ -293,7 +294,7 @@ impl<'a> Planner<'a> {
             Some(f) => vec![self.resolve_folder(f, None)?],
             None => self.roots.search_roots(),
         };
-        let mut found = self.find_entries(name, false, &dirs, 2);
+        let mut found = self.find_entries(name, false, &dirs);
         if found.is_empty() {
             found = self.find_similar(name, &dirs);
         }
@@ -321,13 +322,13 @@ impl<'a> Planner<'a> {
         self.resolve_item(name, None)
     }
 
-    /// Entries named `name` (case-insensitive) up to `depth` levels below `dirs`.
-    fn find_entries(&self, name: &str, dirs_only: bool, dirs: &[PathBuf], depth: usize) -> Vec<PathBuf> {
+    /// Entries named `name` (case-insensitive), including subfolders of `dirs`.
+    fn find_entries(&self, name: &str, dirs_only: bool, dirs: &[PathBuf]) -> Vec<PathBuf> {
         let want = name.to_lowercase();
         let mut out = Vec::new();
         let mut seen = HashSet::new();
         for d in dirs {
-            walk(d, depth, &mut |p, is_dir| {
+            walk(d, SEARCH_DEPTH, &mut |p, is_dir| {
                 if file_name(p).to_lowercase() == want && (is_dir || !dirs_only) && seen.insert(fsx::canonical(p)) {
                     out.push(p.to_path_buf());
                 }
@@ -336,12 +337,11 @@ impl<'a> Planner<'a> {
         out
     }
 
-    /// Fallback for a vague or dictated name: the entries near the top of
-    /// `dirs` whose names are close to it.
+    /// Fallback for a vague or dictated name, including subfolders of `dirs`.
     fn find_similar(&self, name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
         let mut entries = Vec::new();
         for d in dirs {
-            walk(d, 2, &mut |p, _| entries.push(p.to_path_buf()));
+            walk(d, SEARCH_DEPTH, &mut |p, _| entries.push(p.to_path_buf()));
         }
         closest(name, entries)
     }
@@ -364,16 +364,14 @@ impl<'a> Planner<'a> {
                 let label = file_name(&p);
                 Ok((vec![p], label))
             }
-            // Screenshots can be anywhere: every allowed folder, plus one
-            // level of subfolders (see `expand`).
+            // Screenshots can be anywhere: search every allowed folder.
             None if filter.file_type == Some(FileType::Screenshots) => Ok((self.roots.search_roots(), "your folders".into())),
             None => Ok((vec![self.roots.downloads(), self.roots.desktop()], "Downloads and Desktop".into())),
         }
     }
 
-    /// Expands a source into paths. Sets cover files directly in the folder
-    /// (or every subfolder when `recursive`, for read-only queries).
-    fn expand(&self, src: &Source, recursive: bool) -> Result<(Vec<PathBuf>, String), Stop> {
+    /// Expands a source into paths, including subfolders for every file set.
+    fn expand(&self, src: &Source) -> Result<(Vec<PathBuf>, String), Stop> {
         match src {
             Source::Item { name, folder } => {
                 let p = self.resolve_item(name, folder.as_deref())?;
@@ -386,9 +384,7 @@ impl<'a> Planner<'a> {
                 let mut out = Vec::new();
                 let mut seen = HashSet::new();
                 for d in &dirs {
-                    let screenshots_anywhere = folder.is_none() && filter.file_type == Some(FileType::Screenshots);
-                    let depth = if recursive { 12 } else if screenshots_anywhere { 1 } else { 0 };
-                    walk(d, depth, &mut |p, is_dir| {
+                    walk(d, SEARCH_DEPTH, &mut |p, is_dir| {
                         if !is_dir && seen.insert(p.to_path_buf()) && matches(p, filter, today) {
                             out.push(p.to_path_buf());
                         }
@@ -401,7 +397,7 @@ impl<'a> Planner<'a> {
     }
 
     fn expand_nonempty(&self, src: &Source) -> Result<(Vec<PathBuf>, String), Stop> {
-        let (paths, label) = self.expand(src, false)?;
+        let (paths, label) = self.expand(src)?;
         if paths.is_empty() {
             return problem(format!("No files match in {label}."));
         }
@@ -413,16 +409,24 @@ impl<'a> Planner<'a> {
     fn transfer(&mut self, src: &Source, to: &str, copy: bool) -> Result<String, Stop> {
         let (paths, _) = self.expand_nonempty(src)?;
         let src_dir = match src {
-            Source::Set { folder: Some(_), .. } => paths.first().and_then(|p| p.parent()).map(Path::to_path_buf),
+            Source::Set { folder: Some(folder), .. } => Some(self.resolve_folder(folder, None)?),
             _ => None,
         };
         let parent_for_new = src_dir.unwrap_or_else(|| self.roots.desktop());
         let dest = self.resolve_folder(to, Some(&parent_for_new))?;
         self.ensure_dir(&dest)?;
+        // A destination inside the source may already hold previous results.
+        let destination_in_source = match src {
+            Source::Set { folder, filter } => self.set_folders(folder.as_deref(), filter)?.0.iter()
+                .any(|dir| dest != *dir && fsx::canonical(&dest).starts_with(fsx::canonical(dir))),
+            _ => false,
+        };
         let mut already = 0;
         for p in &paths {
             self.check(p)?;
-            if !copy && p.parent().is_some_and(|d| fsx::same_file(d, &dest)) {
+            if (destination_in_source && fsx::canonical(p).starts_with(fsx::canonical(&dest)))
+                || (!copy && p.parent().is_some_and(|d| fsx::same_file(d, &dest)))
+            {
                 already += 1;
                 continue;
             }
@@ -529,10 +533,11 @@ impl<'a> Planner<'a> {
     fn sort(&mut self, folder: &str, by_type: bool) -> Result<String, Stop> {
         let dir = self.resolve_folder(folder, None)?;
         let filter = Filter { file_type: Some(FileType::Files), ..Default::default() };
-        let (paths, _) = self.expand(&Source::Set { folder: Some(dir.to_string_lossy().into()), filter }, false)?;
+        let (paths, _) = self.expand(&Source::Set { folder: Some(dir.to_string_lossy().into()), filter })?;
         let mut left = 0;
         let mut moved = 0;
         for p in &paths {
+            self.check(p)?;
             let sub = if by_type {
                 match type_folder(p) {
                     Some(s) => s.to_string(),
@@ -551,6 +556,9 @@ impl<'a> Planner<'a> {
                 }
             };
             let dest = dir.join(&sub);
+            if p.parent().is_some_and(|parent| fsx::same_file(parent, &dest)) {
+                continue;
+            }
             self.ensure_dir(&dest)?;
             let (to, note) = self.target(&dest, &file_name(p));
             self.push(Action::Move { from: p.clone(), to }, note);
@@ -739,7 +747,7 @@ impl<'a> Planner<'a> {
         if matches!(src, Source::Item { .. }) {
             return Ok(format!("Move {} to the Trash", count_label(&paths)));
         }
-        Ok(format!("Move {} from {label} to the Trash", count_label(&paths)))
+        Ok(format!("Move {} from {label}, including subfolders to the Trash", count_label(&paths)))
     }
 
     // ---- Read-only ---------------------------------------------------------
@@ -753,7 +761,7 @@ impl<'a> Planner<'a> {
     }
 
     fn list(&self, src: &Source) -> Result<Planned, Stop> {
-        let (mut paths, label) = self.expand(src, true)?;
+        let (mut paths, label) = self.expand(src)?;
         let by_size = matches!(src, Source::Set { filter, .. } if filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some());
         if by_size {
             paths.sort_by_key(|p| std::cmp::Reverse(fs::metadata(p).map_or(0, |m| m.len())));
@@ -771,7 +779,7 @@ impl<'a> Planner<'a> {
     }
 
     fn count(&self, src: &Source) -> Result<Planned, Stop> {
-        let (paths, label) = self.expand(src, true)?;
+        let (paths, label) = self.expand(src)?;
         let what = match src {
             Source::Set { filter, .. } => type_label(filter),
             _ => "files",
@@ -810,7 +818,7 @@ impl<'a> Planner<'a> {
     fn duplicates(&self, folder: &str) -> Result<Planned, Stop> {
         let dir = self.resolve_folder(folder, None)?;
         let mut groups: BTreeMap<(String, u64), Vec<PathBuf>> = BTreeMap::new();
-        walk(&dir, 12, &mut |p, is_dir| {
+        walk(&dir, SEARCH_DEPTH, &mut |p, is_dir| {
             if !is_dir {
                 if let Ok(m) = fs::metadata(p) {
                     groups.entry((base_name(&file_name(p)), m.len())).or_default().push(p.to_path_buf());
@@ -1225,6 +1233,97 @@ mod tests {
     }
 
     #[test]
+    fn file_group_commands_include_deeply_nested_files() {
+        let h = home();
+        let dl = h.roots.downloads();
+        let nested = dl.join("one/two/three/four");
+        fs::create_dir_all(&nested).unwrap();
+        for name in ["Draft Report.pdf", "scan.pdf", "Photo.heic", "setup.dmg"] {
+            fs::write(nested.join(name), b"fixture").unwrap();
+        }
+        for command in [
+            "move PDFs from Downloads to Archive",
+            "copy PDFs from Downloads to Archive",
+            "add prefix Invoice- to PDFs in Downloads",
+            "add date prefix to PDFs in Downloads",
+            "replace spaces with dashes in files in Downloads",
+            "lowercase file names in Downloads",
+            "number images in Downloads as trip-001, trip-002",
+            "convert all HEIC in Downloads to jpg",
+            "resize all images in Downloads to 1600 pixels wide",
+            "merge all PDFs in Downloads into combined.pdf",
+            "make a PDF from images in Downloads",
+            "delete installers from Downloads",
+            "sort Downloads by type",
+            "sort Downloads by month",
+        ] {
+            assert!(!steps(&h, command).is_empty(), "{command}");
+        }
+        for command in ["list PDFs in Downloads", "count PDFs in Downloads"] {
+            let Ok(Planned::Info { total, .. }) = plan(&h, command) else { panic!("{command}") };
+            assert_eq!(total, 2, "{command}");
+        }
+        assert!(nested.join("Draft Report.pdf").exists(), "planning doesn't execute changes");
+    }
+
+    #[test]
+    fn nested_transfers_keep_the_destination_under_the_named_source() {
+        for verb in ["move", "copy"] {
+            let h = home();
+            let dl = h.roots.downloads();
+            fs::create_dir_all(dl.join("nested/deep")).unwrap();
+            fs::create_dir_all(dl.join("Archive/old")).unwrap();
+            fs::write(dl.join("nested/deep/report.pdf"), b"a").unwrap();
+            fs::write(dl.join("Archive/report.pdf"), b"b").unwrap();
+            fs::write(dl.join("Archive/old/existing.pdf"), b"c").unwrap();
+            let actions = steps(&h, &format!("{verb} PDFs from Downloads to Archive"));
+            let from = dl.join("nested/deep/report.pdf");
+            let to = dl.join("Archive/report 2.pdf");
+            let expected = if verb == "move" { Action::Move { from, to } } else { Action::Copy { from, to } };
+            assert_eq!(actions, vec![expected]);
+
+            let actions = steps(&h, &format!("{verb} PDFs from Downloads to NewArchive"));
+            assert_eq!(actions[0], Action::CreateFolder { path: dl.join("NewArchive") });
+        }
+    }
+
+    #[test]
+    fn sorting_subfolders_leaves_correctly_grouped_files_alone() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::create_dir_all(dl.join("nested")).unwrap();
+        fs::create_dir_all(dl.join("PDFs")).unwrap();
+        fs::write(dl.join("nested/report.pdf"), b"a").unwrap();
+        fs::write(dl.join("PDFs/report.pdf"), b"b").unwrap();
+        let actions = steps(&h, "sort Downloads by type");
+        assert_eq!(actions, vec![Action::Move {
+            from: dl.join("nested/report.pdf"), to: dl.join("PDFs/report 2.pdf")
+        }]);
+        let month = created(&dl.join("nested/report.pdf")).unwrap().format("%Y-%m").to_string();
+        fs::create_dir(dl.join(&month)).unwrap();
+        fs::rename(dl.join("nested/report.pdf"), dl.join(&month).join("report.pdf")).unwrap();
+        fs::remove_file(dl.join("PDFs/report.pdf")).unwrap();
+        assert!(matches!(plan(&h, "sort Downloads by month"), Err(Stop::Problem(message)) if message.starts_with("Nothing to change.")));
+    }
+
+    #[test]
+    fn single_item_and_folder_commands_find_deeply_nested_names() {
+        let h = home();
+        let nested = h.roots.downloads().join("one/two/three/Project");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(nested.join("report.pdf"), b"a").unwrap();
+        fs::write(nested.join("archive.zip"), b"a").unwrap();
+        assert_eq!(steps(&h, "rename report.pdf to final.pdf"), vec![Action::Rename {
+            path: nested.join("report.pdf"), new_name: "final.pdf".into()
+        }]);
+        assert_eq!(steps(&h, "create folder Output in Project"), vec![Action::CreateFolder { path: nested.join("Output") }]);
+        assert!(matches!(steps(&h, "zip Project into Project.zip").last(), Some(Action::Zip { path, .. }) if path == &nested));
+        assert!(matches!(steps(&h, "unzip archive.zip").last(), Some(Action::Unzip { path, .. }) if path == &nested.join("archive.zip")));
+        fs::write(h.roots.downloads().join("report.pdf"), b"b").unwrap();
+        assert!(matches!(plan(&h, "delete report.pdf from Downloads"), Err(Stop::Ambiguous { candidates, .. }) if candidates.len() == 2));
+    }
+
+    #[test]
     fn delete_named_files_matches_the_group_in_downloads() {
         let h = home();
         let dl = h.roots.downloads();
@@ -1241,6 +1340,41 @@ mod tests {
         assert_eq!(actions, names.map(|name| Action::Trash { path: dl.join(name) }));
         // Planning must leave the files on disk, pending the user's Apply.
         assert!(names.iter().all(|name| dl.join(name).exists()));
+    }
+
+    #[test]
+    fn delete_named_files_includes_matching_files_in_subfolders() {
+        let h = home();
+        let dl = h.roots.downloads();
+        let names = ["AEROGUARD_Report.pdf", "project/AEROGUARD_Case.stl", "project/models/AEROGUARD_Clip.step"];
+        for name in names {
+            let path = dl.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"a").unwrap();
+        }
+        for dir in [".hidden", "_to_delete", "Example.app"] {
+            fs::create_dir(dl.join(dir)).unwrap();
+            fs::write(dl.join(dir).join("AEROGUARD_Ignore.pdf"), b"a").unwrap();
+        }
+        fs::write(dl.join("project/keep.pdf"), b"a").unwrap();
+        fs::write(h.roots.desktop().join("AEROGUARD_Desktop.pdf"), b"a").unwrap();
+        std::os::unix::fs::symlink(h.roots.desktop(), dl.join("linked-folder")).unwrap();
+
+        for command in [
+            "Delete all the Aeroguard files from Downloads",
+            "delete files containing Aeroguard from Downloads",
+            "delete files starting with Aeroguard from Downloads",
+        ] {
+            let Ok(Planned::Steps { actions, title, .. }) = plan(&h, command) else { panic!("expected a plan") };
+            let expected: HashSet<_> = names.iter().map(|name| dl.join(name)).collect();
+            let actual: HashSet<_> = actions.into_iter().map(|a| match a {
+                Action::Trash { path } => path,
+                _ => panic!("expected only Trash actions"),
+            }).collect();
+            assert_eq!(actual, expected, "{command}");
+            assert!(title.contains("including subfolders"));
+            assert!(names.iter().all(|name| dl.join(name).exists()));
+        }
     }
 
     #[test]

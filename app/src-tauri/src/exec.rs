@@ -252,11 +252,14 @@ mod tests {
         let h = &roots.home;
         fs::write(h.join("Downloads/a.pdf"), b"a").unwrap();
         fs::write(h.join("Downloads/b.pdf"), b"b").unwrap();
+        fs::create_dir_all(h.join("Downloads/nested/deep")).unwrap();
+        fs::write(h.join("Downloads/nested/deep/a.pdf"), b"nested").unwrap();
         let mut history = History::load(h.join("history.json"));
 
         let out = plan_and_run(&roots, &history, "move PDFs from Downloads to Archive");
         assert!(out.error.is_none());
         assert!(h.join("Downloads/Archive/a.pdf").exists());
+        assert_eq!(fs::read(h.join("Downloads/Archive/a 2.pdf")).unwrap(), b"nested");
         history.push(crate::history::Entry {
             id: 1,
             time: chrono::Local::now(),
@@ -271,6 +274,7 @@ mod tests {
         assert!(undo.error.is_none(), "{:?}", undo.error);
         assert!(h.join("Downloads/a.pdf").exists());
         assert!(h.join("Downloads/b.pdf").exists());
+        assert_eq!(fs::read(h.join("Downloads/nested/deep/a.pdf")).unwrap(), b"nested");
         assert!(!h.join("Downloads/Archive").exists(), "the folder Voxi created is removed once empty");
     }
 

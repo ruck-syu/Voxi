@@ -39,6 +39,12 @@ There are 27 kinds of commands, with filters for type, date (including months,
 like "in August"), size, and name.
 The full list is on the [Commands page](website/commands.html).
 
+File commands search the folder you name and its subfolders, up to 12 levels
+deep. This applies to groups of files and to individual file or folder names;
+multiple matching names prompt you to choose. Hidden folders, app bundles,
+symlinked folders, and `_to_delete` are skipped. Moves and copies collect matching
+files into the destination; renames and image edits keep files in their folders.
+
 ## Safe by design
 
 - **Nothing changes until you press Enter.** Every command is previewed first.

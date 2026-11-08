@@ -1225,6 +1225,25 @@ mod tests {
     }
 
     #[test]
+    fn delete_named_files_matches_the_group_in_downloads() {
+        let h = home();
+        let dl = h.roots.downloads();
+        let names = ["AEROGUARD_Design_Report.pdf", "AEROGUARD_Smiley_Case_Final.step", "AEROGUARD_Smiley_Case_Final.stl"];
+        for name in names {
+            fs::write(dl.join(name), b"a").unwrap();
+        }
+        fs::write(dl.join("keep.pdf"), b"a").unwrap();
+        fs::write(h.roots.desktop().join(names[0]), b"a").unwrap();
+        fs::create_dir(dl.join("AEROGUARD_Clip_Case")).unwrap();
+        fs::write(dl.join("AEROGUARD_Clip_Case/nested.stl"), b"a").unwrap();
+
+        let actions = steps(&h, "delete all Aeroguard files from Downloads");
+        assert_eq!(actions, names.map(|name| Action::Trash { path: dl.join(name) }));
+        // Planning must leave the files on disk, pending the user's Apply.
+        assert!(names.iter().all(|name| dl.join(name).exists()));
+    }
+
+    #[test]
     fn singular_folder_name_resolves() {
         let h = home();
         fs::write(h.roots.home.join("Downloads/Claude.dmg"), b"a").unwrap();

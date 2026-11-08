@@ -6,6 +6,7 @@ mod parse;
 mod pdf;
 mod plan;
 mod settings;
+mod search;
 mod trash;
 
 use fsx::{Roots, file_name};
@@ -41,6 +42,7 @@ struct AppState {
     settings: Mutex<Settings>,
     settings_path: PathBuf,
     next_plan: AtomicU64,
+    active_search: Mutex<Option<(u64, search::Control)>>,
 }
 
 fn home() -> PathBuf {
@@ -161,7 +163,14 @@ fn preview(actions: &[Action], notes: &[Option<String>], roots: &Roots) -> Vec<P
 // ---- Commands ----------------------------------------------------------------
 
 #[tauri::command(async)]
-fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, String>) -> Outcome {
+fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, String>, request_id: u64) -> Outcome {
+    let control = search::Control::default();
+    {
+        let mut active = state.active_search.lock().unwrap();
+        if let Some((_, previous)) = active.take() { previous.cancel(); }
+        state.pending.lock().unwrap().take();
+        *active = Some((request_id, control.clone()));
+    }
     // A saved shortcut ("run my usuals") wins over the built-in commands.
     enum Work {
         Shortcut(String, Vec<(String, model::Intent)>),
@@ -193,12 +202,17 @@ fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, S
     let choices: HashMap<String, PathBuf> = choices.into_iter().map(|(k, v)| (k, PathBuf::from(v))).collect();
     let planned = {
         let history = state.history.lock().unwrap();
-        let planner = Planner::new(&roots, &choices);
+        let planner = Planner::new(&roots, &choices).with_control(control.clone());
         match &work {
             Work::Shortcut(phrase, commands) => planner.plan_shortcut(phrase, commands, &history),
             Work::Command(intent) => planner.plan(intent, &history),
         }
     };
+    // Serialize publication with cancellation so a late response cannot create a live preview.
+    let active = state.active_search.lock().unwrap();
+    if control.is_cancelled() || !active.as_ref().is_some_and(|(id, _)| *id == request_id) {
+        return Outcome::Problem { message: "Search cancelled.".into() };
+    }
     match planned {
         Err(Stop::Problem(message)) => Outcome::Problem { message },
         Err(Stop::Ambiguous { name, candidates }) => Outcome::Ambiguous {
@@ -256,7 +270,15 @@ fn confirm_plan(state: State<AppState>, id: u64) -> Result<RunResult, String> {
 
 #[tauri::command]
 fn cancel_plan(state: State<AppState>) {
+    if let Some((_, control)) = state.active_search.lock().unwrap().take() { control.cancel(); }
     state.pending.lock().unwrap().take();
+}
+
+#[tauri::command]
+fn search_progress(state: State<AppState>, request_id: u64) -> usize {
+    state.active_search.lock().unwrap().as_ref()
+        .filter(|(id, _)| *id == request_id)
+        .map_or(0, |(_, control)| control.visited.load(Ordering::Relaxed))
 }
 
 /// The window is frosted glass: macOS's Popover vibrancy material on the
@@ -406,6 +428,7 @@ pub fn run() {
                 settings: Mutex::new(settings.clone()),
                 settings_path,
                 next_plan: AtomicU64::new(1),
+                active_search: Mutex::new(None),
             };
             app.manage(state);
 
@@ -462,6 +485,7 @@ pub fn run() {
             plan_command,
             confirm_plan,
             cancel_plan,
+            search_progress,
             hide_window,
             fit_window,
             get_settings,

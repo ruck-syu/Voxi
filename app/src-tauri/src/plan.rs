@@ -8,11 +8,10 @@ use crate::model::{
     Action, ARCHIVE_EXTS, AUDIO_EXTS, DayRef, DOC_EXTS, FileType, Filter, IMAGE_EXTS, ImageFormat, INSTALLER_EXTS, InfoRow,
     Intent, Source, VIDEO_EXTS,
 };
-use crate::pdf;
+use crate::{pdf, search};
 use chrono::{DateTime, Datelike, Local, NaiveDate};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -53,10 +52,9 @@ pub struct Planner<'a> {
     warnings: Vec<String>,
     planned_dirs: HashSet<PathBuf>,
     now: DateTime<Local>,
+    search: search::Search,
 }
 
-const MAX_WALK: usize = 50_000;
-const SEARCH_DEPTH: usize = 12;
 /// How many Spotlight answers to look at, and how long to wait for them.
 const MAX_INDEXED: usize = 5_000;
 const SPOTLIGHT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -72,11 +70,25 @@ impl<'a> Planner<'a> {
             warnings: Vec::new(),
             planned_dirs: HashSet::new(),
             now: Local::now(),
+            search: search::Search::default(),
         }
     }
 
+    pub fn with_control(mut self, control: search::Control) -> Self {
+        self.search = search::Search::new(control);
+        self
+    }
+
     pub fn plan(mut self, intent: &Intent, history: &History) -> Result<Planned, Stop> {
-        let title = match self.step(intent, history)? {
+        let result = self.step(intent, history);
+        if let Some(message) = self.search.status() {
+            if self.search.control.is_cancelled() { return problem(message); }
+            if let Ok(Step::Finished(Planned::Info { title, summary, rows, total })) = result {
+                return Ok(Planned::Info { title, summary: format!("{message} Partial results. {summary}"), rows, total });
+            }
+            return problem(message);
+        }
+        let title = match result? {
             Step::Changes(title) => title,
             Step::Finished(done) => return Ok(done),
         };
@@ -98,7 +110,9 @@ impl<'a> Planner<'a> {
         for (text, intent) in commands {
             let (actions, notes, warnings, dirs) =
                 (self.actions.len(), self.notes.len(), self.warnings.len(), self.planned_dirs.clone());
-            match self.step(intent, history) {
+            let result = self.step(intent, history);
+            if let Some(message) = self.search.status() { return problem(message); }
+            match result {
                 Ok(Step::Changes(_)) if self.actions.len() == actions => {
                     let why = self.warnings.drain(warnings..).next().unwrap_or_else(|| "nothing to change".into());
                     notes_by_command.push(format!("“{text}”: {why}"));
@@ -118,6 +132,7 @@ impl<'a> Planner<'a> {
                 Err(ambiguous) => return Err(ambiguous),
             }
         }
+        if let Some(message) = self.search.status() { return problem(message); }
         if self.actions.is_empty() {
             return problem(format!("Nothing to change for “{name}”. {}", notes_by_command.join(" ")));
         }
@@ -295,14 +310,15 @@ impl<'a> Planner<'a> {
             None => self.roots.search_roots(),
         };
         let mut found = self.find_entries(name, false, &dirs);
+        if let Some(message) = self.search.status() { return problem(message); }
         if found.is_empty() {
             found = self.find_similar(name, &dirs);
         }
         if found.is_empty() {
-            found = closest(name, self.usable_hits(spotlight(name, &dirs), &dirs));
+            found = closest(name, self.usable_hits(spotlight_checked(name, &dirs, Some(&self.search)), &dirs));
         }
         match found.len() {
-            1 => Ok(found.into_iter().next().unwrap()),
+            1 if strong_name_match(name, &found[0]) => Ok(found.remove(0)),
             0 => {
                 let wher = match folder {
                     Some(f) => f.to_string(),
@@ -328,11 +344,12 @@ impl<'a> Planner<'a> {
         let mut out = Vec::new();
         let mut seen = HashSet::new();
         for d in dirs {
-            walk(d, SEARCH_DEPTH, &mut |p, is_dir| {
-                if file_name(p).to_lowercase() == want && (is_dir || !dirs_only) && seen.insert(fsx::canonical(p)) {
-                    out.push(p.to_path_buf());
+            for e in self.search.entries(d).iter() {
+                let p = &e.path;
+                if file_name(p).to_lowercase() == want && (e.is_dir || !dirs_only) && seen.insert(fsx::canonical(p)) {
+                    out.push(p.clone());
                 }
-            });
+            }
         }
         out
     }
@@ -341,7 +358,7 @@ impl<'a> Planner<'a> {
     fn find_similar(&self, name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
         let mut entries = Vec::new();
         for d in dirs {
-            walk(d, SEARCH_DEPTH, &mut |p, _| entries.push(p.to_path_buf()));
+            entries.extend(self.search.entries(d).iter().map(|e| e.path.clone()));
         }
         closest(name, entries)
     }
@@ -381,14 +398,19 @@ impl<'a> Planner<'a> {
             Source::Set { folder, filter } => {
                 let (dirs, label) = self.set_folders(folder.as_deref(), filter)?;
                 let today = self.now.date_naive();
+                let contains = filter.name_contains.as_deref().map(normalized_name);
+                let starts = filter.name_starts_with.as_deref().map(normalized_name);
                 let mut out = Vec::new();
                 let mut seen = HashSet::new();
                 for d in &dirs {
-                    walk(d, SEARCH_DEPTH, &mut |p, is_dir| {
-                        if !is_dir && seen.insert(p.to_path_buf()) && matches(p, filter, today) {
-                            out.push(p.to_path_buf());
+                    for e in self.search.entries(d).iter() {
+                        let p = &e.path;
+                        if !e.is_dir && seen.insert(p.clone()) {
+                            if (filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some() || has_date_filter(filter)) && fs::metadata(p).is_err() {
+                                self.search.issue(format!("couldn't inspect {}", p.display()));
+                            } else if matches_prepared(p, filter, today, contains.as_deref(), starts.as_deref()) { out.push(p.clone()); }
                         }
-                    });
+                    }
                 }
                 out.sort_by_key(|p| file_name(p).to_lowercase());
                 Ok((out, label))
@@ -753,7 +775,7 @@ impl<'a> Planner<'a> {
     // ---- Read-only ---------------------------------------------------------
 
     fn file_row(&self, p: &Path) -> InfoRow {
-        let meta = fs::metadata(p).ok();
+        let meta = fs::metadata(p).map_err(|e| self.search.issue(format!("couldn't inspect {} ({e})", p.display()))).ok();
         let size = if p.is_dir() { fsx::tree_size(p).0 } else { meta.as_ref().map_or(0, |m| m.len()) };
         let date = created(p).map(|d| d.format("%b %-d, %Y").to_string()).unwrap_or_default();
         let dir = p.parent().map(|d| self.roots.display(d)).unwrap_or_default();
@@ -797,10 +819,28 @@ impl<'a> Planner<'a> {
             Some(p) => p.clone(),
             None => self.resolve_any(folder)?,
         };
-        let (bytes, files) = fsx::tree_size(&p);
-        let mut children: Vec<(u64, PathBuf)> = fs::read_dir(&p)
-            .map(|rd| rd.flatten().map(|e| e.path()).filter(|c| !fsx::is_hidden_or_internal(c)).map(|c| (fsx::tree_size(&c).0, c)).collect())
-            .unwrap_or_default();
+        let mut bytes = 0;
+        let mut files = 0;
+        let mut sizes: HashMap<PathBuf, u64> = HashMap::new();
+        if p.is_dir() {
+            for entry in self.search.entries(&p).iter() {
+                let relative = entry.path.strip_prefix(&p).unwrap();
+                let child = p.join(relative.components().next().unwrap().as_os_str());
+                sizes.entry(child.clone()).or_default();
+                if !entry.is_dir {
+                    match fs::symlink_metadata(&entry.path) {
+                        Ok(meta) => { bytes += meta.len(); files += 1; *sizes.entry(child).or_default() += meta.len(); }
+                        Err(e) => self.search.issue(format!("couldn't inspect {} ({e})", entry.path.display())),
+                    }
+                }
+            }
+        } else {
+            match fs::symlink_metadata(&p) {
+                Ok(meta) => { bytes = meta.len(); files = 1; }
+                Err(e) => self.search.issue(format!("couldn't inspect {} ({e})", p.display())),
+            }
+        }
+        let mut children: Vec<(u64, PathBuf)> = sizes.into_iter().map(|(p, size)| (size, p)).collect();
         children.sort_by_key(|(b, _)| std::cmp::Reverse(*b));
         let rows = children
             .iter()
@@ -818,13 +858,15 @@ impl<'a> Planner<'a> {
     fn duplicates(&self, folder: &str) -> Result<Planned, Stop> {
         let dir = self.resolve_folder(folder, None)?;
         let mut groups: BTreeMap<(String, u64), Vec<PathBuf>> = BTreeMap::new();
-        walk(&dir, SEARCH_DEPTH, &mut |p, is_dir| {
-            if !is_dir {
-                if let Ok(m) = fs::metadata(p) {
-                    groups.entry((base_name(&file_name(p)), m.len())).or_default().push(p.to_path_buf());
+        for entry in self.search.entries(&dir).iter() {
+            let p = &entry.path;
+            if !entry.is_dir {
+                match fs::metadata(p) {
+                    Ok(m) => groups.entry((base_name(&file_name(p)), m.len())).or_default().push(p.to_path_buf()),
+                    Err(e) => self.search.issue(format!("couldn't inspect {} ({e})", p.display())),
                 }
             }
-        });
+        }
         let mut dupes: Vec<_> = groups.into_iter().filter(|(_, v)| v.len() > 1).collect();
         dupes.sort_by_key(|((_, size), v)| std::cmp::Reverse(size * (v.len() as u64 - 1)));
         let wasted: u64 = dupes.iter().map(|((_, s), v)| s * (v.len() as u64 - 1)).sum();
@@ -927,6 +969,12 @@ pub fn created(p: &Path) -> Option<DateTime<Local>> {
 }
 
 pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
+    let contains = f.name_contains.as_deref().map(normalized_name);
+    let starts = f.name_starts_with.as_deref().map(normalized_name);
+    matches_prepared(p, f, today, contains.as_deref(), starts.as_deref())
+}
+
+fn matches_prepared(p: &Path, f: &Filter, today: NaiveDate, contains: Option<&str>, starts: Option<&str>) -> bool {
     let e = ext_of(p);
     let type_ok = match f.file_type {
         None => true,
@@ -939,11 +987,9 @@ pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
     if f.ext.as_ref().is_some_and(|exts| !exts.contains(&e)) {
         return false;
     }
-    if f.name_contains.as_ref().is_some_and(|n| !file_name(p).to_lowercase().contains(&n.to_lowercase())) {
-        return false;
-    }
-    if f.name_starts_with.as_ref().is_some_and(|n| !file_name(p).to_lowercase().starts_with(&n.to_lowercase())) {
-        return false;
+    if contains.is_some() || starts.is_some() {
+        let name = normalized_name(&file_name(p));
+        if contains.is_some_and(|needle| !name.contains(needle)) || starts.is_some_and(|needle| !name.starts_with(needle)) { return false; }
     }
     if f.larger_than_mb.is_some() || f.smaller_than_mb.is_some() {
         let mb = fs::metadata(p).map_or(0.0, |m| m.len() as f64 / (1024.0 * 1024.0));
@@ -1070,33 +1116,94 @@ fn closest(name: &str, entries: Vec<PathBuf>) -> Vec<PathBuf> {
         return Vec::new();
     }
     // The words of the name, skipping one-letter words, as they must appear in a file's name.
-    let words: Vec<String> = name.split_whitespace().map(loose).filter(|w| w.len() >= 2).collect();
+    let words: Vec<String> = name.split(|c: char| !c.is_alphanumeric()).map(loose).filter(|w| w.len() >= 2).collect();
     let mut scored: Vec<(u8, Option<DateTime<Local>>, PathBuf)> = Vec::new();
     let mut seen = HashSet::new();
-    for p in entries {
-        let file = file_name(&p);
+    for p in &entries {
+        let file = file_name(p);
         let stem = split_name(&file).0;
         let letters = loose(&file);
         let all_words = words.len() > 1 && words.iter().all(|w| letters.contains(w.as_str()));
         let score = if letters == want || loose(stem) == want {
-            2
+            3
         } else if letters.contains(&want) || all_words {
-            1
+            2
         } else {
             continue;
         };
         if seen.insert(fsx::canonical(&p)) {
-            scored.push((score, created(&p), p));
+            scored.push((score, created(p), p.clone()));
+        }
+    }
+    if scored.is_empty() && (5..=128).contains(&want.len()) {
+        let query_ext = split_name(name).1;
+        for p in entries {
+            let file = file_name(&p);
+            let (stem, ext) = split_name(&file);
+            if query_ext.is_some_and(|q| !ext.is_some_and(|e| q.eq_ignore_ascii_case(e))) { continue; }
+            let candidate = loose(if query_ext.is_some() { &file } else { stem });
+            if near_typo(&want, &candidate) && seen.insert(fsx::canonical(&p)) {
+                scored.push((1, created(&p), p));
+            }
         }
     }
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
     scored.into_iter().take(MAX_CANDIDATES).map(|(_, _, p)| p).collect()
 }
 
+/// Spaces, underscores and hyphens are equivalent in filename filters.
+fn normalized_name(name: &str) -> String {
+    let mut result = String::with_capacity(name.len());
+    let mut space = false;
+    for ch in name.chars() {
+        if ch.is_whitespace() || matches!(ch, '_' | '-') { space = !result.is_empty(); }
+        else {
+            if space { result.push(' '); space = false; }
+            result.extend(ch.to_lowercase());
+        }
+    }
+    result
+}
+
+fn strong_name_match(name: &str, path: &Path) -> bool {
+    let file = file_name(path);
+    file.eq_ignore_ascii_case(name) || loose(&file) == loose(name) || loose(split_name(&file).0) == loose(name)
+}
+
+/// Bounded Damerau-Levenshtein: one edit, or two for names of 12+ characters.
+/// Adjacent transpositions count as one edit. Only used for suggestions.
+fn near_typo(a: &str, b: &str) -> bool {
+    let length = a.chars().count();
+    let limit = if length >= 12 { 2 } else { 1 };
+    if length.abs_diff(b.chars().count()) > limit || b.len() > 520 { return false; }
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    let mut older = previous.clone();
+    for i in 1..=a.len() {
+        let mut row = vec![limit + 1; b.len() + 1];
+        row[0] = i;
+        for j in i.saturating_sub(limit).max(1)..=b.len().min(i + limit) {
+            row[j] = (previous[j] + 1).min(row[j-1] + 1).min(previous[j-1] + usize::from(a[i-1] != b[j-1]));
+            if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+                row[j] = row[j].min(older[j-2] + 1);
+            }
+        }
+        if row.iter().copied().min().unwrap_or(limit + 1) > limit { return false; }
+        older = previous;
+        previous = row;
+    }
+    previous[b.len()] <= limit
+}
+
 /// Asks Spotlight for entries below `dirs` with every word of `name` in their
 /// file name, which finds what the walks are too shallow to reach. Answers
 /// nothing if Spotlight is off or slow: searching just stops at the walks.
 fn spotlight(name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
+    spotlight_checked(name, dirs, None)
+}
+
+fn spotlight_checked(name: &str, dirs: &[PathBuf], search: Option<&search::Search>) -> Vec<PathBuf> {
     // Letters and digits only, so a name can't break out of the quoted query.
     let terms: Vec<String> = name
         .split(|c: char| !c.is_alphanumeric())
@@ -1110,22 +1217,67 @@ fn spotlight(name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
     for d in dirs {
         cmd.arg("-onlyin").arg(d);
     }
-    let Ok(mut child) = cmd.arg(terms.join(" && ")).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
+    let Ok(child) = cmd.arg(terms.join(" && ")).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
+        if let Some(search) = search { search.issue("Spotlight could not start".into()); }
         return Vec::new();
     };
-    let Some(mut out) = child.stdout.take() else {
+    collect_spotlight(child, search, SPOTLIGHT_TIMEOUT)
+}
+
+fn collect_spotlight(mut child: std::process::Child, search: Option<&search::Search>, timeout: Duration) -> Vec<PathBuf> {
+    let Some(out) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        if let Some(s) = search { s.issue("Spotlight output unavailable".into()); }
         return Vec::new();
     };
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let mut text = String::new();
-        let _ = out.read_to_string(&mut text);
-        let _ = tx.send(text);
+        use std::io::{BufRead, BufReader};
+        let lines = BufReader::new(out).lines().take(MAX_INDEXED + 1).collect::<Result<Vec<_>, _>>();
+        let _ = tx.send(lines);
     });
-    let text = rx.recv_timeout(SPOTLIGHT_TIMEOUT).unwrap_or_default();
+    let started = std::time::Instant::now();
+    let mut received = false;
+    let lines = loop {
+        if search.is_some_and(|s| s.stopped()) { break Vec::new(); }
+        if started.elapsed() >= timeout {
+            if let Some(s) = search { s.issue("Spotlight timed out".into()); }
+            break Vec::new();
+        }
+        match rx.recv_timeout(Duration::from_millis(25)) {
+            Ok(Ok(lines)) => { received = true; break lines; },
+            Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                if let Some(s) = search { s.issue("Spotlight results could not be read".into()); }
+                break Vec::new();
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+    };
+    if received && lines.len() <= MAX_INDEXED {
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() { if let Some(s) = search { s.issue("Spotlight exited unsuccessfully".into()); } }
+                    break;
+                }
+                Err(_) => { if let Some(s) = search { s.issue("Spotlight status unavailable".into()); } break; }
+                Ok(None) => {}
+            }
+            if search.is_some_and(|s| s.stopped()) { break; }
+            if started.elapsed() >= timeout {
+                if let Some(s) = search { s.issue("Spotlight timed out".into()); }
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
     let _ = child.kill();
     let _ = child.wait();
-    text.lines().take(MAX_INDEXED).map(PathBuf::from).collect()
+    if lines.len() > MAX_INDEXED {
+        if let Some(s) = search { s.issue("Spotlight result limit reached".into()); }
+    }
+    lines.into_iter().take(MAX_INDEXED).map(PathBuf::from).collect()
 }
 
 /// True when a path below a searched folder is one the walks could have
@@ -1143,30 +1295,9 @@ fn is_bundle(p: &Path) -> bool {
 /// Visits entries below `dir` up to `depth` extra levels, skipping hidden
 /// files, `_to_delete/`, app bundles, and symlinked folders.
 pub fn walk(dir: &Path, depth: usize, f: &mut dyn FnMut(&Path, bool)) {
-    let mut budget = MAX_WALK;
-    walk_inner(dir, depth, f, &mut budget);
-}
-
-fn walk_inner(dir: &Path, depth: usize, f: &mut dyn FnMut(&Path, bool), budget: &mut usize) {
-    let Ok(rd) = fs::read_dir(dir) else { return };
-    let mut entries: Vec<_> = rd.flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
-    for e in entries {
-        if *budget == 0 {
-            return;
-        }
-        *budget -= 1;
-        let p = e.path();
-        if fsx::is_hidden_or_internal(&p) {
-            continue;
-        }
-        let Ok(ft) = e.file_type() else { continue };
-        let is_dir = ft.is_dir();
-        f(&p, is_dir);
-        if is_dir && depth > 0 && !is_bundle(&p) {
-            walk_inner(&p, depth - 1, f, budget);
-        }
-    }
+    let mut search = search::Search::default();
+    search.depth = depth;
+    for e in search.entries(dir).iter() { f(&e.path, e.is_dir); }
 }
 
 fn plural<'s>(n: usize, one: &'s str, many: &'s str) -> &'s str {
@@ -1230,6 +1361,93 @@ mod tests {
             a,
             vec![Action::Move { from: h.roots.home.join("Downloads/report.pdf"), to: h.roots.home.join("Documents/report 2.pdf") }]
         );
+    }
+
+    #[test]
+    fn index_timeout_failure_and_cancellation_are_reported() {
+        let search = search::Search::default();
+        let child = Command::new("/bin/sleep").arg("5").stdout(Stdio::piped()).spawn().unwrap();
+        assert!(collect_spotlight(child, Some(&search), Duration::from_millis(5)).is_empty());
+        assert!(search.status().unwrap().contains("Spotlight timed out"));
+        let search = search::Search::default();
+        search.control.cancel();
+        let child = Command::new("/bin/sleep").arg("5").stdout(Stdio::piped()).spawn().unwrap();
+        assert!(collect_spotlight(child, Some(&search), Duration::from_secs(2)).is_empty());
+        assert_eq!(search.status().as_deref(), Some("Search cancelled."));
+        let search = search::Search::default();
+        let mut child = Command::new("/usr/bin/false").stdout(Stdio::piped()).spawn().unwrap();
+        child.wait().unwrap();
+        assert!(collect_spotlight(child, Some(&search), Duration::from_secs(2)).is_empty());
+        assert!(search.status().unwrap().contains("exited unsuccessfully"));
+    }
+
+    #[test]
+    fn incomplete_search_blocks_changes_and_marks_read_only_results() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("AEROGUARD_1.pdf"), b"a").unwrap();
+        fs::write(dl.join("AEROGUARD_2.pdf"), b"b").unwrap();
+        let choices = HashMap::new();
+        let history = History::load(h.roots.home.join("history.json"));
+        for command in ["delete Aeroguard files from Downloads", "rename AEROGUARD_1.pdf to final.pdf"] {
+            let mut planner = Planner::new(&h.roots, &choices);
+            planner.search.limit = 1;
+            assert!(matches!(planner.plan(&parse(command).unwrap(), &history),
+                Err(Stop::Problem(message)) if message.contains("Search incomplete") && message.contains("entry limit")));
+        }
+        for command in ["list PDFs in Downloads", "count PDFs in Downloads", "show size of Downloads"] {
+            let mut planner = Planner::new(&h.roots, &choices);
+            planner.search.limit = 1;
+            assert!(matches!(planner.plan(&parse(command).unwrap(), &history),
+                Ok(Planned::Info { summary, .. }) if summary.contains("Search incomplete") && summary.contains("Partial results")));
+        }
+        let mut planner = Planner::new(&h.roots, &choices);
+        planner.search.limit = 1;
+        let commands = vec![("delete Aeroguard files from Downloads".into(), parse("delete Aeroguard files from Downloads").unwrap())];
+        assert!(matches!(planner.plan_shortcut("tidy", &commands, &history),
+            Err(Stop::Problem(message)) if message.contains("Search incomplete")));
+        assert!(dl.join("AEROGUARD_1.pdf").exists());
+    }
+
+    #[test]
+    fn exact_and_similar_matching_share_one_scan() {
+        let h = home();
+        fs::write(h.roots.downloads().join("Aeroguard Case.pdf"), b"a").unwrap();
+        let choices = HashMap::new();
+        let planner = Planner::new(&h.roots, &choices);
+        let dirs = vec![h.roots.downloads()];
+        assert!(planner.find_entries("aeroguard case pdf", false, &dirs).is_empty());
+        let visits = planner.search.control.visited.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(planner.find_similar("aeroguard case pdf", &dirs).len(), 1);
+        assert_eq!(planner.search.control.visited.load(std::sync::atomic::Ordering::Relaxed), visits);
+    }
+
+    #[test]
+    fn typo_suggestions_require_selection_even_for_one_candidate() {
+        let h = home();
+        let path = h.roots.downloads().join("Aeroguard-Report.pdf");
+        fs::write(&path, b"a").unwrap();
+        let command = "delete aerogaurd-report.pdf from Downloads";
+        assert!(matches!(plan(&h, command), Err(Stop::Ambiguous { candidates, .. }) if candidates == vec![path.clone()]));
+        let choices = HashMap::from([("aerogaurd-report.pdf".into(), path.clone())]);
+        let history = History::load(h.roots.home.join("history.json"));
+        assert!(matches!(Planner::new(&h.roots, &choices).plan(&parse(command).unwrap(), &history),
+            Ok(Planned::Steps { actions, .. }) if actions == vec![Action::Trash { path: path.clone() }]));
+        assert!(path.exists());
+        assert!(near_typo("aeroguard", "aerogaurd"));
+        assert!(!near_typo("aeroguard", "unrelated"));
+    }
+
+    #[test]
+    fn filename_filters_treat_separators_consistently_without_typo_expansion() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("AERO_GUARD-Case.pdf"), b"a").unwrap();
+        fs::write(dl.join("AeroGaurd.pdf"), b"a").unwrap();
+        assert_eq!(steps(&h, "delete files containing aero guard from Downloads"),
+            vec![Action::Trash { path: dl.join("AERO_GUARD-Case.pdf") }]);
+        assert_eq!(steps(&h, "delete files starting with aero guard from Downloads"),
+            vec![Action::Trash { path: dl.join("AERO_GUARD-Case.pdf") }]);
     }
 
     #[test]
@@ -1598,11 +1816,10 @@ mod tests {
     #[test]
     fn a_name_matches_a_file_that_adds_a_version_number() {
         let h = home();
-        let dl = h.roots.home.join("Downloads");
+        let dl = h.roots.downloads();
         fs::write(dl.join("Anigen-Android-1.zip"), b"a").unwrap();
-        fs::write(dl.join("notes.txt"), b"a").unwrap();
-        let a = steps(&h, "delete anigen android zip from downloads");
-        assert_eq!(a, vec![Action::Trash { path: dl.join("Anigen-Android-1.zip") }]);
+        assert!(matches!(plan(&h, "delete anigen android zip from downloads"),
+            Err(Stop::Ambiguous { candidates, .. }) if candidates == vec![dl.join("Anigen-Android-1.zip")]));
     }
 
     #[test]

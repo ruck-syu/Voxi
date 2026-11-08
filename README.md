@@ -45,6 +45,18 @@ multiple matching names prompt you to choose. Hidden folders, app bundles,
 symlinked folders, and `_to_delete` are skipped. Moves and copies collect matching
 files into the destination; renames and image edits keep files in their folders.
 
+Searches reuse one folder scan per command. The window shows progress, and you
+can cancel with Esc or Cancel. If a scan reaches its depth, entry, or time limit,
+or cannot read a folder, commands that change files stop with an explanation;
+read-only results are marked as partial. Searches are limited to 50,000 entries
+per folder tree and 10 seconds; the Spotlight fallback has a separate 2-second
+limit within that search deadline.
+
+Spaces, underscores, and hyphens are equivalent in name filters. Individual
+filename searches rank exact and normalized names before word matches and typo
+suggestions. Loose or typo matches always ask you to choose, even if there is
+only one suggestion; broad file filters never automatically expand to typos.
+
 ## Safe by design
 
 - **Nothing changes until you press Enter.** Every command is previewed first.

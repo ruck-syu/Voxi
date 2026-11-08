@@ -26,7 +26,8 @@ export type Shortcut = { phrase: string; commands: string[] };
 export type Settings = { hotkey: string; extraFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[] };
 
 export const api = {
-  plan: (text: string, choices: Record<string, string>) => invoke<Outcome>("plan_command", { text, choices }),
+  plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<Outcome>("plan_command", { text, choices, requestId }),
+  searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: () => invoke<void>("hide_window"),

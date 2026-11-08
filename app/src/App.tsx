@@ -205,6 +205,24 @@ function CommandView({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ruleRef = useRef<HTMLSpanElement>(null);
   const planShownAt = useRef(0);
+  const requestId = useRef(0);
+  const [searched, setSearched] = useState(0);
+
+  useEffect(() => () => {
+    ++requestId.current;
+    api.cancel();
+  }, []);
+
+  useEffect(() => {
+    if (phase.k !== "parsing") return;
+    const request = requestId.current;
+    const timer = window.setInterval(() => {
+      api.searchProgress(request).then((count) => {
+        if (request === requestId.current) setSearched(count);
+      }).catch(() => {});
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [phase]);
 
   const focusInput = useCallback(() => {
     // Focus after the window has become key, or macOS drops it.
@@ -255,10 +273,13 @@ function CommandView({
       // command stays visible as the echo above its result.
       setSaid(command.trim().replace(/[.!?]+$/, ""));
       setText("");
+      const request = ++requestId.current;
+      setSearched(0);
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const outcome = await api.plan(command, picked);
+        const outcome = await api.plan(command, picked, request);
+        if (request !== requestId.current) return;
         setPhase({ k: "outcome", outcome });
         if (outcome.status === "plan") planShownAt.current = performance.now();
         if (outcome.status === "ambiguous") {
@@ -271,7 +292,7 @@ function CommandView({
         // the next thing dictated always lands there. Enter runs a preview.
         focusInput();
       } catch (e) {
-        setPhase({ k: "error", message: String(e) });
+        if (request === requestId.current) setPhase({ k: "error", message: String(e) });
       }
     },
     [focusInput],
@@ -305,7 +326,8 @@ function CommandView({
   }, [phase, focusInput]);
 
   const reset = useCallback(() => {
-    if (phase.k === "outcome" && phase.outcome.status === "plan") api.cancel();
+    ++requestId.current;
+    api.cancel();
     stopAsking();
     setHeard(null);
     setSaid(null);
@@ -317,7 +339,7 @@ function CommandView({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (phase.k === "outcome" || phase.k === "error" || phase.k === "done") reset();
+        if (phase.k === "parsing" || phase.k === "outcome" || phase.k === "error" || phase.k === "done") reset();
         else onClose();
       } else if (e.key === "," && e.metaKey) {
         e.preventDefault();
@@ -439,6 +461,7 @@ function CommandView({
         </p>
       )}
       <Body
+        searched={searched}
         key={phaseKey(phase)}
         phase={phase}
         asking={asking}
@@ -472,6 +495,7 @@ function Tick() {
 }
 
 function Body(props: {
+  searched: number;
   phase: Phase;
   asking: Asking | null;
   heard: string | null;
@@ -482,7 +506,13 @@ function Body(props: {
   onUndo: () => void;
 }) {
   const { phase } = props;
-  if (phase.k === "ready" || phase.k === "parsing") return null;
+  if (phase.k === "ready") return null;
+  if (phase.k === "parsing") return (
+    <section className="body" aria-live="polite">
+      <p className="quiet">Searching… {props.searched.toLocaleString()} entries checked.</p>
+      <div className="actions"><button className="secondary" onClick={props.onCancel}>Cancel</button></div>
+    </section>
+  );
 
   if (phase.k === "running") {
     return (
@@ -548,7 +578,7 @@ function Body(props: {
     case "ambiguous":
       return (
         <section className="body">
-          <p className="title">Which “{o.name}”?</p>
+          <p className="title">Choose a match for “{o.name}”</p>
           <p className="quiet">Say a number, or click one.</p>
           <ol className="ruled choices">
             {o.candidates.map((c, i) => (

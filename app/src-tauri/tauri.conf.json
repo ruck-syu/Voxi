@@ -14,6 +14,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Voxi",
         "width": 680,
         "height": 132,

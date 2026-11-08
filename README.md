@@ -12,7 +12,7 @@
 ---
 
 Press <kbd>⌃⌥Space</kbd> anywhere. A small window opens with the cursor ready.
-Type a command, or dictate it with [Wispr Flow](https://wisprflow.ai):
+Type a command or dictate with an app such as [Hex by Anomaly](https://anoma.ly/hex/) or [Wispr Flow](https://wisprflow.ai):
 
 > move all PDFs from Downloads to Documents
 
@@ -56,6 +56,24 @@ Spaces, underscores, and hyphens are equivalent in name filters. Individual
 filename searches rank exact and normalized names before word matches and typo
 suggestions. Loose or typo matches always ask you to choose, even if there is
 only one suggestion; broad file filters never automatically expand to typos.
+
+Commands need a filename or a specific group: references such as “the last file”
+or “the second file” aren't resolved from earlier results. Quote literal names
+containing command words, for example `move "Notes to Self.txt" to Documents`.
+Quoted names also preserve words such as “one”. Size filters require units;
+contradictory or repeated bounds are refused rather than silently discarded.
+Use “undo last” for the newest change; selecting an earlier move or delete by
+its operation type isn't supported.
+
+## Dictation
+
+Use an external dictation app such as [Hex by Anomaly](https://anoma.ly/hex/).
+Hex downloads a speech model once, then transcribes locally and pastes into the
+focused app. Its Mac download requires Apple silicon and macOS 15 or later.
+
+Open Voxi, focus the command bar, dictate with Hex, then press Enter to review
+the command. Other dictation apps work too. Voxi has no built-in recording or
+speech recognition and doesn't request microphone or speech permissions.
 
 ## Safe by design
 

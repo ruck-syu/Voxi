@@ -288,6 +288,7 @@ impl<'a> Planner<'a> {
 
     /// Resolves a file or folder by name, searching the allowed folders.
     fn resolve_item(&self, name: &str, folder: Option<&str>) -> Result<PathBuf, Stop> {
+        if name.trim().is_empty() { return problem("Name the file or folder to use."); }
         if fsx::has_parent_ref(Path::new(name)) {
             return problem("Paths with “..” aren't allowed.");
         }
@@ -1855,5 +1856,246 @@ mod tests {
         assert_eq!(replace_in_stem("My Draft v2.docx", "draft", "final").as_deref(), Some("My final v2.docx"));
         assert_eq!(replace_in_stem("a b c.txt", " ", "-").as_deref(), Some("a-b-c.txt"));
         assert_eq!(replace_in_stem("abc.txt", "z", "y"), None);
+    }
+
+    // ---- Haiku test set (corpus 10): planner checks on temporary folders. ----
+    // These call `plan` only. None of them run an action, and each fixture is a
+    // fresh temp home; actions are never executed. Spotlight may be queried,
+    // but only hits inside the fixture roots can be returned.
+
+    fn touch(path: &Path, bytes: usize) {
+        fs::write(path, vec![b'x'; bytes]).unwrap();
+    }
+
+    /// The paths of a plan that trashes files; any other action fails the test.
+    fn trash_paths(actions: &[Action]) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = actions
+            .iter()
+            .map(|a| match a {
+                Action::Trash { path } => path.clone(),
+                other => panic!("expected only trash actions, got {other:?}"),
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn haiku_explicit_filename_touches_only_the_named_file() {
+        let h = home();
+        let dl = h.roots.downloads();
+        for name in ["last.pdf", "last.txt", "last", "invoice.pdf"] {
+            touch(&dl.join(name), 10);
+        }
+        assert_eq!(trash_paths(&steps(&h, "delete last.pdf")), vec![dl.join("last.pdf")]);
+        assert_eq!(trash_paths(&steps(&h, "delete \"last\"")), vec![dl.join("last")]);
+    }
+
+    #[test]
+    fn haiku_type_group_stays_in_its_folder() {
+        let h = home();
+        let (dl, docs, desk) = (h.roots.downloads(), h.roots.home.join("Documents"), h.roots.desktop());
+        fs::create_dir(dl.join("sub")).unwrap();
+        touch(&dl.join("a.pdf"), 10);
+        touch(&dl.join("b.txt"), 10);
+        touch(&dl.join("sub/c.pdf"), 10);
+        touch(&docs.join("d.pdf"), 10);
+        touch(&desk.join("e.pdf"), 10);
+        let mut want = vec![dl.join("a.pdf"), dl.join("sub/c.pdf")];
+        want.sort();
+        assert_eq!(trash_paths(&steps(&h, "delete PDFs in Downloads")), want);
+    }
+
+    #[test]
+    fn haiku_group_includes_subfolders_but_skips_hidden_ones() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::create_dir_all(dl.join("Old")).unwrap();
+        fs::create_dir_all(dl.join(".hidden")).unwrap();
+        touch(&dl.join("Old/x.pdf"), 10);
+        touch(&dl.join(".hidden/y.pdf"), 10);
+        assert_eq!(trash_paths(&steps(&h, "delete PDFs in Downloads")), vec![dl.join("Old/x.pdf")]);
+    }
+
+    #[test]
+    fn haiku_name_group_does_not_reach_other_folders() {
+        let h = home();
+        let (dl, desk) = (h.roots.downloads(), h.roots.desktop());
+        touch(&dl.join("budget-2026.pdf"), 10);
+        touch(&dl.join("notes.txt"), 10);
+        touch(&desk.join("budget-old.pdf"), 10);
+        assert_eq!(
+            trash_paths(&steps(&h, "delete files named budget in Downloads")),
+            vec![dl.join("budget-2026.pdf")]
+        );
+    }
+
+    #[test]
+    fn haiku_size_filter_selects_only_matching_files() {
+        let h = home();
+        let dl = h.roots.downloads();
+        touch(&dl.join("big.zip"), 2 * 1024 * 1024);
+        touch(&dl.join("small.zip"), 10 * 1024);
+        assert_eq!(trash_paths(&steps(&h, "delete files larger than 1 MB in Downloads")), vec![dl.join("big.zip")]);
+    }
+
+    #[test]
+    fn haiku_same_name_in_two_folders_needs_a_choice() {
+        let h = home();
+        touch(&h.roots.downloads().join("report.pdf"), 10);
+        touch(&h.roots.home.join("Documents/report.pdf"), 10);
+        assert!(matches!(plan(&h, "move report.pdf to Pictures"), Err(Stop::Ambiguous { candidates, .. }) if candidates.len() == 2));
+    }
+
+    #[test]
+    fn haiku_typo_never_picks_a_file_silently() {
+        let h = home();
+        let dl = h.roots.downloads();
+        touch(&dl.join("invoice.pdf"), 10);
+        assert!(!matches!(plan(&h, "delete invoce.pdf"), Ok(Planned::Steps { .. })));
+        assert!(dl.join("invoice.pdf").exists());
+    }
+
+    #[test]
+    fn haiku_paths_outside_voxi_folders_are_refused() {
+        let h = home();
+        assert!(matches!(plan(&h, "move /etc/hosts to Documents"), Err(Stop::Problem(_))));
+        assert!(matches!(plan(&h, "move ../secret.txt to Documents"), Err(Stop::Problem(_))));
+    }
+
+    #[test]
+    fn haiku_unfiltered_clean_up_is_refused_by_the_planner() {
+        let h = home();
+        touch(&h.roots.downloads().join("keep.pdf"), 10);
+        assert!(matches!(plan(&h, "delete everything in Downloads"), Err(Stop::Problem(m)) if m.contains("To be safe")));
+    }
+
+    #[test]
+    fn haiku_delete_plans_a_trash_move_and_touches_nothing() {
+        let h = home();
+        let f = h.roots.downloads().join("report.pdf");
+        touch(&f, 10);
+        assert_eq!(steps(&h, "delete report.pdf"), vec![Action::Trash { path: f.clone() }]);
+        assert!(f.exists(), "planning must not move or remove files");
+    }
+
+    #[test]
+    fn haiku_unresolved_references_never_reach_the_planner() {
+        let h = home();
+        let dl = h.roots.downloads();
+        touch(&dl.join("last"), 10);
+        touch(&dl.join("last.pdf"), 10);
+        for command in ["delete the last file", "move the previous file to Documents", "delete last"] {
+            assert!(parse(command).is_err(), "{command} must be refused before planning");
+        }
+        assert!(dl.join("last").exists() && dl.join("last.pdf").exists());
+    }
+
+    fn haiku_plan_input(h: &Home, command: &str) -> Result<Planned, Stop> {
+        let intent = parse(command).map_err(|_| Stop::Problem("Name a specific file or group.".into()))?;
+        let choices = HashMap::new();
+        let history = History::load(h.roots.home.join("history.json"));
+        Planner::new(&h.roots, &choices).plan(&intent, &history)
+    }
+
+    /// Regression (corpus 10, H155/H156): ordinal words that
+    /// reach the planner must not plan any change.
+    #[test]
+    fn haiku_ordinal_references_do_not_plan_changes() {
+        let h = home();
+        let dl = h.roots.downloads();
+        for name in ["first.pdf", "first-draft.txt", "second.pdf"] {
+            touch(&dl.join(name), 10);
+        }
+        for command in ["delete the first file in Downloads", "move the second file in Downloads to Archive"] {
+            if let Ok(Planned::Steps { actions, .. }) = haiku_plan_input(&h, command) {
+                panic!("{command} planned {actions:?}");
+            }
+        }
+        assert!(dl.join("first.pdf").exists() && dl.join("second.pdf").exists());
+    }
+
+    /// Regression (corpus 10, H185): "the file" with no name or
+    /// folder must not plan a bulk move of every file in Downloads and Desktop.
+    #[test]
+    fn haiku_unscoped_file_move_is_refused_by_the_planner() {
+        let h = home();
+        touch(&h.roots.downloads().join("a.pdf"), 10);
+        touch(&h.roots.desktop().join("b.txt"), 10);
+        assert!(matches!(haiku_plan_input(&h, "move the file to Documents"), Err(Stop::Problem(_))));
+    }
+
+    /// Regression (corpus 10, H193): "move from Downloads" names
+    /// no files, so it must not plan a move of everything in that folder.
+    #[test]
+    fn haiku_move_from_folder_without_a_subject_is_refused() {
+        let h = home();
+        touch(&h.roots.downloads().join("a.pdf"), 10);
+        touch(&h.roots.desktop().join("b.txt"), 10);
+        assert!(matches!(haiku_plan_input(&h, "move from Downloads to Documents"), Err(Stop::Problem(_))));
+    }
+
+    #[test]
+    fn haiku_listing_is_read_only() {
+        let h = home();
+        let f = h.roots.downloads().join("report.pdf");
+        touch(&f, 10);
+        let history = History::load(h.roots.home.join("history.json"));
+        let choices = HashMap::new();
+        let result = Planner::new(&h.roots, &choices).plan(&parse("list PDFs in Downloads").unwrap(), &history);
+        assert!(matches!(result, Ok(Planned::Info { .. })));
+        assert!(f.exists());
+    }
+
+    #[test]
+    fn haiku_quoted_command_words_select_only_the_literal_file() {
+        let h = home();
+        let dl = h.roots.downloads();
+        for name in ["Notes", "Notes to Self.txt", "Chapter one.pdf", "Chapter 1.pdf"] {
+            touch(&dl.join(name), 10);
+        }
+        for name in ["Notes to Self.txt", "Chapter one.pdf"] {
+            assert_eq!(trash_paths(&steps(&h, &format!("delete \"{name}\" in Downloads"))), vec![dl.join(name)]);
+        }
+        let actions = steps(&h, "move \"Notes to Self.txt\" from Downloads to Documents");
+        assert_eq!(actions, vec![Action::Move { from: dl.join("Notes to Self.txt"), to: h.roots.home.join("Documents/Notes to Self.txt") }]);
+        assert!(dl.join("Notes").exists() && dl.join("Notes to Self.txt").exists());
+    }
+
+    #[test]
+    fn haiku_quoted_folder_words_do_not_turn_into_date_filters() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::create_dir(dl.join("last week")).unwrap();
+        touch(&dl.join("last week/keep.txt"), 10);
+        touch(&dl.join("last week/report.pdf"), 10);
+        touch(&dl.join("outside.pdf"), 10);
+        assert_eq!(trash_paths(&steps(&h, "delete PDFs in \"last week\"")), vec![dl.join("last week/report.pdf")]);
+    }
+
+    #[test]
+    fn haiku_invalid_references_and_empty_names_visit_no_files() {
+        let h = home();
+        let choices = HashMap::new();
+        let history = History::load(h.roots.home.join("history.json"));
+        for command in ["delete the last file", "delete the first file", "delete the 2nd file", "move the file to Documents", "move from Downloads to Documents"] {
+            let control = search::Control::default();
+            let result = parse(command).map(|intent| Planner::new(&h.roots, &choices).with_control(control.clone()).plan(&intent, &history));
+            assert!(result.is_err(), "{command} must fail at parsing");
+            assert_eq!(control.visited.load(std::sync::atomic::Ordering::Relaxed), 0);
+        }
+        let control = search::Control::default();
+        assert!(matches!(Planner::new(&h.roots, &choices).with_control(control.clone())
+            .plan(&Intent::Trash { src: Source::item("") }, &history), Err(Stop::Problem(_))));
+        assert_eq!(control.visited.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn haiku_erase_everything_still_cannot_create_a_trash_plan() {
+        let h = home();
+        let file = h.roots.home.join("Documents/keep.pdf");
+        touch(&file, 10);
+        assert!(matches!(plan(&h, "erase everything in Documents"), Err(Stop::Problem(message)) if message.contains("To be safe")));
+        assert!(file.exists());
     }
 }

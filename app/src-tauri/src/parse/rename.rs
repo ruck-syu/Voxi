@@ -1,6 +1,6 @@
 //! Renaming: single files and batch rules (prefix, replace, number, lowercase).
 
-use super::{Pattern, cap, pat, phrase::clean_name, src, typed_src};
+use super::{Pattern, cap, pat, phrase::{bad_destination, clean_name, parse_source, split_arguments}, src, typed_src};
 use crate::model::{FileType, Intent, Source};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -66,19 +66,25 @@ pub fn patterns() -> Vec<Pattern> {
         pat("make_lowercase", r"^make\s+(?:file\s+)?names?\s+(?:in\s+|of\s+)?(.+?)\s+lower\s*case$", |c| {
             Some(Intent::Lowercase { src: src(c, 1)? })
         }),
-        pat("rename_name_of", r"^(?:change|set)\s+(?:file\s+)?names?\s+of\s+(.+?)\s+to\s+(.+)$", |c| {
-            let src = src(c, 1)?;
+        pat("rename_name_of", r"^(?:change|set)\s+(?:file\s+)?names?\s+of\s+(.+)$", |c| {
+            let text = cap(c, 1)?;
+            let (source, target) = split_arguments(&text, &["to"])?;
+            let src = parse_source(source)?;
             if !matches!(src, Source::Item { .. }) {
                 return None;
             }
-            Some(Intent::Rename { src, new_name: clean_name(&cap(c, 2)?) })
+            if bad_destination(target) { return None; }
+            Some(Intent::Rename { src, new_name: clean_name(target) })
         }),
-        pat("rename", r"^rename\s+(.+?)\s+(?:to|as)\s+(.+)$", |c| {
-            let src = src(c, 1)?;
+        pat("rename", r"^rename\s+(.+)$", |c| {
+            let text = cap(c, 1)?;
+            let (source, target) = split_arguments(&text, &["to", "as"])?;
+            let src = parse_source(source)?;
             if !matches!(src, Source::Item { .. }) {
                 return None;
             }
-            Some(Intent::Rename { src, new_name: clean_name(&cap(c, 2)?) })
+            if bad_destination(target) { return None; }
+            Some(Intent::Rename { src, new_name: clean_name(target) })
         }),
     ]
 }

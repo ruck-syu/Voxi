@@ -5,6 +5,7 @@ mod model;
 mod parse;
 mod pdf;
 mod plan;
+mod presentation;
 mod settings;
 mod search;
 mod trash;
@@ -43,6 +44,7 @@ struct AppState {
     settings_path: PathBuf,
     next_plan: AtomicU64,
     active_search: Mutex<Option<(u64, search::Control)>>,
+    presentation: Mutex<presentation::Presentation>,
 }
 
 fn home() -> PathBuf {
@@ -75,16 +77,15 @@ fn show_window(app: &AppHandle, mode: &str) {
             let _ = w.set_position(PhysicalPosition::new(x, y));
         }
     }
-    #[cfg(target_os = "macos")]
-    let _ = app.show();
-    let _ = w.show();
-    // macOS may not focus a window shown from the background: focus the
-    // window here, and the page focuses the text box on this event.
-    let _ = w.set_focus();
-    let _ = w.emit("voxi://shown", mode);
+    let state = app.state::<AppState>();
+    let mut presentation = state.presentation.lock().unwrap();
+    let request = presentation.request(mode);
+    if presentation.ready { let _ = w.emit("voxi://shown", request); }
+
 }
 
 fn hide(app: &AppHandle) {
+    app.state::<AppState>().presentation.lock().unwrap().cancel();
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
@@ -96,6 +97,7 @@ fn hide(app: &AppHandle) {
 /// Asks the page to play its close animation; the page then calls
 /// `hide_window`.
 fn request_hide(app: &AppHandle) {
+    app.state::<AppState>().presentation.lock().unwrap().cancel();
     match app.get_webview_window("main") {
         Some(w) if w.emit("voxi://hide", ()).is_ok() => {}
         _ => hide(app),
@@ -104,7 +106,8 @@ fn request_hide(app: &AppHandle) {
 
 fn toggle_window(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else { return };
-    if w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false) {
+    if app.state::<AppState>().presentation.lock().unwrap().pending.is_some()
+        || (w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false)) {
         request_hide(app);
     } else {
         show_window(app, "command");
@@ -294,12 +297,14 @@ fn apply_glass(app: &AppHandle) {
 /// The window is the card, so it is sized to the content and macOS animates
 /// the resize, keeping the top edge in place.
 #[tauri::command]
-fn fit_window(app: AppHandle, height: f64) {
+fn fit_window(app: AppHandle, height: f64, animate: bool) {
     let Some(w) = app.get_webview_window("main") else { return };
     let height = height.clamp(48.0, 640.0);
+    let handle = app.clone();
     #[cfg(target_os = "macos")]
     {
         let _ = app.run_on_main_thread(move || {
+            if handle.state::<AppState>().presentation.lock().unwrap().pending.is_some() { return; }
             let Ok(ptr) = w.ns_window() else { return };
             // SAFETY: Tauri hands back the live NSWindow, and this runs on
             // the main thread, where AppKit requires window calls.
@@ -311,11 +316,45 @@ fn fit_window(app: AppHandle, height: f64) {
             let top = frame.origin.y + frame.size.height;
             frame.size = objc2_foundation::NSSize::new(WINDOW_WIDTH, height);
             frame.origin.y = top - height;
-            ns.setFrame_display_animate(frame, true, ns.isVisible());
+            ns.setFrame_display_animate(frame, true, animate && ns.isVisible());
         });
     }
     #[cfg(not(target_os = "macos"))]
     let _ = w.set_size(tauri::LogicalSize::new(WINDOW_WIDTH, height));
+}
+
+/// The listener is installed before the frontend advertises readiness.
+#[tauri::command]
+fn frontend_ready(app: AppHandle, state: State<AppState>) {
+    let mut presentation = state.presentation.lock().unwrap();
+    presentation.ready = true;
+    if let Some(request) = &presentation.pending { let _ = app.emit("voxi://shown", request.clone()); }
+}
+
+#[tauri::command]
+fn present_window(app: AppHandle, request_id: u64, height: f64, animate: bool) {
+    if !height.is_finite() { return; }
+    let Some(w) = app.get_webview_window("main") else { return };
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if !handle.state::<AppState>().presentation.lock().unwrap().acknowledge(request_id) { return; }
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(ptr) = w.ns_window() {
+                let ns: &objc2_app_kit::NSWindow = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+                let mut frame = ns.frame();
+                let top = frame.origin.y + frame.size.height;
+                frame.size = objc2_foundation::NSSize::new(WINDOW_WIDTH, height.clamp(48.0, 640.0));
+                frame.origin.y = top - frame.size.height;
+                ns.setFrame_display_animate(frame, true, animate && ns.isVisible());
+            }
+            let _ = handle.show();
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = w.set_size(tauri::LogicalSize::new(WINDOW_WIDTH, height.clamp(48.0, 640.0)));
+        let _ = w.show();
+        let _ = w.set_focus();
+    });
 }
 
 #[tauri::command]
@@ -347,6 +386,14 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     *state.roots.write().unwrap() = build_roots(&settings);
     *state.settings.lock().unwrap() = settings.clone();
     Ok(settings)
+}
+
+/// A fixed destination; the frontend cannot ask this command to open arbitrary URLs.
+#[tauri::command(async)]
+fn open_hex() -> Result<(), String> {
+    Command::new("/usr/bin/open").arg("https://anoma.ly/hex/").status()
+        .map_err(|e| format!("Couldn't open Hex: {e}"))?
+        .success().then_some(()).ok_or_else(|| "Couldn't open the Hex website.".into())
 }
 
 /// macOS opens whichever copy of Voxi last turned on "Open at login". Only an
@@ -429,8 +476,27 @@ pub fn run() {
                 settings_path,
                 next_plan: AtomicU64::new(1),
                 active_search: Mutex::new(None),
+                presentation: Mutex::new(presentation::Presentation::default()),
             };
             app.manage(state);
+
+            // Configure Writing Tools before WKWebView copies its configuration.
+            // The window is created here rather than automatically from config.
+            let window = tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?;
+            #[cfg(target_os = "macos")]
+            let window = {
+                let mtm = objc2::MainThreadMarker::new().expect("setup runs on the main thread");
+                let configuration = unsafe { objc2_web_kit::WKWebViewConfiguration::new(mtm) };
+                // The public selector is available starting with macOS 15.
+                let supported: bool = unsafe { objc2::msg_send![&*configuration,
+                    respondsToSelector: objc2::sel!(setWritingToolsBehavior:)] };
+                if supported {
+                    unsafe { let _: () = objc2::msg_send![&*configuration,
+                        setWritingToolsBehavior: objc2_app_kit::NSWritingToolsBehavior::None]; }
+                }
+                window.with_webview_configuration(configuration)
+            };
+            window.build()?;
 
             // Points the login item back at this copy, in case another
             // copy (an older install, a development build) took it over.
@@ -486,8 +552,11 @@ pub fn run() {
             confirm_plan,
             cancel_plan,
             search_progress,
+            open_hex,
             hide_window,
             fit_window,
+            frontend_ready,
+            present_window,
             get_settings,
             save_settings,
             allowed_folders,

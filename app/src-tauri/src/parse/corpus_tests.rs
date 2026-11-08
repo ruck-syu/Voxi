@@ -98,3 +98,57 @@ fn heldout_error_rate() {
     }
     println!("heldout: {misses} of {} commands wrong ({:.1}%)", cases.len(), 100.0 * misses as f64 / cases.len() as f64);
 }
+
+/// Runs only `corpus/10-haiku-300.txt` and writes one JSON line per row (id,
+/// line, category, command, expected, actual, pass) to the file named by
+/// `VOXI_CASE_REPORT`, default `target/haiku-300-cases.jsonl`. Writes the report
+/// before asserting all 300 audited expectations pass.
+/// Run with `cargo test --lib haiku_300 -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn haiku_300_per_case_report() {
+    super::dates::TEST_TODAY.with(|t| t.set(NaiveDate::from_ymd_opt(2026, 10, 28)));
+    let source = crate_root().join("src/parse/corpus/10-haiku-300.txt");
+    let text = fs::read_to_string(&source).unwrap();
+    let report = std::env::var("VOXI_CASE_REPORT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| crate_root().join("target/haiku-300-cases.jsonl"));
+    let (mut category, mut rows, mut passed) = (String::new(), String::new(), 0);
+    let mut n = 0;
+    for (i, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if let Some(header) = line.strip_prefix("# [") {
+            category = format!("[{header}");
+            continue;
+        }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        n += 1;
+        let at = format!("10-haiku-300.txt:{}", i + 1);
+        let (command, expected) = line.rsplit_once(" => ").unwrap_or_else(|| panic!("{at}: missing \" => \""));
+        let want = expected_value(expected.trim(), &at);
+        let got = outcome(command);
+        let pass = got == want;
+        passed += usize::from(pass);
+        let row = serde_json::json!({
+            "id": format!("H{n:03}"), "line": i + 1, "category": category,
+            "command": command, "expected": want, "actual": got, "pass": pass,
+        });
+        rows.push_str(&row.to_string());
+        rows.push('\n');
+    }
+    fs::write(&report, rows).unwrap();
+    println!("haiku-300: {passed} of {n} rows match; wrote {}", report.display());
+    assert_eq!(n, 300);
+    assert_eq!(passed, n);
+}
+
+#[test]
+fn haiku_suite_contains_exactly_300_distinct_phrases() {
+    let cases: Vec<_> = cases_in(&crate_root().join("src/parse/corpus")).into_iter()
+        .filter(|(_, _, at)| at.starts_with("10-haiku-300.txt:")).collect();
+    assert_eq!(cases.len(), 300);
+    let unique: std::collections::HashSet<_> = cases.iter().map(|(command, _, _)| command).collect();
+    assert_eq!(unique.len(), 300);
+}

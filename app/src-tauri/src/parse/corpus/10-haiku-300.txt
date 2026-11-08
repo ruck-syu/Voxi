@@ -1,0 +1,340 @@
+# 10. Haiku-authored test set: 300 natural phrases, from the "delete the last file" bug report.
+# Original expectations were authored before execution: 150 supported and 150 refused.
+# The audit in docs/testing/haiku-300-results.md records four expectation changes;
+# the current suite has 152 intent rows and 148 refusals. Original baseline artifacts remain unchanged.
+# Dates use the corpus fixed day, 2026-10-28. Format: command => intent JSON, or ! to refuse.
+# Each "# [X] ... H###-H###" header names the IDs of the rows that follow it. The per-case
+# report (corpus_tests.rs, haiku_300_per_case_report) numbers rows H001..H300 in file order.
+# Flagged rows (questionable expectations) are listed in docs/testing/haiku-300-baseline.md.
+
+# [A] Everyday moves, copies, renames, and deletes of one file or a whole set (supported) H001-H020
+please move the invoice.pdf file over to Archive => {"intent":"move","src":{"kind":"item","name":"invoice.pdf"},"to":"Archive"}
+copy the Q3 budget.xlsx to my Backup folder => {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+move every PDF in Documents to Archive => {"intent":"move","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}},"to":"Archive"}
+move the screenshots from Desktop to Pictures => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots"}},"to":"Pictures"}
+copy all the images in Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+move the video files from Downloads to Movies => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"videos"}},"to":"Movies"}
+move Desktop screenshots to Archive => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots"}},"to":"Archive"}
+rename notes.txt to meeting notes.txt => {"intent":"rename","src":{"kind":"item","name":"notes.txt"},"new_name":"meeting notes.txt"}
+rename "Draft 2" to "Final" => {"intent":"rename","src":{"kind":"item","name":"Draft 2"},"new_name":"Final"}
+copy the file called Lease Agreement.pdf to Documents => {"intent":"copy","src":{"kind":"item","name":"Lease Agreement.pdf"},"to":"Documents"}
+move the invoice from Downloads to Archive => {"intent":"move","src":{"kind":"item","name":"invoice","folder":"Downloads"},"to":"Archive"}
+delete the claude.dmg file in Downloads => {"intent":"trash","src":{"kind":"item","name":"claude.dmg","folder":"Downloads"}}
+move the Project folder to Archive => {"intent":"move","src":{"kind":"item","name":"Project"},"to":"Archive"}
+copy the Thesis folder into Backup => {"intent":"copy","src":{"kind":"item","name":"Thesis"},"to":"Backup"}
+move report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+move the 2025 tax return.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+move Invoice Final v2.pdf to Archive => {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+put photo.heic into Pictures => {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+send thesis draft dot docx to Documents => {"intent":"move","src":{"kind":"item","name":"thesis draft.docx"},"to":"Documents"}
+move screenshot 2026-10-01 at 9.41.12 AM.png to Pictures => {"intent":"move","src":{"kind":"item","name":"screenshot 2026-10-01 at 9.41.12 AM.png"},"to":"Pictures"}
+
+# [B] Read-only questions, undo, history, and reveal in Finder (audited) H021-H040
+list PDFs in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+how many screenshots are on my Desktop => {"intent":"count","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots"}}}
+count the images in Pictures => {"intent":"count","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}}}
+show the size of Downloads => {"intent":"size","folder":"Downloads"}
+how big is the Documents folder => {"intent":"size","folder":"Documents"}
+list duplicate files in Downloads => {"intent":"duplicates","folder":"Downloads"}
+find duplicates in Documents => {"intent":"duplicates","folder":"Documents"}
+what is in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+what's on my Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}}}
+show me files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+what files did I download yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","day":"yesterday"}}}
+undo last => {"intent":"undo"}
+undo that => {"intent":"undo"}
+show recent actions => {"intent":"recent_actions"}
+open Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+reveal the file named report.pdf => {"intent":"reveal","target":"report.pdf"}
+show me where invoice.pdf is => {"intent":"reveal","target":"invoice.pdf"}
+count PDFs in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+list everything in Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}}}
+undo the last delete => !
+
+# [C] Dates, ages, months, and day words, against the fixed day 2026-10-28 (supported) H041-H065
+list screenshots from yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"yesterday"}}}
+show PDFs from today => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","day":"today"}}}
+list PDFs older than 30 days in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs","olderThanDays":30}}}
+list files older than 3 months in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+list files older than a year in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+find screenshots from the last 2 weeks => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":14}}}
+list screenshots from last week => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","newerThanDays":7}}}
+list files I downloaded in the last 3 days in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","newerThanDays":3}}}
+list screenshots from July 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","month":7,"year":2026}}}
+list files in Documents since March 2026 => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-03-01"}}}
+list files in Documents before March 2026 => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","before":"2026-03-01"}}}
+list PDFs created after August 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","since":"2026-09-01"}}}
+list files until June 30 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","before":"2026-07-01"}}}
+list screenshots from this month => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","since":"2026-10-01"}}}
+list PDFs from this year => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","since":"2026-01-01"}}}
+count photos taken in August => {"intent":"count","src":{"kind":"set","filter":{"type":"images","month":8}}}
+delete screenshots older than 45 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":45}}}
+move PDFs from last month to Archive => {"intent":"move","src":{"kind":"set","filter":{"type":"pdfs","newerThanDays":30}},"to":"Archive"}
+list files from the last 6 months in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","newerThanDays":180}}}
+list files from yesterday in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","day":"yesterday"}}}
+list files in Documents older than 2 years => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","olderThanDays":730}}}
+move the screenshots taken in March 2025 to Archive => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","month":3,"year":2025}},"to":"Archive"}
+list photos from June 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"images","month":6,"year":2026}}}
+list photos in 2024 => {"intent":"list","src":{"kind":"set","filter":{"type":"images","since":"2024-01-01","before":"2025-01-01"}}}
+list the files from the past week in Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","newerThanDays":7}}}
+
+# [D] Size filters in MB, GB, and spoken units (supported) H066-H077
+list files larger than 100 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":100.0}}}
+delete files larger than 1 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+list files bigger than 500 MB in Desktop => {"intent":"list","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","largerThanMb":500.0}}}
+list files smaller than 1 MB in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","smallerThanMb":1.0}}}
+list files over 2 GB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":2048.0}}}
+list files between 10 MB and 50 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":10.0,"smallerThanMb":50.0}}}
+list files at least 250 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":250.0}}}
+show files in Downloads at most 20 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","smallerThanMb":20.0}}}
+list files that are 500 MB or more in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+delete files under 5 MB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","smallerThanMb":5.0}}}
+move installers over 200 MB from Downloads to External => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers","largerThanMb":200.0}},"to":"External"}
+list files larger than 1 gigabyte in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+
+# [E] File-type words, extension families, and singular or plural subjects (supported) H078-H092
+list the Word documents in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["doc","docx"]}}}
+count the spreadsheets in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["xlsx","xls","csv","numbers"]}}}
+move text files from Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","ext":["txt"]}},"to":"Documents"}
+delete the zip files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"archives"}}}
+move all MP4s from Movies to Videos => {"intent":"move","src":{"kind":"set","folder":"Movies","filter":{"type":"files","ext":["mp4"]}},"to":"Videos"}
+count the png files in Desktop => {"intent":"count","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","ext":["png"]}}}
+show me the installers in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+list DMG files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+move audio files from Downloads to Music => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"audio"}},"to":"Music"}
+list the PDF files in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+list the JPEGs in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["jpg","jpeg"]}}}
+list HEIC photos in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}}}
+list the photos in Pictures named cat => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"images","nameContains":"cat"}}}
+list the Excel files in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["xlsx","xls"]}}}
+list the text files in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["txt"]}}}
+
+# [F] Quoted and exact names, last.pdf and "last", curly quotes, and spoken dots (supported) H093-H107
+delete "last" => {"intent":"trash","src":{"kind":"item","name":"last"}}
+delete last.pdf => {"intent":"trash","src":{"kind":"item","name":"last.pdf"}}
+move "last" to Archive => {"intent":"move","src":{"kind":"item","name":"last"},"to":"Archive"}
+copy last.txt to Desktop => {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+delete the file "report.pdf" => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+rename "old notes.txt" to "new notes.txt" => {"intent":"rename","src":{"kind":"item","name":"old notes.txt"},"new_name":"new notes.txt"}
+move “Q3 report.pdf” to Documents => {"intent":"move","src":{"kind":"item","name":"Q3 report.pdf"},"to":"Documents"}
+move 'Tax Notes.pdf' to Documents => {"intent":"move","src":{"kind":"item","name":"Tax Notes.pdf"},"to":"Documents"}
+delete files named "budget" in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"budget"}}}
+delete last.pdf from Downloads => {"intent":"trash","src":{"kind":"item","name":"last.pdf","folder":"Downloads"}}
+move Ben & Jerry.pdf to Archive => {"intent":"move","src":{"kind":"item","name":"Ben & Jerry.pdf"},"to":"Archive"}
+rename invoice (final).pdf to invoice-v2.pdf => {"intent":"rename","src":{"kind":"item","name":"invoice (final).pdf"},"new_name":"invoice-v2.pdf"}
+delete draft_v1.docx => {"intent":"trash","src":{"kind":"item","name":"draft_v1.docx"}}
+move the 2026-01-15 receipt.pdf to Archive => {"intent":"move","src":{"kind":"item","name":"2026-01-15 receipt.pdf"},"to":"Archive"}
+move the report dot pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+
+# [G] Folders, subfolders, concrete paths, and "folder" as a spoken word (supported) H108-H122
+move ~/Desktop/receipt.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"~/Desktop/receipt.pdf"},"to":"Documents"}
+move Downloads/Invoices/march.pdf to Archive => {"intent":"move","src":{"kind":"item","name":"Downloads/Invoices/march.pdf"},"to":"Archive"}
+list files in Downloads/Invoices => {"intent":"list","src":{"kind":"set","folder":"Downloads/Invoices","filter":{"type":"files"}}}
+list PDFs in the Downloads folder => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+list PDFs in my Documents folder => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+sort Documents by month => {"intent":"sort_by_month","folder":"Documents"}
+list files in Documents/Taxes => {"intent":"list","src":{"kind":"set","folder":"Documents/Taxes","filter":{"type":"files"}}}
+move photos from Pictures/Trip to Archive => {"intent":"move","src":{"kind":"set","folder":"Pictures/Trip","filter":{"type":"images"}},"to":"Archive"}
+list screenshots in Desktop/Screenshots => {"intent":"list","src":{"kind":"set","folder":"Desktop/Screenshots","filter":{"type":"screenshots"}}}
+copy the Notes folder to Backup => {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+list PDFs inside Documents/Scans => {"intent":"list","src":{"kind":"set","folder":"Documents/Scans","filter":{"type":"pdfs"}}}
+show size of Documents/Taxes => {"intent":"size","folder":"Documents/Taxes"}
+count PDFs in Downloads/Invoices => {"intent":"count","src":{"kind":"set","folder":"Downloads/Invoices","filter":{"type":"pdfs"}}}
+move the Downloads/Notes folder to Archive => {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+list files in Pictures/Trip folder => {"intent":"list","src":{"kind":"set","folder":"Pictures/Trip","filter":{"type":"files"}}}
+
+# [H] Batch renames, numbering, prefixes, spoken replacements, and PDF or image tools (supported) H123-H137
+replace spaces with underscores in file names in Pictures => {"intent":"replace_in_names","src":{"kind":"set","folder":"Pictures","filter":{"type":"files"}},"find":" ","replace":"_"}
+replace dashes with spaces in names of files in Documents => {"intent":"replace_in_names","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"find":"-","replace":" "}
+add prefix 2026- to files in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"prefix":"2026-"}
+add prefix Invoice dash to PDFs in Documents => {"intent":"add_prefix","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}},"prefix":"Invoice-"}
+add a date prefix to screenshots in Desktop => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots"}}}
+number PDFs in Scans as scan-01, scan-02 => {"intent":"number","src":{"kind":"set","folder":"Scans","filter":{"type":"pdfs"}},"base":"scan-","width":2}
+lowercase the names of PDFs in Documents => {"intent":"lowercase","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+remove spaces from names in Documents => {"intent":"replace_in_names","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"find":" ","replace":""}
+convert IMG_2041.heic to jpg => {"intent":"convert_image","src":{"kind":"item","name":"IMG_2041.heic"},"format":"jpg"}
+resize the PNGs in Desktop to 800 pixels wide => {"intent":"resize_image","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","ext":["png"]}},"width":800}
+merge PDFs in Documents named invoice into invoices-2026.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs","nameContains":"invoice"}},"output":"invoices-2026.pdf"}
+split scan.pdf into pages => {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf"}}
+extract pages 1 to 3 from book.pdf into intro.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"book.pdf"},"from":1,"to":3,"output":"intro.pdf"}
+make a PDF from images in Scans => {"intent":"images_to_pdf","src":{"kind":"set","folder":"Scans","filter":{"type":"images"}}}
+unzip Backup.zip => {"intent":"unzip","src":{"kind":"item","name":"Backup.zip"}}
+
+# [I] Zip, folders, sorting, conversion, quoted renames, copies, and a spoken number (supported) H138-H150
+zip Thesis folder into Thesis.zip => {"intent":"zip","src":{"kind":"item","name":"Thesis"},"output":"Thesis.zip"}
+zip the Photos folder => {"intent":"zip","src":{"kind":"item","name":"Photos"}}
+create folder Receipts in Documents => {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+sort Pictures by type => {"intent":"sort_by_type","folder":"Pictures"}
+convert all PNGs in Desktop to jpg => {"intent":"convert_image","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","ext":["png"]}},"format":"jpg"}
+rename report.pdf to "Report 2026.pdf" => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Report 2026.pdf"}
+rename Scan 001.pdf to receipt-001.pdf => {"intent":"rename","src":{"kind":"item","name":"Scan 001.pdf"},"new_name":"receipt-001.pdf"}
+rename the file report.pdf as final.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"final.pdf"}
+copy notes.txt into Backup/2026 => {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Backup/2026"}
+copy the JPEGs from Pictures into Backup/Photos => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["jpg","jpeg"]}},"to":"Backup/Photos"}
+move installers from Downloads to External Drive => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}},"to":"External Drive"}
+put the Q3 invoice into Archive => {"intent":"move","src":{"kind":"item","name":"Q3 invoice"},"to":"Archive"}
+move Chapter one to Archive => {"intent":"move","src":{"kind":"item","name":"Chapter 1"},"to":"Archive"}
+
+# [R1] Relative, ordinal, and pronoun references with no resolved file (refused) H151-H180
+delete the last file => !
+move the previous file to Documents => !
+copy the last one to Desktop => !
+rename the last file to final.pdf => !
+delete the first file in Downloads => !
+move the second file in Downloads to Archive => !
+delete the newest file => !
+move the latest screenshot to Pictures => !
+delete the most recent file in Downloads => !
+delete them => !
+move it to Archive => !
+copy that to Desktop => !
+delete those in Downloads => !
+move these files to Archive => !
+delete the one from yesterday => !
+move the old one to Archive => !
+rename it to report-final.pdf => !
+delete the file from before => !
+delete the thing I downloaded yesterday => !
+move the one I took yesterday to Archive => !
+delete the big file => !
+delete the old file in Downloads => !
+rename the newest screenshot to today.png => !
+delete the biggest file in Downloads => !
+move the largest PDF to Documents => !
+delete the smallest screenshot => !
+copy the file I sent you yesterday to Desktop => !
+delete the file you were looking at => !
+move the file we talked about to Archive => !
+delete the thing on my screen => !
+
+# [R2] Missing source, destination, or new name (refused) H181-H200
+move report.pdf => !
+move to Documents => !
+copy to Desktop => !
+delete => !
+move the file to Documents => !
+move files to => !
+rename to final.pdf => !
+rename report.pdf to => !
+move my PDFs to => !
+send them => !
+copy notes.txt to the => !
+delete from Downloads => !
+move from Downloads to Documents => !
+list in => !
+count => !
+show size => !
+reveal => !
+open => !
+move "" to Documents => !
+move notes.txt in Documents => !
+
+# [R3] Several targets, joined lists, exclusions, and exceptions (refused) H201-H220
+move report.pdf and invoice.pdf to Documents => !
+delete the PDFs and images in Downloads => !
+copy notes.txt and todo.txt to Desktop => !
+move everything except PDFs from Downloads to Archive => !
+delete all PDFs in Downloads except invoices => !
+move all files but screenshots from Desktop to Archive => !
+delete installers other than DMG files from Downloads => !
+move report.pdf to Documents and Pictures => !
+copy PDFs to Documents and Backup => !
+delete old screenshots or installers in Downloads => !
+list PDFs and images in Documents => !
+count PDFs in Downloads and Desktop => !
+delete everything in Downloads without PDFs => !
+move screenshots not from today to Archive => !
+delete PDFs then images in Downloads => !
+move old invoices to Archive and receipts to Finance => !
+move installers to Trash and PDFs to Archive => !
+delete Desktop and Downloads screenshots => !
+copy the report to Desktop, then move it to Archive => !
+move report.pdf or invoice.pdf to Documents => !
+
+# [R4] Permanent deletes, sharing, superlatives, undo, and existing aliases (audited) H221-H245
+permanently delete report.pdf => !
+shred the old drafts in Downloads => !
+empty the trash => !
+wipe Downloads => !
+erase everything in Documents => {"intent":"trash","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}}}
+email the invoice to my accountant => !
+compress Project into Project.zip => {"intent":"zip","output":"Project.zip","src":{"kind":"item","name":"Project"}}
+upload the PDFs in Documents to Dropbox => !
+share report.pdf with Alex => !
+rename all my PDFs with dates => !
+delete duplicate files in Downloads => !
+find big files in Downloads and delete them => !
+delete the files that are not needed => !
+move the files that look like invoices to Archive => !
+delete anything older than 10 years that looks unused => !
+clean up my desktop mess => !
+sort my files by size => !
+sort the downloads by date => {"intent":"sort_by_month","folder":"downloads"}
+undo the previous move => !
+undo 3 moves => !
+redo last move => !
+what's the size of the largest PDF => !
+which is the newest file in Downloads => !
+show me the newest PDF in Documents => !
+what is the biggest file in Downloads => !
+
+# [R5] Contradictory, invalid, or unreadable dates, ages, and sizes (refused) H246-H265
+list files larger than 10 MB and smaller than 5 MB in Downloads => !
+list files larger than 10 MB smaller than 5 MB in Downloads => !
+delete files older than 10 days and newer than 5 days => !
+list files older than 30 days from today => !
+list PDFs from today or yesterday => !
+list files from the last 2 days or last month => !
+list files older than 4000000000 years => !
+list photos from February 30 in Pictures => !
+list files from 2026-13-01 in Downloads => !
+list screenshots taken in month 13 => !
+delete files larger than 1 GB but under 500 MB in Downloads => !
+move PDFs created after yesterday before today to Archive => !
+delete screenshots from today older than a week => !
+list files newer than 2 days => !
+list files in the last 0 days => !
+list files from March 2026 before March 2025 => !
+list files bigger than 5 in Downloads => !
+list files created in 1850 in Downloads => !
+delete files larger than 5 GB but smaller than 1 GB => !
+list files over 10 days old and under 1 week old => !
+
+# [R6] Names that contain joining words, command words, filter words, or wildcards (refused) H266-H285
+move Notes to Self.txt to Documents => !
+move Plan to Phase 2.pdf to Archive => !
+copy Trip to Lisbon.jpg to Pictures => !
+move the file Ideas to Drafts.md to Archive => !
+rename Notes to Self.txt to Journal.txt => !
+delete files named report into invoice.pdf in Downloads => !
+delete files named budget or invoice in Downloads => !
+delete files containing budget and invoice in Downloads => !
+list photos named cat or dog in Pictures => !
+delete the Aeroguard files and the Acme files => !
+move photos named report.pdf to Archive => !
+delete videos named invoice.pdf => !
+list screenshots named budget.pdf in Desktop => !
+move PDF files named cat.jpg to Archive => !
+delete the file called stuff*.pdf => !
+list files named ?.txt in Downloads => !
+move files with spaces in their names to Archive => !
+delete files with numbers in their names in Downloads => !
+delete old files whose names contain invoice and are older than 2 years => !
+move the files called Project Plan and Notes to Archive => !
+
+# [R7] Spoken time words, invalid years, and vague periods (refused) H286-H300
+list files from 2026-02-30 in Downloads => !
+list screenshots taken on July 32 => !
+list files from the year 3000 => !
+delete files older than -5 days => !
+list files from the 1st week of 2026 => !
+list screenshots from last fortnight => !
+move files older than 2 hours to Archive => !
+delete installers from last night => !
+list files from this morning => !
+list files from the weekend => !
+move screenshots from two weeks before last to Archive => !
+delete files from 3 days ago in Downloads => !
+move screenshots from tonight to Pictures => !
+list PDFs from a month ago => !
+delete the files from an hour ago => !

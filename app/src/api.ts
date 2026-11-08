@@ -28,6 +28,7 @@ export type Settings = { hotkey: string; extraFolders: string[]; startAtLogin: b
 export const api = {
   plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<Outcome>("plan_command", { text, choices, requestId }),
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
+  openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: () => invoke<void>("hide_window"),

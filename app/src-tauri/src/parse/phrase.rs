@@ -3,6 +3,7 @@
 
 use super::dates;
 use crate::model::{DayRef, FileType, Filter, Source};
+use chrono::{Duration, NaiveDate};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -23,6 +24,7 @@ static SPOKEN_DOT: LazyLock<Regex> = re!(
     r"(?i)(\w)\s+dot\s+(pdf|png|jpe?g|heic|webp|gif|txt|md|zip|docx?|xlsx?|pptx?|csv|mov|mp4|dmg|pkg|key|pages|numbers)\b"
 );
 static FILLER_WORDS: LazyLock<Regex> = re!(r"(?i)\b(?:all\s+of\s+|all\s+|the\s+|my\s+|every\s+|whole\s+|please\s+)");
+static FILE_QUANTIFIER: LazyLock<Regex> = re!(r"(?i)\b(?:every|all(?:\s+of)?)\s+(?:(?:the|my)\s+)?file\b(\s+names?\b)?");
 static COMMA_BEFORE_KEYWORD: LazyLock<Regex> = re!(r"(?i),\s+(to|into|in|from|as|on)\s+");
 static SPACES: LazyLock<Regex> = re!(r"\s+");
 
@@ -32,29 +34,89 @@ pub fn normalize(text: &str) -> String {
     // Dictation often produces curly quotes; they mean the same as straight ones.
     let straight = text.replace(['“', '”'], "\"").replace(['‘', '’'], "'");
     let mut s = SPACES.replace_all(straight.trim(), " ").to_string();
-    s = OVER_TO.replace_all(&s, " $1").to_string();
-    s = SPOKEN_DOT.replace_all(&s, "$1.$2").to_string();
+    s = map_unquoted(&s, |part| OVER_TO.replace_all(part, " $1").to_string());
+    s = map_unquoted(&s, |part| SPOKEN_DOT.replace_all(part, "$1.$2").to_string());
     s = TRAIL_PUNCT.replace(&s, "").to_string();
     s = LEAD_FILLER.replace(&s, "").to_string();
     s = TRAIL_FILLER.replace(&s, "").to_string();
     s = COMMA_BEFORE_KEYWORD.replace_all(&s, " $1 ").to_string();
     // Filler words, but not inside quoted names.
+    s = map_unquoted(&s, |part| FILE_QUANTIFIER.replace_all(part, |c: &regex::Captures| {
+        c.get(1).map_or_else(|| "files".to_string(), |names| format!("file{}", names.as_str()))
+    }).to_string());
     s = map_unquoted(&s, |part| FILLER_WORDS.replace_all(part, "").to_string());
-    s = s
-        .split(' ')
+    s = map_unquoted(&s, |part| part.split(' ')
         .map(|tok| word_number(tok).map(|n| n.to_string()).unwrap_or_else(|| tok.to_string()))
         .collect::<Vec<_>>()
-        .join(" ");
+        .join(" "));
     s = SPACES.replace_all(s.trim(), " ").to_string();
     TRAIL_PUNCT.replace(&s, "").to_string()
 }
 
 fn map_unquoted(s: &str, f: impl Fn(&str) -> String) -> String {
-    s.split('"')
-        .enumerate()
-        .map(|(i, part)| if i % 2 == 0 { f(part) } else { part.to_string() })
-        .collect::<Vec<_>>()
-        .join("\"")
+    let Ok(ranges) = quoted_ranges(s) else { return s.to_string() };
+    let mut out = String::new();
+    let mut end = 0;
+    for (start, next) in ranges {
+        out.push_str(&f(&s[end..start]));
+        out.push_str(&s[start..next]);
+        end = next;
+    }
+    out.push_str(&f(&s[end..]));
+    out
+}
+
+/// Quoted names are literal. Apostrophes inside words aren't quote delimiters.
+fn quoted_ranges(s: &str) -> Result<Vec<(usize, usize)>, ()> {
+    let mut ranges = Vec::new();
+    let mut open = None;
+    for (i, ch) in s.char_indices() {
+        match open {
+            Some((start, quote)) if ch == quote => { ranges.push((start, i + ch.len_utf8())); open = None; }
+            Some(_) => {},
+            None if ch == '"' || (ch == '\'' && (i == 0 || s[..i].ends_with(char::is_whitespace))) => open = Some((i, ch)),
+            None => {},
+        }
+    }
+    if open.is_some() { Err(()) } else { Ok(ranges) }
+}
+
+fn overlaps_quote(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
+    ranges.iter().any(|(a, b)| start < *b && end > *a)
+}
+
+fn unquoted_text(s: &str) -> Option<String> {
+    let mut out = s.to_string();
+    for (start, end) in quoted_ranges(s).ok()?.into_iter().rev() {
+        out.replace_range(start..end, &" ".repeat(end - start));
+    }
+    Some(out)
+}
+
+fn quoted(s: &str) -> bool {
+    quoted_ranges(s).is_ok_and(|ranges| ranges == vec![(0, s.len())])
+}
+
+/// Exactly one unquoted separator: ambiguous bare names must be quoted.
+pub fn split_arguments<'a>(text: &'a str, separators: &[&str]) -> Option<(&'a str, &'a str)> {
+    let ranges = quoted_ranges(text).ok()?;
+    let mut found = None;
+    for word in WORD.find_iter(text) {
+        if separators.iter().any(|s| word.as_str().eq_ignore_ascii_case(s))
+            && !overlaps_quote(&ranges, word.start(), word.end()) {
+            if found.is_some() { return None; }
+            found = Some((word.start(), word.end()));
+        }
+    }
+    let (start, end) = found?;
+    let (left, right) = (text[..start].trim(), text[end..].trim());
+    (!left.is_empty() && !right.is_empty()).then_some((left, right))
+}
+
+pub(super) fn set_once<T>(slot: &mut Option<T>, value: T) -> Option<()> {
+    if slot.is_some() { return None; }
+    *slot = Some(value);
+    Some(())
 }
 
 fn word_number(tok: &str) -> Option<u32> {
@@ -71,6 +133,8 @@ fn word_number(tok: &str) -> Option<u32> {
 
 /// Strips matching quotes and a trailing " folder" from a name.
 pub fn clean_name(s: &str) -> String {
+    let s = s.trim();
+    if quoted(s) { return s[1..s.len() - 1].to_string(); }
     let s = s.trim().trim_matches(['"', '\'']).trim();
     let s = s.strip_suffix(" folder").or_else(|| s.strip_suffix(" Folder")).unwrap_or(s);
     let s = s.strip_prefix("folder ").or_else(|| s.strip_prefix("Folder ")).unwrap_or(s);
@@ -106,11 +170,11 @@ const SIZE_NUMBER: &str = r"(\d+(?:\.\d+)?|an?|one)";
 /// A size unit, with its spoken forms: gigs, megs, kilobytes.
 const SIZE_UNIT: &str = r"(kbs?|kilobytes?|k|mbs?|megs?|megabytes?|m|gbs?|gigs?|gigabytes?|g|tbs?|terabytes?|t)";
 static SIZE_LARGER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"(?i)\b(?:(?:larger|bigger|greater|more|heavier)\s+than|over|above|at\s+least)\s+{SIZE_NUMBER}\s*{SIZE_UNIT}?\b"))
+    Regex::new(&format!(r"(?i)\b(?:(?:larger|bigger|greater|more|heavier)\s+than|over|above|at\s+least)\s+{SIZE_NUMBER}\s*{SIZE_UNIT}\b"))
         .unwrap()
 });
 static SIZE_SMALLER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"(?i)\b(?:(?:smaller|less|lighter)\s+than|under|below|at\s+most|up\s+to)\s+{SIZE_NUMBER}\s*{SIZE_UNIT}?\b"))
+    Regex::new(&format!(r"(?i)\b(?:(?:smaller|less|lighter)\s+than|under|below|at\s+most|up\s+to)\s+{SIZE_NUMBER}\s*{SIZE_UNIT}\b"))
         .unwrap()
 });
 static BETWEEN_SIZE: LazyLock<Regex> = LazyLock::new(|| {
@@ -132,6 +196,10 @@ static NAME_VALUE_REFUSED: LazyLock<Regex> = re!(
 /// Time words the parser cannot turn into dates: refused, not read as folder names.
 static TIME_WORDS: LazyLock<Regex> = re!(
     r"(?i)\b(?:weekends?|mornings?|afternoons?|evenings?|tonight|last\s+night|last\s+(?:hour|quarter)|week\s+before|month\s+before|before\s+last|ago)\b"
+);
+/// Unsupported filter syntax must not fall through to a guessed item/folder.
+static UNREAD_FILTER: LazyLock<Regex> = re!(
+    r"(?i)\b(?:(?:older|newer|larger|bigger|smaller|less|more)\s+than|(?:over|under|above|below|at\s+least|at\s+most|up\s+to)\s+\d+|before|after|since|until|between|(?:month|year)\s+\d+|(?:from|in|on|during)\s+\d{4}\b|\d+(?:st|nd|rd|th)\s+(?:day|week|month|year))\b"
 );
 /// "Desktop screenshots": a folder word, then a type.
 static FOLDER_PREFIX: LazyLock<Regex> = re!(r"(?i)^(desktop|downloads|documents|pictures|screenshots)\s+(.+)$");
@@ -169,7 +237,6 @@ const NAME_STOP: &[&str] = &[
     "over", "under", "taken", "created", "made", "before", "after", "since", "until", "between", "last", "past", "today",
     "yesterday", "that", "which",
 ];
-static FOLDER: LazyLock<Regex> = re!(r"(?i)^(.*?)\s*\b(?:from|in|on|inside|within)\s+(.+)$");
 /// "screenshots I took", "PDFs that I've downloaded", "files we saved":
 /// who made the files says nothing about which ones, so it's dropped.
 static WHO_CLAUSE: LazyLock<Regex> = re!(
@@ -212,10 +279,12 @@ fn to_days(n: &str, unit: &str) -> Option<u32> {
 /// When `f` returns `None` the match is refused: `s` is left as it was, and the
 /// caller refuses the whole command rather than drop the phrase unread.
 pub(super) fn take(s: &mut String, re: &Regex, mut f: impl FnMut(&regex::Captures) -> Option<()>) -> Option<()> {
+    let ranges = quoted_ranges(s).ok()?;
     let mut out = String::new();
     let mut last = 0;
     for caps in re.captures_iter(s) {
         let m = caps.get(0)?;
+        if overlaps_quote(&ranges, m.start(), m.end()) { continue; }
         f(&caps)?;
         out.push_str(&s[last..m.start()]);
         out.push(' ');
@@ -239,7 +308,8 @@ fn size_number(s: &str) -> f64 {
 /// and removes it from `s`. `None` when the keyword has no name after it, or
 /// when a bare "with" names nothing.
 fn take_name(s: &mut String, f: &mut Filter) -> Option<()> {
-    let Some(m) = NAME_KEYWORD.find(s) else { return Some(()) };
+    let ranges = quoted_ranges(s).ok()?;
+    let Some(m) = NAME_KEYWORD.find_iter(s).find(|m| !overlaps_quote(&ranges, m.start(), m.end())) else { return Some(()) };
     let (start, kw_end) = (m.start(), m.end());
     let keyword = m.as_str().trim().to_lowercase();
     let (value, used, in_name) = name_value(&s[kw_end..]);
@@ -314,16 +384,17 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
     take_name(&mut s, &mut f)?;
     // Ages before sizes: "over 30 days" must not read as a size.
     take(&mut s, &OLDER, |c| {
-        f.older_than_days = Some(to_days(&c[1], &c[2])?);
-        Some(())
+        set_once(&mut f.older_than_days, to_days(&c[1], &c[2])?)
     })?;
     take(&mut s, &SINCE_AGO, |c| {
-        f.newer_than_days = Some(to_days(&c[1], &c[2])?);
-        Some(())
+        let days = to_days(&c[1], &c[2])?;
+        if days == 0 { return None; }
+        set_once(&mut f.newer_than_days, days)
     })?;
     take(&mut s, &NEWER, |c| {
-        f.newer_than_days = Some(to_days(c.get(1).map_or("", |m| m.as_str()), &c[2])?);
-        Some(())
+        let days = to_days(c.get(1).map_or("", |m| m.as_str()), &c[2])?;
+        if days == 0 { return None; }
+        set_once(&mut f.newer_than_days, days)
     })?;
     dates::extract(&mut s, &mut f)?;
     take(&mut s, &DAY, |c| {
@@ -335,34 +406,65 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         Some(())
     })?;
     take(&mut s, &MONTH, |c| {
-        f.month = month_number(c.get(1).or(c.get(3)).map_or("", |m| m.as_str()));
+        set_once(&mut f.month, month_number(c.get(1).or(c.get(3)).map_or("", |m| m.as_str()))?)?;
         f.year = c.get(2).or(c.get(4)).and_then(|y| y.as_str().parse().ok());
         Some(())
     })?;
     take(&mut s, &PARTICIPLE, |_| Some(()))?;
     s = BUT_SIZE.replace_all(&s, "$1").to_string();
     take(&mut s, &SIZE_OR_MORE, |c| {
-        f.larger_than_mb = Some(to_mb(size_number(&c[1]), c.get(2).map(|m| m.as_str())));
-        Some(())
+        set_once(&mut f.larger_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
     })?;
     take(&mut s, &SIZE_OR_LESS, |c| {
-        f.smaller_than_mb = Some(to_mb(size_number(&c[1]), c.get(2).map(|m| m.as_str())));
-        Some(())
+        set_once(&mut f.smaller_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
     })?;
     take(&mut s, &BETWEEN_SIZE, |c| {
-        f.larger_than_mb = Some(to_mb(size_number(&c[1]), c.get(2).or(c.get(4)).map(|m| m.as_str())));
-        f.smaller_than_mb = Some(to_mb(size_number(&c[3]), c.get(4).or(c.get(2)).map(|m| m.as_str())));
+        let first_unit = c.get(2).or(c.get(4))?.as_str();
+        let second_unit = c.get(4).or(c.get(2))?.as_str();
+        set_once(&mut f.larger_than_mb, to_mb(size_number(&c[1]), Some(first_unit)))?;
+        set_once(&mut f.smaller_than_mb, to_mb(size_number(&c[3]), Some(second_unit)))?;
         Some(())
     })?;
     take(&mut s, &SIZE_LARGER, |c| {
-        f.larger_than_mb = Some(to_mb(size_number(&c[1]), c.get(2).map(|m| m.as_str())));
-        Some(())
+        set_once(&mut f.larger_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
     })?;
     take(&mut s, &SIZE_SMALLER, |c| {
-        f.smaller_than_mb = Some(to_mb(size_number(&c[1]), c.get(2).map(|m| m.as_str())));
-        Some(())
+        set_once(&mut f.smaller_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
     })?;
-    Some((f, s))
+    filters_consistent(&f).then_some((f, s))
+}
+
+/// Check that all requested bounds can hold at once, without discarding any.
+fn filters_consistent(f: &Filter) -> bool {
+    if f.larger_than_mb.is_some_and(|n| !n.is_finite() || n < 0.0)
+        || f.smaller_than_mb.is_some_and(|n| !n.is_finite() || n <= 0.0)
+        || f.larger_than_mb.zip(f.smaller_than_mb).is_some_and(|(a, b)| a >= b)
+        || f.older_than_days.zip(f.newer_than_days).is_some_and(|(a, b)| a >= b) { return false; }
+    let today = dates::today();
+    let mut start = f.since.unwrap_or(NaiveDate::MIN);
+    let mut end = f.before.unwrap_or(NaiveDate::MAX);
+    if let Some(day) = f.day {
+        let Some(day) = (match day { DayRef::Today => Some(today), DayRef::Yesterday => today.pred_opt() }) else { return false };
+        start = start.max(day);
+        let Some(next) = day.succ_opt() else { return false };
+        end = end.min(next);
+    }
+    if let Some(month) = f.month {
+        let year = crate::plan::month_year(month, f.year, today);
+        let Some(first) = NaiveDate::from_ymd_opt(year, month, 1) else { return false };
+        let Some(next) = (if month == 12 { NaiveDate::from_ymd_opt(year + 1, 1, 1) } else { NaiveDate::from_ymd_opt(year, month + 1, 1) }) else { return false };
+        start = start.max(first);
+        end = end.min(next);
+    }
+    if let Some(days) = f.older_than_days {
+        let Some(day) = today.checked_sub_signed(Duration::days(i64::from(days))).and_then(|d| d.succ_opt()) else { return false };
+        end = end.min(day);
+    }
+    if let Some(days) = f.newer_than_days {
+        let Some(day) = today.checked_sub_signed(Duration::days(i64::from(days))) else { return false };
+        start = start.max(day);
+    }
+    start < end
 }
 
 const EXT_WORDS: &[&str] = &[
@@ -437,8 +539,10 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
     if phrase.is_empty() {
         return None;
     }
-    if phrase.starts_with('"') && phrase.ends_with('"') && phrase.len() > 1 {
-        return Some(Source::item(&clean_name(phrase)));
+    quoted_ranges(phrase).ok()?;
+    if quoted(phrase) {
+        let name = clean_name(phrase);
+        return (!name.is_empty()).then_some(Source::item(&name));
     }
     if NAME_VALUE_REFUSED.is_match(phrase) {
         return None;
@@ -448,16 +552,29 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
         return None;
     }
     let rest = tidy_subject(&rest, filter.is_narrowing());
-    if excludes(&rest) || (!has_extension(&rest) && TIME_WORDS.is_match(&rest)) {
+    let syntax = unquoted_text(&rest)?;
+    if excludes(&rest) || (!has_extension(&syntax) && (TIME_WORDS.is_match(&syntax) || UNREAD_FILTER.is_match(&syntax))) {
         return None;
     }
-    let (head, folder) = match FOLDER.captures(&rest) {
-        Some(c) => (
-            tidy_subject(&c[1], filter.is_narrowing()),
-            Some(clean_name(&tidy_subject(&c[2], filter.is_narrowing()))),
-        ),
-        None => (rest.trim().to_string(), None),
+    let ranges = quoted_ranges(&rest).ok()?;
+    let prepositions = ["from", "in", "on", "inside", "within"];
+    let has_scope = WORD.find_iter(&rest).any(|word| prepositions.iter().any(|p| word.as_str().eq_ignore_ascii_case(p))
+        && !overlaps_quote(&ranges, word.start(), word.end()));
+    let (head, folder) = if has_scope {
+        let (head, folder) = split_arguments(&rest, &prepositions)?;
+        let folder = tidy_subject(folder, filter.is_narrowing());
+        if bad_destination(&folder) { return None; }
+        (tidy_subject(head, filter.is_narrowing()), Some(clean_name(&folder)))
+    } else {
+        (rest.trim().to_string(), None)
     };
+    if head.is_empty() || head.eq_ignore_ascii_case("size") { return None; }
+    if quoted(&head) && !filter.is_narrowing() {
+        let name = clean_name(&head);
+        return (!name.is_empty()).then_some(Source::Item { name, folder });
+    }
+    if type_word(&head).is_none() && vague(&head) { return None; }
+    if head.eq_ignore_ascii_case("file") && !filter.is_narrowing() { return None; }
     // "the file called passport.pdf" is one file. A type word that contradicts
     // its extension ("photos named report.pdf") or another filter is refused.
     if let Some(name) = filter.name_contains.clone().filter(|n| has_extension(n)) {
@@ -556,8 +673,9 @@ fn vague(name: &str) -> bool {
     }
     const VAGUE: &[&str] = &[
         "it", "them", "they", "those", "these", "that", "this", "one", "ones", "stuff", "things", "something",
-        "anything", "newest", "latest", "oldest", "biggest", "largest", "smallest", "recent", "recently", "duplicates",
-        "duplicate",
+        "anything", "last", "previous", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
+        "newest", "latest", "oldest", "biggest", "largest", "smallest", "recent", "recently", "duplicates",
+        "duplicate", "thing", "you", "we", "mess",
     ];
     const SIZES: &[&str] = &["big", "bigger", "biggest", "large", "huge", "small", "tiny", "old", "older", "new", "recent"];
     const NOUNS: &[&str] = &[
@@ -567,7 +685,10 @@ fn vague(name: &str) -> bool {
     // A name made only of size words, or of "1" (which is "one" once normalized,
     // as in "old one"), says no particular file.
     let only_sizes = !words.is_empty() && words.iter().all(|w| SIZES.contains(&w.as_str()) || w.as_str() == "1");
+    let ordinal = words.iter().any(|w| ["st", "nd", "rd", "th"].iter().any(|suffix|
+        w.strip_suffix(suffix).is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))));
     words.iter().any(|w| VAGUE.contains(&w.as_str()))
+        || ordinal
         || only_sizes
         || (words.iter().any(|w| SIZES.contains(&w.as_str())) && words.last().is_some_and(|w| NOUNS.contains(&w.as_str())))
 }
@@ -622,14 +743,18 @@ fn type_fits(head: &str, name: &str) -> bool {
 /// "folders by year", "a new folder called Shots", "Finance folder inside
 /// Documents". Refused, not created as a folder with that name.
 pub fn bad_destination(to: &str) -> bool {
+    if quoted(to) { return clean_name(to).is_empty(); }
     let lower = to.to_lowercase();
-    excludes(to) || [" by ", " called ", " inside ", " within "].iter().any(|word| lower.contains(word))
+    to.trim().is_empty() || vague(to)
+        || ["the", "a", "an", "in", "on", "from", "to", "into", "file", "folder", "before", "after", "since", "until", "size"].contains(&lower.trim())
+        || excludes(to) || [" by ", " called ", " inside ", " within "].iter().any(|word| lower.contains(word))
 }
 
 /// Words that join two things or mean "all but": "PDFs and images",
 /// "everything except PDFs". Voxi does one thing per command.
 fn excludes(s: &str) -> bool {
-    let lower = s.to_lowercase();
+    let Some(text) = unquoted_text(s) else { return true };
+    let lower = text.to_lowercase();
     lower.split_whitespace().any(|w| matches!(w, "and" | "or" | "but" | "except" | "not" | "without" | "then"))
         || lower.contains("other than")
 }
@@ -733,7 +858,7 @@ mod tests {
 
     #[test]
     fn vague_subjects_are_refused_but_real_names_are_not() {
-        for vague in ["big", "old 1", "old one", "them", "recent files"] {
+        for vague in ["big", "old 1", "old one", "them", "recent files", "last", "last file", "previous file"] {
             assert_eq!(parse_source(vague), None, "{vague}");
         }
         for name in ["Report 1", "Plan A"] {

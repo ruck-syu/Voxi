@@ -282,7 +282,7 @@ pub enum Outcome {
     /// command is planned again with that choice.
     Ambiguous { name: String, candidates: Vec<String> },
     /// Read-only result; nothing changed.
-    Info { title: String, summary: String, rows: Vec<InfoRow>, total: usize },
+    Info { title: String, summary: String, rows: Vec<InfoRow>, total: usize, numbered: bool },
     /// The command was understood, but there is nothing to do or it can't be done.
     Problem { message: String },
     NotUnderstood { text: String },

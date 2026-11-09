@@ -1,0 +1,28 @@
+# Contextual cases through plan_input (scope::prepare inside). Columns: id | setup | command | expected
+# setup "default" = "list files in Downloads" against a fixture where files were created oldest-to-newest:
+#   alpha.pdf (oldest) < bravo.txt < charlie.png < delta.pdf < echo.zip (newest).
+# Listing order is newest first, so rows are: 1 echo.zip, 2 delta.pdf, 3 charlie.png, 4 bravo.txt, 5 alpha.pdf.
+# Expected: JSON array of action strings (trash:<name> | move:<name>:<destFolder> | rename:<name>:<newName>), "!" = must produce no plan, "?" = recorded only.
+C01 | default | delete the second file | ["trash:delta.pdf"]
+C02 | default | delete 4 | ["trash:bravo.txt"]
+C03 | default | move 5 to Desktop | ["move:alpha.pdf:Desktop"]
+C04 | default | move the first file to Desktop | ["move:echo.zip:Desktop"]
+C05 | default | delete the last file | ["trash:alpha.pdf"]
+C06 | default | rename the third file to renamed.png | ["rename:charlie.png:renamed.png"]
+C07 | default | delete them | ["trash:alpha.pdf","trash:bravo.txt","trash:charlie.png","trash:delta.pdf","trash:echo.zip"]
+C08 | default | move all of them to Desktop | ["move:alpha.pdf:Desktop","move:bravo.txt:Desktop","move:charlie.png:Desktop","move:delta.pdf:Desktop","move:echo.zip:Desktop"]
+C09 | default | delete four | ["trash:bravo.txt"]
+C10 | default | delete the file named bravo.txt | ["trash:bravo.txt"]
+C11 | default | delete bravo.txt | ["trash:bravo.txt"]
+C12 | list files in Downloads containing alpha | rename it to final.pdf | ["rename:alpha.pdf:final.pdf"]
+C13 | default | delete 9 | !
+C14 | none | delete the second file | !
+C15 | default | move report.pdf to Desktop | !
+C16 | default | delete everything | ["trash:alpha.pdf","trash:bravo.txt","trash:charlie.png","trash:delta.pdf","trash:echo.zip"]
+C17 | default | move the second file to Desktop | ["move:delta.pdf:Desktop"]
+# C18 expectation corrected after the first run: website/commands.html says a rename keeps the original extension when you leave it off ("keeping its extension if you leave it off"), so "last" becomes last.zip.
+C18 | default | rename the first file to "last" | ["rename:echo.zip:last.zip"]
+C19 | default | delete the 6th file | !
+C20 | default | move the first two files to Desktop | ?
+C21 | default | delete the first 3 files | ?
+C22 | default | trash the file bravo.txt | ["trash:bravo.txt"]

@@ -498,16 +498,22 @@ kbd {
 
 /* ---- Which one? ---- */
 
-.choices li {
+.choices li,
+.numbered li {
   grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1.25fr);
 }
 
-.choices .num {
+.choices .num,
+.numbered .num {
   font-family: var(--display);
   font-weight: 700;
   font-size: 16px;
   color: var(--margin);
   font-variant-numeric: tabular-nums;
+}
+
+.numbered li {
+  grid-template-columns: 32px minmax(0, 1fr) minmax(0, 1.25fr);
 }
 
 /* The last command, echoed above its result once the box is cleared. */

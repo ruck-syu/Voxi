@@ -9,8 +9,11 @@ static NUMBERED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*?)(\d+)$").
 
 /// "spaces" -> " ", "dashes" -> "-", anything else unchanged.
 fn spoken_chars(s: &str) -> String {
-    match s.trim().to_ascii_lowercase().as_str() {
-        "space" | "spaces" => " ".into(),
+    let s = s.trim();
+    if s.starts_with(['"', '\'']) { return clean_name(s); }
+    let s = if s.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("word ")) { &s[5..] } else { s };
+    match s.to_ascii_lowercase().as_str() {
+        "space" | "spaces" | "space characters" => " ".into(),
         "dash" | "dashes" | "hyphen" | "hyphens" | "minus" => "-".into(),
         "underscore" | "underscores" => "_".into(),
         "dot" | "dots" | "period" | "periods" => ".".into(),
@@ -30,7 +33,17 @@ fn spoken_suffix(s: &str) -> String {
     s.to_string()
 }
 
-const NAMES_IN: &str = r"(?:(?:file\s+)?names?\s+(?:of\s+|in\s+|for\s+)?)?";
+static NAMES_CONTEXT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:file\s*)?names?\s+(?:(in|of|for)\s+)?(.+)$").unwrap());
+
+/// An explicit "names in <folder>" must not turn Documents into a file type.
+fn name_source(text: &str) -> Option<Source> {
+    if let Some(c) = NAMES_CONTEXT.captures(text) {
+        return if c.get(1).is_some_and(|m| m.as_str().eq_ignore_ascii_case("in")) {
+            parse_source(&format!("files in {}", &c[2]))
+        } else { parse_source(&c[2]) };
+    }
+    parse_source(text)
+}
 
 pub fn patterns() -> Vec<Pattern> {
     vec![
@@ -42,11 +55,11 @@ pub fn patterns() -> Vec<Pattern> {
         pat("add_prefix", r"^add\s+(?:a\s+)?prefix\s+(.+?)\s+to\s+(.+)$", |c| {
             Some(Intent::AddPrefix { src: src(c, 2)?, prefix: spoken_suffix(&cap(c, 1)?) })
         }),
-        pat("replace_in_names", &format!(r"^replace\s+(.+?)\s+with\s+(.+?)\s+in\s+{NAMES_IN}(.+)$"), |c| {
-            Some(Intent::ReplaceInNames { src: src(c, 3)?, find: spoken_chars(&cap(c, 1)?), replace: spoken_chars(&cap(c, 2)?) })
+        pat("replace_in_names", r"^replace\s+(.+?)\s+with\s+(.+?)\s+in\s+(.+)$", |c| {
+            Some(Intent::ReplaceInNames { src: name_source(&cap(c, 3)?)?, find: spoken_chars(&cap(c, 1)?), replace: spoken_chars(&cap(c, 2)?) })
         }),
-        pat("remove_from_names", &format!(r"^(?:remove|strip)\s+(spaces|dashes|underscores|dots)\s+(?:from|in)\s+{NAMES_IN}(.+)$"), |c| {
-            Some(Intent::ReplaceInNames { src: src(c, 2)?, find: spoken_chars(&cap(c, 1)?), replace: String::new() })
+        pat("remove_from_names", r"^(?:remove|strip)\s+(spaces|dashes|underscores|dots)\s+(?:from|in)\s+(.+)$", |c| {
+            Some(Intent::ReplaceInNames { src: name_source(&cap(c, 2)?)?, find: spoken_chars(&cap(c, 1)?), replace: String::new() })
         }),
         pat("number", r"^(?:number|renumber|sequence)\s+(.+?)\s+(?:as|like|to)\s+(.+)$", |c| {
             let first = cap(c, 2)?.split(',').next()?.trim().to_string();
@@ -60,11 +73,11 @@ pub fn patterns() -> Vec<Pattern> {
             };
             Some(Intent::Number { src: typed_src(c, 1, FileType::Files)?, base, width })
         }),
-        pat("lowercase", &format!(r"^(?:lowercase|lower\s*case|make\s+lowercase)\s+{NAMES_IN}(.+)$"), |c| {
-            Some(Intent::Lowercase { src: src(c, 1)? })
+        pat("lowercase", r"^(?:lowercase|lower\s*case|make\s+lowercase)\s+(.+)$", |c| {
+            Some(Intent::Lowercase { src: name_source(&cap(c, 1)?)? })
         }),
-        pat("make_lowercase", r"^make\s+(?:file\s+)?names?\s+(?:in\s+|of\s+)?(.+?)\s+lower\s*case$", |c| {
-            Some(Intent::Lowercase { src: src(c, 1)? })
+        pat("make_lowercase", r"^make\s+((?:file\s*)?names?\s+(?:(?:in|of)\s+)?.+?)\s+lower\s*case$", |c| {
+            Some(Intent::Lowercase { src: name_source(&cap(c, 1)?)? })
         }),
         pat("rename_name_of", r"^(?:change|set)\s+(?:file\s+)?names?\s+of\s+(.+)$", |c| {
             let text = cap(c, 1)?;

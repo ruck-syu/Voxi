@@ -188,6 +188,29 @@ mod catalog_tests {
         assert_eq!(p("create folder Invoices on Desktop"), CreateFolders { names: vec!["Invoices".into()], parent: Some("Desktop".into()) });
     }
     #[test]
+    fn create_folder_accepts_location_before_name() {
+        for command in [
+            "create a folder in downloads named PDFS",
+            "Create a new folder inside Downloads called PDFS.",
+            "make a folder on Downloads named PDFS",
+            "add folder under Downloads called PDFS",
+            "create a folder named PDFS in downloads",
+        ] {
+            let CreateFolders { names, parent: Some(parent) } = p(command) else { panic!("{command}") };
+            assert_eq!(names, vec!["PDFS"], "{command}");
+            assert_eq!(parent.to_lowercase(), "downloads", "{command}");
+        }
+        assert_eq!(p("create folders in Documents named Invoices and Receipts"),
+            CreateFolders { names: vec!["Invoices".into(), "Receipts".into()], parent: Some("Documents".into()) });
+        assert_eq!(p("create a folder in \"Project named Alpha\" called \"Notes in Progress\""),
+            CreateFolders { names: vec!["Notes in Progress".into()], parent: Some("Project named Alpha".into()) });
+        assert_eq!(p("create a folder in Downloads named \"Research and Development\""),
+            CreateFolders { names: vec!["Research and Development".into()], parent: Some("Downloads".into()) });
+        for command in ["create a folder in Downloads", "create a folder inside Downloads", "create a folder under Downloads named", "create a folder in Downloads named \"\"", "create a folder in the named PDFS"] {
+            assert!(parse(command).is_err(), "{command}");
+        }
+    }
+    #[test]
     fn r16_create_folders() {
         assert_eq!(
             p("create folders 2026, 2027 in Documents"),
@@ -486,5 +509,45 @@ mod catalog_tests {
         assert_eq!(p("Please move the report.pdf to Documents."), p("move report.pdf to Documents"));
         assert_eq!(p("Undo that."), parse("undo last").unwrap());
         assert_eq!(p("Delete screenshots older than thirty days."), p("delete screenshots older than 30 days"));
+    }
+
+    #[test]
+    fn audited_paraphrases_keep_the_same_scope_and_arguments() {
+        for (variant, canonical) in [
+            ("replace the word draft with final in names in Documents", "replace draft with final in files in Documents"),
+            ("replace draft with final in filenames in Documents", "replace draft with final in files in Documents"),
+            ("replace draft with final in the names in documents", "replace draft with final in files in documents"),
+            ("replace space characters with dashes in files in Downloads", "replace spaces with dashes in files in Downloads"),
+            ("lowercase filenames in Downloads", "lowercase files in Downloads"),
+            ("merge all PDFs in Downloads into a file called combined.pdf", "merge PDFs in Downloads into combined.pdf"),
+            ("split report.pdf into one page each", "split report.pdf into pages"),
+            ("delete screenshot files older than 30 days", "delete screenshots older than 30 days"),
+            ("reveal the file report.pdf in Finder", "reveal report.pdf in Finder"),
+            ("show the file report.pdf in Finder", "show report.pdf in Finder"),
+        ] {
+            assert_eq!(p(variant), p(canonical), "{variant}");
+        }
+    }
+
+    #[test]
+    fn grammar_fillers_stay_literal_inside_quoted_names() {
+        assert_eq!(p("replace \"word draft\" with final in names in Documents"), ReplaceInNames {
+            src: set(Some("Documents"), of(Files)), find: "word draft".into(), replace: "final".into(),
+        });
+        assert_eq!(p("replace \"space characters\" with \"spaces\" in filenames in downloads"), ReplaceInNames {
+            src: set(Some("downloads"), of(Files)), find: "space characters".into(), replace: "spaces".into(),
+        });
+        assert_eq!(p("merge PDFs in Downloads into \"a file called combined.pdf\""), MergePdf {
+            src: set(Some("Downloads"), of(Pdfs)), output: "a file called combined.pdf".into(),
+        });
+    }
+
+    #[test]
+    fn email_delivery_never_becomes_a_local_folder_implicitly() {
+        for command in ["send report.pdf to my email", "copy report.pdf to email", "move report.pdf to bob@example.com", "send report.pdf to my inbox"] {
+            assert!(parse(command).is_err(), "{command}");
+        }
+        assert_eq!(p("move report.pdf to \"email\""), Move { src: item("report.pdf"), to: "email".into() });
+        assert_eq!(p("move report.pdf to Downloads/email"), Move { src: item("report.pdf"), to: "Downloads/email".into() });
     }
 }

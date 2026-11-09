@@ -4,7 +4,7 @@ use std::{fs, path::{Path, PathBuf}, sync::LazyLock};
 use regex::Regex;
 
 #[derive(Clone)]
-struct Entry { path: PathBuf, identity: (u64, u64) }
+struct Entry { path: PathBuf, identity: (u64, u64), removed: bool }
 fn identity(path: &Path) -> Option<(u64, u64)> {
     let m = fs::symlink_metadata(path).ok()?;
     if !m.is_file() { return None; }
@@ -28,13 +28,13 @@ impl State {
 }
 impl Snapshot {
     pub fn capture(paths: Vec<PathBuf>, label: String) -> Option<Self> {
-        let entries: Option<Vec<_>> = paths.into_iter().map(|path| Some(Entry { identity: identity(&path)?, path })).collect();
+        let entries: Option<Vec<_>> = paths.into_iter().map(|path| Some(Entry { identity: identity(&path)?, path, removed: false })).collect();
         Some(Self { entries: entries?, label })
     }
-    pub fn paths(&self) -> Vec<PathBuf> { self.entries.iter().map(|e| e.path.clone()).collect() }
-    pub fn summary(&self) -> Summary { Summary { count: self.entries.len(), visible: self.entries.len().min(200), label: self.label.clone() } }
+    pub fn paths(&self) -> Vec<PathBuf> { self.entries.iter().filter(|e| !e.removed).map(|e| e.path.clone()).collect() }
+    pub fn summary(&self) -> Summary { Summary { count: self.entries.iter().filter(|e| !e.removed).count(), visible: self.entries.iter().take(200).filter(|e| !e.removed).count(), label: self.label.clone() } }
     pub fn validate(&self) -> Result<(), String> {
-        if self.entries.iter().any(|e| identity(&e.path) != Some(e.identity)) {
+        if self.entries.iter().any(|e| !e.removed && identity(&e.path) != Some(e.identity)) {
             return Err("The listed files changed. Run the list command again before using these results.".into());
         }
         Ok(())
@@ -42,6 +42,7 @@ impl Snapshot {
     pub fn apply(&mut self, actions: &[Action]) {
         for action in actions {
             for entry in &mut self.entries {
+                if entry.removed { continue; }
                 let next = match action {
                     Action::Move { from, to } if *from == entry.path => Some(to.clone()),
                     Action::Rename { path, new_name } if *path == entry.path => path.parent().map(|p| p.join(new_name)),
@@ -57,14 +58,17 @@ impl Snapshot {
                 };
                 if touched { if let Some(id) = identity(&entry.path) { entry.identity = id; } }
             }
-            if let Action::Trash { path } = action { self.entries.retain(|e| e.path != *path); }
+            // Keep the original row slots so later numbers never shift to another file.
+            if let Action::Trash { path } = action {
+                for entry in &mut self.entries { if entry.path == *path { entry.removed = true; } }
+            }
         }
     }
 }
 
 const MARKER: &str = "__voxi_result_reference__";
 static REFERENCES: LazyLock<Regex> = LazyLock::new(|| Regex::new(
-    r"(?i)\b(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(?:st|nd|rd|th))\s+(?:files?|items?|ones?|1)|(?:these|those|listed|search)\s+(?:files|items|results)|them|these|those|results|everything|all|it|file|1)\b"
+    r"(?i)\b(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(?:st|nd|rd|th))\s+(?:files?|items?|ones?|1)|(?:file|item|number)\s+\d+|(?:these|those|listed|search)\s+(?:files|items|results)|them|these|those|results|everything|all|it|file|\d+)\b"
 ).unwrap());
 
 /// Only source arguments are substituted. Quoted names and destinations remain literal.
@@ -76,14 +80,16 @@ pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>,
         let Ok(mut intent) = parse::parse(&replacement) else { continue };
         if !matches!(intent.source(), Some(Source::Item { name, folder: None }) if name == MARKER) { continue; }
         let reference = matched.as_str().to_ascii_lowercase();
-        let word = reference.split_whitespace().next().unwrap_or("");
+        let mut words = reference.split_whitespace();
+        let first = words.next().unwrap_or("");
+        let word = if matches!(first, "file" | "item" | "number") { words.next().unwrap_or(first) } else { first };
         let position = match word {
             "first" => Some(0), "second" => Some(1), "third" => Some(2), "fourth" => Some(3),
             "fifth" => Some(4), "sixth" => Some(5), "seventh" => Some(6), "eighth" => Some(7),
-            "ninth" => Some(8), "tenth" => Some(9), "last" => snapshot.entries.len().min(200).checked_sub(1),
-            "it" | "file" | "1" => {
-                if snapshot.entries.len() != 1 { return Err("Name a file or its position in the displayed list, such as “the first file”.".into()); }
-                Some(0)
+            "ninth" => Some(8), "tenth" => Some(9), "last" => snapshot.entries.iter().take(200).rposition(|e| !e.removed),
+            "it" | "file" => {
+                if snapshot.entries.iter().filter(|e| !e.removed).count() != 1 { return Err("Name a file or its position in the displayed list, such as “the first file”.".into()); }
+                snapshot.entries.iter().position(|e| !e.removed)
             },
             n if n.chars().next().is_some_and(|c| c.is_ascii_digit()) => {
                 let number: String = n.chars().take_while(char::is_ascii_digit).collect();
@@ -93,7 +99,7 @@ pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>,
         };
         let is_position = position.is_some() || word == "last" || word.chars().next().is_some_and(|c| c.is_ascii_digit());
         let source = if is_position {
-            let entry = position.filter(|p| *p < 200).and_then(|p| snapshot.entries.get(p))
+            let entry = position.filter(|p| *p < 200).and_then(|p| snapshot.entries.get(p)).filter(|e| !e.removed)
                 .ok_or("That position isn't in the displayed results. Name a listed file or run another list command.")?;
             Source::item(&entry.path.to_string_lossy())
         } else {

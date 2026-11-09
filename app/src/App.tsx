@@ -1169,20 +1169,6 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
             <p className="settings-description">Voxi only changes files inside these folders.</p>
           </div>
         </li>
-        {builtIn.map((f) => (
-          <li className="pref" key={f}>
-            <span className="pref-folder">{f}</span>
-            <span className="pref-summary">Always</span>
-          </li>
-        ))}
-        {extra.map((f) => (
-          <li className="pref" key={f}>
-            <span className="pref-folder">{f}</span>
-            <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
-              Remove
-            </button>
-          </li>
-        ))}
         <li className="pref">
           <input
             className="path"
@@ -1204,6 +1190,20 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
             Choose…
           </button>
         </li>
+        {builtIn.map((f) => (
+          <li className="pref" key={f}>
+            <span className="pref-folder">{f}</span>
+            <span className="pref-summary">Always</span>
+          </li>
+        ))}
+        {extra.map((f) => (
+          <li className="pref" key={f}>
+            <span className="pref-folder">{f}</span>
+            <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
+              Remove
+            </button>
+          </li>
+        ))}
       </ul>
       {note && <p className="settings-note warn" role="status">{note}</p>}
     </div>

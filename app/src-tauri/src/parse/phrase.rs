@@ -85,7 +85,7 @@ fn overlaps_quote(ranges: &[(usize, usize)], start: usize, end: usize) -> bool {
     ranges.iter().any(|(a, b)| start < *b && end > *a)
 }
 
-fn unquoted_text(s: &str) -> Option<String> {
+pub(crate) fn unquoted_text(s: &str) -> Option<String> {
     let mut out = s.to_string();
     for (start, end) in quoted_ranges(s).ok()?.into_iter().rev() {
         out.replace_range(start..end, &" ".repeat(end - start));
@@ -470,7 +470,7 @@ fn filters_consistent(f: &Filter) -> bool {
 const EXT_WORDS: &[&str] = &[
     "heic", "heif", "png", "jpg", "jpeg", "gif", "webp", "tiff", "svg", "mov", "mp4", "csv", "txt",
     "docx", "doc", "xlsx", "pptx", "key", "pages", "numbers", "md", "rtf", "mp3", "wav", "dmg", "pkg", "mkv",
-    "avi", "m4v", "webm", "psd", "flac", "m4a",
+    "avi", "m4v", "webm", "psd", "flac", "m4a", "stl",
 ];
 
 /// Maps the head of a subject phrase ("screenshots", "HEIC images", "files")

@@ -37,7 +37,7 @@ enum Step {
 
 pub enum Planned {
     Steps { title: String, actions: Vec<Action>, notes: Vec<Option<String>>, warnings: Vec<String>, undo_of: Option<u64> },
-    Info { title: String, summary: String, rows: Vec<InfoRow>, total: usize },
+    Info { title: String, summary: String, rows: Vec<InfoRow>, total: usize, listed: Option<(Vec<PathBuf>, String)> },
     /// Read-only, runs right away without a preview.
     Direct { action: Action, title: String },
 }
@@ -53,6 +53,7 @@ pub struct Planner<'a> {
     planned_dirs: HashSet<PathBuf>,
     now: DateTime<Local>,
     search: search::Search,
+    scope: Option<crate::scope::Snapshot>,
 }
 
 /// How many Spotlight answers to look at, and how long to wait for them.
@@ -71,6 +72,7 @@ impl<'a> Planner<'a> {
             planned_dirs: HashSet::new(),
             now: Local::now(),
             search: search::Search::default(),
+            scope: None,
         }
     }
 
@@ -79,12 +81,15 @@ impl<'a> Planner<'a> {
         self
     }
 
+    pub fn with_scope(mut self, scope: Option<crate::scope::Snapshot>) -> Self { self.scope = scope; self }
+
     pub fn plan(mut self, intent: &Intent, history: &History) -> Result<Planned, Stop> {
+        if let Some(scope) = &self.scope { scope.validate().map_err(Stop::Problem)?; }
         let result = self.step(intent, history);
         if let Some(message) = self.search.status() {
             if self.search.control.is_cancelled() { return problem(message); }
-            if let Ok(Step::Finished(Planned::Info { title, summary, rows, total })) = result {
-                return Ok(Planned::Info { title, summary: format!("{message} Partial results. {summary}"), rows, total });
+            if let Ok(Step::Finished(Planned::Info { title, summary, rows, total, .. })) = result {
+                return Ok(Planned::Info { title, summary: format!("{message} Partial results. {summary}"), rows, total, listed: None });
             }
             return problem(message);
         }
@@ -289,6 +294,24 @@ impl<'a> Planner<'a> {
     /// Resolves a file or folder by name, searching the allowed folders.
     fn resolve_item(&self, name: &str, folder: Option<&str>) -> Result<PathBuf, Stop> {
         if name.trim().is_empty() { return problem("Name the file or folder to use."); }
+        if let Some(scope) = &self.scope {
+            let paths = scope.paths();
+            if let Some(picked) = self.choices.get(name) {
+                if !paths.contains(picked) { return problem("That file isn't in the searched list."); }
+                self.check(picked)?;
+                return Ok(picked.clone());
+            }
+            let mut found = if Path::new(name).is_absolute() {
+                paths.into_iter().filter(|p| p == Path::new(name)).collect()
+            } else { closest(name, paths) };
+            return match found.len() {
+                1 if Path::new(name).is_absolute() || strong_name_match(name, &found[0]) => {
+                    let path = found.remove(0); self.check(&path)?; Ok(path)
+                },
+                0 => problem("That file isn't in the searched list. Name another source folder to search again."),
+                _ => Err(Stop::Ambiguous { name: name.into(), candidates: found }),
+            };
+        }
         if fsx::has_parent_ref(Path::new(name)) {
             return problem("Paths with “..” aren't allowed.");
         }
@@ -397,6 +420,15 @@ impl<'a> Planner<'a> {
                 Ok((vec![p], label))
             }
             Source::Set { folder, filter } => {
+                if let Some(scope) = &self.scope {
+                    if folder.is_some() { return problem("An explicit source folder starts a new search."); }
+                    let mut paths = Vec::new();
+                    for path in scope.paths() {
+                        self.check(&path)?;
+                        if matches(&path, filter, self.now.date_naive()) { paths.push(path); }
+                    }
+                    return Ok((paths, "the previous results".into()));
+                }
                 let (dirs, label) = self.set_folders(folder.as_deref(), filter)?;
                 let today = self.now.date_naive();
                 let contains = filter.name_contains.as_deref().map(normalized_name);
@@ -754,7 +786,7 @@ impl<'a> Planner<'a> {
 
     fn trash(&mut self, src: &Source) -> Result<String, Stop> {
         if let Source::Set { filter, .. } = src {
-            if !filter.is_narrowing() {
+            if !filter.is_narrowing() && self.scope.is_none() {
                 return problem("To be safe, clean-up needs a filter, like “older than 90 days”, “installers”, or “larger than 500 MB”.");
             }
         }
@@ -794,6 +826,7 @@ impl<'a> Planner<'a> {
         let total_bytes: u64 = paths.iter().map(|p| fs::metadata(p).map_or(0, |m| m.len())).sum();
         let rows = paths.iter().take(200).map(|p| self.file_row(p)).collect();
         Ok(Planned::Info {
+            listed: Some((paths.clone(), label.clone())),
             title: format!("{} in {label}", count_label(&paths)),
             summary: if paths.is_empty() { "Nothing matches.".into() } else { format!("{} in total, including subfolders.", human_size(total_bytes)) },
             rows,
@@ -808,6 +841,7 @@ impl<'a> Planner<'a> {
             _ => "files",
         };
         Ok(Planned::Info {
+            listed: None,
             title: format!("{} {what} in {label}", paths.len()),
             summary: "Including subfolders.".into(),
             rows: paths.iter().take(20).map(|p| self.file_row(p)).collect(),
@@ -849,6 +883,7 @@ impl<'a> Planner<'a> {
             .map(|(b, c)| InfoRow { name: file_name(c), detail: format!("{}{}", human_size(*b), if c.is_dir() { " · folder" } else { "" }) })
             .collect();
         Ok(Planned::Info {
+            listed: None,
             title: format!("{} uses {}", file_name(&p), human_size(bytes)),
             summary: format!("{files} {} in total. Largest items:", plural(files, "file", "files")),
             rows,
@@ -880,6 +915,7 @@ impl<'a> Planner<'a> {
             })
             .collect();
         Ok(Planned::Info {
+            listed: None,
             title: format!("{} {} in {}", dupes.len(), plural(dupes.len(), "set of duplicates", "sets of duplicates"), file_name(&dir)),
             summary: if dupes.is_empty() { "No duplicates by name and size.".into() } else { format!("Matched by name and size. Extra copies use {}.", human_size(wasted)) },
             rows,
@@ -904,6 +940,7 @@ fn recent(history: &History, roots: &Roots) -> Planned {
         })
         .collect();
     Planned::Info {
+            listed: None,
         title: "Recent actions".into(),
         summary: if rows.is_empty() { "Nothing yet.".into() } else { "Newest first. “undo last” reverses the newest one that isn't undone.".into() },
         total: history.entries.len(),
@@ -1166,6 +1203,8 @@ fn normalized_name(name: &str) -> String {
     result
 }
 
+pub fn scope_matches(name: &str, paths: Vec<PathBuf>) -> bool { !closest(name, paths).is_empty() }
+
 fn strong_name_match(name: &str, path: &Path) -> bool {
     let file = file_name(path);
     file.eq_ignore_ascii_case(name) || loose(&file) == loose(name) || loose(split_name(&file).0) == loose(name)
@@ -1400,7 +1439,7 @@ mod tests {
             let mut planner = Planner::new(&h.roots, &choices);
             planner.search.limit = 1;
             assert!(matches!(planner.plan(&parse(command).unwrap(), &history),
-                Ok(Planned::Info { summary, .. }) if summary.contains("Search incomplete") && summary.contains("Partial results")));
+                Ok(Planned::Info { summary, listed: None, .. }) if summary.contains("Search incomplete") && summary.contains("Partial results")));
         }
         let mut planner = Planner::new(&h.roots, &choices);
         planner.search.limit = 1;
@@ -2097,5 +2136,99 @@ mod tests {
         touch(&file, 10);
         assert!(matches!(plan(&h, "erase everything in Documents"), Err(Stop::Problem(message)) if message.contains("To be safe")));
         assert!(file.exists());
+    }
+
+    #[test]
+    fn stl_listing_filters_extensions_recursively_inside_downloads() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::create_dir(dl.join("Models")).unwrap();
+        for name in ["part.stl", "UPPER.STL", "Models/nested.stl", "STL guide.txt", "STL-backup.zip", "model.stl.txt"] {
+            touch(&dl.join(name), 10);
+        }
+        touch(&h.roots.home.join("Documents/outside.stl"), 10);
+        let Ok(Planned::Info { rows, total, .. }) = plan(&h, " list the STL files in Downloads. ") else { panic!("expected a read-only list") };
+        let mut names: Vec<_> = rows.iter().map(|row| row.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, vec!["UPPER.STL", "nested.stl", "part.stl"]);
+        assert_eq!(total, 3);
+        assert!(dl.join("part.stl").exists());
+    }
+
+    #[test]
+    #[ignore]
+    fn extension_audit_planner_preview_controls() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::create_dir(dl.join("Models")).unwrap();
+        fs::create_dir(dl.join("folder.stl")).unwrap();
+        for name in ["part.stl", "UPPER.STL", "Models/nested.stl", "STL guide.txt", "STL-backup.zip", "model.stl.txt", "Dockerfile"] {
+            touch(&dl.join(name), 10);
+        }
+        touch(&h.roots.home.join("Documents/outside.stl"), 10);
+
+        let listed = plan(&h, "list the STL files in Downloads").unwrap();
+        let Planned::Info { rows, total, .. } = listed else { panic!("expected read-only list") };
+        let names: std::collections::BTreeSet<_> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(total, 3);
+        assert_eq!(names, ["UPPER.STL", "nested.stl", "part.stl"].into_iter().collect());
+
+        let counted = plan(&h, "count the STL files in Downloads").unwrap();
+        let Planned::Info { total, .. } = counted else { panic!("expected count preview") };
+        assert_eq!(total, 3);
+
+        let moved = steps(&h, "move the STL files in Downloads to Documents");
+        let moved_names: std::collections::BTreeSet<_> = moved.iter().filter_map(|a| match a {
+            Action::Move { from, .. } => Some(file_name(from)), _ => None,
+        }).collect();
+        assert_eq!(moved_names, ["UPPER.STL", "nested.stl", "part.stl"].into_iter().map(str::to_string).collect());
+
+        let trashed = steps(&h, "delete the STL files in Downloads");
+        let trashed_names: std::collections::BTreeSet<_> = trashed.iter().filter_map(|a| match a {
+            Action::Trash { path } => Some(file_name(path)), _ => None,
+        }).collect();
+        assert_eq!(trashed_names, ["UPPER.STL", "nested.stl", "part.stl"].into_iter().map(str::to_string).collect());
+        assert!(dl.join("part.stl").exists(), "planning previews must not execute changes");
+    }
+
+    #[test]
+    #[ignore]
+    fn extension_audit_planner_suffix_matrix_jsonl() {
+        let h = home();
+        let dl = h.roots.downloads();
+        let samples = [
+            ("obj", "mesh.obj"), ("3mf", "print.3mf"), ("bmp", "bitmap.bmp"),
+            ("tar.gz", "archive.tar.gz"), ("zzcustom", "custom.zzcustom"),
+        ];
+        let mut report = String::new();
+        for (requested, filename) in samples {
+            touch(&dl.join(filename), 1);
+            touch(&dl.join(format!("guide.{requested}.txt")), 1);
+            fs::create_dir(dl.join(format!("folder.{requested}"))).unwrap();
+            let intent = Intent::List { src: Source::Set {
+                folder: Some("Downloads".into()),
+                filter: Filter { file_type: Some(FileType::Files), ext: Some(vec![requested.to_string()]), ..Default::default() },
+            }};
+            let history = History::load(h.roots.home.join("history.json"));
+            let actual = Planner::new(&h.roots, &HashMap::new()).plan(&intent, &history);
+            let (names, total) = match actual {
+                Ok(Planned::Info { rows, total, .. }) => (rows.into_iter().map(|r| r.name).collect::<Vec<_>>(), total),
+                Ok(_) => (Vec::new(), 0),
+                Err(error) => (vec![format!("ERROR:{error:?}")], 0),
+            };
+            let expected_name = Path::new(filename).file_name().unwrap().to_string_lossy().into_owned();
+            let expected = vec![expected_name];
+            report.push_str(&serde_json::json!({
+                "requested_suffix":requested, "planner_filter_extensions":[requested],
+                "expected_names":expected, "actual_names":names, "expected_total":1, "actual_total":total,
+                "pass":total == 1 && names == expected,
+                "note":if requested.contains('.') { "literal compound suffix is preserved in the requested filter" } else { "custom filters use direct Source::Set so parser aliases are not involved" },
+            }).to_string());
+            report.push('\n');
+        }
+        let path = std::env::var_os("VOXI_EXTENSION_PLANNER_REPORT").map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/extension-planner-results.jsonl"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, report).unwrap();
     }
 }

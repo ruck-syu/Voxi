@@ -57,8 +57,17 @@ filename searches rank exact and normalized names before word matches and typo
 suggestions. Loose or typo matches always ask you to choose, even if there is
 only one suggestion; broad file filters never automatically expand to typos.
 
-Commands need a filename or a specific group: references such as “the last file”
-or “the second file” aren't resolved from earlier results. Quote literal names
+After a list command, follow-up commands use that exact set of files. For example,
+`list items in Downloads`, then `delete the last file` selects the last displayed
+row; `move PDFs to Documents` selects only PDFs from that list. New files added
+after listing aren't included. Naming another source folder or an unrelated file
+starts a fresh search. The active scope is shown above the results; use **Clear
+scope** to reset it. Closing Voxi or opening Settings also ends the scope.
+Changes still require a preview and confirmation. If a listed file disappears or
+is replaced, run the list command again. Positional references use the displayed
+rows (up to 200); group commands can use every file in a complete list.
+
+Without a list, commands need a filename or a specific group. Quote literal names
 containing command words, for example `move "Notes to Self.txt" to Documents`.
 Quoted names also preserve words such as “one”. Size filters require units;
 contradictory or repeated bounds are refused rather than silently discarded.

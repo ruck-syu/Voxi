@@ -6,11 +6,13 @@ pub struct ShowRequest { pub request_id: u64, pub mode: String }
 #[derive(Default)]
 pub struct Presentation {
     pub ready: bool,
+    pub closing: bool,
     next: u64,
     pub pending: Option<ShowRequest>,
 }
 impl Presentation {
     pub fn request(&mut self, mode: &str) -> ShowRequest {
+        self.closing = false;
         self.next += 1;
         let request = ShowRequest { request_id: self.next, mode: mode.into() };
         self.pending = Some(request.clone());
@@ -21,7 +23,8 @@ impl Presentation {
         self.pending = None;
         true
     }
-    pub fn cancel(&mut self) { self.pending = None; }
+    pub fn cancel(&mut self) { self.pending = None; self.closing = true; }
+    pub fn is_current(&self, id: u64) -> bool { self.next == id }
 }
 
 #[cfg(test)]
@@ -45,5 +48,19 @@ mod tests {
         assert!(!p.acknowledge(old.request_id));
         p.cancel();
         assert!(!p.acknowledge(new.request_id));
+    }
+    #[test]
+    fn a_delayed_close_cannot_hide_a_newer_open() {
+        let mut p = Presentation { ready: true, ..Default::default() };
+        let old = p.request("command");
+        assert!(p.acknowledge(old.request_id));
+        p.cancel();
+        assert!(p.closing);
+        let new = p.request("command");
+        assert!(!p.closing);
+        assert!(!p.is_current(old.request_id));
+        assert!(p.is_current(new.request_id));
+        assert!(p.acknowledge(new.request_id));
+        assert!(!p.is_current(old.request_id));
     }
 }

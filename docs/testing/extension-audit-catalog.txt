@@ -1,0 +1,21 @@
+# Voxi extension audit inventory v1
+# Independently specified inventory; one suffix per line. Catalog entries include
+# parser/model literals and common formats. The list is intentionally finite.
+# compound suffixes are in compound-suffixes.txt.
+documents: pdf doc docx odt ott rtf txt md markdown tex latex epub mobi azw azw3 djvu xps pages
+spreadsheets: xls xlsx xlsm xlsb ods ots csv tsv numbers dif dbf ics
+presentations: ppt pptx pptm odp otp key pps ppsx
+images: png jpg jpeg jpe jfif gif webp tif tiff bmp dib ico icns svg svgz avif jxl heic heif
+raw-design: raw cr2 cr3 nef nrw arw dng raf orf rw2 pef srw psd psb ai eps indd sketch xd fig afdesign afphoto xcf kra procreate blend
+audio: mp3 wav wave m4a aac flac alac aiff aif ogg oga opus wma mid midi amr ac3 dsf dff
+video: mp4 m4v mov avi mkv webm wmv flv f4v mpg mpeg m2v ts mts m2ts vob ogv 3gp 3g2 asf rm rmvb divx
+archives: zip rar 7z tar gz tgz bz2 xz zst zstd lz lzma lz4 lzo cab arj lzh ace sit sitx jar war cpio
+3d-cad-printing: stl 3mf obj fbx glb gltf dae ply 3ds blend step stp iges igs sat sab dwg dxf skp max ma mb c4d usd usdz wrl vrml amf gcode gco
+code-config-web: c h cc cpp cxx hpp rs go py pyc pyo js mjs cjs jsx ts tsx java class jar kt kts swift m objc mm rb php phtml pl pm lua sh bash zsh fish ps1 bat cmd sql html htm css scss sass less json jsonc yaml yml toml ini cfg conf xml xsd xsl xslt mdx vue svelte wasm map lock make gitignore env properties gradle
+fonts: ttf otf woff woff2 eot fon fnt pfb pfa
+databases: db sqlite sqlite3 sqlitedb mdb accdb ldb realm dump bak
+executables-installers: app exe msi msp msix appx apk aab ipa dmg pkg mpkg deb rpm flatpak snap
+disk-images: iso img vhd vhdx vmdk qcow qcow2 sparseimage sparsebundle toast nrg
+subtitles: srt vtt ass ssa sub idx sbv lrc
+scientific-data: fits fit fts hdf h5 hdf5 nc netcdf cdf grib grb grb2 dat vtk vtu vtp shp shx dbf geojson geopackage gpkg las laz ply parquet arrow feather pkl pickle rds rdata mat sav dta stata sas7bdat xpt mzml mzxml fastq fq fasta fa bam sam cram bed gff gtf
+fonts-and-special: icl

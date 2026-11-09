@@ -8,6 +8,7 @@ mod plan;
 mod presentation;
 mod settings;
 mod search;
+mod scope;
 mod trash;
 
 use fsx::{Roots, file_name};
@@ -34,6 +35,16 @@ struct Pending {
     command: String,
     actions: Vec<Action>,
     undo_of: Option<u64>,
+    context_generation: Option<u64>,
+    context_snapshot: Option<scope::Snapshot>,
+}
+impl Pending {
+    fn validate_context(&self, context: &scope::State) -> Result<(), String> {
+        if self.context_generation.is_some_and(|generation| generation != context.generation) {
+            return Err("The previous list expired. Run the list command again.".into());
+        }
+        self.context_snapshot.as_ref().map_or(Ok(()), scope::Snapshot::validate)
+    }
 }
 
 struct AppState {
@@ -42,6 +53,7 @@ struct AppState {
     pending: Mutex<Option<Pending>>,
     settings: Mutex<Settings>,
     settings_path: PathBuf,
+    result_scope: Mutex<scope::State>,
     next_plan: AtomicU64,
     active_search: Mutex<Option<(u64, search::Control)>>,
     presentation: Mutex<presentation::Presentation>,
@@ -65,6 +77,17 @@ fn build_roots(settings: &Settings) -> Roots {
 
 // ---- Window ------------------------------------------------------------------
 
+#[cfg(target_os = "macos")]
+fn fade_window(ns: &objc2_app_kit::NSWindow, visible: bool, animate: bool) {
+    use objc2_app_kit::{NSAnimatablePropertyContainer, NSAnimationContext};
+    let alpha = if visible { 1.0 } else { 0.0 };
+    if !animate { ns.setAlphaValue(alpha); return; }
+    NSAnimationContext::beginGrouping();
+    NSAnimationContext::currentContext().setDuration(if visible { 0.2 } else { 0.14 });
+    ns.animator().setAlphaValue(alpha);
+    NSAnimationContext::endGrouping();
+}
+
 /// Shows the command window on the screen with the cursor and focuses it.
 /// `mode` tells the page which view to open (command, settings, welcome).
 fn show_window(app: &AppHandle, mode: &str) {
@@ -85,6 +108,7 @@ fn show_window(app: &AppHandle, mode: &str) {
 }
 
 fn hide(app: &AppHandle) {
+    app.state::<AppState>().result_scope.lock().unwrap().clear();
     app.state::<AppState>().presentation.lock().unwrap().cancel();
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
@@ -106,8 +130,12 @@ fn request_hide(app: &AppHandle) {
 
 fn toggle_window(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else { return };
-    if app.state::<AppState>().presentation.lock().unwrap().pending.is_some()
-        || (w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false)) {
+    let (pending, closing) = {
+        let state = app.state::<AppState>();
+        let presentation = state.presentation.lock().unwrap();
+        (presentation.pending.is_some(), presentation.closing)
+    };
+    if !closing && (pending || (w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false))) {
         request_hide(app);
     } else {
         show_window(app, "command");
@@ -166,7 +194,21 @@ fn preview(actions: &[Action], notes: &[Option<String>], roots: &Roots) -> Vec<P
 // ---- Commands ----------------------------------------------------------------
 
 #[tauri::command(async)]
-fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, String>, request_id: u64) -> Outcome {
+fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, String>, request_id: u64) -> CommandReply {
+    let outcome = plan_input(&state, text, choices, request_id);
+    let scope = state.result_scope.lock().unwrap().summary();
+    CommandReply { outcome, scope }
+}
+
+#[derive(serde::Serialize)]
+struct CommandReply { outcome: Outcome, scope: Option<scope::Summary> }
+
+#[tauri::command]
+fn clear_result_scope(state: State<AppState>) { state.result_scope.lock().unwrap().clear(); }
+#[tauri::command]
+fn result_scope(state: State<AppState>) -> Option<scope::Summary> { state.result_scope.lock().unwrap().summary() }
+
+fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, request_id: u64) -> Outcome {
     let control = search::Control::default();
     {
         let mut active = state.active_search.lock().unwrap();
@@ -179,6 +221,11 @@ fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, S
         Shortcut(String, Vec<(String, model::Intent)>),
         Command(model::Intent),
     }
+    let (initial_generation, previous_scope) = {
+        let context = state.result_scope.lock().unwrap();
+        (context.generation, context.current.clone())
+    };
+    let mut use_scope = false;
     let shortcut = {
         let settings = state.settings.lock().unwrap();
         // An exact phrase wins over the built-in commands. A near miss
@@ -196,16 +243,26 @@ fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, S
                 Err(bad) => return Outcome::Problem { message: format!("In “{}”, Voxi doesn't understand “{bad}”. Fix it in Settings.", s.phrase) },
             }
         }
-        None => match parse::parse(&text) {
-            Ok(intent) => Work::Command(intent),
-            Err(raw) => return Outcome::NotUnderstood { text: raw },
+        None => match scope::prepare(&text, previous_scope.as_ref()) {
+            Ok((intent, scoped)) => { use_scope = scoped; Work::Command(intent) },
+            Err(raw) if raw == text.trim() => return Outcome::NotUnderstood { text: raw },
+            Err(message) => return Outcome::Problem { message },
         },
     };
+    let (scope_generation, scoped_snapshot) = {
+        let active = state.active_search.lock().unwrap();
+        if !active.as_ref().is_some_and(|(id, _)| *id == request_id) { return Outcome::Problem { message: "Search cancelled.".into() }; }
+        let mut context = state.result_scope.lock().unwrap();
+        if use_scope && context.generation != initial_generation { return Outcome::Problem { message: "The previous list expired. Run the list command again.".into() }; }
+        if !use_scope { context.clear(); }
+        (context.generation, if use_scope { context.current.clone() } else { None })
+    };
+    let listing = matches!(&work, Work::Command(model::Intent::List { .. }));
     let roots = state.roots.read().unwrap().clone();
     let choices: HashMap<String, PathBuf> = choices.into_iter().map(|(k, v)| (k, PathBuf::from(v))).collect();
     let planned = {
         let history = state.history.lock().unwrap();
-        let planner = Planner::new(&roots, &choices).with_control(control.clone());
+        let planner = Planner::new(&roots, &choices).with_control(control.clone()).with_scope(scoped_snapshot.clone());
         match &work {
             Work::Shortcut(phrase, commands) => planner.plan_shortcut(phrase, commands, &history),
             Work::Command(intent) => planner.plan(intent, &history),
@@ -222,7 +279,19 @@ fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, S
             name,
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
         },
-        Ok(Planned::Info { title, summary, rows, total }) => Outcome::Info { title, summary, rows, total },
+        Ok(Planned::Info { title, summary, rows, total, listed }) => {
+            if listing {
+                let mut context = state.result_scope.lock().unwrap();
+                if context.generation == scope_generation {
+                    match listed.and_then(|(paths, label)| scope::Snapshot::capture(paths,
+                        previous_scope.as_ref().filter(|_| use_scope).map_or(label, |s| s.label.clone()))) {
+                        Some(snapshot) => context.publish(snapshot),
+                        None => context.clear(), // Partial/unreadable results must never become an action scope.
+                    }
+                }
+            }
+            Outcome::Info { title, summary, rows, total }
+        },
         Ok(Planned::Direct { action, title }) => {
             let out = exec::run(std::slice::from_ref(&action), &roots);
             match out.error {
@@ -230,11 +299,12 @@ fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, S
                 None => Outcome::Info { title, summary: String::new(), rows: vec![], total: 0 },
             }
         }
-        Ok(Planned::Steps { title, actions, notes, warnings, undo_of }) => {
+        Ok(Planned::Steps { title, actions, notes, mut warnings, undo_of }) => {
             let id = state.next_plan.fetch_add(1, Ordering::SeqCst);
+            if use_scope { warnings.insert(0, "Using files from the previous searched list.".into()); }
             let items = preview(&actions, &notes, &roots);
             let total = actions.len();
-            *state.pending.lock().unwrap() = Some(Pending { id, command: text.trim().to_string(), actions, undo_of });
+            *state.pending.lock().unwrap() = Some(Pending { id, command: text.trim().to_string(), actions, undo_of, context_generation: use_scope.then_some(scope_generation), context_snapshot: scoped_snapshot });
             Outcome::Plan { id, title, total, items, warnings, is_undo: undo_of.is_some() }
         }
     }
@@ -246,8 +316,15 @@ fn confirm_plan(state: State<AppState>, id: u64) -> Result<RunResult, String> {
     let Some(p) = pending.filter(|p| p.id == id) else {
         return Err("That preview expired. Press Enter to plan it again.".into());
     };
+    p.validate_context(&state.result_scope.lock().unwrap())?;
     let roots = state.roots.read().unwrap().clone();
     let out = exec::run(&p.actions, &roots);
+    {
+        let mut context = state.result_scope.lock().unwrap();
+        if p.context_generation == Some(context.generation) {
+            if let Some(snapshot) = &mut context.current { snapshot.apply(&out.done); }
+        }
+    }
     let done = out.done.len();
     let undoable = !out.inverse.is_empty() && p.undo_of.is_none();
     if done > 0 {
@@ -342,6 +419,7 @@ fn present_window(app: AppHandle, request_id: u64, height: f64, animate: bool) {
         {
             if let Ok(ptr) = w.ns_window() {
                 let ns: &objc2_app_kit::NSWindow = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+                if !ns.isVisible() { ns.setAlphaValue(if animate { 0.0 } else { 1.0 }); }
                 let mut frame = ns.frame();
                 let top = frame.origin.y + frame.size.height;
                 frame.size = objc2_foundation::NSSize::new(WINDOW_WIDTH, height.clamp(48.0, 640.0));
@@ -354,11 +432,40 @@ fn present_window(app: AppHandle, request_id: u64, height: f64, animate: bool) {
         let _ = w.set_size(tauri::LogicalSize::new(WINDOW_WIDTH, height.clamp(48.0, 640.0)));
         let _ = w.show();
         let _ = w.set_focus();
+        #[cfg(target_os = "macos")]
+        if let Ok(ptr) = w.ns_window() {
+            let ns: &objc2_app_kit::NSWindow = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+            fade_window(ns, true, animate);
+        }
+        let _ = w.emit("voxi://presented", request_id);
     });
 }
 
 #[tauri::command]
-fn hide_window(app: AppHandle) {
+fn dismiss_window(app: AppHandle, request_id: u64, animate: bool) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        {
+            let state = handle.state::<AppState>();
+            let mut presentation = state.presentation.lock().unwrap();
+            if !presentation.is_current(request_id) { return; }
+            presentation.cancel();
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(w) = handle.get_webview_window("main") {
+            if let Ok(ptr) = w.ns_window() {
+                let ns: &objc2_app_kit::NSWindow = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+                fade_window(ns, false, animate);
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = animate;
+    });
+}
+
+#[tauri::command]
+fn hide_window(app: AppHandle, request_id: u64) {
+    if !app.state::<AppState>().presentation.lock().unwrap().is_current(request_id) { return; }
     hide(&app);
 }
 
@@ -385,6 +492,7 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     settings.save(&state.settings_path)?;
     *state.roots.write().unwrap() = build_roots(&settings);
     *state.settings.lock().unwrap() = settings.clone();
+    state.result_scope.lock().unwrap().clear();
     Ok(settings)
 }
 
@@ -474,6 +582,7 @@ pub fn run() {
                 pending: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
                 settings_path,
+                result_scope: Mutex::new(scope::State::default()),
                 next_plan: AtomicU64::new(1),
                 active_search: Mutex::new(None),
                 presentation: Mutex::new(presentation::Presentation::default()),
@@ -549,11 +658,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             plan_command,
+            clear_result_scope,
+            result_scope,
             confirm_plan,
             cancel_plan,
             search_progress,
             open_hex,
             hide_window,
+            dismiss_window,
             fit_window,
             frontend_ready,
             present_window,
@@ -565,4 +677,147 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Voxi");
+}
+
+#[cfg(test)]
+mod result_context_tests {
+    use super::*;
+    use std::{cell::Cell, fs};
+    struct Fixture { _temp: tempfile::TempDir, home: PathBuf, state: AppState, request: Cell<u64> }
+    impl Fixture {
+        fn new() -> Self {
+            let temp = tempfile::tempdir().unwrap();
+            let home = fsx::canonical(temp.path());
+            for folder in ["Downloads", "Desktop", "Documents", "Pictures"] { fs::create_dir(home.join(folder)).unwrap(); }
+            let state = AppState {
+                roots: RwLock::new(Roots::new(&home, None, &[])), history: Mutex::new(History::load(home.join("history.json"))),
+                pending: Mutex::new(None), settings: Mutex::new(Settings::default()), settings_path: home.join("settings.json"),
+                next_plan: AtomicU64::new(1), active_search: Mutex::new(None), presentation: Mutex::new(Default::default()),
+                result_scope: Mutex::new(Default::default()),
+            };
+            Self { _temp: temp, home, state, request: Cell::new(0) }
+        }
+        fn write(&self, path: &str) -> PathBuf {
+            let path = self.home.join(path); fs::create_dir_all(path.parent().unwrap()).unwrap(); fs::write(&path, b"data").unwrap(); path
+        }
+        fn command(&self, text: &str) -> Outcome { self.request.set(self.request.get()+1); plan_input(&self.state, text.into(), HashMap::new(), self.request.get()) }
+        fn paths(&self) -> Vec<PathBuf> { self.state.result_scope.lock().unwrap().current.as_ref().unwrap().paths() }
+        fn actions(&self) -> Vec<Action> { self.state.pending.lock().unwrap().as_ref().unwrap().actions.clone() }
+        fn list(&self) { assert!(matches!(self.command("list the items in Downloads"), Outcome::Info { .. })); }
+    }
+    #[test]
+    fn last_file_is_the_last_displayed_result_and_no_global_scan_occurs() {
+        let f = Fixture::new(); f.write("Downloads/a.pdf"); f.write("Downloads/sub/b.txt"); f.write("Desktop/elsewhere.txt");
+        f.list(); let paths = f.paths();
+        assert!(matches!(f.command("delete the last file"), Outcome::Plan { total: 1, .. }));
+        assert_eq!(f.actions(), vec![Action::Trash { path: paths.last().unwrap().clone() }]);
+        assert_eq!(f.state.active_search.lock().unwrap().as_ref().unwrap().1.visited.load(Ordering::Relaxed), 0);
+        assert!(paths.iter().all(|p| p.exists()));
+    }
+    #[test]
+    fn all_and_filtered_followups_only_use_snapshot_files() {
+        let f = Fixture::new(); let pdf=f.write("Downloads/a.pdf"); let txt=f.write("Downloads/sub/b.txt");
+        f.write("Documents/outside.pdf"); f.list(); f.write("Downloads/new.pdf");
+        assert!(matches!(f.command("delete PDFs"), Outcome::Plan { total: 1, .. }));
+        assert_eq!(f.actions(), vec![Action::Trash { path: pdf.clone() }]);
+        assert!(matches!(f.command("move those files to Documents"), Outcome::Plan { total: 2, .. }));
+        let sources: Vec<_> = f.actions().iter().filter_map(|a| if let Action::Move{from,..}=a {Some(from.clone())} else {None}).collect();
+        assert!(sources.contains(&pdf) && sources.contains(&txt));
+    }
+    #[test]
+    fn an_empty_scoped_filter_does_not_start_a_global_search() {
+        let f=Fixture::new(); f.write("Downloads/keep.txt"); f.write("Pictures/photo.jpg"); f.list();
+        assert!(matches!(f.command("delete images"), Outcome::Problem{..})); assert_eq!(f.paths().len(),1);
+        assert!(f.state.pending.lock().unwrap().is_none());
+    }
+    #[test]
+    fn explicit_source_folders_and_outside_filenames_leave_scope() {
+        let f=Fixture::new(); f.write("Downloads/a.pdf"); let outside=f.write("Documents/outside.pdf"); f.list();
+        assert!(matches!(f.command("delete outside.pdf"), Outcome::Plan{total:1,..}));
+        assert!(f.state.result_scope.lock().unwrap().current.is_none());
+        assert_eq!(f.actions(),vec![Action::Trash{path:outside.clone()}]);
+        f.list(); assert!(matches!(f.command("delete PDFs in Documents"), Outcome::Plan{total:1,..}));
+        assert_eq!(f.actions(),vec![Action::Trash{path:outside}]); assert!(f.state.result_scope.lock().unwrap().current.is_none());
+    }
+    #[test]
+    fn a_new_list_replaces_scope_and_filters_can_narrow_it() {
+        let f=Fixture::new(); f.write("Downloads/a.pdf"); f.write("Downloads/b.txt"); let image=f.write("Pictures/photo.jpg");
+        f.list(); assert!(matches!(f.command("list PDFs"),Outcome::Info{total:1,..})); assert_eq!(f.paths().len(),1);
+        assert!(matches!(f.command("list images in Pictures"),Outcome::Info{total:1,..})); assert_eq!(f.paths(),vec![image]);
+    }
+    #[test]
+    fn missing_or_replaced_files_require_a_new_list() {
+        let f=Fixture::new(); let path=f.write("Downloads/a.pdf"); f.list();
+        fs::rename(&path,f.home.join("Downloads/original.pdf")).unwrap(); fs::write(&path,b"replacement").unwrap();
+        assert!(matches!(f.command("delete them"), Outcome::Problem{message} if message.contains("changed")));
+        assert!(path.exists()); assert!(f.state.pending.lock().unwrap().is_none());
+    }
+    #[test]
+    fn files_replaced_after_the_preview_cannot_be_confirmed() {
+        let f=Fixture::new(); let path=f.write("Downloads/a.pdf"); f.list();
+        assert!(matches!(f.command("delete them"), Outcome::Plan{..}));
+        let pending=f.state.pending.lock().unwrap().take().unwrap();
+        pending.validate_context(&f.state.result_scope.lock().unwrap()).unwrap();
+        fs::rename(&path,f.home.join("Downloads/original.pdf")).unwrap();
+        fs::write(&path,b"replacement").unwrap();
+        assert!(pending.validate_context(&f.state.result_scope.lock().unwrap()).unwrap_err().contains("changed"));
+        assert_eq!(fs::read(&path).unwrap(),b"replacement");
+    }
+    #[test]
+    fn clearing_scope_expires_its_preview_and_references() {
+        let f=Fixture::new(); f.write("Downloads/a.pdf"); f.list();
+        assert!(matches!(f.command("delete them"), Outcome::Plan{..}));
+        let pending=f.state.pending.lock().unwrap().take().unwrap();
+        f.state.result_scope.lock().unwrap().clear();
+        assert!(pending.validate_context(&f.state.result_scope.lock().unwrap()).unwrap_err().contains("expired"));
+        assert!(matches!(f.command("delete the last file"),Outcome::NotUnderstood{..}));
+    }
+    #[test]
+    fn empty_lists_stay_bounded_and_destinations_are_never_references() {
+        let f=Fixture::new(); f.write("Documents/outside.pdf"); f.list();
+        assert!(matches!(f.command("delete everything"),Outcome::Problem{..}));
+        assert!(f.state.pending.lock().unwrap().is_none());
+        f.write("Downloads/a.pdf"); f.list();
+        let snapshot=f.state.result_scope.lock().unwrap().current.clone().unwrap();
+        let (intent,used)=scope::prepare("rename the first file to \"last\"",Some(&snapshot)).unwrap();
+        assert!(used);
+        assert!(matches!(intent,model::Intent::Rename{new_name,..} if new_name=="last"));
+        assert!(scope::parse_followup("move a.pdf to last",&snapshot).unwrap().is_none());
+        let (intent,used)=scope::prepare("move a.pdf to \"last\"",Some(&snapshot)).unwrap();
+        assert!(used);
+        assert!(matches!(intent,model::Intent::Move{to,..} if to=="last"));
+    }
+    #[test]
+    fn ambiguous_names_only_offer_current_results_and_reject_outside_choices() {
+        let f=Fixture::new(); f.write("Downloads/a/same.pdf"); f.write("Downloads/b/same.pdf"); let outside=f.write("Documents/same.pdf");
+        f.list(); assert!(matches!(f.command("delete same.pdf"),Outcome::Ambiguous{candidates,..} if candidates.len()==2 && !candidates.contains(&outside.to_string_lossy().to_string())));
+        f.request.set(f.request.get()+1);
+        let result=plan_input(&f.state,"delete same.pdf".into(),HashMap::from([("same.pdf".into(),outside.to_string_lossy().into_owned())]),f.request.get());
+        assert!(matches!(result,Outcome::Problem{..}));
+    }
+    #[test]
+    fn positions_are_limited_to_displayed_rows() {
+        let f=Fixture::new(); let paths:Vec<_>=(0..201).map(|i|f.write(&format!("Downloads/{i}.txt"))).collect();
+        let snapshot=scope::Snapshot::capture(paths.clone(),"Downloads".into()).unwrap();
+        let (intent,used)=scope::prepare("delete the last file",Some(&snapshot)).unwrap(); assert!(used);
+        assert_eq!(intent.source(),Some(&model::Source::item(&paths[199].to_string_lossy())));
+        assert!(scope::prepare("delete the 201st file",Some(&snapshot)).is_err());
+    }
+    #[test]
+    fn references_require_context_and_quoted_names_stay_literal() {
+        let f=Fixture::new(); f.write("Downloads/last"); f.write("Downloads/notes.txt");
+        assert!(matches!(f.command("delete the last file"),Outcome::NotUnderstood{..}));
+        f.list(); assert!(matches!(f.command("delete \"last\""),Outcome::Plan{total:1,..}));
+        assert!(matches!(f.command("delete it"),Outcome::Problem{..}));
+    }
+    #[test]
+    fn confirmed_moves_and_trash_update_the_context_order() {
+        let f=Fixture::new(); let old=f.write("Downloads/a.pdf"); let keep=f.write("Downloads/b.txt"); f.list();
+        let moved=f.home.join("Documents/a.pdf"); fs::rename(&old,&moved).unwrap();
+        let mut context=f.state.result_scope.lock().unwrap(); let snapshot=context.current.as_mut().unwrap();
+        snapshot.apply(&[Action::Move{from:old,to:moved.clone()}]); snapshot.validate().unwrap();
+        assert!(snapshot.paths().contains(&moved));
+        fs::remove_file(&keep).unwrap(); snapshot.apply(&[Action::Trash{path:keep}]);
+        assert_eq!(snapshot.paths(),vec![moved]);
+    }
 }

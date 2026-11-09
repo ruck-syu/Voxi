@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, inTauri, tildify, type FolderAccess, type Outcome, type RunResult, type Settings, type Shortcut } from "./api";
+import { api, inTauri, tildify, type FolderAccess, type Outcome, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
 import { readChoice } from "./choice";
 import { appVersion, checkAndInstall, type UpdateState } from "./updates";
 
@@ -35,7 +35,7 @@ function prettyHotkey(h: string): string {
 }
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const CLOSE_MS = 120;
+const CLOSE_MS = 140;
 
 export default function App() {
   const [view, setView] = useState<View>("command");
@@ -46,14 +46,30 @@ export default function App() {
   const [height, setHeight] = useState<number | null>(null);
   const [glide, setGlide] = useState(false);
   const innerRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showId = useRef(0);
+  const awaitingShow = useRef<number | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current !== null) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  }, []);
+  useEffect(() => cancelClose, [cancelClose]);
 
   // Plays the close animation, then hides the window. The card stays in its
   // closed state while hidden, so the next show animates in from there.
   const close = useCallback(() => {
+    cancelClose();
+    const requestId = showId.current;
+    awaitingShow.current = null;
     setOpen(false);
     setPendingShow(null);
-    setTimeout(() => api.hide(), reducedMotion() ? 0 : CLOSE_MS);
-  }, []);
+    if (inTauri) void invoke("dismiss_window", { requestId, animate: !reducedMotion() });
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      void api.hide(requestId);
+    }, reducedMotion() ? 0 : CLOSE_MS);
+  }, [cancelClose]);
 
   // Clicking outside the window (another app, the desktop, the menu bar)
   // closes it, like Spotlight. Not while a command is being planned or run:
@@ -83,20 +99,31 @@ export default function App() {
     let disposed = false;
     const unShown = listen<{ requestId: number; mode: View }>("voxi://shown", (e) => {
       const { mode, requestId } = e.payload;
+      cancelClose();
+      showId.current = requestId;
+      awaitingShow.current = requestId;
       setView((v) => (mode === "command" && v === "welcome" ? v : mode));
       shownAt.current = performance.now();
-      setOpen(true);
+      setOpen(false);
       setPendingShow(requestId);
+    });
+    const unPresented = listen<number>("voxi://presented", ({ payload: requestId }) => {
+      if (requestId !== showId.current || awaitingShow.current !== requestId) return;
+      awaitingShow.current = null;
+      setPendingShow(null);
+      setOpen(true);
+      shownAt.current = performance.now();
       window.dispatchEvent(new Event("voxi-focus"));
     });
     const unHide = listen("voxi://hide", close);
-    Promise.all([unShown, unHide]).then(() => { if (!disposed) void invoke("frontend_ready"); });
+    Promise.all([unShown, unPresented, unHide]).then(() => { if (!disposed) void invoke("frontend_ready"); });
     return () => {
       disposed = true;
       unShown.then((f) => f());
+      unPresented.then((f) => f());
       unHide.then((f) => f());
     };
-  }, [close]);
+  }, [close, cancelClose]);
 
   useEffect(() => {
     let disposed = false;
@@ -110,11 +137,7 @@ export default function App() {
     if (!inTauri || pendingShow === null || !settings || !fontsReady || !innerRef.current) return;
     const requestId = pendingShow;
     const height = Math.ceil(innerRef.current.offsetHeight);
-    void invoke("present_window", { requestId, height, animate: !reducedMotion() }).then(() => {
-      setPendingShow((current) => current === requestId ? null : current);
-      shownAt.current = performance.now();
-      window.dispatchEvent(new Event("voxi-focus"));
-    });
+    void invoke("present_window", { requestId, height, animate: !reducedMotion() });
   }, [pendingShow, settings, fontsReady, view]);
 
   // The window is the frosted card, so it is sized to the content and macOS
@@ -228,6 +251,7 @@ function CommandView({
   // The last command, echoed above its result once the box is cleared.
   const [said, setSaid] = useState<string | null>(null);
   const [heard, setHeard] = useState<string | null>(null);
+  const [resultScope, setResultScope] = useState<ResultScope | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ruleRef = useRef<HTMLSpanElement>(null);
   const planShownAt = useRef(0);
@@ -237,6 +261,7 @@ function CommandView({
   useEffect(() => () => {
     ++requestId.current;
     api.cancel();
+    void api.clearResultScope();
   }, []);
 
   useEffect(() => {
@@ -262,6 +287,7 @@ function CommandView({
 
   useEffect(() => {
     const onFocus = () => {
+      setResultScope(null);
       // A finished result doesn't carry over to the next time the window opens.
       setPhase((p) => {
         const live = p.k === "outcome" && (p.outcome.status === "plan" || p.outcome.status === "ambiguous");
@@ -304,8 +330,9 @@ function CommandView({
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const outcome = await api.plan(command, picked, request);
+        const { outcome, scope } = await api.plan(command, picked, request);
         if (request !== requestId.current) return;
+        setResultScope(scope);
         setPhase({ k: "outcome", outcome });
         if (outcome.status === "plan") planShownAt.current = performance.now();
         if (outcome.status === "ambiguous") {
@@ -344,6 +371,7 @@ function CommandView({
     setPhase({ k: "running", title: plan.title });
     try {
       const result = await api.confirm(plan.id);
+      setResultScope(await api.resultScope().catch(() => null));
       setPhase({ k: "done", result, wasUndo: plan.isUndo });
       focusInput();
     } catch (e) {
@@ -488,6 +516,13 @@ function CommandView({
           “{said}”
         </p>
       )}
+      {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
+        <span>{resultScope.count} results from {resultScope.label}{resultScope.visible < resultScope.count ? ` · first ${resultScope.visible} displayed` : ""}</span>
+        <button className="link" disabled={phase.k === "running"} onClick={() => {
+          reset();
+          void api.clearResultScope().then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: String(e) }));
+        }}>Clear scope</button>
+      </div>}
       <Body
         searched={searched}
         key={phaseKey(phase)}
@@ -874,7 +909,7 @@ function DictationTab() {
     <ul className="prefs">
       <li className="pref">
         <div className="pref-copy">
-          <h2 className="pref-label">Hex by Anomaly</h2>
+          <h2 className="pref-label pref-heading">Hex by Anomaly <span className="recommendation-badge">Recommended</span></h2>
           <p className="settings-description">Free, open source dictation that runs on your device after a one-time model download.</p>
         </div>
         <button className="secondary small" onClick={() => { setLinkError(null); api.openHex().catch((e) => setLinkError(String(e))); }}>Get Hex</button>

@@ -293,6 +293,19 @@ mod catalog_tests {
             List { src: set(Some("Documents"), Filter { older_than_days: Some(365), ..of(Files) }) }
         );
     }
+
+    #[test]
+    fn stl_file_types_are_extension_filters_not_name_filters() {
+        let want = List { src: set(Some("Downloads"), Filter {
+            ext: Some(vec!["stl".into()]), ..of(Files)
+        }) };
+        for command in [" list the STL files in Downloads. ", "list stl files in Downloads", "list .STL files in Downloads", "list STLs in Downloads"] {
+            assert_eq!(p(command), want, "{command}");
+        }
+        assert_eq!(p("list files named STL in Downloads"), List {
+            src: set(Some("Downloads"), Filter { name_contains: Some("STL".into()), ..of(Files) }),
+        });
+    }
     #[test]
     fn r35_size() {
         assert_eq!(p("show size of Downloads"), Size { folder: "Downloads".into() });

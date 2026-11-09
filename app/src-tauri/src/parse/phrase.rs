@@ -479,7 +479,7 @@ pub fn type_word(head: &str) -> Option<(FileType, Option<Vec<String>>)> {
     let h = head.trim().trim_start_matches('.').to_ascii_lowercase();
     let t = match h.as_str() {
         "" | "files" | "file" | "everything" | "anything" | "items" | "stuff" | "things" => FileType::Files,
-        "screenshots" | "screenshot" | "screen shots" => FileType::Screenshots,
+        "screenshots" | "screenshot" | "screen shots" | "screenshot files" | "screenshots files" | "screen shot files" => FileType::Screenshots,
         "images" | "image" | "image files" | "pictures" | "picture" | "photos" | "photo" | "pics" | "pic" => FileType::Images,
         "pdfs" | "pdf" | "pdf files" | "pdf documents" => FileType::Pdfs,
         "videos" | "video" | "video files" | "movies" | "movie" | "screen recordings" => FileType::Videos,

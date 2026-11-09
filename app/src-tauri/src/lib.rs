@@ -10,6 +10,8 @@ mod settings;
 mod search;
 mod scope;
 mod trash;
+#[cfg(test)]
+mod paraphrase_audit; // report-only, all tests #[ignore]
 
 use fsx::{Roots, file_name};
 use history::{Entry, History};
@@ -280,23 +282,24 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
         },
         Ok(Planned::Info { title, summary, rows, total, listed }) => {
+            let mut numbered = false;
             if listing {
                 let mut context = state.result_scope.lock().unwrap();
                 if context.generation == scope_generation {
                     match listed.and_then(|(paths, label)| scope::Snapshot::capture(paths,
                         previous_scope.as_ref().filter(|_| use_scope).map_or(label, |s| s.label.clone()))) {
-                        Some(snapshot) => context.publish(snapshot),
+                        Some(snapshot) => { context.publish(snapshot); numbered = true; },
                         None => context.clear(), // Partial/unreadable results must never become an action scope.
                     }
                 }
             }
-            Outcome::Info { title, summary, rows, total }
+            Outcome::Info { title, summary, rows, total, numbered }
         },
         Ok(Planned::Direct { action, title }) => {
             let out = exec::run(std::slice::from_ref(&action), &roots);
             match out.error {
                 Some(message) => Outcome::Problem { message },
-                None => Outcome::Info { title, summary: String::new(), rows: vec![], total: 0 },
+                None => Outcome::Info { title, summary: String::new(), rows: vec![], total: 0, numbered: false },
             }
         }
         Ok(Planned::Steps { title, actions, notes, mut warnings, undo_of }) => {
@@ -802,6 +805,58 @@ mod result_context_tests {
         let (intent,used)=scope::prepare("delete the last file",Some(&snapshot)).unwrap(); assert!(used);
         assert_eq!(intent.source(),Some(&model::Source::item(&paths[199].to_string_lossy())));
         assert!(scope::prepare("delete the 201st file",Some(&snapshot)).is_err());
+        assert!(scope::prepare("delete 201",Some(&snapshot)).is_err());
+    }
+    #[test]
+    fn numbered_rows_and_spoken_numbers_target_the_displayed_order() {
+        let f=Fixture::new();
+        for name in ["a.pdf","b.txt","c.txt","d.pdf","e.txt","4"] { f.write(&format!("Downloads/{name}")); }
+        let Outcome::Info{rows,numbered:true,..}=f.command("show items in Downloads") else { panic!("expected numbered list") };
+        let paths=f.paths();
+        assert_eq!(rows.iter().map(|r|r.name.clone()).collect::<Vec<_>>(),paths.iter().map(|p|file_name(p)).collect::<Vec<_>>());
+        for command in ["delete 4","delete four","delete item 4","delete number four"] {
+            assert!(matches!(f.command(command),Outcome::Plan{total:1,..}),"{command}");
+            assert_eq!(f.actions(),vec![Action::Trash{path:paths[3].clone()}],"{command}");
+        }
+        assert!(matches!(f.command("Move 5 to desktop"),Outcome::Plan{total:1,..}));
+        assert_eq!(f.actions(),vec![Action::Move{from:paths[4].clone(),to:f.home.join("Desktop").join(file_name(&paths[4]))}]);
+        assert!(matches!(f.command("delete 1"),Outcome::Plan{total:1,..}));
+        assert_eq!(f.actions(),vec![Action::Trash{path:paths[0].clone()}]);
+        assert!(matches!(f.command("delete \"4\""),Outcome::Plan{total:1,..}));
+        assert_eq!(f.actions(),vec![Action::Trash{path:f.home.join("Downloads/4")}]);
+        for command in ["delete 0","delete 7","delete 999999999999999999999999999"] {
+            assert!(matches!(f.command(command),Outcome::Problem{..}),"{command}");
+            assert!(f.state.pending.lock().unwrap().is_none());
+        }
+        assert!(matches!(f.command("count files"),Outcome::Info{numbered:false,..}));
+    }
+    #[test]
+    fn numeric_destinations_and_filenames_are_not_row_references() {
+        let f=Fixture::new(); f.write("Downloads/4.pdf"); f.write("Downloads/a.txt"); f.list();
+        let snapshot=f.state.result_scope.lock().unwrap().current.clone().unwrap();
+        for command in ["move a.txt to 5","rename a.txt to 4.pdf","resize images to 400","delete 4.pdf"] {
+            assert!(scope::parse_followup(command,&snapshot).unwrap().is_none(),"{command}");
+        }
+        let (intent,used)=scope::prepare("rename 1 to 5.pdf",Some(&snapshot)).unwrap();
+        assert!(used);
+        assert!(matches!(intent,model::Intent::Rename{new_name,..} if new_name=="5.pdf"));
+    }
+    #[test]
+    fn deleted_rows_do_not_shift_later_numbers_or_promote_hidden_rows() {
+        let f=Fixture::new();
+        let paths:Vec<_>=(0..201).map(|i|f.write(&format!("Downloads/{i}.txt"))).collect();
+        let mut snapshot=scope::Snapshot::capture(paths.clone(),"Downloads".into()).unwrap();
+        fs::remove_file(&paths[3]).unwrap();
+        snapshot.apply(&[Action::Trash{path:paths[3].clone()}]);
+        snapshot.validate().unwrap();
+        assert!(scope::prepare("delete 4",Some(&snapshot)).is_err());
+        let (intent,_)=scope::prepare("move 5 to Desktop",Some(&snapshot)).unwrap();
+        assert_eq!(intent.source(),Some(&model::Source::item(&paths[4].to_string_lossy())));
+        assert!(scope::prepare("delete 201",Some(&snapshot)).is_err());
+        assert_eq!(snapshot.summary().count,200);
+        assert_eq!(snapshot.summary().visible,199);
+        let (intent,_)=scope::prepare("delete the last file",Some(&snapshot)).unwrap();
+        assert_eq!(intent.source(),Some(&model::Source::item(&paths[199].to_string_lossy())));
     }
     #[test]
     fn references_require_context_and_quoted_names_stay_literal() {

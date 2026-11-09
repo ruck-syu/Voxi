@@ -1546,6 +1546,38 @@ mod tests {
     }
 
     #[test]
+    fn location_first_folder_creation_targets_downloads() {
+        let h = home();
+        let destination = h.roots.downloads().join("PDFS");
+        assert_eq!(steps(&h, "create a folder in downloads named PDFS"),
+            vec![Action::CreateFolder { path: destination.clone() }]);
+        assert!(!destination.exists(), "planning must only preview the new folder");
+    }
+
+    #[test]
+    fn filename_wording_preserves_an_explicit_documents_scope() {
+        let h = home();
+        let document = h.roots.home.join("Documents/draft-plan.txt");
+        let outside = h.roots.home.join("Desktop/draft-plan.txt");
+        fs::write(&document, b"a").unwrap();
+        fs::write(&outside, b"b").unwrap();
+        assert_eq!(steps(&h, "replace draft with final in the names in documents"),
+            vec![Action::Rename { path: document, new_name: "final-plan.txt".into() }]);
+        assert_eq!(fs::read(&outside).unwrap(), b"b");
+    }
+
+    #[test]
+    fn screenshot_files_keeps_screenshot_type_and_all_roots() {
+        let h = home();
+        let image = h.roots.home.join("Pictures/Screenshot 2026-01-01.png");
+        let decoy = h.roots.home.join("Desktop/screenshot-notes.txt");
+        fs::write(&image, b"a").unwrap();
+        fs::write(&decoy, b"b").unwrap();
+        assert_eq!(steps(&h, "delete screenshot files"), vec![Action::Trash { path: image }]);
+        assert!(decoy.exists());
+    }
+
+    #[test]
     fn sorting_subfolders_leaves_correctly_grouped_files_alone() {
         let h = home();
         let dl = h.roots.downloads();

@@ -1,0 +1,365 @@
+# Paraphrase variants. Columns: id | seed | axis | phrase | override (- = seed expectation)
+# Class prefix: P = semantic paraphrase, K = explicit-dot extension (known-gap candidate), N = negative (must refuse), A = ambiguous (recorded only)
+P001 | S01 | filler | please move report.pdf to Documents | -
+P002 | S01 | verb_alias | put the file report.pdf into Documents | -
+P003 | S01 | verb_alias | transfer report.pdf over to Documents | -
+P004 | S01 | verb_alias | relocate report.pdf to the Documents folder | -
+P005 | S01 | case_punct | Move report.pdf to documents. | -
+P006 | S01 | verb_alias | shift report.pdf to Documents | -
+P007 | S01 | article | move the file report.pdf to Documents | -
+P008 | S01 | quoted_keyword | move "Notes from Monday.pdf" to Documents | {"intent":"move","src":{"kind":"item","name":"Notes from Monday.pdf"},"to":"Documents"}
+P009 | S02 | plural_article | move every PDF in Downloads to Documents | -
+P010 | S02 | prep_order | move all the PDFs from Downloads into Documents | -
+P011 | S02 | singular_files | move all PDF files from Downloads to Documents | -
+P012 | S02 | filler_case | please move all pdfs from downloads to documents | -
+P013 | S02 | verb_alias | put all PDFs from Downloads in Documents | -
+P014 | S02 | drop_all | move PDFs from Downloads to Documents | -
+P015 | S02 | filler | move all of the PDFs in Downloads over to Documents | -
+P016 | S03 | size_phrase | move files bigger than 100 MB from Downloads to External | -
+P017 | S03 | size_phrase | move files over 100MB from Downloads to External | -
+P018 | S03 | singular | move file larger than 100 MB from Downloads to External | -
+P019 | S03 | prep_order | move the files larger than 100 MB in Downloads to External | -
+P020 | S03 | spoken_num | move files larger than one hundred MB from Downloads to External | -
+P021 | S03 | case_unit | move files larger than 100 mb from downloads to external | {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":100.0}},"to":"external"}
+P022 | S03 | filler | move files that are larger than 100 MB from Downloads to External | -
+P023 | S04 | relative_clause | move files that contain invoice from Downloads to Invoices | -
+P024 | S04 | any_article | move any file containing invoice from Downloads to Invoices | -
+P025 | S04 | quoted_keyword | move files containing "invoice" from Downloads to Invoices | -
+P026 | S04 | verb_alias | move all files containing invoice from Downloads into Invoices | -
+P027 | S04 | name_phrase | move files with names containing invoice from Downloads to Invoices | -
+P028 | S04 | folder_word | move files containing invoice from the Downloads folder to the Invoices folder | -
+P029 | S04 | folder_suffix | move files containing invoice from Downloads to Invoices folder | -
+P030 | S05 | article | copy the file notes.txt to Desktop | -
+P031 | S05 | verb_synonym | duplicate notes.txt to Desktop | -
+P032 | S05 | filler | please copy notes.txt over to Desktop | -
+P033 | S05 | folder_word | copy notes.txt into the Desktop folder | -
+P034 | S05 | quoted_name | copy "notes.txt" to Desktop | -
+P035 | S05 | case_punct | Copy notes.txt to desktop. | -
+P036 | S05 | spoken_dot | copy notes dot txt to Desktop | -
+P037 | S06 | all_synonym | copy every image from Pictures to Backup | -
+P038 | S06 | singular_files | copy all images in Pictures to Backup | -
+P039 | S06 | image_files | copy all image files from Pictures into Backup | -
+P040 | S06 | case_article | copy all the images from pictures to backup | {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"backup"}
+P041 | S06 | drop_all | copy images from Pictures to Backup | -
+P042 | S06 | folder_suffix | copy all images from Pictures to the Backup folder | -
+P043 | S06 | filler | please copy all the images in Pictures to Backup. | -
+P044 | S07 | article | rename the file report.pdf to Q3-report.pdf | -
+P045 | S07 | verb_alias | rename report.pdf as Q3-report.pdf | -
+P046 | S07 | filler | please rename report.pdf to Q3-report.pdf. | -
+P047 | S07 | quoted_dest | rename report.pdf to "Q3-report.pdf" | -
+P048 | S07 | spoken_dot | rename report dot pdf to Q3-report.pdf | -
+P049 | S07 | quoted_keyword | rename "Notes to self.pdf" to Q3-notes.pdf | {"intent":"rename","src":{"kind":"item","name":"Notes to self.pdf"},"new_name":"Q3-notes.pdf"}
+P050 | S07 | case_caps | RENAME report.pdf TO Q3-report.pdf | -
+P051 | S07 | synonym_phrase | change the name of report.pdf to Q3-report.pdf | -
+P052 | S08 | article | add the prefix Invoice- to files named bill in Downloads | -
+P053 | S08 | named_containing | add prefix Invoice- to files containing bill in Downloads | -
+P054 | S08 | quoted_prefix | add prefix "Invoice-" to files named bill in Downloads | -
+P055 | S08 | filler_prep | please add prefix Invoice- to files named bill from Downloads. | -
+P056 | S08 | singular | add prefix Invoice- to file named bill in Downloads | -
+P057 | S08 | case_folder | add prefix Invoice- to files named bill in downloads | -
+P058 | S09 | article | add the date prefix to files in Screenshots | -
+P059 | S09 | verb_alias | put a date prefix on files in Screenshots | -
+P060 | S09 | all_synonym | add date prefix to all files in Screenshots | -
+P061 | S09 | every | add a date prefix to every file in Screenshots | -
+P062 | S09 | singular_case | add date prefix to file in screenshots | -
+P063 | S09 | plural_noun | please add date prefixes to files in Screenshots | -
+P064 | S09 | folder_suffix | add date prefix to files in the Screenshots folder | -
+P065 | S10 | article_word | replace draft with final in file names in Documents | -
+P066 | S10 | word_quote | replace the word draft with final in names in Documents | -
+P067 | S10 | quoted_terms | replace "draft" with "final" in names in Documents | -
+P068 | S10 | filler | please replace draft with final in names in Documents. | -
+P069 | S10 | synonym_verb | change draft to final in names in Documents | -
+P070 | S10 | one_word | replace draft with final in filenames in Documents | -
+P071 | S10 | case_article | replace draft with final in the names in documents | -
+P072 | S11 | article | replace spaces with dashes in the files in Downloads | -
+P073 | S11 | all_synonym | replace all spaces with dashes in files in Downloads | -
+P074 | S11 | verb_alias | swap spaces for dashes in files in Downloads | -
+P075 | S11 | noun_phrase | replace spaces with dashes in file names in Downloads | -
+P076 | S11 | filler_case | please replace spaces with dashes in files in downloads | -
+P077 | S11 | folder_suffix | replace spaces with dashes in files in the Downloads folder | -
+P078 | S11 | synonym_noun | replace space characters with dashes in files in Downloads | -
+P079 | S12 | article | number the images in Trip as trip-001, trip-002 | -
+P080 | S12 | all_synonym | number all images in Trip as trip-001, trip-002 | -
+P081 | S12 | folder_suffix | number images in the Trip folder as trip-001, trip-002 | -
+P082 | S12 | singular_noun | number image files in Trip as trip-001, trip-002 | -
+P083 | S12 | filler | please number images in Trip as trip-001, trip-002. | -
+P084 | S12 | case_folder | number images in trip as trip-001, trip-002 | {"intent":"number","src":{"kind":"set","folder":"trip","filter":{"type":"images"}},"base":"trip-","width":3}
+P085 | S13 | verb_phrase | make file names lowercase in Downloads | -
+P086 | S13 | all_synonym | lowercase all file names in Downloads | -
+P087 | S13 | article | lowercase the file names in Downloads | -
+P088 | S13 | one_word | lowercase filenames in Downloads | -
+P089 | S13 | every | lowercase every file name in Downloads | -
+P090 | S13 | folder_suffix | lowercase file names in the Downloads folder | -
+P091 | S13 | filler_case | please lowercase file names in downloads. | -
+P092 | S14 | exact_user_cmd | create a folder in Downloads named PDFS. | -
+P093 | S14 | near_dictation | Create a new folder inside Downloads called PDFS. | -
+P094 | S14 | verb_alias | make a folder on Downloads named PDFS | -
+P095 | S14 | verb_alias | add folder under Downloads called PDFS | -
+P096 | S14 | name_first | create a folder named PDFS in downloads | -
+P097 | S14 | name_first_bare | create folder PDFS in downloads | -
+P098 | S14 | literal_name_case | create a folder in Downloads named PDFs | {"intent":"create_folders","names":["PDFs"],"parent":"Downloads"}
+P099 | S14 | literal_name_case | create a folder in Downloads named pdfs | {"intent":"create_folders","names":["pdfs"],"parent":"Downloads"}
+P100 | S15 | conjunction | create folders 2026 and 2027 in Documents | -
+P101 | S15 | verb_alias | make folders 2026, 2027 in Documents | -
+P102 | S15 | article | create the folders 2026, 2027 in Documents | -
+P103 | S15 | prep_under | add folders 2026, 2027 under Documents | -
+P104 | S15 | case_folder | create folders 2026, 2027 in documents | -
+P105 | S15 | filler | please create folders 2026, 2027 in Documents. | -
+P106 | S15 | singular_noun | create folder 2026, 2027 in Documents | -
+P107 | S16 | article | sort the Downloads folder by type | -
+P108 | S16 | verb_alias | organize Downloads by type | -
+P109 | S16 | noun_phrase | sort downloads by file type | -
+P110 | S16 | synonym | sort Downloads by kind | -
+P111 | S16 | filler | please sort Downloads by type. | -
+P112 | S16 | plural | sort Downloads by types | -
+P113 | S16 | verb_alias | tidy Downloads by type | -
+P114 | S17 | article | sort the Screenshots folder by month | -
+P115 | S17 | verb_alias | organize Screenshots by month | -
+P116 | S17 | case | sort screenshots by month | -
+P117 | S17 | plural | sort Screenshots by months | -
+P118 | S17 | prep_into | sort Screenshots into months | -
+P119 | S17 | filler | please sort Screenshots by month. | -
+P120 | S17 | article | sort Screenshots by the month | -
+P121 | S18 | article | convert the file photo.heic to png | -
+P122 | S18 | verb_article | convert photo.heic into a PNG | -
+P123 | S18 | filler | please convert photo.heic to png. | -
+P124 | S18 | case | convert photo.heic to PNG | -
+P125 | S18 | spoken_dot | convert photo dot heic to png | -
+P126 | S18 | verb_alias | turn photo.heic into png | -
+P127 | S19 | all_synonym | convert every HEIC in Pictures to jpg | -
+P128 | S19 | noun_files | convert all HEIC files in Pictures to jpg | -
+P129 | S19 | noun_images_case | convert all heic images in Pictures to JPG | -
+P130 | S19 | verb_alias | turn all HEIC in Pictures into jpg | -
+P131 | S19 | folder_suffix | convert all HEIC in the Pictures folder to jpg | -
+P132 | S19 | drop_all | convert HEIC in Pictures to jpg | -
+P133 | S19 | format_alias | convert all HEIC files in Pictures to jpeg | -
+P134 | S19 | filler | please convert all HEIC in Pictures to jpg. | -
+P135 | S20 | article | resize the file photo.jpg to 1200 pixels wide | -
+P136 | S20 | abbreviation | resize photo.jpg to 1200 px wide | -
+P137 | S20 | verb_alias | shrink photo.jpg to 1200 pixels wide | -
+P138 | S20 | filler | please resize photo.jpg to 1200 pixels wide. | -
+P139 | S20 | drop_unit | resize photo.jpg to 1200 wide | -
+P140 | S20 | spoken_num | resize photo.jpg to one thousand two hundred pixels wide | -
+P141 | S21 | all_synonym | resize every image in Trip to 1600 pixels wide | -
+P142 | S21 | verb_alias | shrink all images in Trip to 1600 pixels wide | -
+P143 | S21 | noun_files_abbrev | resize all image files in Trip to 1600 px wide | -
+P144 | S21 | folder_suffix | resize all images in the Trip folder to 1600 pixels wide | -
+P145 | S21 | filler_drop | please resize all images in Trip to 1600 wide | -
+P146 | S21 | spoken_num | resize all images in trip to sixteen hundred pixels wide | {"intent":"resize_image","src":{"kind":"set","folder":"trip","filter":{"type":"images"}},"width":1600}
+P147 | S21 | drop_all | resize images in Trip to 1600 pixels wide | -
+P148 | S22 | verb_synonym | combine all PDFs in Downloads into combined.pdf | -
+P149 | S22 | all_synonym | merge every PDF in Downloads into combined.pdf | -
+P150 | S22 | article | merge all the PDFs from Downloads into combined.pdf | -
+P151 | S22 | noun_files | merge all PDF files in Downloads into combined.pdf | -
+P152 | S22 | filler | please merge all PDFs in Downloads into combined.pdf. | -
+P153 | S22 | case_folder | merge all PDFs in downloads into combined.pdf | -
+P154 | S22 | called_output | merge all PDFs in Downloads into a file called combined.pdf | -
+P155 | S23 | containing_keyword | merge PDFs in Documents containing scan into scan-all.pdf | -
+P156 | S23 | all_named | merge all PDFs in Documents named scan into scan-all.pdf | -
+P157 | S23 | noun_files | merge PDF files in Documents named scan into scan-all.pdf | -
+P158 | S23 | reorder | merge PDFs named scan in Documents into scan-all.pdf | -
+P159 | S23 | filler | please merge PDFs in Documents named scan into scan-all.pdf. | -
+P160 | S23 | verb_synonym | combine PDFs in Documents named scan into scan-all.pdf | -
+P161 | S23 | quoted_output | merge PDFs in documents named scan into "scan-all.pdf" | -
+P162 | S24 | article | split the file report.pdf into pages | -
+P163 | S24 | adjective | split report.pdf into separate pages | -
+P164 | S24 | verb_alias | break report.pdf into pages | -
+P165 | S24 | filler | please split report.pdf into pages. | -
+P166 | S24 | spoken_dot | split report dot pdf into pages | -
+P167 | S24 | adjective | split report.pdf into individual pages | -
+P168 | S24 | phrasing | split report.pdf into one page each | -
+P169 | S25 | through_range | extract pages 2 through 5 from report.pdf into excerpt.pdf | -
+P170 | S25 | spoken_num | extract pages two to five from report.pdf into excerpt.pdf | -
+P171 | S25 | singular_page | extract page 2 to 5 from report.pdf into excerpt.pdf | -
+P172 | S25 | verb_alias | pull pages 2 to 5 out of report.pdf into excerpt.pdf | -
+P173 | S25 | output_as | extract pages 2 to 5 from report.pdf as excerpt.pdf | -
+P174 | S25 | filler | please extract pages 2 to 5 from report.pdf into excerpt.pdf. | -
+P175 | S25 | article | extract pages 2 to 5 from the file report.pdf into excerpt.pdf | -
+P176 | S26 | containing_keyword | make a PDF from images in Scans containing receipts | -
+P177 | S26 | article_count | make one PDF from images in Scans named receipts | -
+P178 | S26 | verb_alias | create a PDF from images in Scans named receipts | -
+P179 | S26 | reorder_verb | turn images in Scans named receipts into a PDF | -
+P180 | S26 | filler | please make a PDF from images in Scans named receipts. | -
+P181 | S26 | noun_files_case | make a pdf from image files in Scans named receipts | -
+P182 | S26 | verb_synonym | combine images in Scans named receipts into a PDF | -
+P183 | S27 | article_folder | zip the Project folder into Project.zip | -
+P184 | S27 | verb_alias | compress Project into Project.zip | -
+P185 | S27 | particle | zip up Project into Project.zip | -
+P186 | S27 | filler | please zip Project into Project.zip. | -
+P187 | S27 | article | zip the file Project into Project.zip | -
+P188 | S27 | verb_alias_folder | compress the Project folder into Project.zip | -
+P189 | S27 | literal_name_case | zip project into project.zip | {"intent":"zip","src":{"kind":"item","name":"project"},"output":"project.zip"}
+P190 | S28 | verb_alias_extract | extract archive.zip into Downloads/archive | -
+P191 | S28 | article | unzip the file archive.zip into the Downloads/archive folder | -
+P192 | S28 | prep_to | unzip archive.zip to Downloads/archive | -
+P193 | S28 | filler | please unzip archive.zip into Downloads/archive. | -
+P194 | S28 | verb_alias | uncompress archive.zip into Downloads/archive | -
+P195 | S28 | spoken_dot | unzip archive dot zip into Downloads/archive | -
+P196 | S29 | article_filler | clean up Downloads files older than 90 days | -
+P197 | S29 | folder_word | clean up the Downloads folder older than 90 days | -
+P198 | S29 | one_word | cleanup Downloads older than 90 days | -
+P199 | S29 | spoken_num | clean up downloads older than ninety days | -
+P200 | S29 | verb_alias | trash files in Downloads older than 90 days | -
+P201 | S29 | filler | please clean up Downloads older than 90 days. | -
+P202 | S29 | verb_alias | remove files older than 90 days from Downloads | -
+P203 | S30 | all_synonym | delete all screenshots older than 30 days | -
+P204 | S30 | verb_alias | trash screenshots older than 30 days | -
+P205 | S30 | spoken_num | delete the screenshots older than thirty days | -
+P206 | S30 | singular_noun | delete screenshot files older than 30 days | -
+P207 | S30 | verb_alias | remove screenshots older than 30 days | -
+P208 | S30 | filler | please delete screenshots older than 30 days. | -
+P209 | S30 | relative_clause | delete screenshots that are older than 30 days | -
+P210 | S31 | drop_prep | delete installers in Downloads | -
+P211 | S31 | all_synonym | trash all installers in Downloads | -
+P212 | S31 | verb_alias | move the installers from Downloads to Trash | -
+P213 | S31 | folder_suffix | move all installers from Downloads to the Trash folder | -
+P214 | S31 | noun_files | remove installer files from Downloads | -
+P215 | S31 | filler_case | please move installers from Downloads to Trash. | -
+P216 | S31 | article | delete all the installers from Downloads | -
+P217 | S32 | drop_file_word | delete claude.dmg in downloads | -
+P218 | S32 | verb_alias | trash the file claude.dmg in Downloads | -
+P219 | S32 | to_trash | move claude.dmg from Downloads to Trash | -
+P220 | S32 | filler | please delete the file claude.dmg in downloads. | -
+P221 | S32 | prep_from | delete the file claude.dmg from downloads | -
+P222 | S32 | verb_alias | remove claude.dmg from Downloads | -
+P223 | S32 | named_item | delete the file named claude.dmg in downloads | -
+P224 | S33 | verb_alias | show files in Downloads larger than 500 MB | -
+P225 | S33 | all_synonym | list all files in Downloads bigger than 500 MB | -
+P226 | S33 | suffix_order | list files larger than 500 MB in Downloads | -
+P227 | S33 | filler_abbrev | show me the files in Downloads over 500MB | -
+P228 | S33 | case_unit | list files in downloads larger than 500 mb | -
+P229 | S33 | spoken_num | list file in Downloads larger than five hundred MB | -
+P230 | S33 | question_form | what files in Downloads are larger than 500 MB | -
+P231 | S34 | filler | list files in Documents older than 1 year | -
+P232 | S34 | verb_alias | show files older than one year in Documents | -
+P233 | S34 | unit_days | list files older than 365 days in Documents | -
+P234 | S34 | spoken_article | list files in Documents older than a year | -
+P235 | S34 | folder_word | show me files older than 1 year in the Documents folder | -
+P236 | S34 | singular_noun | list file older than 1 year in Documents | -
+P237 | S34 | filler_case | please list files older than 1 year in documents. | -
+P238 | S35 | question_form | how many PDFs are in Documents | -
+P239 | S35 | all_synonym | count all PDFs in Documents | -
+P240 | S35 | article | count the PDFs in Documents | -
+P241 | S35 | noun_files | count pdf files in Documents | -
+P242 | S35 | noun_files_case | count PDF files in Documents | -
+P243 | S35 | filler_case | please count PDFs in documents. | -
+P244 | S35 | folder_word | count PDFs in the Documents folder | -
+P245 | S36 | question_form | what is the size of Downloads | -
+P246 | S36 | question_form | how big is Downloads | -
+P247 | S36 | article_folder | show the size of the Downloads folder | -
+P248 | S36 | drop_verb | size of Downloads | -
+P249 | S36 | verb_alias | check size of Downloads | -
+P250 | S36 | filler | please show the size of Downloads. | -
+P251 | S36 | verb_alias | get size of Downloads | -
+P252 | S37 | verb_alias | find duplicate files in Downloads | -
+P253 | S37 | noun_only | show duplicates in Downloads | -
+P254 | S37 | verb_alias | list duplicates in Downloads | -
+P255 | S37 | article_folder | list the duplicate files in the Downloads folder | -
+P256 | S37 | filler | please list duplicate files in Downloads. | -
+P257 | S37 | singular_noun | list duplicate file in Downloads | -
+P258 | S37 | case_folder | show duplicate files in downloads | -
+P259 | S38 | verb_alias | show Downloads in Finder | -
+P260 | S38 | article_folder | open the Downloads folder in Finder | -
+P261 | S38 | verb_alias | reveal Downloads in Finder | -
+P262 | S38 | case_app | open Downloads in finder | -
+P263 | S38 | filler | please open Downloads in Finder. | -
+P264 | S38 | folder_word | open Downloads folder in Finder | -
+P265 | S38 | article_app | open Downloads in the Finder | -
+P266 | S39 | verb_alias | show report.pdf in Finder | -
+P267 | S39 | verb_alias | open report.pdf in Finder | -
+P268 | S39 | article_file | reveal the file report.pdf in Finder | -
+P269 | S39 | article_file | show the file report.pdf in Finder | -
+P270 | S39 | case_app | reveal report.pdf in finder | -
+P271 | S39 | filler | please reveal report.pdf in Finder. | -
+P272 | S40 | bare | undo | -
+P273 | S40 | article_object | undo the last change | -
+P274 | S40 | possessive | undo my last action | -
+P275 | S40 | filler | please undo last. | -
+P276 | S40 | vague_object | undo the last thing | -
+P277 | S41 | verb_alias | show my recent actions | -
+P278 | S41 | verb_alias | list recent actions | -
+P279 | S41 | punct | show recent actions. | -
+P280 | S41 | article | show the recent actions | -
+P281 | S41 | filler | please show recent actions | -
+P282 | S41 | question_form | what did you do recently | -
+P283 | S42 | verb_alias | list the PDFs I downloaded yesterday | -
+P284 | S42 | downloaded_synonym | show PDFs downloaded yesterday | -
+P285 | S42 | prep_from | show me PDFs from yesterday | -
+P286 | S42 | noun_files | list pdf files I downloaded yesterday | -
+P287 | S42 | filler | please show me the PDFs I downloaded yesterday. | -
+P288 | S42 | drop_article | list PDFs from yesterday | -
+P289 | S43 | period_phrase | list screenshots from the last week | -
+P290 | S43 | period_phrase | show screenshots from the past week | -
+P291 | S43 | numeric_days | list the screenshots I took in the last 7 days | -
+P292 | S43 | numeric_days | show my screenshots from the last 7 days | -
+P293 | S02 | plural_noun | move all PDF documents from Downloads to Documents | -
+P294 | S06 | filler | copy all image files in Pictures over to Backup | -
+P295 | S15 | named_article | create the folders named 2026 and 2027 in Documents | -
+P296 | S20 | word_order | make photo.jpg 1200 pixels wide | -
+P297 | S23 | trailing_please | merge PDFs in Documents named scan into scan-all.pdf please | -
+P298 | S30 | spoken_num | trash screenshots older than thirty days | -
+P299 | S38 | trailing_please | open Downloads in Finder please | -
+P300 | S42 | filler | list PDFs I downloaded yesterday please | -
+P301 | S12 | rename_verb | rename images in Trip as trip-001, trip-002 in order | -
+P302 | S32 | to_trash | move the file claude.dmg from Downloads into Trash | -
+K001 | S37 | explicit_dot_extension | move all .3mf files from Downloads to Documents | {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["3mf"]}},"to":"Documents"}
+K002 | S35 | explicit_dot_extension | count .3mf files in Documents | {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"files","ext":["3mf"]}}}
+K003 | S33 | explicit_dot_extension | list .tar.gz files in Downloads | {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["tar.gz"]}}}
+N001 | - | refuse_scope | delete everything on my Mac | !
+N002 | - | refuse_unsupported | empty the trash | !
+N003 | - | missing_destination | move report.pdf | !
+N004 | - | missing_name | rename report.pdf | !
+N005 | - | missing_source | zip | !
+N006 | - | missing_name | create a folder | !
+N007 | - | missing_source | list | !
+N008 | - | unsupported_action | format my hard drive | !
+N009 | - | unsafe_root_folder | delete the Documents folder | !
+N010 | - | unsafe_system_path | move ~/Library to Trash | !
+N011 | - | unsafe_system_path | delete /System/Library | !
+N012 | - | unsafe_traversal | move ../../secret.txt to Desktop | !
+N013 | - | unsupported_destination | send report.pdf to my email | !
+N014 | - | unsupported_destination | upload all PDFs to Google Drive | !
+N015 | - | no_context_pronoun | rename it to final | !
+N016 | - | no_context_pronoun | delete them | !
+N017 | - | no_context_position | move the first file to Desktop | !
+N018 | - | missing_source | copy to Desktop | !
+N019 | - | missing_source | convert to png | !
+N020 | - | missing_source | resize to 500 pixels | !
+N021 | - | missing_source | merge PDFs | !
+N022 | - | missing_source | split pages | !
+N023 | - | missing_source | unzip | !
+N024 | - | missing_filter | sort Downloads | !
+N025 | - | missing_source | count | !
+N026 | - | missing_source | show size | !
+N027 | - | unsafe_shell | run rm -rf Downloads | !
+N028 | - | unsupported_action | open a terminal | !
+N029 | - | dangling_destination | move report.pdf to | !
+N030 | - | dangling_destination | rename report.pdf to | !
+N031 | - | dangling_name | create folder in Documents named | !
+N032 | - | dangling_size | list files larger than | !
+N033 | - | clean_up_needs_filter | clean up Downloads | !
+N034 | - | unsafe_no_filter | delete all files | !
+N035 | - | unsafe_no_filter | trash everything | !
+N036 | - | unsafe_no_filter | move everything to Trash | !
+N037 | - | unsupported_action | wipe Downloads | !
+N038 | - | unsupported_permanent | shred screenshots older than 30 days | !
+N039 | - | unsupported_action | email the first PDF to Bob | !
+N040 | - | missing_target | reveal | !
+A001 | - | ambiguous_erase | erase screenshots older than 30 days | ?
+A002 | - | ambiguous_permanent | permanently delete screenshots older than 30 days | ?
+A003 | - | ambiguous_no_folder | delete all PDFs | ?
+A004 | - | ambiguous_without_asking | delete all my photos from Pictures without asking | ?
+A005 | - | ambiguous_revert | revert last | ?
+A006 | - | ambiguous_save_as | save photo.heic as png | ?
+A007 | - | ambiguous_copy_synonym | make a copy of notes.txt on Desktop | ?
+A008 | - | ambiguous_big | list big files in Downloads | ?
+A009 | - | ambiguous_modified | show files modified last week in Downloads | ?
+A010 | - | ambiguous_archive | archive Project | ?
+A011 | - | ambiguous_undo_scope | undo everything | ?
+A012 | - | ambiguous_organize | organize my Downloads | ?
+A013 | - | ambiguous_docs_alias | remove spaces from names in Downloads | ?
+A014 | - | ambiguous_group | group screenshots by month | ?
+A015 | - | ambiguous_send | send notes.txt to Desktop | ?
+A016 | - | ambiguous_vague_dest | move report.pdf over there | ?
+A017 | - | ambiguous_no_type | count files in Documents | ?
+A018 | - | ambiguous_today | list files in Downloads from today | ?

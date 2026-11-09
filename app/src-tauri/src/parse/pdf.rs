@@ -2,6 +2,12 @@
 
 use super::{Pattern, cap, pat, phrase::clean_name, typed_src};
 use crate::model::{FileType, Intent};
+use regex::Regex;
+use std::sync::LazyLock;
+
+static OUTPUT_LABEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:a\s+)?(?:file\s+)?(?:called|named)\s+").unwrap());
+
+fn output_name(text: &str) -> String { clean_name(&OUTPUT_LABEL.replace(text, "")) }
 
 pub fn patterns() -> Vec<Pattern> {
     vec![
@@ -26,7 +32,7 @@ pub fn patterns() -> Vec<Pattern> {
                 Some(Intent::ExtractPages { src: typed_src(c, 2, FileType::Pdfs)?, from: n, to: n, output: cap(c, 3).map(|s| clean_name(&s)) })
             },
         ),
-        pat("split_pdf", r"^split\s+(.+?)(?:\s+(?:into|to|by)\s+(?:(?:separate|individual|single)\s+|(?:one|1)\s+(?:file\s+)?per\s+)?pages?)?$", |c| {
+        pat("split_pdf", r"^split\s+(.+?)(?:\s+(?:into|to|by)\s+(?:(?:(?:separate|individual|single)\s+|(?:one|1)\s+(?:file\s+)?per\s+)?pages?|(?:one|1)\s+page\s+each))?$", |c| {
             Some(Intent::SplitPdf { src: typed_src(c, 1, FileType::Pdfs)? })
         }),
         pat(
@@ -42,7 +48,7 @@ pub fn patterns() -> Vec<Pattern> {
         pat("merge_pdf", r"^(?:merge|combine|join)\s+(.+?)(?:\s+(?:into|as|to)\s+(.+))?$", |c| {
             Some(Intent::MergePdf {
                 src: typed_src(c, 1, FileType::Pdfs)?,
-                output: cap(c, 2).map(|s| clean_name(&s)).unwrap_or_else(|| "merged.pdf".into()),
+                output: cap(c, 2).map(|s| output_name(&s)).unwrap_or_else(|| "merged.pdf".into()),
             })
         }),
     ]

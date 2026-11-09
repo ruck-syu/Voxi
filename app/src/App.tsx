@@ -517,7 +517,7 @@ function CommandView({
         </p>
       )}
       {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
-        <span>{resultScope.count} results from {resultScope.label}{resultScope.visible < resultScope.count ? ` · first ${resultScope.visible} displayed` : ""}</span>
+        <span>{resultScope.count} results from {resultScope.label}{resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
         <button className="link" disabled={phase.k === "running"} onClick={() => {
           reset();
           void api.clearResultScope().then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: String(e) }));
@@ -669,14 +669,15 @@ function Body(props: {
           <p className="title">{o.title}</p>
           {o.summary && <p className="quiet">{o.summary}</p>}
           {o.rows.length > 0 && (
-            <ul className="ruled scroll">
+            <ol className={`ruled scroll${o.numbered ? " numbered" : ""}`}>
               {o.rows.map((r, i) => (
                 <li key={i} style={row(i)}>
+                  {o.numbered && <span className="num" aria-hidden="true">{i + 1}</span>}
                   <span className="primary">{r.name}</span>
                   <span className="detail">{r.detail}</span>
                 </li>
               ))}
-            </ul>
+            </ol>
           )}
           {o.total > o.rows.length && o.rows.length > 0 && <p className="quiet">Showing {o.rows.length} of {o.total}.</p>}
         </section>
@@ -1169,20 +1170,6 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
             <p className="settings-description">Voxi only changes files inside these folders.</p>
           </div>
         </li>
-        {builtIn.map((f) => (
-          <li className="pref" key={f}>
-            <span className="pref-folder">{f}</span>
-            <span className="pref-summary">Always</span>
-          </li>
-        ))}
-        {extra.map((f) => (
-          <li className="pref" key={f}>
-            <span className="pref-folder">{f}</span>
-            <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
-              Remove
-            </button>
-          </li>
-        ))}
         <li className="pref">
           <input
             className="path"
@@ -1204,6 +1191,20 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
             Choose…
           </button>
         </li>
+        {builtIn.map((f) => (
+          <li className="pref" key={f}>
+            <span className="pref-folder">{f}</span>
+            <span className="pref-summary">Always</span>
+          </li>
+        ))}
+        {extra.map((f) => (
+          <li className="pref" key={f}>
+            <span className="pref-folder">{f}</span>
+            <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
+              Remove
+            </button>
+          </li>
+        ))}
       </ul>
       {note && <p className="settings-note warn" role="status">{note}</p>}
     </div>

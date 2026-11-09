@@ -1,7 +1,7 @@
 //! Undo, history, and opening things in Finder.
 
 use super::{Pattern, cap, pat, phrase::clean_name};
-use crate::model::Intent;
+use crate::model::{Intent, Source};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -38,6 +38,8 @@ static FILE_NAMED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:file|
 /// "the file named notes.txt" -> "notes.txt".
 fn reveal_target(s: &str) -> Option<String> {
     let source = FILE_NAMED.replace(s.trim(), "");
-    super::phrase::parse_source(&source)?;
-    Some(clean_name(&source))
+    match super::phrase::parse_source(&source)? {
+        Source::Item { name, folder: None } => Some(name),
+        _ => Some(clean_name(&source)),
+    }
 }

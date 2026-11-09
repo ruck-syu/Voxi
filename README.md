@@ -27,6 +27,7 @@ Say **undo last**.
 | move screenshots from today to Screenshots | Files today's screenshots, wherever they are |
 | clean up Downloads older than 90 days | Moves old files to the Trash |
 | rename report.pdf to Q3-report.pdf | Renames one file |
+| create a folder in Downloads named PDFS | Creates the PDFS folder in Downloads |
 | replace spaces with dashes in files in Downloads | Renames in bulk |
 | sort Downloads by type | Groups files into Images, PDFs, Videos, and more |
 | convert all HEIC in Pictures to jpg | Writes JPG copies |
@@ -59,8 +60,11 @@ only one suggestion; broad file filters never automatically expand to typos.
 
 After a list command, follow-up commands use that exact set of files. For example,
 `list items in Downloads`, then `delete the last file` selects the last displayed
-row; `move PDFs to Documents` selects only PDFs from that list. New files added
-after listing aren't included. Naming another source folder or an unrelated file
+row; `move PDFs to Documents` selects only PDFs from that list.
+Each displayed item is numbered: `delete 4` or `move 5 to Desktop` targets that
+row. Spoken numbers such as “four” work too; quote a literal numeric filename.
+Numbers stay attached to their original files until another list is displayed.
+New files added after listing aren't included. Naming another source folder or an unrelated file
 starts a fresh search. The active scope is shown above the results; use **Clear
 scope** to reset it. Closing Voxi or opening Settings also ends the scope.
 Changes still require a preview and confirmation. If a listed file disappears or

@@ -12,7 +12,7 @@ export type InfoRow = { name: string; detail: string };
 export type Outcome =
   | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; warnings: string[]; isUndo: boolean }
   | { status: "ambiguous"; name: string; candidates: string[] }
-  | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number }
+  | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
   | { status: "not_understood"; text: string };
 

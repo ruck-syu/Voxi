@@ -1,0 +1,12 @@
+# compound suffix inventory; tested as whole suffix expectations where syntax permits
+tar.gz
+tar.bz2
+tar.xz
+tar.zst
+user.js
+d.ts
+wasm.map
+min.js
+min.css
+nii.gz
+vcf.gz

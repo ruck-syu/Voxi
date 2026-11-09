@@ -12,7 +12,7 @@
 ---
 
 Press <kbd>⌃⌥Space</kbd> anywhere. A small window opens with the cursor ready.
-Type a command, or dictate it with [Wispr Flow](https://wisprflow.ai):
+Type a command or dictate with an app such as [Hex by Anomaly](https://anoma.ly/hex/) or [Wispr Flow](https://wisprflow.ai):
 
 > move all PDFs from Downloads to Documents
 
@@ -44,6 +44,45 @@ deep. This applies to groups of files and to individual file or folder names;
 multiple matching names prompt you to choose. Hidden folders, app bundles,
 symlinked folders, and `_to_delete` are skipped. Moves and copies collect matching
 files into the destination; renames and image edits keep files in their folders.
+
+Searches reuse one folder scan per command. The window shows progress, and you
+can cancel with Esc or Cancel. If a scan reaches its depth, entry, or time limit,
+or cannot read a folder, commands that change files stop with an explanation;
+read-only results are marked as partial. Searches are limited to 50,000 entries
+per folder tree and 10 seconds; the Spotlight fallback has a separate 2-second
+limit within that search deadline.
+
+Spaces, underscores, and hyphens are equivalent in name filters. Individual
+filename searches rank exact and normalized names before word matches and typo
+suggestions. Loose or typo matches always ask you to choose, even if there is
+only one suggestion; broad file filters never automatically expand to typos.
+
+After a list command, follow-up commands use that exact set of files. For example,
+`list items in Downloads`, then `delete the last file` selects the last displayed
+row; `move PDFs to Documents` selects only PDFs from that list. New files added
+after listing aren't included. Naming another source folder or an unrelated file
+starts a fresh search. The active scope is shown above the results; use **Clear
+scope** to reset it. Closing Voxi or opening Settings also ends the scope.
+Changes still require a preview and confirmation. If a listed file disappears or
+is replaced, run the list command again. Positional references use the displayed
+rows (up to 200); group commands can use every file in a complete list.
+
+Without a list, commands need a filename or a specific group. Quote literal names
+containing command words, for example `move "Notes to Self.txt" to Documents`.
+Quoted names also preserve words such as “one”. Size filters require units;
+contradictory or repeated bounds are refused rather than silently discarded.
+Use “undo last” for the newest change; selecting an earlier move or delete by
+its operation type isn't supported.
+
+## Dictation
+
+Use an external dictation app such as [Hex by Anomaly](https://anoma.ly/hex/).
+Hex downloads a speech model once, then transcribes locally and pastes into the
+focused app. Its Mac download requires Apple silicon and macOS 15 or later.
+
+Open Voxi, focus the command bar, dictate with Hex, then press Enter to review
+the command. Other dictation apps work too. Voxi has no built-in recording or
+speech recognition and doesn't request microphone or speech permissions.
 
 ## Safe by design
 

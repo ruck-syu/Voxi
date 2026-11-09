@@ -68,8 +68,11 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
 export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
   await new Promise((r) => setTimeout(r, 250));
   switch (cmd) {
+    case "search_progress": return 0;
+    case "result_scope": return null;
+    case "clear_result_scope": return;
     case "plan_command":
-      return plan(String(args.text), args.choices as Record<string, string>);
+      return { outcome: plan(String(args.text), args.choices as Record<string, string>), scope: null };
     case "confirm_plan":
       return { done: 26, total: 26, error: null, undoable: true, summary: "Done. 26 changes." } satisfies RunResult;
     case "get_settings":

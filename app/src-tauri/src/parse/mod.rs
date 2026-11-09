@@ -293,6 +293,19 @@ mod catalog_tests {
             List { src: set(Some("Documents"), Filter { older_than_days: Some(365), ..of(Files) }) }
         );
     }
+
+    #[test]
+    fn stl_file_types_are_extension_filters_not_name_filters() {
+        let want = List { src: set(Some("Downloads"), Filter {
+            ext: Some(vec!["stl".into()]), ..of(Files)
+        }) };
+        for command in [" list the STL files in Downloads. ", "list stl files in Downloads", "list .STL files in Downloads", "list STLs in Downloads"] {
+            assert_eq!(p(command), want, "{command}");
+        }
+        assert_eq!(p("list files named STL in Downloads"), List {
+            src: set(Some("Downloads"), Filter { name_contains: Some("STL".into()), ..of(Files) }),
+        });
+    }
     #[test]
     fn r35_size() {
         assert_eq!(p("show size of Downloads"), Size { folder: "Downloads".into() });
@@ -378,6 +391,94 @@ mod catalog_tests {
         for s in ["", "hello there", "make me a sandwich", "what's the weather", "move", "rename report.pdf"] {
             assert!(parse(s).is_err(), "should not understand {s:?}");
         }
+    }
+
+    #[test]
+    fn relative_file_references_do_not_become_filename_searches() {
+        for command in [
+            "delete the last file",
+            "Delete the last file.",
+            "delete last files from Downloads",
+            "delete the previous file in Downloads",
+            "move the last file to Documents",
+            "copy the last file to Desktop",
+            "rename the last file to report.pdf",
+            "list the last file",
+            "delete the last one",
+            "delete last",
+        ] {
+            assert!(parse(command).is_err(), "unresolved reference must not search: {command}");
+        }
+        assert_eq!(p("delete files from the last week"), Trash {
+            src: set(None, Filter { newer_than_days: Some(7), ..of(Files) }),
+        });
+        assert_eq!(p("undo last"), Undo);
+        assert_eq!(p("delete last.pdf"), Trash { src: item("last.pdf") });
+        assert_eq!(p("delete \"last\""), Trash { src: item("last") });
+        assert_eq!(p("delete files named \"last\" in Downloads"), Trash {
+            src: set(Some("Downloads"), Filter { name_contains: Some("last".into()), ..of(Files) }),
+        });
+    }
+
+    #[test]
+    fn quoted_arguments_preserve_literal_names_and_command_words() {
+        for name in ["Notes to Self.txt", "Chapter one.pdf", "first", "Month 13", "called notes", "My folder", "the report.pdf"] {
+            assert_eq!(p(&format!("delete \"{name}\" in Downloads")), Trash {
+                src: Source::Item { name: name.into(), folder: Some("Downloads".into()) },
+            }, "{name}");
+        }
+        assert_eq!(p("move \"Notes to Self.txt\" to Documents"), Move { src: item("Notes to Self.txt"), to: "Documents".into() });
+        assert_eq!(p("rename 'Notes to Self.txt' to 'Journal as of today.txt'"), Rename {
+            src: item("Notes to Self.txt"), new_name: "Journal as of today.txt".into(),
+        });
+        assert_eq!(p("copy report.pdf to \"Terms and Conditions\""), Copy { src: item("report.pdf"), to: "Terms and Conditions".into() });
+        for command in ["move Notes to Self.txt to Documents", "rename Notes to Self.txt to Journal.txt", "move \"unterminated to Documents"] {
+            assert!(parse(command).is_err(), "{command}");
+        }
+    }
+
+    #[test]
+    fn missing_subjects_and_explicit_file_quantifiers_are_distinct() {
+        for command in ["move the file to Documents", "copy file from Downloads to Desktop", "delete from Downloads"] {
+            assert!(parse(command).is_err(), "{command}");
+        }
+        for command in ["move every file in Downloads to Documents", "move all the files from Downloads to Documents"] {
+            assert_eq!(p(command), Move { src: set(Some("Downloads"), of(Files)), to: "Documents".into() });
+        }
+        assert_eq!(p("lowercase all the file names in Desktop"), Lowercase { src: set(Some("Desktop"), of(Files)) });
+    }
+
+    #[test]
+    fn conflicting_or_repeated_filters_never_drop_constraints() {
+        for command in [
+            "delete files older than 30 days older than 90 days",
+            "delete files larger than 1 MB larger than 5 MB",
+            "list files before March 2025 before July 2026",
+            "list files after March 2025 since July 2026",
+            "delete files larger than 1 GB but smaller than 500 MB",
+            "delete files bigger than 5 in Downloads",
+            "delete files over 5 in Downloads",
+            "delete files under 5 in Downloads",
+            "delete files above 5 in Downloads",
+            "delete files below 5 in Downloads",
+            "delete files at least 5 in Downloads",
+            "delete files at most 5 in Downloads",
+            "delete files under 0 MB in Downloads",
+        ] { assert!(parse(command).is_err(), "{command}"); }
+        assert_eq!(p("list files between 5 and 10 MB in Downloads"), List {
+            src: set(Some("Downloads"), Filter { larger_than_mb: Some(5.0), smaller_than_mb: Some(10.0), ..of(Files) }),
+        });
+    }
+
+    #[test]
+    fn unsupported_references_are_refused_in_read_only_commands_too() {
+        for command in ["reveal the first file", "open the last file", "show me the second file in Finder", "what's the size of the largest PDF"] {
+            assert!(parse(command).is_err(), "{command}");
+        }
+        assert_eq!(p("open \"first\""), Reveal { target: "first".into() });
+        assert!(parse("undo the last delete").is_err());
+        assert!(parse("undo the previous move").is_err());
+        assert_eq!(p("undo the last change"), Undo);
     }
 
     #[test]

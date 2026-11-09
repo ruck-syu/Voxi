@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, inTauri, tildify, type FolderAccess, type Outcome, type RunResult, type Settings, type Shortcut } from "./api";
+import { api, inTauri, tildify, type FolderAccess, type Outcome, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
 import { readChoice } from "./choice";
 import { appVersion, checkAndInstall, type UpdateState } from "./updates";
 
@@ -35,22 +35,41 @@ function prettyHotkey(h: string): string {
 }
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const CLOSE_MS = 120;
+const CLOSE_MS = 140;
 
 export default function App() {
   const [view, setView] = useState<View>("command");
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(!inTauri);
+  const [pendingShow, setPendingShow] = useState<number | null>(null);
+  const [fontsReady, setFontsReady] = useState(false);
   const [height, setHeight] = useState<number | null>(null);
   const [glide, setGlide] = useState(false);
   const innerRef = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showId = useRef(0);
+  const awaitingShow = useRef<number | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current !== null) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  }, []);
+  useEffect(() => cancelClose, [cancelClose]);
 
   // Plays the close animation, then hides the window. The card stays in its
   // closed state while hidden, so the next show animates in from there.
   const close = useCallback(() => {
+    cancelClose();
+    const requestId = showId.current;
+    awaitingShow.current = null;
     setOpen(false);
-    setTimeout(() => api.hide(), reducedMotion() ? 0 : CLOSE_MS);
-  }, []);
+    setPendingShow(null);
+    if (inTauri) void invoke("dismiss_window", { requestId, animate: !reducedMotion() });
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      void api.hide(requestId);
+    }, reducedMotion() ? 0 : CLOSE_MS);
+  }, [cancelClose]);
 
   // Clicking outside the window (another app, the desktop, the menu bar)
   // closes it, like Spotlight. Not while a command is being planned or run:
@@ -77,19 +96,49 @@ export default function App() {
       if (!s.onboarded) setView("welcome");
     });
     if (!inTauri) return;
-    const unShown = listen<string>("voxi://shown", (e) => {
-      const mode = e.payload as View;
+    let disposed = false;
+    const unShown = listen<{ requestId: number; mode: View }>("voxi://shown", (e) => {
+      const { mode, requestId } = e.payload;
+      cancelClose();
+      showId.current = requestId;
+      awaitingShow.current = requestId;
       setView((v) => (mode === "command" && v === "welcome" ? v : mode));
       shownAt.current = performance.now();
+      setOpen(false);
+      setPendingShow(requestId);
+    });
+    const unPresented = listen<number>("voxi://presented", ({ payload: requestId }) => {
+      if (requestId !== showId.current || awaitingShow.current !== requestId) return;
+      awaitingShow.current = null;
+      setPendingShow(null);
       setOpen(true);
+      shownAt.current = performance.now();
       window.dispatchEvent(new Event("voxi-focus"));
     });
     const unHide = listen("voxi://hide", close);
+    Promise.all([unShown, unPresented, unHide]).then(() => { if (!disposed) void invoke("frontend_ready"); });
     return () => {
+      disposed = true;
       unShown.then((f) => f());
+      unPresented.then((f) => f());
       unHide.then((f) => f());
     };
-  }, [close]);
+  }, [close, cancelClose]);
+
+  useEffect(() => {
+    let disposed = false;
+    document.fonts.ready.then(() => { if (!disposed) setFontsReady(true); });
+    return () => { disposed = true; };
+  }, []);
+
+  // Layout is measured after settings and fonts settle, while the native window
+  // is still hidden. The acknowledgement resizes and reveals it in one operation.
+  useLayoutEffect(() => {
+    if (!inTauri || pendingShow === null || !settings || !fontsReady || !innerRef.current) return;
+    const requestId = pendingShow;
+    const height = Math.ceil(innerRef.current.offsetHeight);
+    void invoke("present_window", { requestId, height, animate: !reducedMotion() });
+  }, [pendingShow, settings, fontsReady, view]);
 
   // The window is the frosted card, so it is sized to the content and macOS
   // animates the resize. In a browser preview the card glides instead.
@@ -98,7 +147,7 @@ export default function App() {
     if (!el) return;
     const ro = new ResizeObserver(() => {
       const h = Math.ceil(el.offsetHeight);
-      if (inTauri) invoke("fit_window", { height: h });
+      if (inTauri) invoke("fit_window", { height: h, animate: !reducedMotion() });
       else setHeight(h);
     });
     ro.observe(el);
@@ -202,9 +251,29 @@ function CommandView({
   // The last command, echoed above its result once the box is cleared.
   const [said, setSaid] = useState<string | null>(null);
   const [heard, setHeard] = useState<string | null>(null);
+  const [resultScope, setResultScope] = useState<ResultScope | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ruleRef = useRef<HTMLSpanElement>(null);
   const planShownAt = useRef(0);
+  const requestId = useRef(0);
+  const [searched, setSearched] = useState(0);
+
+  useEffect(() => () => {
+    ++requestId.current;
+    api.cancel();
+    void api.clearResultScope();
+  }, []);
+
+  useEffect(() => {
+    if (phase.k !== "parsing") return;
+    const request = requestId.current;
+    const timer = window.setInterval(() => {
+      api.searchProgress(request).then((count) => {
+        if (request === requestId.current) setSearched(count);
+      }).catch(() => {});
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [phase]);
 
   const focusInput = useCallback(() => {
     // Focus after the window has become key, or macOS drops it.
@@ -218,6 +287,7 @@ function CommandView({
 
   useEffect(() => {
     const onFocus = () => {
+      setResultScope(null);
       // A finished result doesn't carry over to the next time the window opens.
       setPhase((p) => {
         const live = p.k === "outcome" && (p.outcome.status === "plan" || p.outcome.status === "ambiguous");
@@ -255,10 +325,14 @@ function CommandView({
       // command stays visible as the echo above its result.
       setSaid(command.trim().replace(/[.!?]+$/, ""));
       setText("");
+      const request = ++requestId.current;
+      setSearched(0);
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const outcome = await api.plan(command, picked);
+        const { outcome, scope } = await api.plan(command, picked, request);
+        if (request !== requestId.current) return;
+        setResultScope(scope);
         setPhase({ k: "outcome", outcome });
         if (outcome.status === "plan") planShownAt.current = performance.now();
         if (outcome.status === "ambiguous") {
@@ -271,7 +345,7 @@ function CommandView({
         // the next thing dictated always lands there. Enter runs a preview.
         focusInput();
       } catch (e) {
-        setPhase({ k: "error", message: String(e) });
+        if (request === requestId.current) setPhase({ k: "error", message: String(e) });
       }
     },
     [focusInput],
@@ -297,6 +371,7 @@ function CommandView({
     setPhase({ k: "running", title: plan.title });
     try {
       const result = await api.confirm(plan.id);
+      setResultScope(await api.resultScope().catch(() => null));
       setPhase({ k: "done", result, wasUndo: plan.isUndo });
       focusInput();
     } catch (e) {
@@ -305,7 +380,8 @@ function CommandView({
   }, [phase, focusInput]);
 
   const reset = useCallback(() => {
-    if (phase.k === "outcome" && phase.outcome.status === "plan") api.cancel();
+    ++requestId.current;
+    api.cancel();
     stopAsking();
     setHeard(null);
     setSaid(null);
@@ -317,7 +393,7 @@ function CommandView({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (phase.k === "outcome" || phase.k === "error" || phase.k === "done") reset();
+        if (phase.k === "parsing" || phase.k === "outcome" || phase.k === "error" || phase.k === "done") reset();
         else onClose();
       } else if (e.key === "," && e.metaKey) {
         e.preventDefault();
@@ -412,6 +488,7 @@ function CommandView({
   const busy = phase.k === "parsing" || phase.k === "running";
   useEffect(() => {
     onBusy(busy);
+    return () => onBusy(false);
   }, [busy, onBusy]);
   const placeholder = useTypedPlaceholder(open && phase.k === "ready" && text === "");
 
@@ -424,6 +501,7 @@ function CommandView({
           className="command"
           rows={1}
           value={text}
+          writingsuggestions="false"
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
@@ -438,7 +516,15 @@ function CommandView({
           “{said}”
         </p>
       )}
+      {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
+        <span>{resultScope.count} results from {resultScope.label}{resultScope.visible < resultScope.count ? ` · first ${resultScope.visible} displayed` : ""}</span>
+        <button className="link" disabled={phase.k === "running"} onClick={() => {
+          reset();
+          void api.clearResultScope().then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: String(e) }));
+        }}>Clear scope</button>
+      </div>}
       <Body
+        searched={searched}
         key={phaseKey(phase)}
         phase={phase}
         asking={asking}
@@ -472,6 +558,7 @@ function Tick() {
 }
 
 function Body(props: {
+  searched: number;
   phase: Phase;
   asking: Asking | null;
   heard: string | null;
@@ -482,7 +569,13 @@ function Body(props: {
   onUndo: () => void;
 }) {
   const { phase } = props;
-  if (phase.k === "ready" || phase.k === "parsing") return null;
+  if (phase.k === "ready") return null;
+  if (phase.k === "parsing") return (
+    <section className="body" aria-live="polite">
+      <p className="quiet">Searching… {props.searched.toLocaleString()} entries checked.</p>
+      <div className="actions"><button className="secondary" onClick={props.onCancel}>Cancel</button></div>
+    </section>
+  );
 
   if (phase.k === "running") {
     return (
@@ -527,7 +620,7 @@ function Body(props: {
       return (
         <section className="body">
           <p className="title nudge">Didn't understand: “{o.text}”</p>
-          <p className="quiet">Commands start with what to do. For example:</p>
+          <p className="quiet">Use a filename, folder, or a specific group of files. For example:</p>
           <ul className="examples">
             {EXAMPLES.map((ex, i) => (
               <li key={ex} style={row(i)}>
@@ -548,7 +641,7 @@ function Body(props: {
     case "ambiguous":
       return (
         <section className="body">
-          <p className="title">Which “{o.name}”?</p>
+          <p className="title">Choose a match for “{o.name}”</p>
           <p className="quiet">Say a number, or click one.</p>
           <ol className="ruled choices">
             {o.candidates.map((c, i) => (
@@ -689,12 +782,50 @@ function comboFromEvent(e: React.KeyboardEvent): string | null {
   return [...mods, key].join("+");
 }
 
-type Tab = "general" | "shortcuts" | "folders";
+type Tab = "general" | "dictation" | "shortcuts" | "folders";
 const TABS: [Tab, string][] = [
   ["general", "General"],
+  ["dictation", "Dictation"],
   ["shortcuts", "Shortcuts"],
   ["folders", "Folders"],
 ];
+
+function SettingsTabs({ value, saving, onSelect }: { value: Tab; saving: boolean; onSelect: (tab: Tab) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
+  const [animate, setAnimate] = useState(false);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => {
+      const selected = element.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+      if (selected) setIndicator({ left: selected.offsetLeft, width: selected.offsetWidth });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    const frame = requestAnimationFrame(() => setAnimate(true));
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, [value]);
+  return <div className="tabs" role="tablist" aria-label="Settings sections" ref={ref}>
+    {indicator && <span className="tab-highlight" data-animate={animate || undefined} aria-hidden="true" style={indicator} />}
+    {TABS.map(([id, label], index) => <button key={id} role="tab" id={`settings-tab-${id}`}
+      aria-selected={value === id} aria-disabled={saving} aria-controls="settings-panel"
+      tabIndex={value === id ? 0 : -1} onClick={() => onSelect(id)}
+      onKeyDown={(event) => {
+        if (saving) return;
+        const next = event.key === "ArrowRight" ? (index + 1) % TABS.length
+          : event.key === "ArrowLeft" ? (index + TABS.length - 1) % TABS.length
+          : event.key === "Home" ? 0 : event.key === "End" ? TABS.length - 1 : null;
+        if (next === null) return;
+        event.preventDefault();
+        onSelect(TABS[next][0]);
+        ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+      }}>
+      {label}
+    </button>)}
+  </div>;
+}
 
 /** Settings save as they change: no Save button. */
 function SettingsView({
@@ -712,10 +843,12 @@ function SettingsView({
 }) {
   const [tab, setTab] = useState<Tab>("general");
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savePending = useRef(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !savePending.current) {
         e.preventDefault();
         onClose();
       }
@@ -725,6 +858,10 @@ function SettingsView({
   }, [onClose]);
 
   const persist = async (next: Settings): Promise<boolean> => {
+    if (savePending.current) return false;
+    savePending.current = true;
+    const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSaving(true);
     try {
       onSaved(await api.saveSettings(next));
       setError(null);
@@ -732,6 +869,12 @@ function SettingsView({
     } catch (e) {
       setError(String(e));
       return false;
+    } finally {
+      savePending.current = false;
+      setSaving(false);
+      requestAnimationFrame(() => {
+        if (focused?.isConnected && document.activeElement === document.body && !focused.matches(":disabled")) focused.focus();
+      });
     }
   };
 
@@ -739,31 +882,43 @@ function SettingsView({
     <Sheet
       title="Settings"
       aside={
-        <div className="tabs" role="tablist">
-          {TABS.map(([id, label]) => (
-            <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <SettingsTabs value={tab} saving={saving} onSelect={(id) => { if (!savePending.current) setTab(id); }} />
       }
-      foot={error ? <span className="warn">{error}</span> : "Changes save as you go. Esc to go back."}
+      foot={error ? <span className="warn" role="alert">{error}</span> : "Changes save as you go. Esc to go back."}
       footRight={
-        <button className="link" onClick={onClose}>
+        <button className="link" aria-disabled={saving} onClick={() => { if (!savePending.current) onClose(); }}>
           Done
         </button>
       }
     >
-      <div key={tab} className="tab-panel">
+      <fieldset key={tab} id="settings-panel" role="tabpanel" tabIndex={0} aria-labelledby={`settings-tab-${tab}`} className="tab-panel" disabled={saving} aria-busy={saving}>
         {tab === "general" && <GeneralTab settings={settings} persist={persist} onAccess={onAccess} />}
+        {tab === "dictation" && <DictationTab />}
         {tab === "shortcuts" && <ShortcutsTab settings={settings} persist={persist} />}
         {tab === "folders" && <FoldersTab settings={settings} persist={persist} setBusy={setBusy} />}
-      </div>
+      </fieldset>
     </Sheet>
   );
 }
 
 type TabProps = { settings: Settings; persist: (s: Settings) => Promise<boolean> };
+
+function DictationTab() {
+  const [linkError, setLinkError] = useState<string | null>(null);
+  return <>
+    <ul className="prefs">
+      <li className="pref">
+        <div className="pref-copy">
+          <h2 className="pref-label pref-heading">Hex by Anomaly <span className="recommendation-badge">Recommended</span></h2>
+          <p className="settings-description">Free, open source dictation that runs on your device after a one-time model download.</p>
+        </div>
+        <button className="secondary small" onClick={() => { setLinkError(null); api.openHex().catch((e) => setLinkError(String(e))); }}>Get Hex</button>
+      </li>
+    </ul>
+    <p className="settings-note">Requires Apple silicon and macOS 15 or later. Other dictation apps work too.</p>
+    {linkError && <p className="settings-note warn" role="alert">{linkError}</p>}
+  </>;
+}
 
 function GeneralTab({ settings, persist, onAccess }: TabProps & { onAccess: () => void }) {
   const [recording, setRecording] = useState(false);
@@ -892,9 +1047,20 @@ function ShortcutsTab({ settings, persist }: TabProps) {
   };
 
   return (
-    <div className="shortcuts">
-      <p className="hint">Say a shortcut to run all its commands, with one preview and one undo.</p>
+    <>
       <ul className="prefs">
+        <li className="pref">
+          <div className="pref-copy">
+            <h2 className="pref-label">Saved shortcuts</h2>
+            <p className="settings-description">Run several commands with one phrase, one preview, and one undo.</p>
+          </div>
+          {editing === null && (
+            <button className="secondary small" onClick={() => {
+              setList((l) => [...l, { phrase: "", commands: [] }]);
+              setEditing(list.length);
+            }}>Add shortcut</button>
+          )}
+        </li>
         {list.map((s, i) =>
           editing === i ? (
             <li className="shortcut" key={i}>
@@ -912,6 +1078,9 @@ function ShortcutsTab({ settings, persist }: TabProps) {
                 </button>
               </div>
               <textarea
+                writingsuggestions="false"
+                spellCheck={false}
+                autoCorrect="off"
                 className="plain"
                 rows={Math.max(2, s.commands.length)}
                 placeholder={"move screenshots from today to Screenshots\nclean up Downloads older than 90 days"}
@@ -942,18 +1111,7 @@ function ShortcutsTab({ settings, persist }: TabProps) {
           ),
         )}
       </ul>
-      {editing === null && (
-        <button
-          className="link strong add"
-          onClick={() => {
-            setList((l) => [...l, { phrase: "", commands: [] }]);
-            setEditing(list.length);
-          }}
-        >
-          + Add shortcut
-        </button>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -1004,17 +1162,22 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
 
   return (
     <div>
-      <p className="hint">Voxi only changes files inside these folders.</p>
       <ul className="prefs">
+        <li className="pref">
+          <div className="pref-copy">
+            <h2 className="pref-label">Allowed folders</h2>
+            <p className="settings-description">Voxi only changes files inside these folders.</p>
+          </div>
+        </li>
         {builtIn.map((f) => (
           <li className="pref" key={f}>
-            <span>{f}</span>
+            <span className="pref-folder">{f}</span>
             <span className="pref-summary">Always</span>
           </li>
         ))}
         {extra.map((f) => (
           <li className="pref" key={f}>
-            <span>{f}</span>
+            <span className="pref-folder">{f}</span>
             <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
               Remove
             </button>
@@ -1042,7 +1205,7 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
           </button>
         </li>
       </ul>
-      {note && <p className="hint warn">{note}</p>}
+      {note && <p className="settings-note warn" role="status">{note}</p>}
     </div>
   );
 }

@@ -24,12 +24,18 @@ export type FolderAccess = { name: string; path: string; allowed: boolean };
 export type Shortcut = { phrase: string; commands: string[] };
 
 export type Settings = { hotkey: string; extraFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[] };
+export type ResultScope = { count: number; visible: number; label: string };
+export type CommandReply = { outcome: Outcome; scope: ResultScope | null };
 
 export const api = {
-  plan: (text: string, choices: Record<string, string>) => invoke<Outcome>("plan_command", { text, choices }),
+  plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<CommandReply>("plan_command", { text, choices, requestId }),
+  clearResultScope: () => invoke<void>("clear_result_scope"),
+  resultScope: () => invoke<ResultScope | null>("result_scope"),
+  searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
+  openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
   cancel: () => invoke<void>("cancel_plan"),
-  hide: () => invoke<void>("hide_window"),
+  hide: (requestId: number) => invoke<void>("hide_window", { requestId }),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   allowedFolders: () => invoke<string[]>("allowed_folders"),

@@ -3,7 +3,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-
 /// Clear of Wispr Flow's defaults (Fn, Fn+Space) and of Spotlight (Cmd+Space).
 pub const DEFAULT_HOTKEY: &str = "Control+Alt+Space";
 
@@ -173,6 +172,20 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removed_dictation_setting_does_not_break_existing_settings() {
+        let old: Settings = serde_json::from_str(r#"{"hotkey":"Control+Alt+Space","onboarded":true,"startAtLogin":true,"extraFolders":["/tmp"],"appleDictationEnabled":true,"shortcuts":[{"phrase":"tidy","commands":["sort Downloads by type"]}]}"#).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        old.save(&path).unwrap();
+        let restored = Settings::load(&path);
+        assert!(restored.onboarded && restored.start_at_login);
+        assert_eq!(restored.hotkey, "Control+Alt+Space");
+        assert_eq!(restored.extra_folders, vec!["/tmp"]);
+        assert_eq!(restored.shortcuts[0].phrase, "tidy");
+        assert!(!fs::read_to_string(path).unwrap().contains("appleDictationEnabled"));
+    }
 
     fn with(phrase: &str, commands: &[&str]) -> Settings {
         Settings {

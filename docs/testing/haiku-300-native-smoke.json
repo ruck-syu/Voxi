@@ -1,0 +1,32 @@
+[
+  {
+    "id": "H155",
+    "command": "delete the first file in Downloads",
+    "expected": "refusal with filename guidance; no change preview",
+    "pass": true
+  },
+  {
+    "id": "H185",
+    "command": "move the file to Documents",
+    "expected": "refusal with filename guidance; no change preview",
+    "pass": true
+  },
+  {
+    "id": "H266",
+    "command": "move Notes to Self.txt to Documents",
+    "expected": "refusal with filename guidance; no change preview",
+    "pass": true
+  },
+  {
+    "id": "H256",
+    "command": "delete files larger than 1 GB but under 500 MB in Downloads",
+    "expected": "refusal with filename guidance; no change preview",
+    "pass": true
+  },
+  {
+    "id": "H251",
+    "command": "list files from the last 2 days or last month",
+    "expected": "refusal with filename guidance; no change preview",
+    "pass": true
+  }
+]

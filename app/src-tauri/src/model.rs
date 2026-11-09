@@ -192,6 +192,31 @@ pub enum Intent {
     RecentActions,
 }
 
+impl Intent {
+    pub fn source(&self) -> Option<&Source> {
+        match self {
+            Self::Move { src, .. } | Self::Copy { src, .. } | Self::Rename { src, .. }
+            | Self::AddPrefix { src, .. } | Self::AddDatePrefix { src } | Self::ReplaceInNames { src, .. }
+            | Self::Number { src, .. } | Self::Lowercase { src } | Self::ConvertImage { src, .. }
+            | Self::ResizeImage { src, .. } | Self::MergePdf { src, .. } | Self::SplitPdf { src }
+            | Self::ExtractPages { src, .. } | Self::ImagesToPdf { src, .. } | Self::Zip { src, .. }
+            | Self::Unzip { src, .. } | Self::Trash { src } | Self::List { src } | Self::Count { src } => Some(src),
+            _ => None,
+        }
+    }
+    pub fn replace_source(&mut self, source: Source) {
+        match self {
+            Self::Move { src, .. } | Self::Copy { src, .. } | Self::Rename { src, .. }
+            | Self::AddPrefix { src, .. } | Self::AddDatePrefix { src } | Self::ReplaceInNames { src, .. }
+            | Self::Number { src, .. } | Self::Lowercase { src } | Self::ConvertImage { src, .. }
+            | Self::ResizeImage { src, .. } | Self::MergePdf { src, .. } | Self::SplitPdf { src }
+            | Self::ExtractPages { src, .. } | Self::ImagesToPdf { src, .. } | Self::Zip { src, .. }
+            | Self::Unzip { src, .. } | Self::Trash { src } | Self::List { src } | Self::Count { src } => *src = source,
+            _ => {},
+        }
+    }
+}
+
 /// A concrete, fully resolved step. Every path is absolute and was checked
 /// against the allowed folders when the plan was built.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

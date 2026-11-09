@@ -7,7 +7,7 @@
 //! `extract` return `None`, so the command is refused rather than read without
 //! its date.
 
-use super::phrase::take;
+use super::phrase::{set_once, take};
 use crate::model::Filter;
 use chrono::{Datelike, Duration, Local, NaiveDate, Weekday};
 use regex::Regex;
@@ -243,49 +243,49 @@ pub fn extract(s: &mut String, f: &mut Filter) -> Option<()> {
     take(s, &RANGE, |c| {
         let (a, b) = (parse_when(&c[1])?, parse_when(&c[2])?);
         // "March to May 2026": the first date takes the year of the second.
-        f.since = Some(span(a.or_year(b.year()), today)?.0);
-        f.before = Some(span(b, today)?.1);
+        set_once(&mut f.since, span(a.or_year(b.year()), today)?.0)?;
+        set_once(&mut f.before, span(b, today)?.1)?;
         Some(())
     })?;
     take(s, &ONWARD, |c| {
-        f.since = Some(span(parse_when(&c[1])?, today)?.0);
+        set_once(&mut f.since, span(parse_when(&c[1])?, today)?.0)?;
         Some(())
     })?;
     take(s, &PERIOD_BOUND, |c| {
         let (start, end) = this_period(&c[2].to_lowercase(), today)?;
         match c[1].to_lowercase().as_str() {
-            "before" | "prior to" => f.before = Some(start),
-            "after" => f.since = Some(end),
-            "since" => f.since = Some(start),
-            _ => f.before = Some(end), // until, till, through
+            "before" | "prior to" => set_once(&mut f.before, start)?,
+            "after" => set_once(&mut f.since, end)?,
+            "since" => set_once(&mut f.since, start)?,
+            _ => set_once(&mut f.before, end)?, // until, till, through
         }
         Some(())
     })?;
     take(s, &BOUND, |c| {
         let (start, end) = span(parse_when(&c[2])?, today)?;
         match c[1].to_lowercase().as_str() {
-            "before" | "prior to" | "earlier than" => f.before = Some(start),
-            "until" | "till" | "through" | "thru" | "up to" | "on or before" => f.before = Some(end),
-            "after" | "later than" => f.since = Some(end),
-            _ => f.since = Some(start), // since, on or after
+            "before" | "prior to" | "earlier than" => set_once(&mut f.before, start)?,
+            "until" | "till" | "through" | "thru" | "up to" | "on or before" => set_once(&mut f.before, end)?,
+            "after" | "later than" => set_once(&mut f.since, end)?,
+            _ => set_once(&mut f.since, start)?, // since, on or after
         }
         Some(())
     })?;
     take(s, &ON, |c| {
         let (start, end) = span(parse_when(&c[1])?, today)?;
-        f.since = Some(start);
-        f.before = Some(end);
+        set_once(&mut f.since, start)?;
+        set_once(&mut f.before, end)?;
         Some(())
     })?;
     take(s, &LAST_WEEKDAY, |c| {
         let wd = weekday_of(&c[1].to_lowercase())?;
         let (start, end) = span(When::Weekday { wd, last: true }, today)?;
-        f.since = Some(start);
-        f.before = Some(end);
+        set_once(&mut f.since, start)?;
+        set_once(&mut f.before, end)?;
         Some(())
     })?;
     take(s, &THIS_PERIOD, |c| {
-        f.since = Some(this_period(&c[1].to_lowercase(), today)?.0);
+        set_once(&mut f.since, this_period(&c[1].to_lowercase(), today)?.0)?;
         Some(())
     })
 }

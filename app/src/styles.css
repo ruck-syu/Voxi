@@ -50,10 +50,8 @@ body {
   cursor: default;
 }
 
-/* The window is frosted glass: macOS's Popover vibrancy, its shadow and
-   corner radius come from the window itself. The card is a thin paper tint
-   over it and fills the window. The glass can't fade, so opening and
-   closing animate the contents instead. */
+/* Native opacity fades the glass and shadow with the contents. The subtle
+   content transform adds depth without resizing the native window. */
 .card {
   --glass-tint: 28%;
   background: color-mix(in srgb, var(--card) var(--glass-tint), transparent);
@@ -66,12 +64,15 @@ body {
 
 .card-inner {
   opacity: 0;
-  transition: opacity 110ms ease-in;
+  transform: translateY(5px) scale(0.985);
+  transform-origin: center top;
+  transition: opacity 140ms cubic-bezier(.4, 0, 1, 1), transform 140ms cubic-bezier(.4, 0, 1, 1);
 }
 
 .card[data-open] .card-inner {
   opacity: 1;
-  transition: opacity 180ms var(--settle);
+  transform: translateY(0) scale(1);
+  transition: opacity 200ms cubic-bezier(.16, 1, .3, 1), transform 200ms cubic-bezier(.16, 1, .3, 1);
 }
 
 /* Browser preview only (`npm run dev`): a sample desktop behind the card,
@@ -526,6 +527,8 @@ kbd {
 .said + .body {
   padding-top: 4px;
 }
+.result-scope { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 0; color: var(--muted); font-size: 13px; }
+.result-scope .link { flex-shrink: 0; }
 
 /* ---- Settings: one ruled row per setting; big ones fold away ---- */
 
@@ -676,12 +679,6 @@ kbd {
   color: var(--margin);
 }
 
-.link.add {
-  margin-top: 4px;
-  color: var(--ink);
-  font-weight: 700;
-}
-
 /* Updates: version, a button, and a progress bar while it downloads. */
 .updates {
   flex-wrap: wrap;
@@ -761,6 +758,7 @@ kbd {
 }
 
 .tabs {
+  position: relative;
   display: inline-flex;
   gap: 2px;
   padding: 2px;
@@ -770,6 +768,9 @@ kbd {
 }
 
 .tabs button {
+  position: relative;
+  z-index: 1;
+  transition: color 160ms ease;
   height: 28px;
   padding: 0 12px;
   border: 0;
@@ -782,7 +783,6 @@ kbd {
 }
 
 .tabs button[aria-selected="true"] {
-  background: var(--ink);
   color: var(--card);
 }
 
@@ -791,13 +791,17 @@ kbd {
   outline-offset: 1px;
 }
 
-.tab-panel {
-  animation: settle-in 180ms var(--settle) both;
+.tab-highlight {
+  position: absolute; top: 2px; bottom: 2px; border-radius: 7px;
+  background: var(--ink); pointer-events: none;
 }
-
-.tab-panel > .hint,
-.shortcuts > .hint {
-  margin: 0 0 8px;
+.tab-highlight[data-animate] {
+  transition: left 240ms var(--settle), width 240ms var(--settle);
+}
+.tab-panel { animation: tab-fade-in 180ms ease-out both; }
+@keyframes tab-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .foot .warn,
@@ -870,3 +874,64 @@ kbd {
 .secondary {
   background: var(--field);
 }
+
+/* All Settings tabs share the same content inset, rows, and type scale. */
+fieldset.tab-panel {
+  min-width: 0;
+  height: 320px;
+  overflow-y: auto;
+  padding: 8px 0 0;
+  margin: 0;
+  border: 0;
+}
+
+.tab-panel .prefs { margin: 0; border-top: 0; }
+.tab-panel:focus-visible { outline: 2px solid var(--margin); outline-offset: -2px; border-radius: 4px; }
+.tab-panel .pref { min-height: 48px; padding: 9px 0; }
+.pref-copy { flex: 1; min-width: 0; }
+.pref-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.recommendation-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--wash);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.tab-panel .pref-label,
+.tab-panel .phrase-text {
+  margin: 0;
+  font-family: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.settings-description,
+.settings-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.settings-description { margin: 4px 0 0; }
+.settings-note { margin: 12px 0 0; }
+.settings-note.warn { color: var(--margin); }
+.tab-panel .pref-summary { font-size: 13px; }
+.tab-panel .secondary,
+.tab-panel .hotkey {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.tab-panel .switch { flex-shrink: 0; }
+.tab-panel .updates > .secondary { margin-block: 0; }
+.tab-panel .pref .link.remove { margin-top: 0; }
+.tab-panel .shortcut { margin: 0; padding: 12px 0; }
+.tab-panel .shortcut-row { min-height: 30px; }
+.pref-folder { min-width: 0; overflow-wrap: anywhere; }

@@ -1,0 +1,7 @@
+# Bank 1 / moves and copies. Variants carry their seed's expected intent.
+# Backlog: commands the parser still gets wrong. Fixing one moves it into src/parse/corpus/11-bank-1.txt.
+over to my Desktop could you copy notes.txt => {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+back up all the images in Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+pt photo.heic into Pictures => {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+stick Invoice Final v2.pdf in Archive please => {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+um move Terms and Conditions.pdf to Archive => {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}

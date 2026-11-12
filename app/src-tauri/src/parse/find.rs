@@ -5,6 +5,15 @@ use crate::model::Intent;
 
 pub fn specific() -> Vec<Pattern> {
     vec![
+        pat("what_named_file", r"^what\s+files?\s+(?:are\s+)?(?:named|called)\s+(.+)$", |c| {
+            Some(Intent::List { src: super::phrase::parse_source(&format!("file named {}", cap(c, 1)?))? })
+        }),
+        pat("count_reworded", r"^(?:tell\s+me\s+(?:number|count)\s+of\s+(?:files|items)\s+in|give\s+me\s+(?:a\s+)?file\s+count\s+for|number\s+of\s+files\s+under|what\s+is\s+file\s+count\s+in)\s+(.+)$", |c| {
+            Some(Intent::Count { src: super::phrase::parse_source(&format!("files in {}", cap(c, 1)?))? })
+        }),
+        pat("how_many_contained", r"^how\s+many\s+(?:files|items)\s+does\s+(.+?)\s+(?:contain|have)$", |c| {
+            Some(Intent::Count { src: super::phrase::parse_source(&format!("files in {}", cap(c, 1)?))? })
+        }),
         pat(
             "size_of",
             r"^(?:(?:show|what\s+is|what's|get|check|calculate|tell\s+me)\s+(?:me\s+)?)?(?:total\s+)?size\s+of\s+(.+)$",
@@ -33,7 +42,7 @@ pub fn specific() -> Vec<Pattern> {
 
 pub fn general() -> Vec<Pattern> {
     vec![
-        pat("list", r"^(?:list|find|show|search\s+for|search|look\s+for)\s+(?:me\s+)?(?:what\s+)?(?:contents?\s+of\s+|what'?s\s+(?:on|in)\s+)?(.+)$", |c| {
+        pat("list", r"^(?:list|find|show|display|search\s+for|search|look\s+for)\s+(?:me\s+)?(?:what\s+)?(?:contents?\s+of\s+|what'?s\s+(?:on|in)\s+)?(.+)$", |c| {
             Some(Intent::List { src: src(c, 1)? })
         }),
         pat("whats_in", r"^(?:what'?s|what\s+is)\s+(?:on|in)\s+(.+)$", |c| Some(Intent::List { src: src(c, 1)? })),

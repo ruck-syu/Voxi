@@ -1,0 +1,215 @@
+{"at": "3-list-count-size.txt:3", "command": "what pdfs are in Downloads?", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:5", "command": "got any PDFs in Downloads?", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:7", "command": "i need to see the PDFs in Downloads", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:9", "command": "pull up the PDF files in Downloads", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:10", "command": "lsit PDFs in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:12", "command": "what videos are in Downloads", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:16", "command": "i need to see the videos in Downloads quickly", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:19", "command": "lisst the videos in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:21", "command": "what Word documents are in Documents?", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:25", "command": "i need to see the word documents in Documents", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:26", "command": "pull up the Word documents in Documents", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:28", "command": "shwo the Word documents in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:30", "command": "what zips are in Downloads?", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:34", "command": "i need to see the zips in Downloads", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:37", "command": "lisst the zips in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:39", "command": "what files have budget in the name in Documents", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:43", "command": "i need to see the files called budget in Documents", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:44", "command": "pull up files named budget in Documents", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:46", "command": "lsit files named budget in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:48", "command": "what's the file named passport.pdf?", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:52", "command": "i need to find the file named passport.pdf quickly", "label": "wrong_parse", "cluster": "trailing_filler", "why": "'quickly' absorbed into nameContains; file-named search became set filter"}
+{"at": "3-list-count-size.txt:55", "command": "fnid the file named passport.pdf", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:63", "command": "pull up files called Final Draft.docx", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:64", "command": "fnid files called Final Draft.docx", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:70", "command": "i need to see the files in Desktop bigger than 500 MB", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:73", "command": "lsit files bigger than 500 MB in Desktop", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:79", "command": "i need to see files between 10 and 50 MB in Downloads", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:80", "command": "pull up the files in Downloads between 10 and 50 MB", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:82", "command": "lsit files between 10 and 50 MB in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:84", "command": "what png files are there", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:88", "command": "i need to see all the png files", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:91", "command": "lsit all png files", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:93", "command": "what HEIC photos are in Pictures", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:97", "command": "i need to see the HEIC photos in Pictures", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:98", "command": "pull up all the HEIC photos in Pictures", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:100", "command": "lsit all the HEIC photos in Pictures", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:102", "command": "what's in the Pictures/Trip folder", "label": "wrong_parse", "cluster": "question_form", "why": "folder question became item lookup named 'Pictures/Trip'"}
+{"at": "3-list-count-size.txt:106", "command": "i need to see the files in Pictures/Trip folder", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:107", "command": "pull up the files in Pictures/Trip folder", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:109", "command": "shwo the files in Pictures/Trip folder", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:115", "command": "i need to see the photos in Pictures named cat", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:116", "command": "pull up the photos in Pictures named cat", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:118", "command": "lsit the photos in Pictures named cat", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:120", "command": "what text files are in Documents", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:124", "command": "i need to see the text files in Documents", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:125", "command": "pull up the text files in Documents", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:127", "command": "lsit the text files in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:132", "command": "could you tell me what's in the Desktop folder", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:133", "command": "i need to see what's in the Desktop folder", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:136", "command": "shwo me what's in the Desktop folder", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:139", "command": "what files are in my downloads folder", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:141", "command": "i need to see the files in my downloads folder", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:142", "command": "pull up the files in my downloads folder", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:145", "command": "lsit the files in my downloads folder", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:151", "command": "i need to see files at least 10 MB in Downloads", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:152", "command": "pull up files at least 10 MB in Downloads", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:154", "command": "lsit files at least 10 MB in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:159", "command": "i need to see everything with 'draft' in the name", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:160", "command": "pull up everything with 'draft' in the name", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:162", "command": "what has 'draft' in the name?", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:163", "command": "lsit everything with 'draft' in the name", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:165", "command": "tell me how many PDFs are in Documents", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:167", "command": "number of PDFs in Documents", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:169", "command": "i need the count of PDFs in Documents", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:170", "command": "can you tell me how many PDFs are in Documents", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:172", "command": "cuont PDFs in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:176", "command": "number of images in Pictures", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:178", "command": "i need the count of images in Pictures", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:179", "command": "can you tell me how many images are in Pictures", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:181", "command": "cuont the images in Pictures", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:185", "command": "number of screenshots on my Desktop", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:188", "command": "i need to know how many screenshots are on my Desktop", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:190", "command": "hwo many screenshots are on my Desktop", "label": "gap", "cluster": "typo", "why": "misspelled question word or noun; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:194", "command": "number of HEIC files in Pictures", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:196", "command": "i need the count of HEIC files in Pictures", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:197", "command": "can you tell me how many HEIC files are in Pictures", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:199", "command": "cuont the HEIC files in Pictures", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:203", "command": "number of spreadsheets in Downloads", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:205", "command": "i need the count of spreadsheets in Downloads", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:206", "command": "can you tell me how many spreadsheets are in Downloads", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:208", "command": "cuont the spreadsheets in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:212", "command": "number of zip files over 100 MB in Downloads", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:214", "command": "i need the count of zip files over 100 MB in Downloads", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:215", "command": "can you tell me how many zip files are over 100 MB in Downloads", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:217", "command": "cuont the zip files over 100 MB in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:219", "command": "how many files have IMG in the name in Pictures", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:221", "command": "number of files with IMG in the name in Pictures", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:223", "command": "i need the count of files with IMG in the name in Pictures", "label": "gap", "cluster": "count_phrasing", "why": "'number of'/'count of'/'how many' variant not recognized"}
+{"at": "3-list-count-size.txt:224", "command": "can you tell me how many files have IMG in the name in Pictures", "label": "gap", "cluster": "leading_filler", "why": "conversational lead-in ('tell me') not stripped"}
+{"at": "3-list-count-size.txt:226", "command": "cuont the files with IMG in the name in Pictures", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:231", "command": "what size is the Documents folder", "label": "gap", "cluster": "size_phrasing", "why": "'what size is X folder' not parsed; 'how big is X' works"}
+{"at": "3-list-count-size.txt:233", "command": "i need to know how big the Documents folder is", "label": "gap", "cluster": "size_phrasing", "why": "'how big the X folder is' word order not parsed"}
+{"at": "3-list-count-size.txt:235", "command": "hwo big is the Documents folder", "label": "gap", "cluster": "typo", "why": "misspelled question word or noun; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:242", "command": "i need the size of the Desktop folder", "label": "gap", "cluster": "leading_filler", "why": "'i need the' lead-in; 'size of the X folder' otherwise supported"}
+{"at": "3-list-count-size.txt:244", "command": "sise of the Desktop folder", "label": "gap", "cluster": "typo", "why": "misspelled question word or noun; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:248", "command": "how much space is Downloads taking up", "label": "gap", "cluster": "size_phrasing", "why": "'how much space is X taking up' not recognized"}
+{"at": "3-list-count-size.txt:250", "command": "i need to know how much space Downloads is using", "label": "gap", "cluster": "size_phrasing", "why": "'how much space X is using' not recognized"}
+{"at": "3-list-count-size.txt:252", "command": "how much disk space is Downloads using", "label": "gap", "cluster": "size_phrasing", "why": "'how much disk space' phrasing not recognized"}
+{"at": "3-list-count-size.txt:253", "command": "hwo much space is Downloads using", "label": "gap", "cluster": "size_phrasing", "why": "'how much space' phrasing not recognized; also typo 'hwo'"}
+{"at": "3-list-count-size.txt:260", "command": "i need to know how big my screenshots folder is", "label": "gap", "cluster": "size_phrasing", "why": "'how big my X folder is' not recognized; screenshots folder is lowercase"}
+{"at": "3-list-count-size.txt:262", "command": "hwo big is my screenshots folder", "label": "gap", "cluster": "typo", "why": "misspelled question word or noun; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:269", "command": "i need to see the size of my home folder", "label": "gap", "cluster": "leading_filler", "why": "'i need to see' lead-in; 'size of my home folder' is supported"}
+{"at": "3-list-count-size.txt:271", "command": "chekc the size of my home folder", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:273", "command": "look for duplicates in Documents", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:278", "command": "any duplicates in Documents?", "label": "policy", "cluster": "yes_no_existence", "why": "yes/no existence question; corpus refuses 'are there any duplicate PDFs'"}
+{"at": "3-list-count-size.txt:280", "command": "fnid duplicates in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:284", "command": "look for duplicate files in Downloads", "label": "gap", "cluster": "verb_synonym", "why": "'pull up'/'look for' not recognized; 'find'/'list' are"}
+{"at": "3-list-count-size.txt:286", "command": "i need to see duplicate files in Downloads", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:287", "command": "are there duplicate files in Downloads?", "label": "policy", "cluster": "yes_no_existence", "why": "yes/no existence question; corpus refuses 'are there any duplicate PDFs'"}
+{"at": "3-list-count-size.txt:289", "command": "lsit duplicate files in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:296", "command": "i need Downloads open in Finder", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:298", "command": "oepn Downloads in Finder", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:300", "command": "where is report.pdf", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:301", "command": "where's report.pdf", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:302", "command": "where is report.pdf in Finder?", "label": "gap", "cluster": "question_form", "why": "question phrasing not parsed; declarative form is supported"}
+{"at": "3-list-count-size.txt:305", "command": "i need to find where report.pdf is", "label": "wrong_parse", "cluster": "question_form", "why": "where-is question became item named 'where report.pdf is'"}
+{"at": "3-list-count-size.txt:307", "command": "shwo me where report.pdf is", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:312", "command": "i need to see Invoice.pdf in Finder", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:316", "command": "revael Invoice.pdf", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:325", "command": "oepn the Downloads folder", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:331", "command": "i need to see the Pictures folder in Finder", "label": "gap", "cluster": "leading_filler", "why": "'i need to see/find' lead-in not stripped"}
+{"at": "3-list-count-size.txt:334", "command": "shwo me the Pictures folder in Finder", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "3-list-count-size.txt:343", "command": "oepn my Pictures folder", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:7", "command": "report.pdf should be called final report.pdf", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:10", "command": "renmae the file report.pdf to final report.pdf", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:11", "command": "could you call the file report.pdf final report.pdf instead", "label": "gap", "cluster": "rename_phrasing", "why": "'call X Y instead' phrasing not parsed"}
+{"at": "4-renames.txt:17", "command": "report should be called Final Report", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:20", "command": "renmae report to Final Report", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:27", "command": "report.pdf should be called summary.pdf", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:30", "command": "renmae report.pdf as summary.pdf", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:31", "command": "call report.pdf summary.pdf instead", "label": "gap", "cluster": "rename_phrasing", "why": "'call X Y instead' phrasing not parsed"}
+{"at": "4-renames.txt:37", "command": "the Claude dmg should be called Claude", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called' phrasing; 'rename the Claude dmg to Claude' is supported"}
+{"at": "4-renames.txt:40", "command": "renmae the Claude dmg to Claude", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:41", "command": "could you give the Claude dmg the new name Claude", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:47", "command": "notes.txt should be called meeting notes.txt", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:48", "command": "notes.txt should be named meeting notes.txt", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:50", "command": "chnage the name of notes.txt to meeting notes.txt", "label": "gap", "cluster": "rename_phrasing", "why": "'change the name of X to Y' phrasing; also typo 'chnage'"}
+{"at": "4-renames.txt:51", "command": "can you give notes.txt the new name meeting notes.txt", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:57", "command": "\"Draft 2\" should be called \"Final\"", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:60", "command": "renmae \"Draft 2\" to \"Final\"", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:67", "command": "\"old notes.txt\" should be called \"new notes.txt\"", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:70", "command": "renmae \"old notes.txt\" to \"new notes.txt\"", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:71", "command": "could you give \"old notes.txt\" the new name \"new notes.txt\"", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into quoted source name"}
+{"at": "4-renames.txt:77", "command": "invoice (final).pdf should be called invoice-v2.pdf", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:80", "command": "renmae invoice (final).pdf to invoice-v2.pdf", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:81", "command": "could you give invoice (final).pdf the new name invoice-v2.pdf", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:87", "command": "report.pdf should be called \"Report 2026.pdf\"", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:90", "command": "renmae report.pdf to \"Report 2026.pdf\"", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:91", "command": "could you give report.pdf the new name \"Report 2026.pdf\"", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:97", "command": "Scan 001.pdf should be called receipt-001.pdf", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:100", "command": "renmae Scan 001.pdf to receipt-001.pdf", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:101", "command": "could you give Scan 001.pdf the new name receipt-001.pdf", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:107", "command": "report.pdf should be called final.pdf", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:110", "command": "renmae the file report.pdf as final.pdf", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:111", "command": "could you give report.pdf the new name final.pdf", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:117", "command": "scan001.pdf should be called Lease agreement.pdf", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:120", "command": "renmae the file scan001.pdf to Lease agreement.pdf", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:121", "command": "could you give scan001.pdf the new name Lease agreement.pdf", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:127", "command": "IMG_0042.HEIC should be called beach.heic", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:130", "command": "renmae IMG_0042.HEIC to beach.heic", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:137", "command": "the folder Scans should be called Scanned Documents", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:140", "command": "renmae the folder Scans to Scanned Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:141", "command": "could you give the folder Scans the new name Scanned Documents", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:147", "command": "Holiday photos should be called Vacation", "label": "gap", "cluster": "rename_phrasing", "why": "'should be called/named' phrasing not parsed"}
+{"at": "4-renames.txt:150", "command": "renmae Holiday photos to Vacation", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:151", "command": "could you give Holiday photos the new name Vacation", "label": "wrong_parse", "cluster": "new_name_leak", "why": "'new' from 'new name' leaked into source name"}
+{"at": "4-renames.txt:157", "command": "put Invoice- in front of all PDFs in Downloads", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:158", "command": "stick the prefix Invoice- on all PDFs in Downloads", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:160", "command": "ad prefix Invoice- to all PDFs in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:167", "command": "put 2026- in front of every file in Documents", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:168", "command": "stick 2026- in front of every file in Documents", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:170", "command": "ad prefix 2026- to every file in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:171", "command": "can you put the prefix 2026- on every file in Documents", "label": "wrong_parse", "cluster": "prefix_phrasing", "why": "'move' intent on file 'prefix 2026-'; would move a file"}
+{"at": "4-renames.txt:177", "command": "put Invoice dash in front of the PDFs in Documents", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:178", "command": "stick the prefix Invoice dash on the PDFs in Documents", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:180", "command": "ad prefix Invoice dash to PDFs in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:187", "command": "put 2026- in front of files in Downloads", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:188", "command": "stick 2026- in front of the files in Downloads", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:190", "command": "plese add prefix 2026- to files in Downloads", "label": "gap", "cluster": "leading_filler", "why": "'plese' lead-in (typo of please); 'add prefix X to files' otherwise supported"}
+{"at": "4-renames.txt:197", "command": "put a date in front of the screenshots in Pictures", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:198", "command": "stick a date prefix on screenshots in Pictures", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:200", "command": "ad a date prefix to screenshots in Pictures", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:207", "command": "put a date in front of screenshots on the Desktop", "label": "wrong_parse", "cluster": "prefix_phrasing", "why": "'move' intent on file 'a date'; would move a file"}
+{"at": "4-renames.txt:208", "command": "stick a date prefix on the screenshots in Desktop", "label": "gap", "cluster": "prefix_phrasing", "why": "'put/stick X in front of' phrasing not parsed"}
+{"at": "4-renames.txt:210", "command": "ad a date prefix to screenshots in Desktop", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:217", "command": "change spaces to underscores in names of files in Downloads", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:218", "command": "swap spaces for underscores in names of files in Downloads", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:220", "command": "repalce spaces with underscores in names of files in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:221", "command": "in names of files in Downloads replace spaces with underscores", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:227", "command": "take out the spaces in the file names in Downloads", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:230", "command": "remvoe spaces from the file names in Downloads", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:231", "command": "make the file names in Downloads have no spaces", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:238", "command": "take the dashes out of names in Documents", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:240", "command": "strpi dashes from names in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:241", "command": "names in Documents should lose their dashes", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:247", "command": "change dashes to spaces in names of files in Documents", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:248", "command": "swap dashes for spaces in names of files in Documents", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:250", "command": "repalce dashes with spaces in names of files in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:251", "command": "in names of files in Documents replace dashes with spaces", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:257", "command": "change spaces to underscores in file names in Pictures", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:258", "command": "swap spaces for underscores in the file names in Pictures", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:260", "command": "replce spaces with underscores in file names in Pictures", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:261", "command": "in file names in Pictures replace spaces with underscores", "label": "gap", "cluster": "replace_phrasing", "why": "word-order or verb variant of supported replace-in-names"}
+{"at": "4-renames.txt:267", "command": "give the photos in Trip numbered names like trip-001", "label": "gap", "cluster": "numbering_phrasing", "why": "'numbered names like trip-001' phrasing not parsed"}
+{"at": "4-renames.txt:270", "command": "nubmer the photos in Trip as trip-001", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:277", "command": "give the PDFs in Scans numbers like scan-01, scan-02", "label": "gap", "cluster": "numbering_phrasing", "why": "'numbers like scan-01' phrasing not parsed"}
+{"at": "4-renames.txt:280", "command": "nubmer PDFs in Scans as scan-01, scan-02", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:281", "command": "number the PDFs in Scans as scan-01 and scan-02", "label": "wrong_parse", "cluster": "numbering_phrasing", "why": "'and' form makes base 'scan-01 and scan-'"}
+{"at": "4-renames.txt:288", "command": "change all the file names in Desktop to lowercase", "label": "gap", "cluster": "case_phrasing", "why": "'change the names to lowercase' phrasing not parsed"}
+{"at": "4-renames.txt:290", "command": "lowrcase all the file names in Desktop", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:300", "command": "mkae the names of my PDFs lowercase", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:308", "command": "change the names of PDFs in Documents to lowercase", "label": "gap", "cluster": "case_phrasing", "why": "'change the names to lowercase' phrasing not parsed"}
+{"at": "4-renames.txt:310", "command": "lowercse the names of PDFs in Documents", "label": "gap", "cluster": "typo_verb", "why": "misspelled command verb; core phrasing otherwise supported"}
+{"at": "4-renames.txt:321", "command": "rename report.pdf to ../final.pdf", "label": "label_error", "cluster": "path_in_new_name", "why": "corpus accepts '..' in names at parse time; refuses later"}
+{"at": "4-renames.txt:323", "command": "rename report.pdf to a/final.pdf", "label": "policy", "cluster": "path_in_new_name", "why": "slash in new name; no corpus precedent; either answer defensible"}

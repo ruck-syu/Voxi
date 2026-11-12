@@ -1,0 +1,267 @@
+MISS 7-dictation-undo.txt:5  move the uh report dot pdf file to my Documents folder
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  {"intent":"move","src":{"kind":"item","name":"uh report.pdf"},"to":"Documents"}
+MISS 7-dictation-undo.txt:8  move the report dot pdf file to my Documents folder like thanks
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents folder like"}
+MISS 7-dictation-undo.txt:9  like move the report dot pdf file to my Documents folder okay
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:15  so like please move all the PDFs in Downloads over to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:24  could you like copy notes dot txt over to my Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+     got  "!"
+MISS 7-dictation-undo.txt:32  like copy my notes to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 7-dictation-undo.txt:33  so copy my notes to Backup uh thanks
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup uh"}
+MISS 7-dictation-undo.txt:38  shift the uh zip files from Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  {"intent":"move","src":{"filter":{"nameContains":"uh zip","type":"files"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+MISS 7-dictation-undo.txt:41  like shift the zip files from Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 7-dictation-undo.txt:49  so like move every PDF from Downloads into the Archive folder
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 7-dictation-undo.txt:55  send the uh invoice to Archive
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  {"intent":"move","src":{"kind":"item","name":"uh invoice"},"to":"Archive"}
+MISS 7-dictation-undo.txt:58  like send the invoice to Archive
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 7-dictation-undo.txt:63  put the uh tax form into Documents
+     want {"intent":"move","src":{"kind":"item","name":"tax form"},"to":"Documents"}
+     got  {"intent":"move","src":{"kind":"item","name":"uh tax form"},"to":"Documents"}
+MISS 7-dictation-undo.txt:66  so like put the tax form into Documents
+     want {"intent":"move","src":{"kind":"item","name":"tax form"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:68  like put the tax form into Documents
+     want {"intent":"move","src":{"kind":"item","name":"tax form"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:75  so like move report final v2 dot docx to Documents
+     want {"intent":"move","src":{"kind":"item","name":"report final v2.docx"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:76  move report final v2 dot docx to Documents uh thanks
+     want {"intent":"move","src":{"kind":"item","name":"report final v2.docx"},"to":"Documents"}
+     got  {"intent":"move","src":{"kind":"item","name":"report final v2.docx"},"to":"Documents uh"}
+MISS 7-dictation-undo.txt:80  relocate the uh zip files in Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  {"intent":"move","src":{"filter":{"nameContains":"uh zip","type":"files"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+MISS 7-dictation-undo.txt:83  so like relocate the zip files in Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 7-dictation-undo.txt:91  so like change the name of draft dot docx to final dot docx
+     want {"intent":"rename","new_name":"final.docx","src":{"kind":"item","name":"draft.docx"}}
+     got  "!"
+MISS 7-dictation-undo.txt:92  change the name of draft dot docx to final dot docx uh thanks
+     want {"intent":"rename","new_name":"final.docx","src":{"kind":"item","name":"draft.docx"}}
+     got  {"intent":"rename","new_name":"final.docx uh","src":{"kind":"item","name":"draft.docx"}}
+MISS 7-dictation-undo.txt:99  so like change the name of notes dot txt to meeting notes dot txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  "!"
+MISS 7-dictation-undo.txt:100  change the name of notes dot txt to meeting notes dot txt uh thanks
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  {"intent":"rename","new_name":"meeting notes.txt uh","src":{"kind":"item","name":"notes.txt"}}
+MISS 7-dictation-undo.txt:107  so like rename report dot pdf as summary dot pdf
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 7-dictation-undo.txt:108  rename report dot pdf as summary dot pdf uh thanks
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"rename","new_name":"summary.pdf uh","src":{"kind":"item","name":"report.pdf"}}
+MISS 7-dictation-undo.txt:114  like delete everything
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:116  delete uh everything
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  {"intent":"trash","src":{"kind":"item","name":"uh everything"}}
+MISS 7-dictation-undo.txt:122  like delete everything in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:124  delete everything in Downloads uh thanks
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads uh","kind":"set"}}
+MISS 7-dictation-undo.txt:130  like move everything to the trash
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:132  move everything to the uh trash
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  {"intent":"move","src":{"filter":{"type":"files"},"kind":"set"},"to":"uh trash"}
+MISS 7-dictation-undo.txt:138  like clean up my Downloads folder
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:140  clean up my Downloads folder uh thanks
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"uh"}}
+MISS 7-dictation-undo.txt:144  delete the uh stuff in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:146  like delete the stuff in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:154  so like get rid of the screenshots in Desktop older than a week
+     want {"intent":"trash","src":{"filter":{"olderThanDays":7,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:163  so like delete the file that's on the desktop called tmp dot txt
+     want {"intent":"trash","src":{"folder":"desktop","kind":"item","name":"tmp.txt"}}
+     got  "!"
+MISS 7-dictation-undo.txt:164  delete the file that's on the desktop called tmp dot txt uh thanks
+     want {"intent":"trash","src":{"folder":"desktop","kind":"item","name":"tmp.txt"}}
+     got  {"intent":"trash","src":{"filter":{"nameContains":"tmp.txt uh","type":"files"},"folder":"desktop","kind":"set"}}
+MISS 7-dictation-undo.txt:171  so like move the video called intro dot mov to Videos
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 7-dictation-undo.txt:172  move the video called intro dot mov to Videos uh thanks
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos uh"}
+MISS 7-dictation-undo.txt:174  um move every dot mov file from Downloads to Videos
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:175  okay so move every dot mov file from Downloads to Videos
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:176  move every dot mov file from Downloads to Videos thanks
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:177  uh move every dot mov file from Downloads to Videos please
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:178  move every dot mov file from Downloads to Videos period
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:179  so like move every dot mov file from Downloads to Videos
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  "!"
+MISS 7-dictation-undo.txt:180  move every dot mov file from Downloads to Videos uh thanks
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos uh"}
+MISS 7-dictation-undo.txt:186  so like move the screenshots on my desktop to Pictures
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"desktop","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 7-dictation-undo.txt:188  move the screenshots on my desktop to Pictures uh thanks
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"desktop","kind":"set"},"to":"Pictures"}
+     got  {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"desktop","kind":"set"},"to":"Pictures uh"}
+MISS 7-dictation-undo.txt:194  so like move my installers to the trash
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:196  move my uh installers to the trash
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"kind":"set"}}
+     got  {"intent":"trash","src":{"kind":"item","name":"uh installers"}}
+MISS 7-dictation-undo.txt:200  undo the uh last change
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:203  so like undo the last change
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:205  undo the last change uh thanks
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:212  like undo
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:220  so like take that back
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:228  so like revert that
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:231  um undo the last move
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:232  okay so undo the last move
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:233  undo the uh last move
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:234  undo the last move thanks
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:235  undo the last move please
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:236  so like undo the last move
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:237  undo the last move period
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:241  please take back what you uh just did
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:243  so like please take back what you just did
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:251  so like I want to undo the last thing I did
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:257  show my uh history
+     want {"intent":"recent_actions"}
+     got  {"intent":"list","src":{"kind":"item","name":"uh history"}}
+MISS 7-dictation-undo.txt:260  so like show my history
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:265  list my uh recent changes
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:268  so like list my recent changes
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:273  show my uh recent actions please
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:275  so like show my recent actions please
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:277  show my recent actions uh please
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:281  what uh changed recently
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:284  so like what changed recently
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:292  so like could you show me the recent actions
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:297  hey voxi please delete the uh screenshots from yesterday
+     want {"intent":"trash","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:300  so like hey voxi please delete the screenshots from yesterday
+     want {"intent":"trash","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:305  count the uh screenshots from yesterday
+     want {"intent":"count","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:308  so like count the screenshots from yesterday
+     want {"intent":"count","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:313  how many PDFs are uh in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  {"intent":"count","src":{"folder":"Documents","kind":"item","name":"PDFs are uh"}}
+MISS 7-dictation-undo.txt:316  so like how many PDFs are in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:321  list every uh zip in Downloads
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"list","src":{"folder":"Downloads","kind":"item","name":"uh zip"}}
+MISS 7-dictation-undo.txt:324  so like list every zip in Downloads
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:329  move the uh tax return from Downloads into Taxes
+     want {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"tax return"},"to":"Taxes"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"uh tax return"},"to":"Taxes"}
+MISS 7-dictation-undo.txt:332  so like move the tax return from Downloads into Taxes
+     want {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"tax return"},"to":"Taxes"}
+     got  "!"
+MISS 7-dictation-undo.txt:337  move my uh screenshots from today to the Archive
+     want {"intent":"move","src":{"filter":{"day":"today","type":"screenshots"},"kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 7-dictation-undo.txt:340  so like move my screenshots from today to the Archive
+     want {"intent":"move","src":{"filter":{"day":"today","type":"screenshots"},"kind":"set"},"to":"Archive"}
+     got  "!"

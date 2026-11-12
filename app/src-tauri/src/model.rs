@@ -280,7 +280,9 @@ pub enum Outcome {
     },
     /// A name matched more than one file. The user picks one and the
     /// command is planned again with that choice.
-    Ambiguous { name: String, candidates: Vec<String> },
+    /// `folders` is true when every candidate is a folder, so the pick can be
+    /// remembered as the user's name for it.
+    Ambiguous { name: String, candidates: Vec<String>, folders: bool },
     /// Read-only result; nothing changed.
     Info { title: String, summary: String, rows: Vec<InfoRow>, total: usize, numbered: bool },
     /// The command was understood, but there is nothing to do or it can't be done.

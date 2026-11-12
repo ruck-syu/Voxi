@@ -1,0 +1,28 @@
+# Bank 1 / trash. Variants carry their seed's expected intent.
+# Backlog: commands the parser still gets wrong. Fixing one moves it into src/parse/corpus/11-bank-1.txt.
+hey can you remvoe the claude.dmg file from Downloads => {"intent":"trash","src":{"kind":"item","name":"claude.dmg","folder":"Downloads"}}
+delte the claude.dmg file in Downloads => {"intent":"trash","src":{"kind":"item","name":"claude.dmg","folder":"Downloads"}}
+delet screenshots older than 45 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":45}}}
+delte files larger than 1 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+hey can you remvoe files smaller than 5 MB from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","smallerThanMb":5.0}}}
+delet "last" => {"intent":"trash","src":{"kind":"item","name":"last"}}
+dleete last.pdf => {"intent":"trash","src":{"kind":"item","name":"last.pdf"}}
+remvoe the file "report.pdf" => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+dellete files named "budget" in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"budget"}}}
+trsah draft_v1.docx => {"intent":"trash","src":{"kind":"item","name":"draft_v1.docx"}}
+delte the file that's on the desktop called tmp.txt => {"intent":"trash","src":{"kind":"item","name":"tmp.txt","folder":"desktop"}}
+claen up my desktop => {"intent":"trash","src":{"kind":"set","folder":"desktop","filter":{"type":"files"}}}
+claen up my Downloads folder => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+delet the stuff in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+hey can you remvoe everything in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+delte everything => {"intent":"trash","src":{"kind":"set","filter":{"type":"files"}}}
+toss the files whose names have draft in them in Documents => {"intent":"trash","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"draft"}}}
+delte the files whose names contain draft in Documents => {"intent":"trash","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"draft"}}}
+delte files that start with invoice from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameStartsWith":"invoice"}}}
+delte all PNG files older than 2 years in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["png"],"olderThanDays":730}}}
+delet screenshots older than 6 months in Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots","olderThanDays":180}}}
+delte files over 10 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":10240.0}}}
+delte files named untitled on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+delte all the GIFs older than a year => {"intent":"trash","src":{"kind":"set","filter":{"type":"files","ext":["gif"],"olderThanDays":365}}}
+hey voxi pls delte the screenshots from yesterday => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","day":"yesterday"}}}
+delte everything in Documents => {"intent":"trash","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}}}

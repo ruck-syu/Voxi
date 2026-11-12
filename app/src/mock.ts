@@ -7,7 +7,9 @@ let settings: Settings = {
   // ?welcome previews the first-run page.
   onboarded: !new URLSearchParams(location.search).has("welcome"),
   shortcuts: [{ phrase: "run my usuals", commands: ["move screenshots from today to Screenshots", "delete installers from Downloads"] }],
+  nicknames: [{ name: "dev", path: "~/Documents/Dev" }],
 };
+let reports = 0;
 
 function plan(text: string, choices: Record<string, string> = {}): Outcome {
   const t = text.toLowerCase();
@@ -49,7 +51,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("claude"))
     return {
-      status: "ambiguous", name: "claude",
+      status: "ambiguous", name: "claude", folders: false,
       candidates: ["/Users/me/Downloads/Claude.dmg", "/Users/me/Downloads/Claude Setup.dmg", "/Users/me/Documents/claude-notes.txt"],
     };
   if (t.includes("size"))
@@ -84,6 +86,23 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         .filter((s) => s.phrase || s.commands.length);
       if (settings.shortcuts.some((s) => !s.phrase)) throw "Give each shortcut a phrase to say, like “run my usuals”.";
       return settings;
+    case "report_wrong":
+      return { count: ++reports, path: "~/Library/Application Support/voxi/reports.jsonl" };
+    case "reports_summary":
+      return { count: reports, path: "~/Library/Application Support/voxi/reports.jsonl" };
+    case "clear_reports":
+      reports = 0;
+      return { count: 0, path: "~/Library/Application Support/voxi/reports.jsonl" };
+    case "reveal_reports":
+      return;
+    case "teach_phrase":
+      settings = { ...settings, shortcuts: [...settings.shortcuts, { phrase: String(args.phrase), commands: [String(args.command)] }] };
+      return settings;
+    case "remember_folder": {
+      const name = String(args.name).toLowerCase();
+      settings = { ...settings, nicknames: [...settings.nicknames.filter((n) => n.name !== name), { name, path: String(args.path) }] };
+      return settings;
+    }
     case "request_folder_access":
       return [
         { name: "Desktop", path: "~/Desktop", allowed: true },

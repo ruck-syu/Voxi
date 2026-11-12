@@ -273,6 +273,7 @@ fn state_for(home: &Path) -> AppState {
         pending: Mutex::new(None),
         settings: Mutex::new(Settings::default()),
         settings_path: home.join("settings.json"),
+        reports_path: home.join("reports.jsonl"),
         next_plan: AtomicU64::new(1),
         active_search: Mutex::new(None),
         presentation: Mutex::new(Default::default()),

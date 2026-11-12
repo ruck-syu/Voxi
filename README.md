@@ -184,7 +184,3 @@ remembers folder access across versions.
 `website/` is a static site with no build step. In Vercel, import this repo and
 set **Root Directory** to `website`. Pushes that only touch the website or docs
 don't build a new app.
-
----
-
-Built for No Hands: The Wispr Challenge by [WeMakeDevs](https://www.wemakedevs.org).

@@ -1,0 +1,10 @@
+# Bank 1 / dictation and undo. Variants carry their seed's expected intent.
+# Backlog: commands the parser still gets wrong. Fixing one moves it into src/parse/corpus/11-bank-1.txt.
+um undo the last move => {"intent":"undo"}
+okay so undo the last move => {"intent":"undo"}
+undo the uh last move => {"intent":"undo"}
+undo the last move thanks => {"intent":"undo"}
+undo the last move please => {"intent":"undo"}
+so like undo the last move => {"intent":"undo"}
+undo the last move period => {"intent":"undo"}
+so like hey voxi please delete the screenshots from yesterday => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","day":"yesterday"}}}

@@ -23,6 +23,12 @@ static TRAIL_PUNCT: LazyLock<Regex> = re!(r"[.!?;:,\s]+$");
 static SPOKEN_DOT: LazyLock<Regex> = re!(
     r"(?i)(\w)\s+dot\s+(pdf|png|jpe?g|heic|webp|gif|txt|md|zip|docx?|xlsx?|pptx?|csv|mov|mp4|dmg|pkg|key|pages|numbers)\b"
 );
+/// "every dot mov file" -> "mov files": a spoken extension after a quantifier.
+static QUANTIFIED_DOT: LazyLock<Regex> = re!(r"(?i)\b(?:every|any|all|each)\s+dot\s+([a-z0-9]{2,5})\s+files?\b");
+/// "every video file", "any PDF files" -> "video files", "PDF files".
+static QUANTIFIED_TYPE: LazyLock<Regex> = re!(r"(?i)\b(?:every|any|each)\s+(?:(?:the|my)\s+)?([a-z0-9]+)\s+files?\b");
+/// "any photos", "any installers": "any" adds nothing to a set.
+static ANY: LazyLock<Regex> = re!(r"(?i)\bany\s+");
 static FILLER_WORDS: LazyLock<Regex> = re!(r"(?i)\b(?:all\s+of\s+|all\s+|the\s+|my\s+|every\s+|whole\s+|please\s+)");
 static FILE_QUANTIFIER: LazyLock<Regex> = re!(r"(?i)\b(?:every|all(?:\s+of)?)\s+(?:(?:the|my)\s+)?file\b(\s+names?\b)?");
 static COMMA_BEFORE_KEYWORD: LazyLock<Regex> = re!(r"(?i),\s+(to|into|in|from|as|on)\s+");
@@ -35,12 +41,20 @@ pub fn normalize(text: &str) -> String {
     let straight = text.replace(['“', '”'], "\"").replace(['‘', '’'], "'");
     let mut s = SPACES.replace_all(straight.trim(), " ").to_string();
     s = map_unquoted(&s, |part| OVER_TO.replace_all(part, " $1").to_string());
+    s = map_unquoted(&s, |part| QUANTIFIED_DOT.replace_all(part, "$1 files").to_string());
     s = map_unquoted(&s, |part| SPOKEN_DOT.replace_all(part, "$1.$2").to_string());
     s = TRAIL_PUNCT.replace(&s, "").to_string();
     s = LEAD_FILLER.replace(&s, "").to_string();
     s = TRAIL_FILLER.replace(&s, "").to_string();
     s = COMMA_BEFORE_KEYWORD.replace_all(&s, " $1 ").to_string();
     // Filler words, but not inside quoted names.
+    s = map_unquoted(&s, |part| {
+        let part = QUANTIFIED_TYPE.replace_all(part, |c: &regex::Captures| {
+            let word = &c[1];
+            if word.eq_ignore_ascii_case("file") { "files".to_string() } else { format!("{word} files") }
+        });
+        ANY.replace_all(&part, "").to_string()
+    });
     s = map_unquoted(&s, |part| FILE_QUANTIFIER.replace_all(part, |c: &regex::Captures| {
         c.get(1).map_or_else(|| "files".to_string(), |names| format!("file{}", names.as_str()))
     }).to_string());
@@ -53,7 +67,7 @@ pub fn normalize(text: &str) -> String {
     TRAIL_PUNCT.replace(&s, "").to_string()
 }
 
-fn map_unquoted(s: &str, f: impl Fn(&str) -> String) -> String {
+pub(crate) fn map_unquoted(s: &str, f: impl Fn(&str) -> String) -> String {
     let Ok(ranges) = quoted_ranges(s) else { return s.to_string() };
     let mut out = String::new();
     let mut end = 0;
@@ -136,7 +150,7 @@ pub fn clean_name(s: &str) -> String {
     let s = s.trim();
     if quoted(s) { return s[1..s.len() - 1].to_string(); }
     let s = s.trim().trim_matches(['"', '\'']).trim();
-    let s = s.strip_suffix(" folder").or_else(|| s.strip_suffix(" Folder")).unwrap_or(s);
+    let s = s.strip_suffix(" folder").unwrap_or(s);
     let s = s.strip_prefix("folder ").or_else(|| s.strip_prefix("Folder ")).unwrap_or(s);
     s.trim().to_string()
 }
@@ -144,17 +158,19 @@ pub fn clean_name(s: &str) -> String {
 /// Drops the spoken words around a name: "the file claude.dmg",
 /// "claude.dmg file" -> "claude.dmg".
 fn clean_item(s: &str) -> String {
-    let mut s = clean_name(s);
+    let s = s.trim();
+    if quoted(s) { return clean_name(s); }
     for word in ["file", "folder"] {
         let lower = s.to_lowercase();
-        if lower.ends_with(&format!(" {word}")) {
-            s.truncate(s.len() - word.len() - 1);
-        } else if lower.starts_with(&format!("{word} ")) {
-            s = s[word.len() + 1..].to_string();
+        if lower.starts_with(&format!("{word} ")) {
+            let name = s[word.len() + 1..].trim();
+            return if quoted(name) { clean_name(name) } else { name.to_string() };
+        }
+        if s.ends_with(&format!(" {word}")) {
+            return clean_name(&s[..s.len() - word.len() - 1]);
         }
     }
-    // "the file 'Lease.pdf'": the quotes are still there once the word is gone.
-    clean_name(&s)
+    s.to_string()
 }
 
 pub fn has_extension(name: &str) -> bool {
@@ -233,7 +249,7 @@ static NAME_SUFFIX: LazyLock<Regex> = re!(r"(?i)^\s+in\s+(?:the\s+|their\s+|its\
 static WORD: LazyLock<Regex> = re!(r"\S+");
 /// Words that end an unquoted name: "files named budget from Downloads".
 const NAME_STOP: &[&str] = &[
-    "from", "in", "on", "inside", "within", "to", "into", "older", "newer", "larger", "bigger", "smaller", "less", "more",
+    "from", "in", "on", "inside", "within", "under", "to", "into", "older", "newer", "larger", "bigger", "smaller", "less", "more",
     "over", "under", "taken", "created", "made", "before", "after", "since", "until", "between", "last", "past", "today",
     "yesterday", "that", "which",
 ];
@@ -481,7 +497,7 @@ pub fn type_word(head: &str) -> Option<(FileType, Option<Vec<String>>)> {
         "" | "files" | "file" | "everything" | "anything" | "items" | "stuff" | "things" => FileType::Files,
         "screenshots" | "screenshot" | "screen shots" | "screenshot files" | "screenshots files" | "screen shot files" => FileType::Screenshots,
         "images" | "image" | "image files" | "pictures" | "picture" | "photos" | "photo" | "pics" | "pic" => FileType::Images,
-        "pdfs" | "pdf" | "pdf files" | "pdf documents" => FileType::Pdfs,
+        "pdfs" | "pdf" | "pdf files" | "pdf documents" | "documents of type pdf" | "files of type pdf" => FileType::Pdfs,
         "videos" | "video" | "video files" | "movies" | "movie" | "screen recordings" => FileType::Videos,
         "documents" | "document" | "docs" | "document files" => FileType::Documents,
         "archives" | "archive" | "zips" | "zip" | "zip files" | "compressed files" => FileType::Archives,
@@ -535,6 +551,12 @@ pub const KNOWN_FOLDERS: &[&str] = &[
 
 /// Parses a subject phrase into a single named item or a filtered set.
 pub fn parse_source(phrase: &str) -> Option<Source> {
+    static LOCATED: LazyLock<Regex> = re!(r"(?i)\s+located\s+(in|inside|within|under)\s+");
+    static NAMED_IN_FOLDER: LazyLock<Regex> = re!(r"(?i)^(file|folder)\s+(?:in|from|inside|within|under)\s+(.+)$");
+    static FOLDER_BEFORE_ITEM: LazyLock<Regex> = re!(r"(?i)^(\S+)\s+(file|folder)\s+(.+)$");
+    static NAMED_FILE_PATH: LazyLock<Regex> = re!(r"(?i)^(?:file\s+(?:(?:named|called)\s+)?)?(.+?\.[a-z0-9]{1,8})(?:\s+(?:in|from|on|inside|within|under)\s+(.+))?$");
+    let prepared = map_unquoted(phrase, |part| LOCATED.replace_all(part, " $1 ").to_string());
+    let phrase = prepared.as_str();
     let phrase = phrase.trim();
     if phrase.is_empty() {
         return None;
@@ -544,8 +566,39 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
         let name = clean_name(phrase);
         return (!name.is_empty()).then_some(Source::item(&name));
     }
+    if let Some(c) = NAMED_IN_FOLDER.captures(phrase)
+        && let Some((folder, name)) = split_arguments(&c[2], &["called", "named"])
+    {
+        let name = clean_name(name);
+        if name.is_empty() || vague(&name) || bad_destination(folder) { return None; }
+        if c[1].eq_ignore_ascii_case("file") && !has_extension(&name) { return None; }
+        return Some(Source::Item { name, folder: Some(clean_name(folder)) });
+    }
+    if let Some(c) = FOLDER_BEFORE_ITEM.captures(phrase)
+        && (c[1].contains('/') || KNOWN_FOLDERS.contains(&c[1].to_ascii_lowercase().as_str()))
+        && !UNREAD_FILTER.is_match(&unquoted_text(&c[3])?)
+    {
+        let name = clean_item(&c[3]);
+        if name.is_empty() || vague(&name) || bad_destination(&c[1]) { return None; }
+        return Some(Source::Item { name, folder: Some(clean_name(&c[1])) });
+    }
     if NAME_VALUE_REFUSED.is_match(phrase) {
         return None;
+    }
+    // The extension ends an explicit filename; words such as "from Monday"
+    // within it must not become a date filter or a second source folder.
+    if let Some(c) = NAMED_FILE_PATH.captures(phrase) {
+        let name = c[1].trim();
+        let head = name.split_whitespace().next().unwrap_or("");
+        if type_word(head).is_none()
+            && !["folder", "in", "from", "on", "inside", "within", "under"].contains(&head.to_ascii_lowercase().as_str())
+            && !name.contains(['"', '\'', '*', '?']) && !vague(name) && !excludes(name)
+        {
+            let folder = c.get(2).map(|m| m.as_str());
+            if folder.is_none_or(|f| !bad_destination(f) && unquoted_text(f).is_some_and(|s| !UNREAD_FILTER.is_match(&s) && !TIME_WORDS.is_match(&s))) {
+                return Some(Source::Item { name: name.into(), folder: folder.map(clean_name) });
+            }
+        }
     }
     let (mut filter, rest) = extract_filters(phrase)?;
     if filter.name_contains.as_deref().is_some_and(|n| n.contains(['*', '?'])) {
@@ -557,7 +610,7 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
         return None;
     }
     let ranges = quoted_ranges(&rest).ok()?;
-    let prepositions = ["from", "in", "on", "inside", "within"];
+    let prepositions = ["from", "in", "on", "inside", "within", "under"];
     let has_scope = WORD.find_iter(&rest).any(|word| prepositions.iter().any(|p| word.as_str().eq_ignore_ascii_case(p))
         && !overlaps_quote(&ranges, word.start(), word.end()));
     let (head, folder) = if has_scope {
@@ -599,6 +652,16 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
         return Some(Source::Set { folder: Some(c[1].to_string()), filter });
     }
     let narrowed = filter.is_narrowing();
+
+    if let Some((folder_name, noun)) = head.rsplit_once(' ')
+        && folder_name.contains('/')
+        && let Some((kind, extensions)) = type_word(noun)
+    {
+        if folder.is_some() || bad_destination(folder_name) { return None; }
+        filter.file_type = Some(kind);
+        filter.ext = extensions;
+        return Some(Source::Set { folder: Some(clean_name(folder_name)), filter });
+    }
 
     if !has_extension(&head) && !head.contains('/') {
         if let Some((t, ext)) = type_word(&head) {

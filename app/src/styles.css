@@ -941,3 +941,12 @@ fieldset.tab-panel {
 .tab-panel .shortcut { margin: 0; padding: 12px 0; }
 .tab-panel .shortcut-row { min-height: 30px; }
 .pref-folder { min-width: 0; overflow-wrap: anywhere; }
+
+/* ---- Learning: "Wrong result?" and one-time offers under a result ---- */
+
+.learn { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 22px 8px; color: var(--muted); font-size: 12.5px; }
+.learn .warn { color: var(--margin); }
+.learn.writing .path { height: 28px; font-size: 13px; }
+.learn.offer { justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--rule); margin: 4px 22px 0; padding-left: 0; padding-right: 0; color: var(--ink); }
+.learn.offer strong { font-weight: 600; }
+.learn-buttons { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }

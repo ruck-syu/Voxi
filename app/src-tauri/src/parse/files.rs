@@ -19,6 +19,13 @@ fn destination(text: &str) -> Option<String> {
 
 pub fn patterns() -> Vec<Pattern> {
     vec![
+        pat("put_in", r"^put\s+(.+)$", |c| {
+            let text = cap(c, 1)?;
+            let (source, target) = split_arguments(&text, &["in"])?;
+            let syntax = super::phrase::unquoted_text(target)?.to_ascii_lowercase();
+            if syntax.contains(" as ") || syntax.contains("together") { return None; }
+            Some(Intent::Move { src: parse_source(source)?, to: destination(target)? })
+        }),
         pat("copy", r"^(?:copy|duplicate)\s+(.+)$", |c| {
             let text = cap(c, 1)?;
             let (source, target) = split_arguments(&text, &["to", "into"])?;

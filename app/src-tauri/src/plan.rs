@@ -329,6 +329,10 @@ impl<'a> Planner<'a> {
             let p = d.join(file);
             return if p.exists() { Ok(p) } else { problem(format!("Couldn't find “{file}” in {}.", self.roots.display(&d))) };
         }
+        if folder.is_none() && let Some(path) = self.roots.named(name) {
+            self.check(path)?;
+            return Ok(path.clone());
+        }
         let dirs = match folder {
             Some(f) => vec![self.resolve_folder(f, None)?],
             None => self.roots.search_roots(),
@@ -479,6 +483,9 @@ impl<'a> Planner<'a> {
         let mut already = 0;
         for p in &paths {
             self.check(p)?;
+            if !copy && self.roots.is_root(p) {
+                return problem("Voxi won't move an allowed root folder itself. Name a folder inside it.");
+            }
             if (destination_in_source && fsx::canonical(p).starts_with(fsx::canonical(&dest)))
                 || (!copy && p.parent().is_some_and(|d| fsx::same_file(d, &dest)))
             {
@@ -503,6 +510,9 @@ impl<'a> Planner<'a> {
         let Source::Item { name, folder } = src else { return problem("Rename one file at a time, or use a rule like “replace X with Y”.") };
         let path = self.resolve_item(name, folder.as_deref())?;
         self.check(&path)?;
+        if self.roots.is_root(&path) {
+            return problem("Voxi won't rename an allowed root folder itself. Name a folder inside it.");
+        }
         if new_name.contains('/') || new_name == "." || new_name == ".." {
             return problem("New names can't contain “/”.");
         }
@@ -1377,6 +1387,25 @@ mod tests {
         Home { _dir: dir, roots }
     }
 
+    #[test]
+    fn folder_nicknames_resolve_and_stay_inside_allowed_roots() {
+        let mut h = home();
+        let dev = h.roots.home.join("Documents/Dev");
+        let other = h.roots.home.join("Desktop/Dev");
+        fs::create_dir_all(&dev).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        fs::write(h.roots.home.join("Downloads/report.pdf"), b"x").unwrap();
+        // Without a nickname, two folders called Dev need a choice.
+        assert!(matches!(plan(&h, "move report.pdf to dev"), Err(Stop::Ambiguous { .. })));
+        let outside = tempfile::tempdir().unwrap();
+        h.roots = h.roots.clone().with_nicknames(vec![("dev".into(), dev.clone()), ("out".into(), outside.path().to_path_buf())]);
+        for cmd in ["move report.pdf to dev", "move report.pdf to the dev folder", "move report.pdf into my Dev folder"] {
+            let actions = steps(&h, cmd);
+            assert!(matches!(&actions[..], [Action::Move { to, .. }] if to.starts_with(&dev)), "{cmd}: {actions:?}");
+        }
+        assert!(h.roots.named("out").is_none(), "a nickname can't point outside the allowed folders");
+    }
+
     fn plan(h: &Home, cmd: &str) -> Result<Planned, Stop> {
         let choices = HashMap::new();
         let history = History::load(h.roots.home.join("history.json"));
@@ -1552,6 +1581,41 @@ mod tests {
         assert_eq!(steps(&h, "create a folder in downloads named PDFS"),
             vec![Action::CreateFolder { path: destination.clone() }]);
         assert!(!destination.exists(), "planning must only preview the new folder");
+    }
+
+    #[test]
+    fn location_first_creation_accepts_nested_paths_and_spaced_names() {
+        let h = home();
+        fs::create_dir(h.roots.home.join("Documents/Dev")).unwrap();
+        let path = h.roots.home.join("Documents/Dev/Toggle Wars");
+        assert_eq!(steps(&h, "create a folder in Documents/Dev called Toggle Wars."),
+            vec![Action::CreateFolder { path: path.clone() }]);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn luna_folder_literals_do_not_select_shorter_decoys() {
+        let h = home();
+        let full = h.roots.home.join("Documents/Dev/Child Folder");
+        fs::create_dir_all(&full).unwrap();
+        fs::create_dir_all(h.roots.home.join("Documents/Dev/Child")).unwrap();
+        assert_eq!(steps(&h, "delete folder \"Documents/Dev/Child Folder\""), vec![Action::Trash { path: full.clone() }]);
+        assert_eq!(steps(&h, "move Documents/Dev/Child Folder to Desktop"), vec![Action::Move { from: full, to: h.roots.home.join("Desktop/Child Folder") }]);
+        assert_eq!(steps(&h, "create folders named \"Alpha and Beta\" in Documents/Dev"),
+            vec![Action::CreateFolder { path: h.roots.home.join("Documents/Dev/Alpha and Beta") }]);
+    }
+
+    #[test]
+    fn luna_named_allowed_roots_are_found_and_protected() {
+        let mut h = home();
+        let root = h.roots.home.join("Other Folder");
+        fs::create_dir(&root).unwrap();
+        h.roots = Roots::new(&h.roots.home, None, std::slice::from_ref(&root));
+        assert_eq!(steps(&h, "copy \"Other Folder\" to Desktop"), vec![Action::Copy { from: root.clone(), to: h.roots.home.join("Desktop/Other Folder") }]);
+        for command in ["delete folder Other Folder", "move Other Folder into Documents", "rename Other Folder to New Name"] {
+            assert!(matches!(plan(&h, command), Err(Stop::Problem(_))), "{command}");
+        }
+        assert!(root.exists());
     }
 
     #[test]

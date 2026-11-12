@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, inTauri, tildify, type FolderAccess, type Outcome, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
+import { api, inTauri, tildify, type FolderAccess, type Outcome, type Reports, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
 import { readChoice } from "./choice";
 import { appVersion, checkAndInstall, type UpdateState } from "./updates";
 
@@ -16,7 +16,15 @@ type Phase =
 
 /** Waiting for the answer to "which one?": the command being planned and
  *  the picks made so far (one command can need several). */
-type Asking = { command: string; choices: Record<string, string>; name: string; candidates: string[] };
+type Asking = { command: string; choices: Record<string, string>; name: string; candidates: string[]; folders: boolean };
+
+/** Something Voxi can learn from what just happened, offered once. */
+type Offer =
+  | { k: "folder"; name: string; path: string }
+  | { k: "phrase"; phrase: string; command: string };
+
+/** How long a missed phrase stays teachable by the command that follows it. */
+const TEACH_WINDOW_MS = 3 * 60_000;
 
 const EXAMPLES = [
   "move screenshots from today to Screenshots",
@@ -257,6 +265,13 @@ function CommandView({
   const planShownAt = useRef(0);
   const requestId = useRef(0);
   const [searched, setSearched] = useState(0);
+  // The command behind the result on screen, exactly as entered.
+  const lastCommand = useRef("");
+  // The last phrase Voxi didn't understand, which the next run can teach.
+  const missed = useRef<{ text: string; at: number } | null>(null);
+  const [offer, setOffer] = useState<Offer | null>(null);
+  // A folder picked for an ambiguous name, offered as a nickname after the plan.
+  const pickedFolder = useRef<{ name: string; path: string } | null>(null);
 
   useEffect(() => () => {
     ++requestId.current;
@@ -325,6 +340,10 @@ function CommandView({
       // command stays visible as the echo above its result.
       setSaid(command.trim().replace(/[.!?]+$/, ""));
       setText("");
+      lastCommand.current = command.trim();
+      setOffer(null);
+      const folderPick = pickedFolder.current;
+      pickedFolder.current = null;
       const request = ++requestId.current;
       setSearched(0);
       setPhase({ k: "parsing" });
@@ -335,9 +354,12 @@ function CommandView({
         setResultScope(scope);
         setPhase({ k: "outcome", outcome });
         if (outcome.status === "plan") planShownAt.current = performance.now();
+        if (outcome.status === "not_understood") missed.current = { text: command.trim(), at: Date.now() };
+        // Once the picked folder led somewhere, offer to remember it by name.
+        if (folderPick && (outcome.status === "plan" || outcome.status === "info")) setOffer({ k: "folder", ...folderPick });
         if (outcome.status === "ambiguous") {
           // The answer will be dictated too.
-          setAsking({ command, choices: picked, name: outcome.name, candidates: outcome.candidates });
+          setAsking({ command, choices: picked, name: outcome.name, candidates: outcome.candidates, folders: outcome.folders });
         } else {
           setAsking(null);
         }
@@ -356,6 +378,7 @@ function CommandView({
       if (!asking) return;
       const path = asking.candidates[index];
       if (!path) return;
+      if (asking.folders) pickedFolder.current = { name: asking.name, path };
       submit(asking.command, { ...asking.choices, [asking.name]: path });
     },
     [asking, submit],
@@ -373,6 +396,13 @@ function CommandView({
       const result = await api.confirm(plan.id);
       setResultScope(await api.resultScope().catch(() => null));
       setPhase({ k: "done", result, wasUndo: plan.isUndo });
+      // A phrase Voxi missed, followed soon by a command that worked, can
+      // be taught: next time the phrase runs this command.
+      const miss = missed.current;
+      missed.current = null;
+      if (!result.error && !plan.isUndo && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
+        setOffer({ k: "phrase", phrase: miss.text, command: lastCommand.current });
+      }
       focusInput();
     } catch (e) {
       setPhase({ k: "error", message: String(e) });
@@ -385,6 +415,7 @@ function CommandView({
     stopAsking();
     setHeard(null);
     setSaid(null);
+    setOffer(null);
     setPhase({ k: "ready" });
     focusInput();
   }, [phase, focusInput, stopAsking]);
@@ -535,8 +566,101 @@ function CommandView({
         onFill={fill}
         onUndo={undo}
       />
+      {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onDone={() => { setOffer(null); focusInput(); }} />}
+      {reportable(phase) && <ReportRow key={phaseKey(phase)} command={lastCommand.current} phase={phase} onDone={focusInput} />}
       <Footer phase={phase} asking={!!asking} onSettings={onSettings} />
     </>
+  );
+}
+
+/** Results that can be reported as wrong: anything Voxi decided, not a pick list. */
+function reportable(p: Phase): boolean {
+  return p.k === "done" || (p.k === "outcome" && p.outcome.status !== "ambiguous");
+}
+
+/** What the person saw, small enough to keep in a report. */
+function reportOutcome(p: Phase): unknown {
+  if (p.k === "done") return { status: "done", summary: p.result.summary, error: p.result.error };
+  if (p.k !== "outcome") return { status: p.k };
+  const o = p.outcome;
+  switch (o.status) {
+    case "plan": return { status: o.status, title: o.title, total: o.total, items: o.items.slice(0, 5).map((i) => `${i.kind}: ${i.primary} ${i.detail}`) };
+    case "info": return { status: o.status, title: o.title, summary: o.summary, total: o.total, rows: o.rows.slice(0, 5).map((r) => r.name) };
+    case "problem": return { status: o.status, message: o.message };
+    default: return { status: o.status };
+  }
+}
+
+/** "Wrong result?": saves the command and what Voxi did with it on this Mac,
+ *  with an optional note on what it should have done. Nothing is sent. */
+function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; onDone: () => void }) {
+  const [state, setState] = useState<{ k: "idle" } | { k: "writing"; note: string } | { k: "saved"; count: number } | { k: "error"; message: string }>({ k: "idle" });
+  if (!command) return null;
+  const save = async (note: string) => {
+    try {
+      const r = await api.reportWrong(command, reportOutcome(phase), note);
+      setState({ k: "saved", count: r.count });
+    } catch (e) {
+      setState({ k: "error", message: String(e) });
+    }
+    onDone();
+  };
+  if (state.k === "idle") return (
+    <div className="learn">
+      <button className="link" onClick={() => setState({ k: "writing", note: "" })}>Wrong result?</button>
+    </div>
+  );
+  if (state.k === "saved") return <div className="learn" role="status"><span>Saved on this Mac. Nothing is sent. {state.count} {state.count === 1 ? "report" : "reports"} so far.</span></div>;
+  if (state.k === "error") return <div className="learn" role="alert"><span className="warn">{state.message}</span></div>;
+  return (
+    <div className="learn writing">
+      <input
+        className="path"
+        autoFocus
+        value={state.note}
+        placeholder="What should Voxi have done? (optional)"
+        aria-label="What should Voxi have done?"
+        onChange={(e) => setState({ k: "writing", note: e.target.value })}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); save(state.note); }
+        }}
+      />
+      <button className="secondary small" onClick={() => save(state.note)}>Save report</button>
+      <button className="link" onClick={() => { setState({ k: "idle" }); onDone(); }}>Cancel</button>
+    </div>
+  );
+}
+
+/** One offer to learn from what just happened: a folder's nickname, or a
+ *  phrase that should run the command that worked. */
+function OfferRow({ offer, onDone }: { offer: Offer; onDone: () => void }) {
+  const [state, setState] = useState<{ k: "asking" } | { k: "saved"; text: string } | { k: "error"; message: string }>({ k: "asking" });
+  const accept = async () => {
+    try {
+      if (offer.k === "folder") {
+        await api.rememberFolder(offer.name, offer.path);
+        setState({ k: "saved", text: `Saved. “${offer.name}” now means ${tildify(offer.path)}.` });
+      } else {
+        await api.teachPhrase(offer.phrase, offer.command);
+        setState({ k: "saved", text: `Saved. “${offer.phrase}” now runs “${offer.command}”. Change it under Shortcuts.` });
+      }
+    } catch (e) {
+      setState({ k: "error", message: String(e) });
+    }
+  };
+  if (state.k === "saved") return <div className="learn offer" role="status"><span>{state.text}</span></div>;
+  if (state.k === "error") return <div className="learn offer" role="alert"><span className="warn">{state.message}</span></div>;
+  const question = offer.k === "folder"
+    ? <>Always use <strong>{tildify(offer.path)}</strong> for “{offer.name}”?</>
+    : <>Next time you say “{offer.phrase}”, run this?</>;
+  return (
+    <div className="learn offer">
+      <span>{question}</span>
+      <span className="learn-buttons">
+        <button className="secondary small" onClick={accept}>{offer.k === "folder" ? "Remember" : "Teach Voxi"}</button>
+        <button className="link" onClick={onDone}>No thanks</button>
+      </span>
+    </div>
   );
 }
 
@@ -783,12 +907,13 @@ function comboFromEvent(e: React.KeyboardEvent): string | null {
   return [...mods, key].join("+");
 }
 
-type Tab = "general" | "dictation" | "shortcuts" | "folders";
+type Tab = "general" | "dictation" | "shortcuts" | "folders" | "learning";
 const TABS: [Tab, string][] = [
   ["general", "General"],
   ["dictation", "Dictation"],
   ["shortcuts", "Shortcuts"],
   ["folders", "Folders"],
+  ["learning", "Learning"],
 ];
 
 function SettingsTabs({ value, saving, onSelect }: { value: Tab; saving: boolean; onSelect: (tab: Tab) => void }) {
@@ -897,6 +1022,7 @@ function SettingsView({
         {tab === "dictation" && <DictationTab />}
         {tab === "shortcuts" && <ShortcutsTab settings={settings} persist={persist} />}
         {tab === "folders" && <FoldersTab settings={settings} persist={persist} setBusy={setBusy} />}
+        {tab === "learning" && <LearningTab settings={settings} persist={persist} setBusy={setBusy} />}
       </fieldset>
     </Sheet>
   );
@@ -1205,6 +1331,99 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
             </button>
           </li>
         ))}
+      </ul>
+      {note && <p className="settings-note warn" role="status">{note}</p>}
+    </div>
+  );
+}
+
+/** What Voxi has learned: folder nicknames, and reports saved on this Mac. */
+function LearningTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
+  const [name, setName] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const [reports, setReports] = useState<Reports | null>(null);
+  const taught = settings.shortcuts.filter((s) => s.commands.length === 1).length;
+
+  useEffect(() => {
+    api.reportsSummary().then(setReports).catch(() => setReports(null));
+  }, []);
+
+  // The picker takes focus, which would otherwise close the window.
+  const choose = async () => {
+    const said = name.trim();
+    if (!said) return setNote("Type the name you'll say first, like “dev”.");
+    setBusy(true);
+    try {
+      const path = await api.pickFolder();
+      if (path && await persist({ ...settings, nicknames: [...settings.nicknames, { name: said, path }] })) {
+        setName("");
+        setNote(null);
+      }
+    } catch (e) {
+      setNote(`Couldn't open the folder picker: ${e}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reportAction = async (run: () => Promise<Reports | void>) => {
+    try {
+      const r = await run();
+      if (r) setReports(r);
+      setNote(null);
+    } catch (e) {
+      setNote(String(e));
+    }
+  };
+
+  return (
+    <div>
+      <ul className="prefs">
+        <li className="pref">
+          <div className="pref-copy">
+            <h2 className="pref-label">Folder nicknames</h2>
+            <p className="settings-description">Your names for folders, so “move it to dev” finds the right one. Voxi also offers to remember a folder after you pick one.</p>
+          </div>
+        </li>
+        <li className="pref">
+          <input
+            className="path"
+            value={name}
+            placeholder="Name to say, like dev"
+            aria-label="Nickname to say"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); choose(); }
+            }}
+          />
+          <button className="secondary small" onClick={choose}>Choose folder…</button>
+        </li>
+        {settings.nicknames.map((n) => (
+          <li className="pref" key={n.name}>
+            <span className="pref-folder">“{n.name}” → {tildify(n.path)}</span>
+            <button className="link remove" onClick={() => persist({ ...settings, nicknames: settings.nicknames.filter((x) => x.name !== n.name) })}>
+              Remove
+            </button>
+          </li>
+        ))}
+        <li className="pref">
+          <div className="pref-copy">
+            <h2 className="pref-label">Taught phrases</h2>
+            <p className="settings-description">
+              When Voxi misses a phrase and you then run a command that works, it offers to learn the phrase. {taught > 0 ? `${taught} saved under Shortcuts.` : "They're saved under Shortcuts."}
+            </p>
+          </div>
+        </li>
+        <li className="pref">
+          <div className="pref-copy">
+            <h2 className="pref-label">Wrong-result reports</h2>
+            <p className="settings-description">
+              {reports ? `${reports.count} ${reports.count === 1 ? "report" : "reports"} saved on this Mac.` : "Reports are saved on this Mac."} Nothing is sent anywhere.
+            </p>
+          </div>
+          <button className="secondary small" disabled={!reports?.count} onClick={() => reportAction(api.revealReports)}>Show in Finder</button>
+          <button className="link remove" disabled={!reports?.count} onClick={() => reportAction(api.clearReports)}>Clear</button>
+        </li>
       </ul>
       {note && <p className="settings-note warn" role="status">{note}</p>}
     </div>

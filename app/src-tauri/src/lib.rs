@@ -1,8 +1,13 @@
 mod exec;
 mod fsx;
 mod history;
+mod learn;
 mod model;
 mod parse;
+#[cfg(test)]
+mod luna_folder_audit;
+#[cfg(test)]
+mod luna_command_audit;
 mod pdf;
 mod plan;
 mod presentation;
@@ -55,6 +60,8 @@ struct AppState {
     pending: Mutex<Option<Pending>>,
     settings: Mutex<Settings>,
     settings_path: PathBuf,
+    /// "This was wrong" reports, kept on this Mac.
+    reports_path: PathBuf,
     result_scope: Mutex<scope::State>,
     next_plan: AtomicU64,
     active_search: Mutex<Option<(u64, search::Control)>>,
@@ -74,7 +81,7 @@ fn screenshot_location() -> Option<PathBuf> {
 
 fn build_roots(settings: &Settings) -> Roots {
     let h = home();
-    Roots::new(&h, screenshot_location(), &settings.extra_paths(&h))
+    Roots::new(&h, screenshot_location(), &settings.extra_paths(&h)).with_nicknames(settings.nickname_paths(&h))
 }
 
 // ---- Window ------------------------------------------------------------------
@@ -279,6 +286,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
         Err(Stop::Problem(message)) => Outcome::Problem { message },
         Err(Stop::Ambiguous { name, candidates }) => Outcome::Ambiguous {
             name,
+            folders: !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
         },
         Ok(Planned::Info { title, summary, rows, total, listed }) => {
@@ -480,6 +488,7 @@ fn get_settings(state: State<AppState>) -> Settings {
 #[tauri::command]
 fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings) -> Result<Settings, String> {
     settings.validate_shortcuts()?;
+    settings.validate_nicknames(&home())?;
     let old = state.settings.lock().unwrap().clone();
     if settings.hotkey != old.hotkey {
         if let Err(e) = register_hotkey(&app, &settings.hotkey) {
@@ -497,6 +506,56 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     *state.settings.lock().unwrap() = settings.clone();
     state.result_scope.lock().unwrap().clear();
     Ok(settings)
+}
+
+// ---- Learning ----------------------------------------------------------------
+
+/// Saves a "this was wrong" report on this Mac. Nothing is sent anywhere.
+#[tauri::command]
+fn report_wrong(state: State<AppState>, command: String, outcome: serde_json::Value, note: String) -> Result<learn::Reports, String> {
+    learn::record(&state.reports_path, &command, outcome, &note)
+}
+
+#[tauri::command]
+fn reports_summary(state: State<AppState>) -> learn::Reports {
+    learn::summary(&state.reports_path)
+}
+
+#[tauri::command]
+fn clear_reports(state: State<AppState>) -> Result<learn::Reports, String> {
+    learn::clear(&state.reports_path)
+}
+
+/// Shows the report file in Finder; only this one fixed file.
+#[tauri::command]
+fn reveal_reports(state: State<AppState>) -> Result<(), String> {
+    let path = &state.reports_path;
+    if !path.exists() {
+        return Err("No reports yet.".into());
+    }
+    Command::new("/usr/bin/open").arg("-R").arg(path).status().map_err(|e| format!("Couldn't open Finder: {e}"))?;
+    Ok(())
+}
+
+/// Teaches a phrase Voxi missed to run a command it then ran.
+#[tauri::command]
+fn teach_phrase(app: AppHandle, state: State<AppState>, phrase: String, command: String) -> Result<Settings, String> {
+    let current = state.settings.lock().unwrap().clone();
+    let next = learn::teach_phrase(&current, &phrase, &command)?;
+    save_settings(app, state, next)
+}
+
+/// Remembers a folder the user picked as their name for it. Only folders
+/// Voxi may already use can get a nickname.
+#[tauri::command]
+fn remember_folder(app: AppHandle, state: State<AppState>, name: String, path: String) -> Result<Settings, String> {
+    let folder = PathBuf::from(&path);
+    if !folder.is_dir() || !state.roots.read().unwrap().is_allowed(&folder) {
+        return Err("Voxi can't use that folder.".into());
+    }
+    let current = state.settings.lock().unwrap().clone();
+    let next = learn::add_nickname(&current, &name, &folder, &home())?;
+    save_settings(app, state, next)
 }
 
 /// A fixed destination; the frontend cannot ask this command to open arbitrary URLs.
@@ -585,6 +644,7 @@ pub fn run() {
                 pending: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
                 settings_path,
+                reports_path: learn::reports_path(&data_dir),
                 result_scope: Mutex::new(scope::State::default()),
                 next_plan: AtomicU64::new(1),
                 active_search: Mutex::new(None),
@@ -661,6 +721,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             plan_command,
+            report_wrong,
+            reports_summary,
+            clear_reports,
+            reveal_reports,
+            teach_phrase,
+            remember_folder,
             clear_result_scope,
             result_scope,
             confirm_plan,
@@ -694,7 +760,7 @@ mod result_context_tests {
             for folder in ["Downloads", "Desktop", "Documents", "Pictures"] { fs::create_dir(home.join(folder)).unwrap(); }
             let state = AppState {
                 roots: RwLock::new(Roots::new(&home, None, &[])), history: Mutex::new(History::load(home.join("history.json"))),
-                pending: Mutex::new(None), settings: Mutex::new(Settings::default()), settings_path: home.join("settings.json"),
+                pending: Mutex::new(None), settings: Mutex::new(Settings::default()), settings_path: home.join("settings.json"), reports_path: home.join("reports.jsonl"),
                 next_plan: AtomicU64::new(1), active_search: Mutex::new(None), presentation: Mutex::new(Default::default()),
                 result_scope: Mutex::new(Default::default()),
             };

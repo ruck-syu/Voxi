@@ -13,6 +13,7 @@ mod meta;
 mod pdf;
 pub mod phrase;
 mod rename;
+mod rewrite;
 
 use crate::model::{FileType, Intent, Source};
 use regex::{Captures, Regex};
@@ -45,17 +46,50 @@ static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
     v
 });
 
+static LEADING_SCOPE: LazyLock<Regex> = LazyLock::new(|| Regex::new(
+    r#"(?i)^(?:in|inside|within|under)\s+("[^"]+"|'[^']+'|\S+)\s+((?:list|show|find|display|move|copy|rename|trash|delete|remove)\s+.+)$"#
+).unwrap());
+
 /// Parses a command. `Err` carries the raw text for "Didn't understand".
+/// A misspelled verb is corrected only when the command can't be read as
+/// typed, so a real word ("take that back") is never turned into another.
 pub fn parse(text: &str) -> Result<Intent, String> {
     let cleaned = phrase::normalize(text);
-    for p in PATTERNS.iter() {
-        if let Some(caps) = p.re.captures(&cleaned)
-            && let Some(intent) = (p.build)(&caps)
-        {
-            return Ok(intent);
-        }
+    if rewrite::refused(&cleaned) {
+        return Err(text.trim().to_string());
+    }
+    let as_typed = rewrite::canonical(&cleaned, false);
+    if let Some(intent) = parse_canonical(&as_typed) {
+        return Ok(intent);
+    }
+    let corrected = rewrite::canonical(&cleaned, true);
+    if corrected != as_typed && let Some(intent) = parse_canonical(&corrected) {
+        return Ok(intent);
     }
     Err(text.trim().to_string())
+}
+
+fn parse_canonical(cleaned: &str) -> Option<Intent> {
+    for p in PATTERNS.iter() {
+        if let Some(caps) = p.re.captures(cleaned)
+            && let Some(intent) = (p.build)(&caps)
+        {
+            return Some(intent);
+        }
+    }
+    if let Some(c) = LEADING_SCOPE.captures(cleaned)
+        && !phrase::bad_destination(&c[1])
+        && let Ok(mut intent) = parse(&c[2])
+    {
+        let folder = Some(phrase::clean_name(&c[1]));
+        let source = match intent.source() {
+            Some(Source::Item { name, folder: None }) => Some(Source::Item { name: name.clone(), folder }),
+            Some(Source::Set { filter, folder: None }) => Some(Source::Set { filter: filter.clone(), folder }),
+            _ => None,
+        };
+        if let Some(source) = source { intent.replace_source(source); return Some(intent); }
+    }
+    None
 }
 
 /// Capture group `i` as a trimmed string, if present and non-empty.
@@ -549,5 +583,49 @@ mod catalog_tests {
         }
         assert_eq!(p("move report.pdf to \"email\""), Move { src: item("report.pdf"), to: "email".into() });
         assert_eq!(p("move report.pdf to Downloads/email"), Move { src: item("report.pdf"), to: "Downloads/email".into() });
+    }
+
+    #[test]
+    fn luna_literal_folder_names_are_preserved() {
+        for command in [
+            "create folders named \"Alpha and Beta\" in Documents/Dev",
+            "create folders in Documents/Dev called \"Alpha and Beta\"",
+        ] {
+            assert_eq!(p(command), CreateFolders { names: vec!["Alpha and Beta".into()], parent: Some("Documents/Dev".into()) });
+        }
+        for name in ["Project/Child Folder", "Other Folder", "Research and Development"] {
+            assert_eq!(p(&format!("move folder \"{name}\" to Desktop")), Move { src: item(name), to: "Desktop".into() });
+        }
+        assert_eq!(p("move Project/Child Folder to Desktop"), Move { src: item("Project/Child Folder"), to: "Desktop".into() });
+        assert!(parse("create folders named \"Alpha and Beta in Documents").is_err());
+    }
+
+    #[test]
+    fn luna_reordered_sources_keep_the_explicit_folder() {
+        let source = Source::Item { name: "Project Plan.pdf".into(), folder: Some("Documents/Dev".into()) };
+        for command in [
+            "move Project Plan.pdf located in Documents/Dev to Backup",
+            "move the file in Documents/Dev called Project Plan.pdf to Backup",
+            "move the Documents/Dev file Project Plan.pdf to Backup",
+            "in Documents/Dev move Project Plan.pdf to Backup",
+            "move the file named Project Plan.pdf under Documents/Dev to Backup",
+        ] {
+            assert_eq!(p(command), Move { src: source.clone(), to: "Backup".into() }, "{command}");
+        }
+        assert!(parse("in Documents move report.pdf in Downloads to Backup").is_err());
+        assert_eq!(p("put PDFs in Documents/Dev together as combined.pdf"), MergePdf {
+            src: set(Some("Documents/Dev"), of(Pdfs)), output: "combined.pdf".into(),
+        });
+        assert!(parse("put report.pdf in Downloads together as something").is_err());
+        assert!(parse("change photo.heic to pdf").is_err());
+        assert_eq!(p("move Notes from Monday.pdf from Documents/Dev to Backup"), Move {
+            src: Source::Item { name: "Notes from Monday.pdf".into(), folder: Some("Documents/Dev".into()) }, to: "Backup".into(),
+        });
+        assert_eq!(p("give Project Plan.pdf inside Documents/Dev the name Final Plan.pdf"), Rename {
+            src: source, new_name: "Final Plan.pdf".into(),
+        });
+        assert_eq!(p("list files named \"located in\" in Downloads"), List {
+            src: set(Some("Downloads"), Filter { name_contains: Some("located in".into()), ..of(Files) }),
+        });
     }
 }

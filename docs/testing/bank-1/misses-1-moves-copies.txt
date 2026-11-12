@@ -1,0 +1,417 @@
+MISS 1-moves-copies.txt:7  to my Documents folder move the report.pdf file
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:8  real quick transfer the report.pdf file to my Documents folder
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:9  mvoe the report.pdf file to my Documents folder
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:10  drag the report.pdf file into my Documents folder for me
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:16  from Downloads, move all the PDFs over to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:18  relocate any PDF files in Downloads over to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+     got  {"intent":"move","src":{"filter":{"nameContains":"any PDF","type":"files"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+MISS 1-moves-copies.txt:19  sned all the PDFs in Downloads over to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:24  make a copy of notes.txt in my Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:27  over to my Desktop could you copy notes.txt
+     want {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:28  coppy notes.txt over to my Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:34  real quick transfer the invoice to Archive
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:35  to Archive send the invoice
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:36  drag the invoice into Archive please
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:37  sned the invoice to Archive
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:40  please make a copy of my notes in Backup
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:42  back up my notes to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:45  to Backup copy my notes
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:46  coppy my notes to Backup please
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:49  please make a copy of the whole Project folder in Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:51  back up the whole Project folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:53  real quick, copy the whole Project folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:54  to Backup copy the whole Project folder
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:55  cpoy the whole Project folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:61  to Documents move Downloads/invoice.pdf
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/invoice.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:62  drag Downloads/invoice.pdf into Documents for me
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/invoice.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:64  mvoe Downloads/invoice.pdf to Documents
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/invoice.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:70  into Documents move the file called taxes 2025.pdf
+     want {"intent":"move","src":{"kind":"item","name":"taxes 2025.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:71  real quick, shift the file called taxes 2025.pdf into Documents
+     want {"intent":"move","src":{"kind":"item","name":"taxes 2025.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:73  mvoe the file called taxes 2025.pdf into Documents
+     want {"intent":"move","src":{"kind":"item","name":"taxes 2025.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:79  from Desktop move all my PDFs to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:80  drag all my PDFs from Desktop into Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:81  sned all my PDFs from Desktop to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:82  move any pdf files from Desktop to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+     got  {"intent":"move","src":{"filter":{"nameContains":"any pdf","type":"files"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+MISS 1-moves-copies.txt:86  um make a copy of every JPEG from Pictures in Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:88  from Pictures copy every JPEG to Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:89  back up every JPEG from Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:90  real quick copy every JPEG file in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:91  coppy every JPEG from Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:97  from Downloads move photos into Pictures
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Downloads","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:98  drag any photos in Downloads into Pictures
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Downloads","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:100  mvoe photos from Downloads into Pictures
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Downloads","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:107  to Invoices move the PDF named invoice
+     want {"intent":"move","src":{"filter":{"nameContains":"invoice","type":"pdfs"},"kind":"set"},"to":"Invoices"}
+     got  "!"
+MISS 1-moves-copies.txt:108  real quick transfer the PDF named invoice to Invoices
+     want {"intent":"move","src":{"filter":{"nameContains":"invoice","type":"pdfs"},"kind":"set"},"to":"Invoices"}
+     got  "!"
+MISS 1-moves-copies.txt:109  sned the PDF named invoice to Invoices
+     want {"intent":"move","src":{"filter":{"nameContains":"invoice","type":"pdfs"},"kind":"set"},"to":"Invoices"}
+     got  "!"
+MISS 1-moves-copies.txt:115  to Documents move Q3 report.pdf
+     want {"intent":"move","src":{"kind":"item","name":"Q3 report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:116  real quick, drag Q3 report.pdf into Documents
+     want {"intent":"move","src":{"kind":"item","name":"Q3 report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:118  mvoe Q3 report.pdf to Documents
+     want {"intent":"move","src":{"kind":"item","name":"Q3 report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:124  to Documents move the file 'Lease Agreement.pdf'
+     want {"intent":"move","src":{"kind":"item","name":"Lease Agreement.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:125  real quick, transfer the file 'Lease Agreement.pdf' to Documents
+     want {"intent":"move","src":{"kind":"item","name":"Lease Agreement.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:127  mvoe the file 'Lease Agreement.pdf' to Documents
+     want {"intent":"move","src":{"kind":"item","name":"Lease Agreement.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:133  from Downloads move the zip files to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 1-moves-copies.txt:134  drag every zip file in Downloads into Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 1-moves-copies.txt:136  sned the zip files from Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 1-moves-copies.txt:139  please make a copy of the Q3 budget.xlsx in my Backup folder
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:141  back up the Q3 budget.xlsx to my Backup folder
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:143  to my Backup folder copy the Q3 budget.xlsx
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:144  real quick copy the Q3 budget.xlsx to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:145  cpoy the Q3 budget.xlsx to my Backup folder
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:151  from Documents move every PDF to Archive
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:153  drag every PDF in Documents into Archive for me
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:154  mvoe every PDF in Documents to Archive
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:160  from Desktop move the screenshots to Pictures
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:161  drag every screenshot on Desktop into Pictures
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:163  sned the screenshots from Desktop to Pictures
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:167  um make a copy of all the images from Pictures in Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:169  back up all the images in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:170  from Pictures copy all the images to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:171  real quick copy all images in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:172  coppy all the images in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:178  from Downloads move the video files into Movies
+     want {"intent":"move","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"},"to":"Movies"}
+     got  "!"
+MISS 1-moves-copies.txt:179  transfer every video file in Downloads to Movies
+     want {"intent":"move","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"},"to":"Movies"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"video"},"to":"Movies"}
+MISS 1-moves-copies.txt:180  drag the video files from Downloads into Movies for me
+     want {"intent":"move","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"},"to":"Movies"}
+     got  "!"
+MISS 1-moves-copies.txt:181  mvoe the video files from Downloads to Movies
+     want {"intent":"move","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"},"to":"Movies"}
+     got  "!"
+MISS 1-moves-copies.txt:187  into Pictures put photo.heic
+     want {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:188  real quick transfer photo.heic to Pictures
+     want {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:189  drag photo.heic into Pictures please
+     want {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:190  pt photo.heic into Pictures
+     want {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:196  to Documents move the 2025 tax return.pdf
+     want {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:197  real quick, transfer the 2025 tax return.pdf to Documents
+     want {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:198  drag the 2025 tax return.pdf into Documents for me
+     want {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:199  mvoe the 2025 tax return.pdf to Documents
+     want {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:205  to Archive move Invoice Final v2.pdf
+     want {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:206  real quick transfer Invoice Final v2.pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:207  stick Invoice Final v2.pdf in Archive please
+     want {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:208  mvoe Invoice Final v2.pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:214  to Documents send thesis draft dot docx
+     want {"intent":"move","src":{"kind":"item","name":"thesis draft.docx"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:215  real quick, drag thesis draft dot docx into Documents
+     want {"intent":"move","src":{"kind":"item","name":"thesis draft.docx"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:217  sned thesis draft dot docx to Documents
+     want {"intent":"move","src":{"kind":"item","name":"thesis draft.docx"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:221  um move Terms and Conditions.pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:223  to Archive move the file called Terms and Conditions.pdf
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:224  real quick shift the file called Terms and Conditions dot pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:225  drag the file called Terms and Conditions.pdf into Archive
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:226  mvoe the file called Terms and Conditions.pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:232  to Videos move the video called intro.mov
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 1-moves-copies.txt:233  real quick transfer the video called intro.mov to Videos
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 1-moves-copies.txt:234  drag the video called intro.mov into Videos please
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 1-moves-copies.txt:235  mvoe the video called intro.mov to Videos
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 1-moves-copies.txt:241  from Downloads move all text files to Notes
+     want {"intent":"move","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Notes"}
+     got  "!"
+MISS 1-moves-copies.txt:243  drag every text file from Downloads into Notes for me
+     want {"intent":"move","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Notes"}
+     got  "!"
+MISS 1-moves-copies.txt:244  sned all text files from Downloads to Notes
+     want {"intent":"move","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Notes"}
+     got  "!"
+MISS 1-moves-copies.txt:250  from Pictures/Trip move photos to Archive
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:251  transfer any photos in Pictures/Trip to Archive
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  {"intent":"move","src":{"folder":"Pictures/Trip","kind":"item","name":"any photos"},"to":"Archive"}
+MISS 1-moves-copies.txt:252  drag photos from Pictures/Trip into Archive for me
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:253  mvoe photos from Pictures/Trip to Archive
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:259  from Downloads move installers over 200 MB to External
+     want {"intent":"move","src":{"filter":{"largerThanMb":200.0,"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External"}
+     got  "!"
+MISS 1-moves-copies.txt:261  drag installers over 200 MB from Downloads into External
+     want {"intent":"move","src":{"filter":{"largerThanMb":200.0,"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External"}
+     got  "!"
+MISS 1-moves-copies.txt:262  mvoe installers over 200 MB from Downloads to External
+     want {"intent":"move","src":{"filter":{"largerThanMb":200.0,"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External"}
+     got  "!"
+MISS 1-moves-copies.txt:268  from Pictures move images smaller than 200 KB to Archive
+     want {"intent":"move","src":{"filter":{"smallerThanMb":0.1953125,"type":"images"},"folder":"Pictures","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:269  transfer any image under 200 KB in Pictures to Archive
+     want {"intent":"move","src":{"filter":{"smallerThanMb":0.1953125,"type":"images"},"folder":"Pictures","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:270  drag images that are under 200 KB from Pictures into Archive
+     want {"intent":"move","src":{"filter":{"smallerThanMb":0.1953125,"type":"images"},"folder":"Pictures","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:271  mvoe images smaller than 200 KB from Pictures to Archive
+     want {"intent":"move","src":{"filter":{"smallerThanMb":0.1953125,"type":"images"},"folder":"Pictures","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:275  um make a copy of the JPEGs from Pictures in Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:277  from Pictures copy the JPEGs into Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:278  back up the JPEGs from Pictures to Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:279  real quick copy every JPEG in Pictures into Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:280  coppy the JPEGs from Pictures into Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:283  please make a copy of the Notes folder in Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:285  back up the Notes folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:287  to Backup copy the Notes folder
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:288  real quick copy the Notes folder to Backup for me
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:289  cpoy the Notes folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:295  to Archive move the Downloads/Notes folder
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:296  real quick transfer the Downloads/Notes folder to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:297  drag the Downloads/Notes folder into Archive please
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:298  mvoe the Downloads/Notes folder to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:304  from Downloads move installers to External Drive
+     want {"intent":"move","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External Drive"}
+     got  "!"
+MISS 1-moves-copies.txt:306  drag the installers from Downloads into External Drive for me
+     want {"intent":"move","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External Drive"}
+     got  "!"
+MISS 1-moves-copies.txt:307  sned installers from Downloads to External Drive
+     want {"intent":"move","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External Drive"}
+     got  "!"
+MISS 1-moves-copies.txt:311  um make a copy of last.txt in Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:313  back up last.txt to Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:314  to Desktop copy last.txt
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:315  real quick copy last.txt over to Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:316  coppy last.txt to Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:318  move *.pdf to Documents
+     want "!"
+     got  {"intent":"move","src":{"kind":"item","name":"*.pdf"},"to":"Documents"}
+MISS 1-moves-copies.txt:319  copy *.png to Backup
+     want "!"
+     got  {"intent":"copy","src":{"kind":"item","name":"*.png"},"to":"Backup"}
+MISS 1-moves-copies.txt:320  move Downloads/* to Archive
+     want "!"
+     got  {"intent":"move","src":{"kind":"item","name":"Downloads/*"},"to":"Archive"}
+MISS 1-moves-copies.txt:321  copy *.jpg from Pictures to Backup
+     want "!"
+     got  {"intent":"copy","src":{"folder":"Pictures","kind":"item","name":"*.jpg"},"to":"Backup"}
+MISS 1-moves-copies.txt:322  move ../Downloads/report.pdf to Documents
+     want "!"
+     got  {"intent":"move","src":{"kind":"item","name":"../Downloads/report.pdf"},"to":"Documents"}
+MISS 1-moves-copies.txt:323  copy ../notes.txt to Backup
+     want "!"
+     got  {"intent":"copy","src":{"kind":"item","name":"../notes.txt"},"to":"Backup"}

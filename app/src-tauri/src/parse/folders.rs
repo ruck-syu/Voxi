@@ -7,6 +7,18 @@ use std::sync::LazyLock;
 
 static LIST_SEP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s*,\s*(?:and\s+)?|\s+and\s+").unwrap());
 
+fn folder_names(text: &str) -> Option<Vec<String>> {
+    let unquoted = unquoted_text(text)?;
+    let mut start = 0;
+    let mut names = Vec::new();
+    for separator in LIST_SEP.find_iter(&unquoted) {
+        names.push(clean_name(&text[start..separator.start()]));
+        start = separator.end();
+    }
+    names.push(clean_name(&text[start..]));
+    (!names.iter().any(String::is_empty)).then_some(names)
+}
+
 pub fn patterns() -> Vec<Pattern> {
     vec![
         pat(
@@ -17,16 +29,7 @@ pub fn patterns() -> Vec<Pattern> {
                 let (parent, names) = split_arguments(&rest, &["named", "called"])?;
                 let parent = clean_name(parent);
                 if bad_destination(&parent) { return None; }
-                let unquoted = unquoted_text(names)?;
-                let mut start = 0;
-                let mut result = Vec::new();
-                for separator in LIST_SEP.find_iter(&unquoted) {
-                    result.push(clean_name(&names[start..separator.start()]));
-                    start = separator.end();
-                }
-                result.push(clean_name(&names[start..]));
-                let names = result;
-                if names.is_empty() || names.iter().any(String::is_empty) { return None; }
+                let names = folder_names(names)?;
                 Some(Intent::CreateFolders { names, parent: Some(parent) })
             },
         ),
@@ -34,8 +37,7 @@ pub fn patterns() -> Vec<Pattern> {
             "create_folders",
             r"^(?:create|make|add|new)\s+(?:a\s+)?(?:new\s+)?folders?\s+(?:called\s+|named\s+|for\s+)?(.+?)(?:\s+(?:in|on|inside|under)\s+(.+))?$",
             |c| {
-                let names: Vec<String> =
-                    LIST_SEP.split(&cap(c, 1)?).map(clean_name).filter(|s| !s.is_empty()).collect();
+                let names = folder_names(&cap(c, 1)?)?;
                 // "create a folder on the desktop" names no folder: "on the desktop" is a place.
                 if names.is_empty() || names.iter().any(|n| ["on ", "in ", "inside ", "under "].iter().any(|p| n.to_lowercase().starts_with(p))) {
                     return None;

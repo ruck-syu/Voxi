@@ -11,7 +11,7 @@ pub fn patterns() -> Vec<Pattern> {
             r"^(?:move|put|send|throw|transfer|drop|shift|stash|store)\s+(.+?)\s+(?:to|into|in)\s+(?:trash|bin|_to_delete|to\s+delete)(?:\s+folder)?$",
             |c| Some(Intent::Trash { src: src(c, 1)? }),
         ),
-        pat("delete", r"^(?:delete|trash|remove|bin|erase|throw\s+away|get\s+rid\s+of)\s+(.+)$", |c| {
+        pat("delete", r"^(?:delete|trash|remove|discard|bin|erase|throw\s+away|get\s+rid\s+of)\s+(.+)$", |c| {
             Some(Intent::Trash { src: src(c, 1)? })
         }),
         pat("clean_up", r"^clean\s*up\s+(.+)$", |c| Some(Intent::Trash { src: src(c, 1)? })),

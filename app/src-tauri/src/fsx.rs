@@ -16,6 +16,9 @@ pub struct Roots {
     /// Canonical allowed roots. Nothing outside these is ever touched.
     pub allowed: Vec<PathBuf>,
     pub screenshots: Option<PathBuf>,
+    /// The user's own folder names, looked up before the standard ones but
+    /// never searched as extra roots (they already sit inside one).
+    pub nicknames: Vec<(String, PathBuf)>,
 }
 
 impl Roots {
@@ -36,7 +39,7 @@ impl Roots {
             }
             allowed.push(canonical(p));
         }
-        let mut roots = Roots { home: home.to_path_buf(), named, allowed, screenshots: None };
+        let mut roots = Roots { home: home.to_path_buf(), named, allowed, screenshots: None, nicknames: Vec::new() };
         // Where screenshots land: the system setting if there is one, else
         // the usual Screenshots folders. A custom location inside the home
         // folder is allowed even outside the four standard folders.
@@ -58,9 +61,20 @@ impl Roots {
         roots
     }
 
+    /// Adds the user's folder nicknames. Only folders inside the allowed
+    /// roots count, so a nickname can never widen what Voxi may touch.
+    pub fn with_nicknames(mut self, nicknames: Vec<(String, PathBuf)>) -> Self {
+        self.nicknames = nicknames.into_iter().filter(|(_, p)| p.is_dir() && self.is_allowed(p)).collect();
+        self
+    }
+
     /// Looks up a spoken folder name. Singular and plural both match, so
-    /// "download" finds Downloads.
+    /// "download" finds Downloads. A nickname wins over a standard name.
     pub fn named(&self, key: &str) -> Option<&PathBuf> {
+        let nick = crate::settings::nickname_key(key);
+        if let Some((_, p)) = self.nicknames.iter().find(|(n, _)| *n == nick) {
+            return Some(p);
+        }
         let key = key.trim().to_lowercase();
         let find = |k: &str| self.named.iter().find(|(n, _)| n == k).map(|(_, p)| p);
         find(&key).or_else(|| find(&format!("{key}s"))).or_else(|| key.strip_suffix('s').and_then(find))

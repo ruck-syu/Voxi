@@ -512,6 +512,7 @@ function CommandView({
   const onChange = (v: string) => {
     inkFeedback(v.length - text.length);
     setText(v);
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) api.trayTyping();
     // While asking, the box holds the answer; the question stays up.
     if (asking) return;
     // A pending plan is dropped as soon as a new command starts, so Enter can

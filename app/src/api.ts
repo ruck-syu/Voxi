@@ -35,6 +35,8 @@ export type ResultScope = { count: number; visible: number; label: string };
 export type CommandReply = { outcome: Outcome; scope: ResultScope | null };
 
 export const api = {
+  /** The command box changed: the menu bar face talks along. Fire and forget. */
+  trayTyping: () => invoke<void>("tray_typing").catch(() => {}),
   schedulerNotice: () => invoke<string | null>("scheduler_notice"),
   scheduledTasks: () => invoke<ScheduledTask[]>("scheduled_tasks"),
   cancelScheduledTask: (id: number) => invoke<void>("cancel_scheduled_task", { id }),

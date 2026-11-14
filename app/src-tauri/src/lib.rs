@@ -16,6 +16,7 @@ mod search;
 mod scope;
 mod scheduler;
 mod trash;
+mod tray_face;
 #[cfg(test)]
 mod paraphrase_audit; // report-only, all tests #[ignore]
 
@@ -533,6 +534,12 @@ fn apply_glass(app: &AppHandle) {
 
 /// The window is the card, so it is sized to the content and macOS animates
 /// the resize, keeping the top edge in place.
+/// The command box changed: the menu bar face talks along for a moment.
+#[tauri::command]
+fn tray_typing(app: AppHandle) {
+    tray_face::nudge(&app);
+}
+
 #[tauri::command]
 fn fit_window(app: AppHandle, height: f64, animate: bool) {
     let Some(w) = app.get_webview_window("main") else { return };
@@ -843,8 +850,8 @@ pub fn run() {
             let prefs = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
             let quit = MenuItem::with_id(app, "quit", "Quit Voxi", true, Some("CmdOrCtrl+Q"))?;
             let menu = Menu::with_items(app, &[&show, &prefs, &PredefinedMenuItem::separator(app)?, &quit])?;
-            TrayIconBuilder::with_id("voxi")
-                .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+            TrayIconBuilder::with_id(tray_face::TRAY_ID)
+                .icon(tray_face::rest_icon()?)
                 .icon_as_template(true)
                 .tooltip("Voxi")
                 .menu(&menu)
@@ -897,6 +904,7 @@ pub fn run() {
             hide_window,
             dismiss_window,
             fit_window,
+            tray_typing,
             frontend_ready,
             present_window,
             get_settings,

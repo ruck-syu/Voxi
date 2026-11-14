@@ -1,12 +1,18 @@
 <p align="center">
-  <img src="docs/icon/voxi-icon-256.png" width="128" height="128" alt="Voxi icon: a smiling face whose smile is a sound wave" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/banner-dark.png" />
+    <img src="docs/readme/banner-light.png" width="640" alt="Voxi: a smiling face whose smile is a sound wave, next to the words: organize your Mac's files by saying what you want." />
+  </picture>
 </p>
 
-<h1 align="center">Voxi</h1>
-
 <p align="center">
-  Organize your Mac's files by saying what you want.<br />
   <a href="https://github.com/ruck-syu/Voxi/releases/latest"><b>Download for Mac</b></a>
+  &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="website/commands.html">Commands</a>
+  &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="#install">Install</a>
+  <br />
+  <sub>Free and open source. macOS 12 or later, Apple silicon and Intel.</sub>
 </p>
 
 ---
@@ -33,12 +39,17 @@ Say **undo last**.
 | convert all HEIC in Pictures to jpg | Writes JPG copies |
 | merge PDFs in Documents named scan into scan-all.pdf | Combines PDFs |
 | zip Project into Project.zip | Compresses a folder |
-| list files in Downloads larger than 500 MB | Shows matches, changes nothing |
+| list files in Downloads larger than 500 MB | Shows numbered matches, changes nothing |
+| delete 4 | Trashes row 4 of the list on screen |
+| move PDFs from Downloads to Documents at 9 pm | Runs once, tonight |
+| delete dmg files from Downloads every 3 days | Repeats on a schedule |
 | run my usuals | Runs a shortcut you saved in Settings |
 
 There are 27 kinds of commands, with filters for type, date (including months,
 like "in August"), size, and name.
 The full list is on the [Commands page](website/commands.html).
+
+### How searching works
 
 File commands search the folder you name and its subfolders, up to 12 levels
 deep. This applies to groups of files and to individual file or folder names;
@@ -58,6 +69,8 @@ filename searches rank exact and normalized names before word matches and typo
 suggestions. Loose or typo matches always ask you to choose, even if there is
 only one suggestion; broad file filters never automatically expand to typos.
 
+### Working with a list
+
 After a list command, follow-up commands use that exact set of files. For example,
 `list items in Downloads`, then `delete the last file` selects the last displayed
 row; `move PDFs to Documents` selects only PDFs from that list.
@@ -71,6 +84,8 @@ Changes still require a preview and confirmation. If a listed file disappears or
 is replaced, run the list command again. Positional references use the displayed
 rows (up to 200); group commands can use every file in a complete list.
 
+### Names, quotes, and sizes
+
 Without a list, commands need a filename or a specific group. Quote literal names
 containing command words, for example `move "Notes to Self.txt" to Documents`.
 Quoted names also preserve words such as “one”. Size filters require units;
@@ -80,7 +95,7 @@ its operation type isn't supported.
 
 ## Dictation
 
-Use an external dictation app such as [Hex by Anomaly](https://anoma.ly/hex/).
+Use an external dictation app such as [Hex by Anomaly](https://anoma.ly/hex/) or [Wispr Flow](https://wisprflow.ai).
 Hex downloads a speech model once, then transcribes locally and pastes into the
 focused app. Its Mac download requires Apple silicon and macOS 15 or later.
 
@@ -99,6 +114,14 @@ speech recognition and doesn't request microphone or speech permissions.
 
 ## Install
 
+With [Homebrew](https://brew.sh), run this, then continue from step 2:
+
+```bash
+brew install --cask ruck-syu/tap/voxi
+```
+
+Or by hand:
+
 1. Download the `.dmg` from the [latest release](https://github.com/ruck-syu/Voxi/releases/latest), open it, and drag Voxi to Applications.
 2. Open Voxi. It isn't notarized by Apple yet, so the first launch is blocked:
    - **macOS 15 or later:** open System Settings → Privacy & Security, scroll down, and click **Open Anyway** next to Voxi.
@@ -107,7 +130,7 @@ speech recognition and doesn't request microphone or speech permissions.
    macOS remembers this, so you only do it once.
 3. Voxi opens a welcome page. Click **Allow access** and approve each folder, so commands never stop to ask.
 
-Voxi lives in the menu bar. Click its icon or press <kbd>⌃⌥Space</kbd>.
+Voxi lives in the menu bar as a small face. Click it or press <kbd>⌃⌥Space</kbd>.
 
 ## Updates
 
@@ -115,38 +138,63 @@ Open Settings → General → **Check for updates**. Voxi downloads the newest
 release with a progress bar, shows what's new, checks the update's signature,
 installs it, and restarts.
 
-## Scheduled commands
+## Scheduled and repeating commands
 
-Add a time or delay to a file command, then review the preview and choose
-**Schedule task**:
+Add a time, a delay, or a repeat to the end of a file command, review the
+preview, then choose **Schedule task**:
 
 - `move screenshots from Desktop to Screenshots folder at 9:40 pm`
 - `move PDFs from Downloads to Documents after 3 hours`
 - `clean up Downloads older than 90 days in 30 minutes`
+- `delete dmg files from Downloads every 3 days`
+- `sort Downloads by type every Monday at 8 am`
 
 Clock times use your Mac's local timezone. A time that has passed means tomorrow;
 you can also say `at 9:40 pm tomorrow` or use a 24-hour time such as `at 21:40`.
 Delays accept whole hours or minutes, including spoken numbers through ninety-nine,
 such as “three” or “twenty-one”.
-Settings → Scheduled lists tasks, their results, and a cancellation button for
-pending tasks. Tasks survive restarting Voxi. Keep Voxi running for on-time
-execution; if it is closed or your Mac is asleep, overdue tasks run when Voxi
-next runs or your Mac wakes. No task wakes the Mac or launches Voxi.
 
-A task changes only the files in its approved preview, excluding files added
-later. Changed or missing source files stop the task; destination collisions
-never overwrite files. Completed changes enter History and can be undone with
-`undo last`. An interrupted task is marked failed and is never automatically
-retried. Undo, read-only, and Finder commands cannot be scheduled.
-If saved schedules cannot be read, Voxi preserves a backup and shows a recovery
-notice in Settings → Scheduled. A storage error disables scheduling for that
-session while the rest of the app remains available.
+Repeats accept `every 3 days`, `every other week`, `every Monday`, `daily at 9 pm`,
+`hourly`, and `weekly`. A time of day works with days and weeks; a weekday without
+a time runs at 9 am. Repeats are at least 15 minutes apart.
+
+**One-time tasks** change only the files in their approved preview, excluding
+files added later. Changed or missing source files stop the task.
+**Repeating tasks** save the command and plan it again at each run, so they act
+on whatever matches at that time, without a new preview. A repeating task can't
+use a previous list as its scope; name the files or folder instead.
+
+Settings → Scheduled lists tasks, their results, and a cancellation button.
+Tasks survive restarting Voxi. Keep Voxi running for on-time execution; if it is
+closed or your Mac is asleep, an overdue task runs once when Voxi next runs or
+your Mac wakes. No task wakes the Mac or launches Voxi.
+
+Destination collisions never overwrite files, and every completed run enters
+History, so `undo last` can reverse it. An interrupted task is marked failed and
+is never retried automatically. Undo, read-only, and Finder commands cannot be
+scheduled. If saved schedules cannot be read, Voxi preserves a backup and shows
+a recovery notice in Settings → Scheduled. A storage error disables scheduling
+for that session while the rest of the app remains available.
 
 ## Shortcuts
 
 Save a phrase and a list of commands in Settings → Shortcuts. Saying the
 phrase runs them all as one preview with one undo. "Run my usual" and
 "run my usuals" both work.
+
+## Learning on your Mac
+
+Voxi's parser is rule-based and runs locally. It learns from you without
+sending anything anywhere:
+
+- **Teach a phrase.** If Voxi doesn't understand a sentence and you rephrase it
+  within a few minutes, it offers to run the working command the next time you
+  say the original. Taught phrases appear under Settings → Shortcuts.
+- **Folder nicknames.** When a name matches several folders and you pick one,
+  Voxi offers to remember that choice.
+- **Wrong-result reports.** Mark a result as wrong and Voxi saves a readable
+  JSON line on this Mac. Show or clear them from Settings. Developers can turn
+  them into parser test candidates with `scripts/feedback-to-corpus.mjs`.
 
 ## Develop
 
@@ -187,6 +235,7 @@ a new one before changing the parser.
 | `app/src-tauri/src/exec.rs` | Runs a confirmed plan and records how to undo each step |
 | `app/src/` | The floating window: commands, settings, folder access |
 | `website/` | The landing page, deployed to Vercel |
+| `docs/readme/` | The banner at the top of this file, light and dark |
 | `docs/icon/` | The app icon and the script that draws it |
 | `BUILD.md` | The original build plan |
 
@@ -205,3 +254,12 @@ The workflow needs four repository secrets: `TAURI_SIGNING_PRIVATE_KEY` and
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` sign updates; `VOXI_SIGNING_CERT` and
 `VOXI_SIGNING_CERT_PASSWORD` give the app a stable code signature, so macOS
 remembers folder access across versions.
+
+### Website
+
+`website/` is a static site with no build step. Its look comes from the app
+icon: paper, ink, and the red smile that doubles as a sound wave, which ripples
+in the hero while the demo command is typed. Serve it locally with
+`python3 -m http.server -d website`. In Vercel, import this repo and set
+**Root Directory** to `website`. Pushes that only touch the website or docs
+don't build a new app.

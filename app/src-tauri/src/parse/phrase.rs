@@ -495,10 +495,14 @@ pub fn type_word(head: &str) -> Option<(FileType, Option<Vec<String>>)> {
     let h = head.trim().trim_start_matches('.').to_ascii_lowercase();
     let t = match h.as_str() {
         "" | "files" | "file" | "everything" | "anything" | "items" | "stuff" | "things" => FileType::Files,
-        "screenshots" | "screenshot" | "screen shots" | "screenshot files" | "screenshots files" | "screen shot files" => FileType::Screenshots,
+        "screenshots" | "screenshot" | "screen shots" | "screenshot files" | "screenshots files" | "screen shot files"
+        // Casual names for the same thing.
+        | "screenies" | "screenie" | "screengrabs" | "screengrab" | "screen grabs" | "screen grab" | "screencaps"
+        | "screencap" | "screen caps" | "screen cap" | "screen captures" | "screen capture" => FileType::Screenshots,
         "images" | "image" | "image files" | "pictures" | "picture" | "photos" | "photo" | "pics" | "pic" => FileType::Images,
         "pdfs" | "pdf" | "pdf files" | "pdf documents" | "documents of type pdf" | "files of type pdf" => FileType::Pdfs,
-        "videos" | "video" | "video files" | "movies" | "movie" | "screen recordings" => FileType::Videos,
+        "videos" | "video" | "video files" | "movies" | "movie" | "screen recordings"
+        | "vids" | "vid" | "clips" | "clip" | "footage" => FileType::Videos,
         "documents" | "document" | "docs" | "document files" => FileType::Documents,
         "archives" | "archive" | "zips" | "zip" | "zip files" | "compressed files" => FileType::Archives,
         "installers" | "installer" | "installer files" | "dmgs" | "dmg files" | "disk images" => FileType::Installers,
@@ -743,6 +747,7 @@ fn vague(name: &str) -> bool {
     const SIZES: &[&str] = &["big", "bigger", "biggest", "large", "huge", "small", "tiny", "old", "older", "new", "recent"];
     const NOUNS: &[&str] = &[
         "files", "file", "photos", "pictures", "screenshots", "documents", "docs", "pdfs", "images", "videos", "downloads",
+        "screenies", "vids", "clips",
     ];
     let words: Vec<String> = name.to_lowercase().split_whitespace().map(str::to_string).collect();
     // A name made only of size words, or of "1" (which is "one" once normalized,
@@ -832,6 +837,16 @@ mod tests {
         assert_eq!(normalize("Hey Voxi, can you move all PDFs from Downloads to Documents?"), "move PDFs from Downloads to Documents");
         assert_eq!(normalize("convert photo dot heic to png"), "convert photo.heic to png");
         assert_eq!(normalize("list files from the last seven days"), "list files from last 7 days");
+    }
+
+    #[test]
+    fn casual_type_words() {
+        for word in ["screenies", "screenie", "screen grabs", "screengrabs", "screencaps", "screen captures"] {
+            assert_eq!(type_word(word), Some((FileType::Screenshots, None)), "{word}");
+        }
+        for word in ["vids", "vid", "clips", "footage"] {
+            assert_eq!(type_word(word), Some((FileType::Videos, None)), "{word}");
+        }
     }
 
     #[test]

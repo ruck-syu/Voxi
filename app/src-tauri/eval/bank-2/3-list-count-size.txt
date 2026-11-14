@@ -1,0 +1,128 @@
+# Bank 2 / list, count, size, find: slang, casual and regional phrasings that no corpus or eval file tests yet.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: list files in Downloads larger than 500 MB
+what's hogging space in Downloads over 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+show me the chonky files in Downloads over 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+which files in Downloads are over 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+any files in Downloads above 500 MB? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+find the fat files in Downloads over 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+show files in Downloads that are 500 MB plus => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+what's over 500 MB in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+pull up files bigger than 500mb in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+list the beefy files in Downloads over 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+
+# seed: list files in Downloads
+what's in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+what's in my Downloads rn => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+show me what's in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+gimme a rundown of Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+what've I got in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+peek inside Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+what's lurking in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+pull up Downloads files => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+list out everything in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+show me the contents of Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: list PDFs in Downloads
+any PDFs in Downloads? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+which PDFs do I have in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+pull up my pdfs in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+find all the PDFs sitting in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+list out the pdf files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+what pdf files are lying around in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+
+# seed: list screenshots from today
+what screenshots did I take today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+any screenshots from today? => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+pull up the screenshots I snapped today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+which screenshots are from today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+what did I screenshot today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+list out today's screenshots => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+
+# seed: list files in Downloads older than 1 year
+what's ancient in Downloads, older than a year => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+show me the stale stuff in Downloads older than 1 year => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+which files in Downloads are over a year old => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+find the dusty files in Downloads older than 12 months => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+any files in Downloads older than one year? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+pull up Downloads files from more than a year ago => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+show files in Downloads that are a year old or more => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+lemme see old stuff in Downloads older than 1 yr => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+what's been sitting in Downloads for over a year => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+list the fossils in Downloads older than 1 year => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+
+# seed: list videos in Movies
+show me the videos in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+any videos in Movies? => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+which videos do I have in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+list out the video files in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+what videos are in my Movies folder => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+
+# seed: list files in Documents from this week
+what's new in Documents this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+show me this week's stuff in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+what did I add to Documents this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+pull up this week's files in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+which files in Documents are from this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+any new files in Documents this week? => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+show what landed in Documents this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+find files in Documents I made this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+this week's files in Documents pls => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+
+# seed: count PDFs in Documents
+how many PDFs have I got in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+how many PDF files are sitting in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+gimme a count of PDFs in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+tally up the PDFs in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+count up my pdfs in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+pdf count for Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+how many pdfs are in my Documents folder => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+quick count of PDFs in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+how many PDFs live in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+
+# seed: count files in Downloads
+how many files in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+how many files have I got in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+how much stuff is in Downloads, count it => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+gimme a file count for Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+number of files in Downloads? => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+tally the files in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+count up everything in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+file count Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+how many things are in my Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+quick count of files in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+how many files are chilling in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: show size of Downloads
+how big is my Downloads folder => {"intent":"size","folder":"Downloads"}
+how chonky is Downloads => {"intent":"size","folder":"Downloads"}
+how much space is Downloads eating => {"intent":"size","folder":"Downloads"}
+how many gigs is Downloads => {"intent":"size","folder":"Downloads"}
+what's Downloads weigh => {"intent":"size","folder":"Downloads"}
+how much room does Downloads take up => {"intent":"size","folder":"Downloads"}
+size of Downloads? => {"intent":"size","folder":"Downloads"}
+check the size of Downloads => {"intent":"size","folder":"Downloads"}
+how heavy is Downloads => {"intent":"size","folder":"Downloads"}
+how much storage is Downloads using => {"intent":"size","folder":"Downloads"}
+what's the total size of Downloads => {"intent":"size","folder":"Downloads"}
+
+# seed: list duplicate files in Downloads
+any dupes in Downloads => {"intent":"duplicates","folder":"Downloads"}
+find the dupes in Downloads => {"intent":"duplicates","folder":"Downloads"}
+what's doubled up in Downloads => {"intent":"duplicates","folder":"Downloads"}
+find copies of the same file in Downloads => {"intent":"duplicates","folder":"Downloads"}
+spot duplicates in Downloads => {"intent":"duplicates","folder":"Downloads"}
+which files in Downloads are duplicates => {"intent":"duplicates","folder":"Downloads"}
+check Downloads for dupes => {"intent":"duplicates","folder":"Downloads"}
+any repeated files in Downloads? => {"intent":"duplicates","folder":"Downloads"}
+
+# seed: open Downloads in Finder
+pull up Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+pop open Downloads => {"intent":"reveal","target":"Downloads"}
+take me to Downloads => {"intent":"reveal","target":"Downloads"}
+open up Downloads => {"intent":"reveal","target":"Downloads"}
+bring up Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+jump to Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+launch Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+go to Downloads in Finder => {"intent":"reveal","target":"Downloads"}

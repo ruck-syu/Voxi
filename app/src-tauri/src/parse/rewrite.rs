@@ -19,13 +19,13 @@ macro_rules! re {
 static MID_FILLER: LazyLock<Regex> = re!(r"(?i)(?:^|\s)(?:u+h+|u+m+|e+r+m+|uhm+|hmm+)(?:,|\s|$)");
 /// Fillers before the verb that `normalize` doesn't catch.
 static LEAD: LazyLock<Regex> = re!(
-    r"(?i)^(?:(?:so|like|just|ok|okay|real\s+quick|quickly|quick|hey|now|then|alright|right|pl[ea]+s[e]?|kindly|go\s+ahead\s+and|help\s+me(?:\s+to)?|h[el]{2}p\s+me|(?:can|could|would|will)\s+you(?:\s+please)?|(?:can|could)\s+i|i\s+(?:want|need|would\s+like|wanna)\s+(?:you\s+)?to|i'?d\s+like\s+(?:you\s+)?to|let's|tell\s+me|i\s+need\s+to\s+know|i\s+wonder)[,]?\s+)+"
+    r"(?i)^(?:(?:so|like|just|ok|okay|real\s+quick|quickly|quick|hey|now|then|alright|right|pl[ea]+s[e]?|pl[sz]|kindly|go\s+ahead\s+and|help\s+me(?:\s+to)?|h[el]{2}p\s+me|(?:can|could|would|will)\s+you(?:\s+please)?|(?:can|could)\s+i|i\s+(?:want|need|would\s+like|wanna)\s+(?:you\s+)?to|i'?d\s+like\s+(?:you\s+)?to|let's|tell\s+me|i\s+need\s+to\s+know|i\s+wonder)[,]?\s+)+"
 );
 /// Fillers after the command that `normalize` doesn't catch.
 static TRAIL: LazyLock<Regex> = re!(
-    r"(?i)(?:,?\s+(?:real\s+quick|quickly|quick|right\s+now|now|asap|if\s+you\s+can|if\s+you\s+could|okay|ok|like|thanks|thank\s+you|thx|cheers|please|for\s+me|period|full\s+stop))+$"
+    r"(?i)(?:,?\s+(?:real\s+quick|quickly|quick|right\s+now|now|asap|if\s+you\s+can|if\s+you\s+could|okay|ok|like|thanks|thank\s+you|thx|cheers|please|pl[sz]|for\s+me|period|full\s+stop))+$"
 );
-static SEE: LazyLock<Regex> = re!(r"(?i)^(?:i\s+(?:need|want|wanna|would\s+like)\s+to\s+see|let\s+me\s+see|i'?d\s+like\s+to\s+see)\s+");
+static SEE: LazyLock<Regex> = re!(r"(?i)^(?:i\s+(?:need|want|wanna|would\s+like)\s+to\s+see|(?:let\s+me|lemme)\s+see|i'?d\s+like\s+to\s+see|gimme)\s+");
 static SPACES: LazyLock<Regex> = re!(r"\s+");
 
 /// Words that ask for something Voxi never does: deleting past the Trash.
@@ -64,6 +64,16 @@ static RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         // "find where report.pdf is" -> "show me where report.pdf is"
         (r"(?i)^find\s+where\s+(.+)$", "show me where $1"),
         // Deleting, said other ways. Everything still goes to the Trash with a preview.
+        // "chuck a new Invoices folder in Documents": a new folder is made, never binned.
+        (r"(?i)^(?:toss|chuck|throw|stick|pop|bung)\s+(?:a\s+)?new\s+(.+?)\s+folder\s+(?:in|into|on|inside)\s+(.+)$", "create a folder named $1 in $2"),
+        // "chuck X in the bin", "send X to the trash can": the Trash, said casually.
+        (r"(?i)^(?:toss|chuck|throw|dump|bung|send|put)\s+(.+?)\s+(?:over\s+)?(?:in|into|to)\s+(?:the\s+)?(?:trash\s+can|bin|rubbish(?:\s+bin)?|garbage(?:\s+can)?|recycle\s+bin)$", "delete $1"),
+        // "chuck X into Y", "toss X over to Y": with a destination these mean
+        // move, not delete. "toss X in Downloads" names where X is, so "in"
+        // stays a delete, as it always has.
+        (r"(?i)^(?:toss|chuck|throw)\s+(.+?)\s+(?:over\s+)?(?:into|onto|to)\s+(.+)$", "move $1 to $2"),
+        // "zap X" deletes; it is never a typo for "zip".
+        (r"(?i)^zap\s+", "delete "),
         (r"(?i)^(?:toss|chuck|clear\s+out|ditch|dump)\s+(.+?)\s+out\s+of\s+(.+)$", "delete $1 from $2"),
         (r"(?i)^(?:toss|chuck|throw|ditch|dump)\s+(.+?)\s+(?:out|away)$", "delete $1"),
         (r"(?i)^(?:toss|chuck|clear\s+out|ditch)\s+", "delete "),
@@ -118,7 +128,9 @@ const VERBS: &[&str] = &[
 ];
 /// Words a correction must never produce from, or turn into, because they
 /// destroy or are too short to tell apart.
-const NEVER: &[&str] = &["delete", "remove", "trash", "erase", "bin", "clean", "wipe", "toss", "nuke", "discard", "purge"];
+const NEVER: &[&str] = &["delete", "remove", "trash", "erase", "bin", "clean", "wipe", "toss", "nuke", "discard", "purge", "zap",
+    // Casual deletes: "chuck" is one letter from "check", but means bin it.
+    "chuck", "ditch", "dump", "throw"];
 
 /// Optimal string alignment distance: edits plus adjacent swaps ("mvoe").
 fn osa(a: &str, b: &str) -> usize {
@@ -199,7 +211,7 @@ mod tests {
         for (typo, verb) in [("mvoe", "move"), ("coppy", "copy"), ("renmae", "rename"), ("lsit", "list"), ("sned", "send"), ("creat", "create"), ("cuont", "count"), ("orgainze", "organize")] {
             assert_eq!(correct_verb(typo), Some(verb), "{typo}");
         }
-        for typo in ["delte", "delet", "remvoe", "dleete", "trsah", "claen", "ad", "pt", "move"] {
+        for typo in ["delte", "delet", "remvoe", "dleete", "trsah", "claen", "ad", "pt", "move", "zap", "chuck"] {
             assert_eq!(correct_verb(typo), None, "{typo}");
         }
     }
@@ -216,6 +228,20 @@ mod tests {
             ("put 2026- in front of files in Downloads", "add prefix 2026- to files in Downloads"),
             ("put a date in front of screenshots on Desktop", "add date prefix to screenshots on Desktop"),
             ("pleese make folder called Receipts", "make folder called Receipts"),
+            // Casual delete verbs: a destination makes them a move, the bin keeps them a delete.
+            ("chuck every PDF in Downloads over to Documents", "move every PDF in Downloads to Documents"),
+            ("toss the videos from Desktop over to Movies", "move the videos from Desktop to Movies"),
+            ("throw report.pdf into Documents", "move report.pdf to Documents"),
+            ("chuck report.pdf in the bin", "delete report.pdf"),
+            ("send report.pdf to the trash can", "delete report.pdf"),
+            ("toss everything in Downloads", "delete everything in Downloads"),
+            ("zap report.pdf", "delete report.pdf"),
+            ("chuck a new Invoices folder in Documents", "create a folder named Invoices in Documents"),
+            // Texting shorthand.
+            ("lemme see today's screen grabs", "show today's screen grabs"),
+            ("gimme all the clips in Movies", "show all the clips in Movies"),
+            ("show vids in Movies pls", "show vids in Movies"),
+            ("plz move report.pdf to Documents", "move report.pdf to Documents"),
         ] {
             assert_eq!(canonical(said, true), want, "{said}");
         }

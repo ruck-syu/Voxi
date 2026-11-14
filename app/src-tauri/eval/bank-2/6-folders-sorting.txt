@@ -1,0 +1,49 @@
+# Bank 2 / folders and sorting: slang, casual and regional phrasings that no corpus or eval file tests yet.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: create folders 2026, 2027 in Documents
+make folders 2026 and 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+spin up folders 2026, 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+new folders 2026 and 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+whip up folders called 2026 and 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+set up folders 2026 and 2027 inside Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+add folders 2026, 2027 to Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+mkdir 2026 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+create 2 folders in Documents, 2026 and 2027 => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+I need folders 2026 and 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+make me folders named 2026 and 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+create folders for 2026 and 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+
+# seed: create a folder named Invoices in Documents
+spin up a folder called Invoices in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+make a new folder Invoices in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+new folder Invoices in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+whip up an Invoices folder in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+set up an Invoices folder inside Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+mkdir Invoices in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+add a folder called Invoices to Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+I need an Invoices folder in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+make me a folder named Invoices in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+create an Invoices folder in Documents pls => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+
+# seed: sort Downloads by type
+sort out Downloads by file type => {"intent":"sort_by_type","folder":"Downloads"}
+tidy Downloads into folders by type => {"intent":"sort_by_type","folder":"Downloads"}
+bucket Downloads by type => {"intent":"sort_by_type","folder":"Downloads"}
+arrange Downloads by file type => {"intent":"sort_by_type","folder":"Downloads"}
+split Downloads up by type => {"intent":"sort_by_type","folder":"Downloads"}
+file Downloads into folders by type => {"intent":"sort_by_type","folder":"Downloads"}
+categorize Downloads by type => {"intent":"sort_by_type","folder":"Downloads"}
+Downloads, sort by type => {"intent":"sort_by_type","folder":"Downloads"}
+
+# seed: sort Screenshots by month
+organise Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+group Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+sort out Screenshots into months => {"intent":"sort_by_month","folder":"Screenshots"}
+bucket Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+file Screenshots into monthly folders => {"intent":"sort_by_month","folder":"Screenshots"}
+split Screenshots up by month => {"intent":"sort_by_month","folder":"Screenshots"}
+arrange Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+categorize Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+tidy Screenshots into folders by month => {"intent":"sort_by_month","folder":"Screenshots"}
+Screenshots, sort by month => {"intent":"sort_by_month","folder":"Screenshots"}

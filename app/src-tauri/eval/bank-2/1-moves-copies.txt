@@ -1,0 +1,83 @@
+# Bank 2 / moves and copies: slang, casual and regional phrasings that no corpus or eval file tests yet.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: move all PDFs from Downloads to Documents
+yeet all the PDFs from Downloads into Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+shove the PDFs from Downloads into Documents pls => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+yo move all my pdfs outta Downloads and into Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+can u move all pdfs from Downloads to Documents rn => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+bung all the PDFs from Downloads into Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+kindly move all PDFs from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+lemme get all the PDFs from Downloads moved to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+ship all the PDFs in Downloads off to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+migrate all PDFs from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+relocate every pdf from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+pdfs from Downloads -> Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+
+# seed: move screenshots from today to Screenshots
+stash today's screenshots in Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+file away today's screenshots in Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+sweep today's screenshots into Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+can you pop today's screenshots into Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+send today's screenshots over to Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+get today's screenshots into Screenshots asap => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+screenshots from today go in Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+
+# seed: move report.pdf to Documents
+yeet report.pdf into Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+chuck report.pdf in Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+pop report.pdf over to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+stick report.pdf in Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+plonk report.pdf into Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+throw report.pdf in Documents real quick => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+drag report.pdf into Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+put report.pdf in Documents ty => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+report.pdf goes to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+shift report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+park report.pdf in Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+
+# seed: move all videos from Desktop to Movies
+shove every video on Desktop into Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+get all the videos off Desktop and into Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+can u move videos from Desktop to Movies plz => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+evacuate all the videos from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+videos on Desktop -> Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+haul all videos from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+
+# seed: move files from Desktop to Documents
+dump everything from Desktop into Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+clear off Desktop into Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+chuck all my Desktop stuff into Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+move all the junk on Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+shovel the files from Desktop into Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+empty Desktop into Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+move all my stuff from Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+relocate every file on Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+get all files off Desktop and into Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+transfer files from Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+migrate the Desktop files over to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+
+# seed: copy all images from Pictures to Backup
+dupe all the pics from Pictures into Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+clone every image in Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+make copies of all photos from Pictures in Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+back up all the images from Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+copy all my pics from Pictures over to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+duplicate all images from Pictures into Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+cp all images from Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+copy paste all images from Pictures into Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+copy the snaps from Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+copy all the photos from Pictures to Backup thx => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+
+# seed: copy report.pdf to Desktop
+dupe report.pdf onto Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+clone report.pdf to Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+make a copy of report.pdf on Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+stick a copy of report.pdf on Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+cp report.pdf to Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+copy report.pdf over to Desktop real quick => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+duplicate report.pdf to Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+can I get a copy of report.pdf on Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+copy report.pdf onto the Desktop pls => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+drop a copy of report.pdf on Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+copy-paste report.pdf to Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}

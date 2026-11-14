@@ -1,0 +1,1896 @@
+MISS 1-moves-copies.txt:7  to my Documents folder move the report.pdf file
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:8  real quick transfer the report.pdf file to my Documents folder
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:9  mvoe the report.pdf file to my Documents folder
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:10  drag the report.pdf file into my Documents folder for me
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:16  from Downloads, move all the PDFs over to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:18  relocate any PDF files in Downloads over to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+     got  {"intent":"move","src":{"filter":{"nameContains":"any PDF","type":"files"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+MISS 1-moves-copies.txt:19  sned all the PDFs in Downloads over to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:24  make a copy of notes.txt in my Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:27  over to my Desktop could you copy notes.txt
+     want {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:28  coppy notes.txt over to my Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:34  real quick transfer the invoice to Archive
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:35  to Archive send the invoice
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:36  drag the invoice into Archive please
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:37  sned the invoice to Archive
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:40  please make a copy of my notes in Backup
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:42  back up my notes to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:45  to Backup copy my notes
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:46  coppy my notes to Backup please
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:49  please make a copy of the whole Project folder in Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:51  back up the whole Project folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:53  real quick, copy the whole Project folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:54  to Backup copy the whole Project folder
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:55  cpoy the whole Project folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Project"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:61  to Documents move Downloads/invoice.pdf
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/invoice.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:62  drag Downloads/invoice.pdf into Documents for me
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/invoice.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:64  mvoe Downloads/invoice.pdf to Documents
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/invoice.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:70  into Documents move the file called taxes 2025.pdf
+     want {"intent":"move","src":{"kind":"item","name":"taxes 2025.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:71  real quick, shift the file called taxes 2025.pdf into Documents
+     want {"intent":"move","src":{"kind":"item","name":"taxes 2025.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:73  mvoe the file called taxes 2025.pdf into Documents
+     want {"intent":"move","src":{"kind":"item","name":"taxes 2025.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:79  from Desktop move all my PDFs to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:80  drag all my PDFs from Desktop into Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:81  sned all my PDFs from Desktop to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:82  move any pdf files from Desktop to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+     got  {"intent":"move","src":{"filter":{"nameContains":"any pdf","type":"files"},"folder":"Desktop","kind":"set"},"to":"Documents"}
+MISS 1-moves-copies.txt:86  um make a copy of every JPEG from Pictures in Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:88  from Pictures copy every JPEG to Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:89  back up every JPEG from Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:90  real quick copy every JPEG file in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:91  coppy every JPEG from Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:97  from Downloads move photos into Pictures
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Downloads","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:98  drag any photos in Downloads into Pictures
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Downloads","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:100  mvoe photos from Downloads into Pictures
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Downloads","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:107  to Invoices move the PDF named invoice
+     want {"intent":"move","src":{"filter":{"nameContains":"invoice","type":"pdfs"},"kind":"set"},"to":"Invoices"}
+     got  "!"
+MISS 1-moves-copies.txt:108  real quick transfer the PDF named invoice to Invoices
+     want {"intent":"move","src":{"filter":{"nameContains":"invoice","type":"pdfs"},"kind":"set"},"to":"Invoices"}
+     got  "!"
+MISS 1-moves-copies.txt:109  sned the PDF named invoice to Invoices
+     want {"intent":"move","src":{"filter":{"nameContains":"invoice","type":"pdfs"},"kind":"set"},"to":"Invoices"}
+     got  "!"
+MISS 1-moves-copies.txt:115  to Documents move Q3 report.pdf
+     want {"intent":"move","src":{"kind":"item","name":"Q3 report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:116  real quick, drag Q3 report.pdf into Documents
+     want {"intent":"move","src":{"kind":"item","name":"Q3 report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:118  mvoe Q3 report.pdf to Documents
+     want {"intent":"move","src":{"kind":"item","name":"Q3 report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:124  to Documents move the file 'Lease Agreement.pdf'
+     want {"intent":"move","src":{"kind":"item","name":"Lease Agreement.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:125  real quick, transfer the file 'Lease Agreement.pdf' to Documents
+     want {"intent":"move","src":{"kind":"item","name":"Lease Agreement.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:127  mvoe the file 'Lease Agreement.pdf' to Documents
+     want {"intent":"move","src":{"kind":"item","name":"Lease Agreement.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:133  from Downloads move the zip files to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 1-moves-copies.txt:134  drag every zip file in Downloads into Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 1-moves-copies.txt:136  sned the zip files from Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 1-moves-copies.txt:139  please make a copy of the Q3 budget.xlsx in my Backup folder
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:141  back up the Q3 budget.xlsx to my Backup folder
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:143  to my Backup folder copy the Q3 budget.xlsx
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:144  real quick copy the Q3 budget.xlsx to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:145  cpoy the Q3 budget.xlsx to my Backup folder
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:151  from Documents move every PDF to Archive
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:153  drag every PDF in Documents into Archive for me
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:154  mvoe every PDF in Documents to Archive
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:160  from Desktop move the screenshots to Pictures
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:161  drag every screenshot on Desktop into Pictures
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:163  sned the screenshots from Desktop to Pictures
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:167  um make a copy of all the images from Pictures in Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:169  back up all the images in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:170  from Pictures copy all the images to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:171  real quick copy all images in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:172  coppy all the images in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:178  from Downloads move the video files into Movies
+     want {"intent":"move","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"},"to":"Movies"}
+     got  "!"
+MISS 1-moves-copies.txt:179  transfer every video file in Downloads to Movies
+     want {"intent":"move","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"},"to":"Movies"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"video"},"to":"Movies"}
+MISS 1-moves-copies.txt:180  drag the video files from Downloads into Movies for me
+     want {"intent":"move","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"},"to":"Movies"}
+     got  "!"
+MISS 1-moves-copies.txt:181  mvoe the video files from Downloads to Movies
+     want {"intent":"move","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"},"to":"Movies"}
+     got  "!"
+MISS 1-moves-copies.txt:187  into Pictures put photo.heic
+     want {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:188  real quick transfer photo.heic to Pictures
+     want {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:189  drag photo.heic into Pictures please
+     want {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:190  pt photo.heic into Pictures
+     want {"intent":"move","src":{"kind":"item","name":"photo.heic"},"to":"Pictures"}
+     got  "!"
+MISS 1-moves-copies.txt:196  to Documents move the 2025 tax return.pdf
+     want {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:197  real quick, transfer the 2025 tax return.pdf to Documents
+     want {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:198  drag the 2025 tax return.pdf into Documents for me
+     want {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:199  mvoe the 2025 tax return.pdf to Documents
+     want {"intent":"move","src":{"kind":"item","name":"2025 tax return.pdf"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:205  to Archive move Invoice Final v2.pdf
+     want {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:206  real quick transfer Invoice Final v2.pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:207  stick Invoice Final v2.pdf in Archive please
+     want {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:208  mvoe Invoice Final v2.pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Invoice Final v2.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:214  to Documents send thesis draft dot docx
+     want {"intent":"move","src":{"kind":"item","name":"thesis draft.docx"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:215  real quick, drag thesis draft dot docx into Documents
+     want {"intent":"move","src":{"kind":"item","name":"thesis draft.docx"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:217  sned thesis draft dot docx to Documents
+     want {"intent":"move","src":{"kind":"item","name":"thesis draft.docx"},"to":"Documents"}
+     got  "!"
+MISS 1-moves-copies.txt:221  um move Terms and Conditions.pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:223  to Archive move the file called Terms and Conditions.pdf
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:224  real quick shift the file called Terms and Conditions dot pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:225  drag the file called Terms and Conditions.pdf into Archive
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:226  mvoe the file called Terms and Conditions.pdf to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Terms and Conditions.pdf"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:232  to Videos move the video called intro.mov
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 1-moves-copies.txt:233  real quick transfer the video called intro.mov to Videos
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 1-moves-copies.txt:234  drag the video called intro.mov into Videos please
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 1-moves-copies.txt:235  mvoe the video called intro.mov to Videos
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 1-moves-copies.txt:241  from Downloads move all text files to Notes
+     want {"intent":"move","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Notes"}
+     got  "!"
+MISS 1-moves-copies.txt:243  drag every text file from Downloads into Notes for me
+     want {"intent":"move","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Notes"}
+     got  "!"
+MISS 1-moves-copies.txt:244  sned all text files from Downloads to Notes
+     want {"intent":"move","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Notes"}
+     got  "!"
+MISS 1-moves-copies.txt:250  from Pictures/Trip move photos to Archive
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:251  transfer any photos in Pictures/Trip to Archive
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  {"intent":"move","src":{"folder":"Pictures/Trip","kind":"item","name":"any photos"},"to":"Archive"}
+MISS 1-moves-copies.txt:252  drag photos from Pictures/Trip into Archive for me
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:253  mvoe photos from Pictures/Trip to Archive
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:259  from Downloads move installers over 200 MB to External
+     want {"intent":"move","src":{"filter":{"largerThanMb":200.0,"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External"}
+     got  "!"
+MISS 1-moves-copies.txt:261  drag installers over 200 MB from Downloads into External
+     want {"intent":"move","src":{"filter":{"largerThanMb":200.0,"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External"}
+     got  "!"
+MISS 1-moves-copies.txt:262  mvoe installers over 200 MB from Downloads to External
+     want {"intent":"move","src":{"filter":{"largerThanMb":200.0,"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External"}
+     got  "!"
+MISS 1-moves-copies.txt:268  from Pictures move images smaller than 200 KB to Archive
+     want {"intent":"move","src":{"filter":{"smallerThanMb":0.1953125,"type":"images"},"folder":"Pictures","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:269  transfer any image under 200 KB in Pictures to Archive
+     want {"intent":"move","src":{"filter":{"smallerThanMb":0.1953125,"type":"images"},"folder":"Pictures","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:270  drag images that are under 200 KB from Pictures into Archive
+     want {"intent":"move","src":{"filter":{"smallerThanMb":0.1953125,"type":"images"},"folder":"Pictures","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:271  mvoe images smaller than 200 KB from Pictures to Archive
+     want {"intent":"move","src":{"filter":{"smallerThanMb":0.1953125,"type":"images"},"folder":"Pictures","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:275  um make a copy of the JPEGs from Pictures in Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:277  from Pictures copy the JPEGs into Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:278  back up the JPEGs from Pictures to Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:279  real quick copy every JPEG in Pictures into Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:280  coppy the JPEGs from Pictures into Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 1-moves-copies.txt:283  please make a copy of the Notes folder in Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:285  back up the Notes folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:287  to Backup copy the Notes folder
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:288  real quick copy the Notes folder to Backup for me
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:289  cpoy the Notes folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 1-moves-copies.txt:295  to Archive move the Downloads/Notes folder
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:296  real quick transfer the Downloads/Notes folder to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:297  drag the Downloads/Notes folder into Archive please
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:298  mvoe the Downloads/Notes folder to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 1-moves-copies.txt:304  from Downloads move installers to External Drive
+     want {"intent":"move","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External Drive"}
+     got  "!"
+MISS 1-moves-copies.txt:306  drag the installers from Downloads into External Drive for me
+     want {"intent":"move","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External Drive"}
+     got  "!"
+MISS 1-moves-copies.txt:307  sned installers from Downloads to External Drive
+     want {"intent":"move","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"},"to":"External Drive"}
+     got  "!"
+MISS 1-moves-copies.txt:311  um make a copy of last.txt in Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:313  back up last.txt to Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:314  to Desktop copy last.txt
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:315  real quick copy last.txt over to Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:316  coppy last.txt to Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"last.txt"},"to":"Desktop"}
+     got  "!"
+MISS 1-moves-copies.txt:318  move *.pdf to Documents
+     want "!"
+     got  {"intent":"move","src":{"kind":"item","name":"*.pdf"},"to":"Documents"}
+MISS 1-moves-copies.txt:319  copy *.png to Backup
+     want "!"
+     got  {"intent":"copy","src":{"kind":"item","name":"*.png"},"to":"Backup"}
+MISS 1-moves-copies.txt:320  move Downloads/* to Archive
+     want "!"
+     got  {"intent":"move","src":{"kind":"item","name":"Downloads/*"},"to":"Archive"}
+MISS 1-moves-copies.txt:321  copy *.jpg from Pictures to Backup
+     want "!"
+     got  {"intent":"copy","src":{"folder":"Pictures","kind":"item","name":"*.jpg"},"to":"Backup"}
+MISS 1-moves-copies.txt:322  move ../Downloads/report.pdf to Documents
+     want "!"
+     got  {"intent":"move","src":{"kind":"item","name":"../Downloads/report.pdf"},"to":"Documents"}
+MISS 1-moves-copies.txt:323  copy ../notes.txt to Backup
+     want "!"
+     got  {"intent":"copy","src":{"kind":"item","name":"../notes.txt"},"to":"Backup"}
+MISS 2-trash.txt:6  toss every installer out of Downloads please
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:7  i want to bin all the installers in Downloads real quick
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads real quick","kind":"set"}}
+MISS 2-trash.txt:8  delete any installers from the Downloads folder
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"any installers"}}
+MISS 2-trash.txt:10  clear out the installers in Downloads, thanks
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:13  hey can you remvoe the claude.dmg file from Downloads
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"claude.dmg"}}
+     got  "!"
+MISS 2-trash.txt:18  throw away the claude.dmg file that's in Downloads
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"claude.dmg"}}
+     got  {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"claude.dmg file that's"}}
+MISS 2-trash.txt:19  delte the claude.dmg file in Downloads
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"claude.dmg"}}
+     got  "!"
+MISS 2-trash.txt:25  delete any screenshot older than 45 days for me
+     want {"intent":"trash","src":{"filter":{"olderThanDays":45,"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:26  toss the screenshots that are older than 45 days
+     want {"intent":"trash","src":{"filter":{"olderThanDays":45,"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:28  delet screenshots older than 45 days
+     want {"intent":"trash","src":{"filter":{"olderThanDays":45,"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:34  toss the files bigger than 1 gigabyte in Downloads
+     want {"intent":"trash","src":{"filter":{"largerThanMb":1024.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:37  delte files larger than 1 GB in Downloads
+     want {"intent":"trash","src":{"filter":{"largerThanMb":1024.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:40  hey can you remvoe files smaller than 5 MB from Downloads
+     want {"intent":"trash","src":{"filter":{"smallerThanMb":5.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:44  delete any file under 5 mb in Downloads
+     want {"intent":"trash","src":{"filter":{"smallerThanMb":5.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:45  just delete the files under 5 MB in Downloads thanks
+     want {"intent":"trash","src":{"filter":{"smallerThanMb":5.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:46  toss files under 5 MB out of Downloads
+     want {"intent":"trash","src":{"filter":{"smallerThanMb":5.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:48  pleese delete the zip files in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:52  i want to bin the zip files that are in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:54  toss the zips out of Downloads please
+     want {"intent":"trash","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:55  clear out the zip files in Downloads for me
+     want {"intent":"trash","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:63  toss "last" out
+     want {"intent":"trash","src":{"kind":"item","name":"last"}}
+     got  "!"
+MISS 2-trash.txt:64  delet "last"
+     want {"intent":"trash","src":{"kind":"item","name":"last"}}
+     got  "!"
+MISS 2-trash.txt:72  toss last dot pdf out
+     want {"intent":"trash","src":{"kind":"item","name":"last.pdf"}}
+     got  "!"
+MISS 2-trash.txt:73  dleete last.pdf
+     want {"intent":"trash","src":{"kind":"item","name":"last.pdf"}}
+     got  "!"
+MISS 2-trash.txt:81  toss the file "report.pdf" out
+     want {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 2-trash.txt:82  remvoe the file "report.pdf"
+     want {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 2-trash.txt:90  toss every file named "budget" out of Downloads
+     want {"intent":"trash","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:91  dellete files named "budget" in Downloads
+     want {"intent":"trash","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:99  toss last.pdf out of Downloads
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"last.pdf"}}
+     got  "!"
+MISS 2-trash.txt:100  delete last.pdf from Downloads real quick
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"last.pdf"}}
+     got  {"intent":"trash","src":{"folder":"Downloads real quick","kind":"item","name":"last.pdf"}}
+MISS 2-trash.txt:104  trsah draft_v1.docx
+     want {"intent":"trash","src":{"kind":"item","name":"draft_v1.docx"}}
+     got  "!"
+MISS 2-trash.txt:108  toss draft_v1.docx out
+     want {"intent":"trash","src":{"kind":"item","name":"draft_v1.docx"}}
+     got  "!"
+MISS 2-trash.txt:117  toss the file called tmp.txt that's on the desktop
+     want {"intent":"trash","src":{"folder":"desktop","kind":"item","name":"tmp.txt"}}
+     got  "!"
+MISS 2-trash.txt:118  delte the file that's on the desktop called tmp.txt
+     want {"intent":"trash","src":{"folder":"desktop","kind":"item","name":"tmp.txt"}}
+     got  "!"
+MISS 2-trash.txt:123  clean up the desktop real quick
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"desktop","kind":"set"}}
+     got  {"intent":"trash","src":{"kind":"item","name":"desktop real quick"}}
+MISS 2-trash.txt:125  clean my desktop up please
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:127  claen up my desktop
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:132  clean up the Downloads folder real quick
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"real quick"}}
+MISS 2-trash.txt:134  clean my Downloads folder up please
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:136  claen up my Downloads folder
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:144  toss the stuff in Downloads out
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:145  delet the stuff in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:148  hey can you remvoe everything in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:153  toss everything in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:154  clear out everything in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:162  toss everything out
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:163  delte everything
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:171  please move everything to the trash real quick
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  {"intent":"move","src":{"filter":{"type":"files"},"kind":"set"},"to":"trash real quick"}
+MISS 2-trash.txt:172  mvoe everything to the trash
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:180  toss the files whose names have draft in them in Documents
+     want {"intent":"trash","src":{"filter":{"nameContains":"draft","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:181  delte the files whose names contain draft in Documents
+     want {"intent":"trash","src":{"filter":{"nameContains":"draft","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:189  toss all files that start with invoice from Downloads
+     want {"intent":"trash","src":{"filter":{"nameStartsWith":"invoice","type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:190  delte files that start with invoice from Downloads
+     want {"intent":"trash","src":{"filter":{"nameStartsWith":"invoice","type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:197  throw away any PNG files older than 2 years in Downloads
+     want {"intent":"trash","src":{"filter":{"ext":["png"],"olderThanDays":730,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"filter":{"nameContains":"any PNG","olderThanDays":730,"type":"files"},"folder":"Downloads","kind":"set"}}
+MISS 2-trash.txt:198  toss the PNGs older than 2 years in Downloads
+     want {"intent":"trash","src":{"filter":{"ext":["png"],"olderThanDays":730,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:199  delte all PNG files older than 2 years in Downloads
+     want {"intent":"trash","src":{"filter":{"ext":["png"],"olderThanDays":730,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:207  toss every screenshot in Desktop older than a week
+     want {"intent":"trash","src":{"filter":{"olderThanDays":7,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:215  toss screenshots older than 6 months in Desktop
+     want {"intent":"trash","src":{"filter":{"olderThanDays":180,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:216  clear out the screenshots older than 6 months in Desktop
+     want {"intent":"trash","src":{"filter":{"olderThanDays":180,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:217  delet screenshots older than 6 months in Desktop
+     want {"intent":"trash","src":{"filter":{"olderThanDays":180,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:225  toss the files over 10GB out of Downloads
+     want {"intent":"trash","src":{"filter":{"largerThanMb":10240.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:226  delte files over 10 GB in Downloads
+     want {"intent":"trash","src":{"filter":{"largerThanMb":10240.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:229  hey can you mvoe Thumbs.db to the trash for me
+     want {"intent":"trash","src":{"kind":"item","name":"Thumbs.db"}}
+     got  "!"
+MISS 2-trash.txt:233  throw Thumbs.db away
+     want {"intent":"trash","src":{"kind":"item","name":"Thumbs.db"}}
+     got  "!"
+MISS 2-trash.txt:243  toss files named untitled that are on Desktop
+     want {"intent":"trash","src":{"filter":{"nameContains":"untitled","type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:244  delte files named untitled on Desktop
+     want {"intent":"trash","src":{"filter":{"nameContains":"untitled","type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:252  toss all the GIFs older than a year
+     want {"intent":"trash","src":{"filter":{"ext":["gif"],"olderThanDays":365,"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:253  delte all the GIFs older than a year
+     want {"intent":"trash","src":{"filter":{"ext":["gif"],"olderThanDays":365,"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:261  Hey Voxi please toss the screenshots from yesterday
+     want {"intent":"trash","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:262  hey voxi pls delte the screenshots from yesterday
+     want {"intent":"trash","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:264  please clear out everything in Documents
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:269  chuck everything in Documents please
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:270  toss everything in Documents out
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:271  delte everything in Documents
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:302  um delete report.pdf permanently
+     want "!"
+     got  {"intent":"trash","src":{"kind":"item","name":"report.pdf permanently"}}
+MISS 2-trash.txt:304  delete report.pdf for good
+     want "!"
+     got  {"intent":"trash","src":{"kind":"item","name":"report.pdf for good"}}
+MISS 3-list-count-size.txt:3  what pdfs are in Downloads?
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:5  got any PDFs in Downloads?
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:7  i need to see the PDFs in Downloads
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:9  pull up the PDF files in Downloads
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:10  lsit PDFs in Downloads
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:12  what videos are in Downloads
+     want {"intent":"list","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:16  i need to see the videos in Downloads quickly
+     want {"intent":"list","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:19  lisst the videos in Downloads
+     want {"intent":"list","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:21  what Word documents are in Documents?
+     want {"intent":"list","src":{"filter":{"ext":["doc","docx"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:25  i need to see the word documents in Documents
+     want {"intent":"list","src":{"filter":{"ext":["doc","docx"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:26  pull up the Word documents in Documents
+     want {"intent":"list","src":{"filter":{"ext":["doc","docx"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:28  shwo the Word documents in Documents
+     want {"intent":"list","src":{"filter":{"ext":["doc","docx"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:30  what zips are in Downloads?
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:34  i need to see the zips in Downloads
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:37  lisst the zips in Downloads
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:39  what files have budget in the name in Documents
+     want {"intent":"list","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:43  i need to see the files called budget in Documents
+     want {"intent":"list","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:44  pull up files named budget in Documents
+     want {"intent":"list","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:46  lsit files named budget in Documents
+     want {"intent":"list","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:48  what's the file named passport.pdf?
+     want {"intent":"list","src":{"kind":"item","name":"passport.pdf"}}
+     got  "!"
+MISS 3-list-count-size.txt:52  i need to find the file named passport.pdf quickly
+     want {"intent":"list","src":{"kind":"item","name":"passport.pdf"}}
+     got  {"intent":"list","src":{"filter":{"nameContains":"passport.pdf quickly","type":"files"},"kind":"set"}}
+MISS 3-list-count-size.txt:55  fnid the file named passport.pdf
+     want {"intent":"list","src":{"kind":"item","name":"passport.pdf"}}
+     got  "!"
+MISS 3-list-count-size.txt:63  pull up files called Final Draft.docx
+     want {"intent":"list","src":{"kind":"item","name":"Final Draft.docx"}}
+     got  "!"
+MISS 3-list-count-size.txt:64  fnid files called Final Draft.docx
+     want {"intent":"list","src":{"kind":"item","name":"Final Draft.docx"}}
+     got  "!"
+MISS 3-list-count-size.txt:70  i need to see the files in Desktop bigger than 500 MB
+     want {"intent":"list","src":{"filter":{"largerThanMb":500.0,"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:73  lsit files bigger than 500 MB in Desktop
+     want {"intent":"list","src":{"filter":{"largerThanMb":500.0,"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:79  i need to see files between 10 and 50 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"smallerThanMb":50.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:80  pull up the files in Downloads between 10 and 50 MB
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"smallerThanMb":50.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:82  lsit files between 10 and 50 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"smallerThanMb":50.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:84  what png files are there
+     want {"intent":"list","src":{"filter":{"ext":["png"],"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:88  i need to see all the png files
+     want {"intent":"list","src":{"filter":{"ext":["png"],"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:91  lsit all png files
+     want {"intent":"list","src":{"filter":{"ext":["png"],"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:93  what HEIC photos are in Pictures
+     want {"intent":"list","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:97  i need to see the HEIC photos in Pictures
+     want {"intent":"list","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:98  pull up all the HEIC photos in Pictures
+     want {"intent":"list","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:100  lsit all the HEIC photos in Pictures
+     want {"intent":"list","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:102  what's in the Pictures/Trip folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Pictures/Trip","kind":"set"}}
+     got  {"intent":"list","src":{"kind":"item","name":"Pictures/Trip"}}
+MISS 3-list-count-size.txt:106  i need to see the files in Pictures/Trip folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Pictures/Trip","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:107  pull up the files in Pictures/Trip folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Pictures/Trip","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:109  shwo the files in Pictures/Trip folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Pictures/Trip","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:115  i need to see the photos in Pictures named cat
+     want {"intent":"list","src":{"filter":{"nameContains":"cat","type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:116  pull up the photos in Pictures named cat
+     want {"intent":"list","src":{"filter":{"nameContains":"cat","type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:118  lsit the photos in Pictures named cat
+     want {"intent":"list","src":{"filter":{"nameContains":"cat","type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:120  what text files are in Documents
+     want {"intent":"list","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:124  i need to see the text files in Documents
+     want {"intent":"list","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:125  pull up the text files in Documents
+     want {"intent":"list","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:127  lsit the text files in Documents
+     want {"intent":"list","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:132  could you tell me what's in the Desktop folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:133  i need to see what's in the Desktop folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:136  shwo me what's in the Desktop folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:139  what files are in my downloads folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:141  i need to see the files in my downloads folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:142  pull up the files in my downloads folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:145  lsit the files in my downloads folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:151  i need to see files at least 10 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:152  pull up files at least 10 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:154  lsit files at least 10 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:159  i need to see everything with 'draft' in the name
+     want {"intent":"list","src":{"filter":{"nameContains":"draft","type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:160  pull up everything with 'draft' in the name
+     want {"intent":"list","src":{"filter":{"nameContains":"draft","type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:162  what has 'draft' in the name?
+     want {"intent":"list","src":{"filter":{"nameContains":"draft","type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:163  lsit everything with 'draft' in the name
+     want {"intent":"list","src":{"filter":{"nameContains":"draft","type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:165  tell me how many PDFs are in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:167  number of PDFs in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:169  i need the count of PDFs in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:170  can you tell me how many PDFs are in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:172  cuont PDFs in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:176  number of images in Pictures
+     want {"intent":"count","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:178  i need the count of images in Pictures
+     want {"intent":"count","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:179  can you tell me how many images are in Pictures
+     want {"intent":"count","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:181  cuont the images in Pictures
+     want {"intent":"count","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:185  number of screenshots on my Desktop
+     want {"intent":"count","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:188  i need to know how many screenshots are on my Desktop
+     want {"intent":"count","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:190  hwo many screenshots are on my Desktop
+     want {"intent":"count","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:194  number of HEIC files in Pictures
+     want {"intent":"count","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:196  i need the count of HEIC files in Pictures
+     want {"intent":"count","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:197  can you tell me how many HEIC files are in Pictures
+     want {"intent":"count","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:199  cuont the HEIC files in Pictures
+     want {"intent":"count","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:203  number of spreadsheets in Downloads
+     want {"intent":"count","src":{"filter":{"ext":["xlsx","xls","csv","numbers"],"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:205  i need the count of spreadsheets in Downloads
+     want {"intent":"count","src":{"filter":{"ext":["xlsx","xls","csv","numbers"],"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:206  can you tell me how many spreadsheets are in Downloads
+     want {"intent":"count","src":{"filter":{"ext":["xlsx","xls","csv","numbers"],"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:208  cuont the spreadsheets in Downloads
+     want {"intent":"count","src":{"filter":{"ext":["xlsx","xls","csv","numbers"],"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:212  number of zip files over 100 MB in Downloads
+     want {"intent":"count","src":{"filter":{"largerThanMb":100.0,"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:214  i need the count of zip files over 100 MB in Downloads
+     want {"intent":"count","src":{"filter":{"largerThanMb":100.0,"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:215  can you tell me how many zip files are over 100 MB in Downloads
+     want {"intent":"count","src":{"filter":{"largerThanMb":100.0,"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:217  cuont the zip files over 100 MB in Downloads
+     want {"intent":"count","src":{"filter":{"largerThanMb":100.0,"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:219  how many files have IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:221  number of files with IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:223  i need the count of files with IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:224  can you tell me how many files have IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:226  cuont the files with IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:231  what size is the Documents folder
+     want {"folder":"Documents","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:233  i need to know how big the Documents folder is
+     want {"folder":"Documents","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:235  hwo big is the Documents folder
+     want {"folder":"Documents","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:242  i need the size of the Desktop folder
+     want {"folder":"Desktop","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:244  sise of the Desktop folder
+     want {"folder":"Desktop","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:248  how much space is Downloads taking up
+     want {"folder":"Downloads","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:250  i need to know how much space Downloads is using
+     want {"folder":"Downloads","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:252  how much disk space is Downloads using
+     want {"folder":"Downloads","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:253  hwo much space is Downloads using
+     want {"folder":"Downloads","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:260  i need to know how big my screenshots folder is
+     want {"folder":"screenshots","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:262  hwo big is my screenshots folder
+     want {"folder":"screenshots","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:269  i need to see the size of my home folder
+     want {"folder":"home","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:271  chekc the size of my home folder
+     want {"folder":"home","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:273  look for duplicates in Documents
+     want {"folder":"Documents","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:278  any duplicates in Documents?
+     want {"folder":"Documents","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:280  fnid duplicates in Documents
+     want {"folder":"Documents","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:284  look for duplicate files in Downloads
+     want {"folder":"Downloads","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:286  i need to see duplicate files in Downloads
+     want {"folder":"Downloads","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:287  are there duplicate files in Downloads?
+     want {"folder":"Downloads","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:289  lsit duplicate files in Downloads
+     want {"folder":"Downloads","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:296  i need Downloads open in Finder
+     want {"intent":"reveal","target":"Downloads"}
+     got  "!"
+MISS 3-list-count-size.txt:298  oepn Downloads in Finder
+     want {"intent":"reveal","target":"Downloads"}
+     got  "!"
+MISS 3-list-count-size.txt:300  where is report.pdf
+     want {"intent":"reveal","target":"report.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:301  where's report.pdf
+     want {"intent":"reveal","target":"report.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:302  where is report.pdf in Finder?
+     want {"intent":"reveal","target":"report.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:305  i need to find where report.pdf is
+     want {"intent":"reveal","target":"report.pdf"}
+     got  {"intent":"list","src":{"kind":"item","name":"where report.pdf is"}}
+MISS 3-list-count-size.txt:307  shwo me where report.pdf is
+     want {"intent":"reveal","target":"report.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:312  i need to see Invoice.pdf in Finder
+     want {"intent":"reveal","target":"Invoice.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:316  revael Invoice.pdf
+     want {"intent":"reveal","target":"Invoice.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:325  oepn the Downloads folder
+     want {"intent":"reveal","target":"Downloads"}
+     got  "!"
+MISS 3-list-count-size.txt:331  i need to see the Pictures folder in Finder
+     want {"intent":"reveal","target":"Pictures"}
+     got  "!"
+MISS 3-list-count-size.txt:334  shwo me the Pictures folder in Finder
+     want {"intent":"reveal","target":"Pictures"}
+     got  "!"
+MISS 3-list-count-size.txt:343  oepn my Pictures folder
+     want {"intent":"reveal","target":"Pictures"}
+     got  "!"
+MISS 4-renames.txt:7  report.pdf should be called final report.pdf
+     want {"intent":"rename","new_name":"final report.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:10  renmae the file report.pdf to final report.pdf
+     want {"intent":"rename","new_name":"final report.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:11  could you call the file report.pdf final report.pdf instead
+     want {"intent":"rename","new_name":"final report.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:17  report should be called Final Report
+     want {"intent":"rename","new_name":"Final Report","src":{"kind":"item","name":"report"}}
+     got  "!"
+MISS 4-renames.txt:20  renmae report to Final Report
+     want {"intent":"rename","new_name":"Final Report","src":{"kind":"item","name":"report"}}
+     got  "!"
+MISS 4-renames.txt:27  report.pdf should be called summary.pdf
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:30  renmae report.pdf as summary.pdf
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:31  call report.pdf summary.pdf instead
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:37  the Claude dmg should be called Claude
+     want {"intent":"rename","new_name":"Claude","src":{"kind":"item","name":"Claude dmg"}}
+     got  "!"
+MISS 4-renames.txt:40  renmae the Claude dmg to Claude
+     want {"intent":"rename","new_name":"Claude","src":{"kind":"item","name":"Claude dmg"}}
+     got  "!"
+MISS 4-renames.txt:41  could you give the Claude dmg the new name Claude
+     want {"intent":"rename","new_name":"Claude","src":{"kind":"item","name":"Claude dmg"}}
+     got  {"intent":"rename","new_name":"Claude","src":{"kind":"item","name":"Claude dmg new"}}
+MISS 4-renames.txt:47  notes.txt should be called meeting notes.txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:48  notes.txt should be named meeting notes.txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:50  chnage the name of notes.txt to meeting notes.txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:51  can you give notes.txt the new name meeting notes.txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt new"}}
+MISS 4-renames.txt:57  "Draft 2" should be called "Final"
+     want {"intent":"rename","new_name":"Final","src":{"kind":"item","name":"Draft 2"}}
+     got  "!"
+MISS 4-renames.txt:60  renmae "Draft 2" to "Final"
+     want {"intent":"rename","new_name":"Final","src":{"kind":"item","name":"Draft 2"}}
+     got  "!"
+MISS 4-renames.txt:67  "old notes.txt" should be called "new notes.txt"
+     want {"intent":"rename","new_name":"new notes.txt","src":{"kind":"item","name":"old notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:70  renmae "old notes.txt" to "new notes.txt"
+     want {"intent":"rename","new_name":"new notes.txt","src":{"kind":"item","name":"old notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:71  could you give "old notes.txt" the new name "new notes.txt"
+     want {"intent":"rename","new_name":"new notes.txt","src":{"kind":"item","name":"old notes.txt"}}
+     got  {"intent":"rename","new_name":"new notes.txt","src":{"kind":"item","name":"\"old notes.txt\" new"}}
+MISS 4-renames.txt:77  invoice (final).pdf should be called invoice-v2.pdf
+     want {"intent":"rename","new_name":"invoice-v2.pdf","src":{"kind":"item","name":"invoice (final).pdf"}}
+     got  "!"
+MISS 4-renames.txt:80  renmae invoice (final).pdf to invoice-v2.pdf
+     want {"intent":"rename","new_name":"invoice-v2.pdf","src":{"kind":"item","name":"invoice (final).pdf"}}
+     got  "!"
+MISS 4-renames.txt:81  could you give invoice (final).pdf the new name invoice-v2.pdf
+     want {"intent":"rename","new_name":"invoice-v2.pdf","src":{"kind":"item","name":"invoice (final).pdf"}}
+     got  {"intent":"rename","new_name":"invoice-v2.pdf","src":{"kind":"item","name":"invoice (final).pdf new"}}
+MISS 4-renames.txt:87  report.pdf should be called "Report 2026.pdf"
+     want {"intent":"rename","new_name":"Report 2026.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:90  renmae report.pdf to "Report 2026.pdf"
+     want {"intent":"rename","new_name":"Report 2026.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:91  could you give report.pdf the new name "Report 2026.pdf"
+     want {"intent":"rename","new_name":"Report 2026.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"rename","new_name":"Report 2026.pdf","src":{"kind":"item","name":"report.pdf new"}}
+MISS 4-renames.txt:97  Scan 001.pdf should be called receipt-001.pdf
+     want {"intent":"rename","new_name":"receipt-001.pdf","src":{"kind":"item","name":"Scan 001.pdf"}}
+     got  "!"
+MISS 4-renames.txt:100  renmae Scan 001.pdf to receipt-001.pdf
+     want {"intent":"rename","new_name":"receipt-001.pdf","src":{"kind":"item","name":"Scan 001.pdf"}}
+     got  "!"
+MISS 4-renames.txt:101  could you give Scan 001.pdf the new name receipt-001.pdf
+     want {"intent":"rename","new_name":"receipt-001.pdf","src":{"kind":"item","name":"Scan 001.pdf"}}
+     got  {"intent":"rename","new_name":"receipt-001.pdf","src":{"kind":"item","name":"Scan 001.pdf new"}}
+MISS 4-renames.txt:107  report.pdf should be called final.pdf
+     want {"intent":"rename","new_name":"final.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:110  renmae the file report.pdf as final.pdf
+     want {"intent":"rename","new_name":"final.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:111  could you give report.pdf the new name final.pdf
+     want {"intent":"rename","new_name":"final.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"rename","new_name":"final.pdf","src":{"kind":"item","name":"report.pdf new"}}
+MISS 4-renames.txt:117  scan001.pdf should be called Lease agreement.pdf
+     want {"intent":"rename","new_name":"Lease agreement.pdf","src":{"kind":"item","name":"scan001.pdf"}}
+     got  "!"
+MISS 4-renames.txt:120  renmae the file scan001.pdf to Lease agreement.pdf
+     want {"intent":"rename","new_name":"Lease agreement.pdf","src":{"kind":"item","name":"scan001.pdf"}}
+     got  "!"
+MISS 4-renames.txt:121  could you give scan001.pdf the new name Lease agreement.pdf
+     want {"intent":"rename","new_name":"Lease agreement.pdf","src":{"kind":"item","name":"scan001.pdf"}}
+     got  {"intent":"rename","new_name":"Lease agreement.pdf","src":{"kind":"item","name":"scan001.pdf new"}}
+MISS 4-renames.txt:127  IMG_0042.HEIC should be called beach.heic
+     want {"intent":"rename","new_name":"beach.heic","src":{"kind":"item","name":"IMG_0042.HEIC"}}
+     got  "!"
+MISS 4-renames.txt:130  renmae IMG_0042.HEIC to beach.heic
+     want {"intent":"rename","new_name":"beach.heic","src":{"kind":"item","name":"IMG_0042.HEIC"}}
+     got  "!"
+MISS 4-renames.txt:137  the folder Scans should be called Scanned Documents
+     want {"intent":"rename","new_name":"Scanned Documents","src":{"kind":"item","name":"Scans"}}
+     got  "!"
+MISS 4-renames.txt:140  renmae the folder Scans to Scanned Documents
+     want {"intent":"rename","new_name":"Scanned Documents","src":{"kind":"item","name":"Scans"}}
+     got  "!"
+MISS 4-renames.txt:141  could you give the folder Scans the new name Scanned Documents
+     want {"intent":"rename","new_name":"Scanned Documents","src":{"kind":"item","name":"Scans"}}
+     got  {"intent":"rename","new_name":"Scanned Documents","src":{"kind":"item","name":"Scans new"}}
+MISS 4-renames.txt:147  Holiday photos should be called Vacation
+     want {"intent":"rename","new_name":"Vacation","src":{"kind":"item","name":"Holiday photos"}}
+     got  "!"
+MISS 4-renames.txt:150  renmae Holiday photos to Vacation
+     want {"intent":"rename","new_name":"Vacation","src":{"kind":"item","name":"Holiday photos"}}
+     got  "!"
+MISS 4-renames.txt:151  could you give Holiday photos the new name Vacation
+     want {"intent":"rename","new_name":"Vacation","src":{"kind":"item","name":"Holiday photos"}}
+     got  {"intent":"rename","new_name":"Vacation","src":{"kind":"item","name":"Holiday photos new"}}
+MISS 4-renames.txt:157  put Invoice- in front of all PDFs in Downloads
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:158  stick the prefix Invoice- on all PDFs in Downloads
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:160  ad prefix Invoice- to all PDFs in Downloads
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:167  put 2026- in front of every file in Documents
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:168  stick 2026- in front of every file in Documents
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:170  ad prefix 2026- to every file in Documents
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:171  can you put the prefix 2026- on every file in Documents
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  {"intent":"move","src":{"folder":"files","kind":"item","name":"prefix 2026-"},"to":"Documents"}
+MISS 4-renames.txt:177  put Invoice dash in front of the PDFs in Documents
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:178  stick the prefix Invoice dash on the PDFs in Documents
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:180  ad prefix Invoice dash to PDFs in Documents
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:187  put 2026- in front of files in Downloads
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:188  stick 2026- in front of the files in Downloads
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:190  plese add prefix 2026- to files in Downloads
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:197  put a date in front of the screenshots in Pictures
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:198  stick a date prefix on screenshots in Pictures
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:200  ad a date prefix to screenshots in Pictures
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:207  put a date in front of screenshots on the Desktop
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  {"intent":"move","src":{"kind":"item","name":"a date"},"to":"front of screenshots on Desktop"}
+MISS 4-renames.txt:208  stick a date prefix on the screenshots in Desktop
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:210  ad a date prefix to screenshots in Desktop
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:217  change spaces to underscores in names of files in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:218  swap spaces for underscores in names of files in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:220  repalce spaces with underscores in names of files in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:221  in names of files in Downloads replace spaces with underscores
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:227  take out the spaces in the file names in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:230  remvoe spaces from the file names in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:231  make the file names in Downloads have no spaces
+     want {"find":" ","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:238  take the dashes out of names in Documents
+     want {"find":"-","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:240  strpi dashes from names in Documents
+     want {"find":"-","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:241  names in Documents should lose their dashes
+     want {"find":"-","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:247  change dashes to spaces in names of files in Documents
+     want {"find":"-","intent":"replace_in_names","replace":" ","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:248  swap dashes for spaces in names of files in Documents
+     want {"find":"-","intent":"replace_in_names","replace":" ","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:250  repalce dashes with spaces in names of files in Documents
+     want {"find":"-","intent":"replace_in_names","replace":" ","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:251  in names of files in Documents replace dashes with spaces
+     want {"find":"-","intent":"replace_in_names","replace":" ","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:257  change spaces to underscores in file names in Pictures
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:258  swap spaces for underscores in the file names in Pictures
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:260  replce spaces with underscores in file names in Pictures
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:261  in file names in Pictures replace spaces with underscores
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:267  give the photos in Trip numbered names like trip-001
+     want {"base":"trip-","intent":"number","src":{"filter":{"type":"images"},"folder":"Trip","kind":"set"},"width":3}
+     got  "!"
+MISS 4-renames.txt:270  nubmer the photos in Trip as trip-001
+     want {"base":"trip-","intent":"number","src":{"filter":{"type":"images"},"folder":"Trip","kind":"set"},"width":3}
+     got  "!"
+MISS 4-renames.txt:277  give the PDFs in Scans numbers like scan-01, scan-02
+     want {"base":"scan-","intent":"number","src":{"filter":{"type":"pdfs"},"folder":"Scans","kind":"set"},"width":2}
+     got  "!"
+MISS 4-renames.txt:280  nubmer PDFs in Scans as scan-01, scan-02
+     want {"base":"scan-","intent":"number","src":{"filter":{"type":"pdfs"},"folder":"Scans","kind":"set"},"width":2}
+     got  "!"
+MISS 4-renames.txt:281  number the PDFs in Scans as scan-01 and scan-02
+     want {"base":"scan-","intent":"number","src":{"filter":{"type":"pdfs"},"folder":"Scans","kind":"set"},"width":2}
+     got  {"base":"scan-01 and scan-","intent":"number","src":{"filter":{"type":"pdfs"},"folder":"Scans","kind":"set"},"width":2}
+MISS 4-renames.txt:288  change all the file names in Desktop to lowercase
+     want {"intent":"lowercase","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:290  lowrcase all the file names in Desktop
+     want {"intent":"lowercase","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:300  mkae the names of my PDFs lowercase
+     want {"intent":"lowercase","src":{"filter":{"type":"pdfs"},"kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:308  change the names of PDFs in Documents to lowercase
+     want {"intent":"lowercase","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:310  lowercse the names of PDFs in Documents
+     want {"intent":"lowercase","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:321  rename report.pdf to ../final.pdf
+     want "!"
+     got  {"intent":"rename","new_name":"../final.pdf","src":{"kind":"item","name":"report.pdf"}}
+MISS 4-renames.txt:323  rename report.pdf to a/final.pdf
+     want "!"
+     got  {"intent":"rename","new_name":"a/final.pdf","src":{"kind":"item","name":"report.pdf"}}
+MISS 5-folders-sorting.txt:5  in Documents make a folder called Taxes
+     want {"intent":"create_folders","names":["Taxes"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:8  set up a folder called Taxes in the Documents folder
+     want {"intent":"create_folders","names":["Taxes"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:9  mkae a folder called Taxes in Documents
+     want {"intent":"create_folders","names":["Taxes"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:14  create the Receipts folder in Documents
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:15  in Documents create folder Receipts
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:18  set up folder Receipts in Documents
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:19  creat folder Receipts in Documents
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:24  in Documents make a folder named Receipts
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:29  mke a folder named Receipts in Documents
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:33  on the desktop create a new folder named Invoices
+     want {"intent":"create_folders","names":["Invoices"],"parent":"desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:36  set up a new folder named Invoices on the desktop
+     want {"intent":"create_folders","names":["Invoices"],"parent":"desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:37  creat a new folder named Invoices on the desktop
+     want {"intent":"create_folders","names":["Invoices"],"parent":"desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:45  set up a new folder called Receipts
+     want {"intent":"create_folders","names":["Receipts"]}
+     got  "!"
+MISS 5-folders-sorting.txt:48  pleese new folder called Receipts
+     want {"intent":"create_folders","names":["Receipts"]}
+     got  "!"
+MISS 5-folders-sorting.txt:53  in Documents create folders for 2024 and 2025
+     want {"intent":"create_folders","names":["2024","2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:55  set up folders for 2024 and 2025 in Documents
+     want {"intent":"create_folders","names":["2024","2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:56  creat folders for 2024 and 2025 in Documents
+     want {"intent":"create_folders","names":["2024","2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:63  in Documents create folders Taxes, Receipts, and Photos
+     want {"intent":"create_folders","names":["Taxes","Receipts","Photos"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:65  set up folders Taxes, Receipts, and Photos in Documents
+     want {"intent":"create_folders","names":["Taxes","Receipts","Photos"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:66  creat folders Taxes, Receipts, and Photos in Documents
+     want {"intent":"create_folders","names":["Taxes","Receipts","Photos"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:72  in Documents make a folder called 'Tax 2025'
+     want {"intent":"create_folders","names":["Tax 2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:74  set up a folder called 'Tax 2025' in Documents
+     want {"intent":"create_folders","names":["Tax 2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:75  mkae a folder called 'Tax 2025' in Documents
+     want {"intent":"create_folders","names":["Tax 2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:82  in Documents create folder Invoices/2026
+     want {"intent":"create_folders","names":["Invoices/2026"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:84  set up folder Invoices/2026 in Documents
+     want {"intent":"create_folders","names":["Invoices/2026"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:85  creat folder Invoices/2026 in Documents
+     want {"intent":"create_folders","names":["Invoices/2026"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:92  in Documents create folders for Q1, Q2, Q3 and Q4
+     want {"intent":"create_folders","names":["Q1","Q2","Q3","Q4"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:94  set up folders for Q1, Q2, Q3 and Q4 in Documents
+     want {"intent":"create_folders","names":["Q1","Q2","Q3","Q4"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:95  creat folders for Q1, Q2, Q3 and Q4 in Documents
+     want {"intent":"create_folders","names":["Q1","Q2","Q3","Q4"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:101  on the Desktop make a new folder called Scans
+     want {"intent":"create_folders","names":["Scans"],"parent":"Desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:103  set up a new folder called Scans on the Desktop
+     want {"intent":"create_folders","names":["Scans"],"parent":"Desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:104  mkae a new folder called Scans on the Desktop
+     want {"intent":"create_folders","names":["Scans"],"parent":"Desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:111  in Documents make a folder called Medical Records
+     want {"intent":"create_folders","names":["Medical Records"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:113  set up a folder called Medical Records in Documents
+     want {"intent":"create_folders","names":["Medical Records"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:114  mkae a folder called Medical Records in Documents
+     want {"intent":"create_folders","names":["Medical Records"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:121  in Archive create folders named 2023, 2024, and 2025
+     want {"intent":"create_folders","names":["2023","2024","2025"],"parent":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:123  set up folders named 2023, 2024, and 2025 in Archive
+     want {"intent":"create_folders","names":["2023","2024","2025"],"parent":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:124  creat folders named 2023, 2024, and 2025 in Archive
+     want {"intent":"create_folders","names":["2023","2024","2025"],"parent":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:132  file Documents away by month
+     want {"folder":"Documents","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:135  sotr Documents by month
+     want {"folder":"Documents","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:145  sotr Pictures by type
+     want {"folder":"Pictures","intent":"sort_by_type"}
+     got  "!"
+MISS 5-folders-sorting.txt:155  orgainze Downloads by type
+     want {"folder":"Downloads","intent":"sort_by_type"}
+     got  "!"
+MISS 5-folders-sorting.txt:162  tidy the downloads by date
+     want {"folder":"downloads","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:164  sotr the downloads by date
+     want {"folder":"downloads","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:172  file away the screenshots by month
+     want {"folder":"screenshots","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:175  sotr the screenshots by month
+     want {"folder":"screenshots","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:185  sotr my Desktop by date
+     want {"folder":"Desktop","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:189  please help me organize my pictures by month
+     want {"folder":"pictures","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:190  could you help me sort my pictures by month
+     want {"folder":"pictures","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:192  help me file my pictures away by month
+     want {"folder":"pictures","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:195  hlep me organize my pictures by month
+     want {"folder":"pictures","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:204  tidy the desktop by type
+     want {"folder":"desktop","intent":"sort_by_type"}
+     got  "!"
+MISS 5-folders-sorting.txt:205  tiddy up the desktop by type
+     want {"folder":"desktop","intent":"sort_by_type"}
+     got  "!"
+MISS 5-folders-sorting.txt:215  mvoe the Project folder to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Project"},"to":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:224  coppy the Thesis folder into Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Thesis"},"to":"Backup"}
+     got  "!"
+MISS 5-folders-sorting.txt:235  cpoy the Notes folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 5-folders-sorting.txt:245  mvoe photos from Pictures/Trip to Archive
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:255  coppy the JPEGs from Pictures into Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 5-folders-sorting.txt:265  mvoe the Downloads/Notes folder to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:275  snd every photo from the Trip folder to Pictures
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Trip","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 5-folders-sorting.txt:285  coppy the Q3 budget.xlsx to my Backup folder
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 5-folders-sorting.txt:295  coppy all the images in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 5-folders-sorting.txt:300  could you move the Invoices folder over from Documents to Archive
+     want {"intent":"move","src":{"folder":"Documents","kind":"item","name":"Invoices"},"to":"Archive"}
+     got  {"intent":"move","src":{"folder":"Documents","kind":"item","name":"Invoices folder over"},"to":"Archive"}
+MISS 5-folders-sorting.txt:305  mvoe the Invoices folder from Documents to Archive
+     want {"intent":"move","src":{"folder":"Documents","kind":"item","name":"Invoices"},"to":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:319  make a folder called Taxes in Documents and Pictures
+     want "!"
+     got  {"intent":"create_folders","names":["Taxes"],"parent":"Documents and Pictures"}
+MISS 6-pdf-images-archives.txt:10  cmobine the PDFs in Documents into report-all.pdf
+     want {"intent":"merge_pdf","output":"report-all.pdf","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:14  could you merge all pdfs in downloads into combined.pdf
+     want {"intent":"merge_pdf","output":"combined.pdf","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"merge_pdf","output":"combined.pdf","src":{"filter":{"type":"pdfs"},"folder":"downloads","kind":"set"}}
+MISS 6-pdf-images-archives.txt:19  mrege all PDFs in Downloads into combined.pdf
+     want {"intent":"merge_pdf","output":"combined.pdf","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:23  could you join the pdfs in desktop as summary.pdf
+     want {"intent":"merge_pdf","output":"summary.pdf","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"}}
+     got  {"intent":"merge_pdf","output":"summary.pdf","src":{"filter":{"type":"pdfs"},"folder":"desktop","kind":"set"}}
+MISS 6-pdf-images-archives.txt:28  jion the PDFs in Desktop as summary.pdf
+     want {"intent":"merge_pdf","output":"summary.pdf","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:37  mergee PDFs in Documents named scan into scan-all.pdf
+     want {"intent":"merge_pdf","output":"scan-all.pdf","src":{"filter":{"nameContains":"scan","type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:44  split report.pdf apart into separate pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf apart"}}
+MISS 6-pdf-images-archives.txt:45  split up report.pdf into separate pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"split_pdf","src":{"kind":"item","name":"up report.pdf"}}
+MISS 6-pdf-images-archives.txt:46  spilt report.pdf into separate pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:53  split scan.pdf into each page
+     want {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf"}}
+     got  {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf into each page"}}
+MISS 6-pdf-images-archives.txt:54  split up scan.pdf into individual pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf"}}
+     got  {"intent":"split_pdf","src":{"kind":"item","name":"up scan.pdf"}}
+MISS 6-pdf-images-archives.txt:55  spli scan.pdf into individual pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:59  could you pull pages 2 to 5 out of report.pdf into excerpt.pdf
+     want {"from":2,"intent":"extract_pages","output":"excerpt.pdf","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:63  extract pages 2 to 5 from report.pdf and save as excerpt.pdf
+     want {"from":2,"intent":"extract_pages","output":"excerpt.pdf","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:64  extrct pages 2 to 5 from report.pdf into excerpt.pdf
+     want {"from":2,"intent":"extract_pages","output":"excerpt.pdf","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:69  pull pages 3 through 4 out of contract.pdf
+     want {"from":3,"intent":"extract_pages","src":{"kind":"item","name":"contract.pdf"},"to":4}
+     got  "!"
+MISS 6-pdf-images-archives.txt:73  extrat pages 3 through 4 from contract.pdf
+     want {"from":3,"intent":"extract_pages","src":{"kind":"item","name":"contract.pdf"},"to":4}
+     got  "!"
+MISS 6-pdf-images-archives.txt:79  pull page 5 out of report.pdf
+     want {"from":5,"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:82  pul out page 5 of report.pdf
+     want {"from":5,"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:91  mkae a PDF out of the screenshots in Pictures
+     want {"intent":"images_to_pdf","src":{"filter":{"type":"screenshots"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:100  mke a PDF from images in Scans named receipts
+     want {"intent":"images_to_pdf","src":{"filter":{"nameContains":"receipts","type":"images"},"folder":"Scans","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:106  make screenshots into a PDF
+     want {"intent":"images_to_pdf","src":{"filter":{"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:109  convrt screenshots to PDF
+     want {"intent":"images_to_pdf","src":{"filter":{"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:118  convrt all the photos in Pictures to PNG
+     want {"format":"png","intent":"convert_image","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:127  convrt HEIC to JPEG
+     want {"format":"jpg","intent":"convert_image","src":{"filter":{"ext":["heic","heif"],"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:134  make photo.HEIC into a jpg
+     want {"format":"jpg","intent":"convert_image","src":{"kind":"item","name":"photo.HEIC"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:136  covert photo.HEIC to jpeg
+     want {"format":"jpg","intent":"convert_image","src":{"kind":"item","name":"photo.HEIC"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:143  make logo.png into webp
+     want {"format":"webp","intent":"convert_image","src":{"kind":"item","name":"logo.png"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:145  convrt logo.png to webp
+     want {"format":"webp","intent":"convert_image","src":{"kind":"item","name":"logo.png"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:154  shirnk the photos to 1200 pixels
+     want {"intent":"resize_image","src":{"filter":{"type":"images"},"kind":"set"},"width":1200}
+     got  "!"
+MISS 6-pdf-images-archives.txt:163  scal down all images in Pictures to 800 px wide
+     want {"intent":"resize_image","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"width":800}
+     got  "!"
+MISS 6-pdf-images-archives.txt:172  zpi up the Project folder
+     want {"intent":"zip","src":{"kind":"item","name":"Project"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:180  compress Downloads/Project into a zip called Project.zip
+     want {"intent":"zip","output":"Project.zip","src":{"kind":"item","name":"Downloads/Project"}}
+     got  {"intent":"zip","output":"a zip called Project.zip","src":{"kind":"item","name":"Downloads/Project"}}
+MISS 6-pdf-images-archives.txt:181  compres Downloads/Project into Project.zip
+     want {"intent":"zip","output":"Project.zip","src":{"kind":"item","name":"Downloads/Project"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:190  extrct archive.zip to Documents
+     want {"destination":"Documents","intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:199  expnad Downloads/bundle.zip into Downloads/bundle
+     want {"destination":"Downloads/bundle","intent":"unzip","src":{"kind":"item","name":"Downloads/bundle.zip"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:206  unzip the archive.zip file
+     want {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:208  unzp archive.zip
+     want {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:217  mke a PDF from the photos in Downloads named trip
+     want {"intent":"images_to_pdf","src":{"filter":{"nameContains":"trip","type":"images"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:225  make IMG_2041.heic into a jpeg
+     want {"format":"jpg","intent":"convert_image","src":{"kind":"item","name":"IMG_2041.heic"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:226  convrt IMG_2041.heic to jpg
+     want {"format":"jpg","intent":"convert_image","src":{"kind":"item","name":"IMG_2041.heic"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:235  resze the PNGs in Desktop to 800 pixels wide
+     want {"intent":"resize_image","src":{"filter":{"ext":["png"],"type":"files"},"folder":"Desktop","kind":"set"},"width":800}
+     got  "!"
+MISS 6-pdf-images-archives.txt:244  merg PDFs in Documents named invoice into invoices-2026.pdf
+     want {"intent":"merge_pdf","output":"invoices-2026.pdf","src":{"filter":{"nameContains":"invoice","type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:248  could you pull pages 1 to 3 out of book.pdf into intro.pdf
+     want {"from":1,"intent":"extract_pages","output":"intro.pdf","src":{"kind":"item","name":"book.pdf"},"to":3}
+     got  "!"
+MISS 6-pdf-images-archives.txt:252  extract pages 1 to 3 from book.pdf and save it as intro.pdf
+     want {"from":1,"intent":"extract_pages","output":"intro.pdf","src":{"kind":"item","name":"book.pdf"},"to":3}
+     got  "!"
+MISS 6-pdf-images-archives.txt:253  extrac pages 1 to 3 from book.pdf into intro.pdf
+     want {"from":1,"intent":"extract_pages","output":"intro.pdf","src":{"kind":"item","name":"book.pdf"},"to":3}
+     got  "!"
+MISS 6-pdf-images-archives.txt:262  zipp Thesis folder into Thesis.zip
+     want {"intent":"zip","output":"Thesis.zip","src":{"kind":"item","name":"Thesis"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:271  convrt all PNGs in Desktop to jpg
+     want {"format":"jpg","intent":"convert_image","src":{"filter":{"ext":["png"],"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:5  move the uh report dot pdf file to my Documents folder
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  {"intent":"move","src":{"kind":"item","name":"uh report.pdf"},"to":"Documents"}
+MISS 7-dictation-undo.txt:8  move the report dot pdf file to my Documents folder like thanks
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents folder like"}
+MISS 7-dictation-undo.txt:9  like move the report dot pdf file to my Documents folder okay
+     want {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:15  so like please move all the PDFs in Downloads over to Documents
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:24  could you like copy notes dot txt over to my Desktop
+     want {"intent":"copy","src":{"kind":"item","name":"notes.txt"},"to":"Desktop"}
+     got  "!"
+MISS 7-dictation-undo.txt:32  like copy my notes to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  "!"
+MISS 7-dictation-undo.txt:33  so copy my notes to Backup uh thanks
+     want {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup"}
+     got  {"intent":"copy","src":{"kind":"item","name":"notes"},"to":"Backup uh"}
+MISS 7-dictation-undo.txt:38  shift the uh zip files from Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  {"intent":"move","src":{"filter":{"nameContains":"uh zip","type":"files"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+MISS 7-dictation-undo.txt:41  like shift the zip files from Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 7-dictation-undo.txt:49  so like move every PDF from Downloads into the Archive folder
+     want {"intent":"move","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 7-dictation-undo.txt:55  send the uh invoice to Archive
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  {"intent":"move","src":{"kind":"item","name":"uh invoice"},"to":"Archive"}
+MISS 7-dictation-undo.txt:58  like send the invoice to Archive
+     want {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+     got  "!"
+MISS 7-dictation-undo.txt:63  put the uh tax form into Documents
+     want {"intent":"move","src":{"kind":"item","name":"tax form"},"to":"Documents"}
+     got  {"intent":"move","src":{"kind":"item","name":"uh tax form"},"to":"Documents"}
+MISS 7-dictation-undo.txt:66  so like put the tax form into Documents
+     want {"intent":"move","src":{"kind":"item","name":"tax form"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:68  like put the tax form into Documents
+     want {"intent":"move","src":{"kind":"item","name":"tax form"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:75  so like move report final v2 dot docx to Documents
+     want {"intent":"move","src":{"kind":"item","name":"report final v2.docx"},"to":"Documents"}
+     got  "!"
+MISS 7-dictation-undo.txt:76  move report final v2 dot docx to Documents uh thanks
+     want {"intent":"move","src":{"kind":"item","name":"report final v2.docx"},"to":"Documents"}
+     got  {"intent":"move","src":{"kind":"item","name":"report final v2.docx"},"to":"Documents uh"}
+MISS 7-dictation-undo.txt:80  relocate the uh zip files in Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  {"intent":"move","src":{"filter":{"nameContains":"uh zip","type":"files"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+MISS 7-dictation-undo.txt:83  so like relocate the zip files in Downloads to Archives
+     want {"intent":"move","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"},"to":"Archives"}
+     got  "!"
+MISS 7-dictation-undo.txt:91  so like change the name of draft dot docx to final dot docx
+     want {"intent":"rename","new_name":"final.docx","src":{"kind":"item","name":"draft.docx"}}
+     got  "!"
+MISS 7-dictation-undo.txt:92  change the name of draft dot docx to final dot docx uh thanks
+     want {"intent":"rename","new_name":"final.docx","src":{"kind":"item","name":"draft.docx"}}
+     got  {"intent":"rename","new_name":"final.docx uh","src":{"kind":"item","name":"draft.docx"}}
+MISS 7-dictation-undo.txt:99  so like change the name of notes dot txt to meeting notes dot txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  "!"
+MISS 7-dictation-undo.txt:100  change the name of notes dot txt to meeting notes dot txt uh thanks
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  {"intent":"rename","new_name":"meeting notes.txt uh","src":{"kind":"item","name":"notes.txt"}}
+MISS 7-dictation-undo.txt:107  so like rename report dot pdf as summary dot pdf
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 7-dictation-undo.txt:108  rename report dot pdf as summary dot pdf uh thanks
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"rename","new_name":"summary.pdf uh","src":{"kind":"item","name":"report.pdf"}}
+MISS 7-dictation-undo.txt:114  like delete everything
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:116  delete uh everything
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  {"intent":"trash","src":{"kind":"item","name":"uh everything"}}
+MISS 7-dictation-undo.txt:122  like delete everything in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:124  delete everything in Downloads uh thanks
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads uh","kind":"set"}}
+MISS 7-dictation-undo.txt:130  like move everything to the trash
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:132  move everything to the uh trash
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  {"intent":"move","src":{"filter":{"type":"files"},"kind":"set"},"to":"uh trash"}
+MISS 7-dictation-undo.txt:138  like clean up my Downloads folder
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:140  clean up my Downloads folder uh thanks
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"uh"}}
+MISS 7-dictation-undo.txt:144  delete the uh stuff in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:146  like delete the stuff in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:154  so like get rid of the screenshots in Desktop older than a week
+     want {"intent":"trash","src":{"filter":{"olderThanDays":7,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:163  so like delete the file that's on the desktop called tmp dot txt
+     want {"intent":"trash","src":{"folder":"desktop","kind":"item","name":"tmp.txt"}}
+     got  "!"
+MISS 7-dictation-undo.txt:164  delete the file that's on the desktop called tmp dot txt uh thanks
+     want {"intent":"trash","src":{"folder":"desktop","kind":"item","name":"tmp.txt"}}
+     got  {"intent":"trash","src":{"filter":{"nameContains":"tmp.txt uh","type":"files"},"folder":"desktop","kind":"set"}}
+MISS 7-dictation-undo.txt:171  so like move the video called intro dot mov to Videos
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  "!"
+MISS 7-dictation-undo.txt:172  move the video called intro dot mov to Videos uh thanks
+     want {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos"}
+     got  {"intent":"move","src":{"kind":"item","name":"intro.mov"},"to":"Videos uh"}
+MISS 7-dictation-undo.txt:174  um move every dot mov file from Downloads to Videos
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:175  okay so move every dot mov file from Downloads to Videos
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:176  move every dot mov file from Downloads to Videos thanks
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:177  uh move every dot mov file from Downloads to Videos please
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:178  move every dot mov file from Downloads to Videos period
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos"}
+MISS 7-dictation-undo.txt:179  so like move every dot mov file from Downloads to Videos
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  "!"
+MISS 7-dictation-undo.txt:180  move every dot mov file from Downloads to Videos uh thanks
+     want {"intent":"move","src":{"filter":{"ext":["mov"],"type":"files"},"folder":"Downloads","kind":"set"},"to":"Videos"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"every.mov"},"to":"Videos uh"}
+MISS 7-dictation-undo.txt:186  so like move the screenshots on my desktop to Pictures
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"desktop","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 7-dictation-undo.txt:188  move the screenshots on my desktop to Pictures uh thanks
+     want {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"desktop","kind":"set"},"to":"Pictures"}
+     got  {"intent":"move","src":{"filter":{"type":"screenshots"},"folder":"desktop","kind":"set"},"to":"Pictures uh"}
+MISS 7-dictation-undo.txt:194  so like move my installers to the trash
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:196  move my uh installers to the trash
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"kind":"set"}}
+     got  {"intent":"trash","src":{"kind":"item","name":"uh installers"}}
+MISS 7-dictation-undo.txt:200  undo the uh last change
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:203  so like undo the last change
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:205  undo the last change uh thanks
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:212  like undo
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:220  so like take that back
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:228  so like revert that
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:231  um undo the last move
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:232  okay so undo the last move
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:233  undo the uh last move
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:234  undo the last move thanks
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:235  undo the last move please
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:236  so like undo the last move
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:237  undo the last move period
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:241  please take back what you uh just did
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:243  so like please take back what you just did
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:251  so like I want to undo the last thing I did
+     want {"intent":"undo"}
+     got  "!"
+MISS 7-dictation-undo.txt:257  show my uh history
+     want {"intent":"recent_actions"}
+     got  {"intent":"list","src":{"kind":"item","name":"uh history"}}
+MISS 7-dictation-undo.txt:260  so like show my history
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:265  list my uh recent changes
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:268  so like list my recent changes
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:273  show my uh recent actions please
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:275  so like show my recent actions please
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:277  show my recent actions uh please
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:281  what uh changed recently
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:284  so like what changed recently
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:292  so like could you show me the recent actions
+     want {"intent":"recent_actions"}
+     got  "!"
+MISS 7-dictation-undo.txt:297  hey voxi please delete the uh screenshots from yesterday
+     want {"intent":"trash","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:300  so like hey voxi please delete the screenshots from yesterday
+     want {"intent":"trash","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:305  count the uh screenshots from yesterday
+     want {"intent":"count","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:308  so like count the screenshots from yesterday
+     want {"intent":"count","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:313  how many PDFs are uh in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  {"intent":"count","src":{"folder":"Documents","kind":"item","name":"PDFs are uh"}}
+MISS 7-dictation-undo.txt:316  so like how many PDFs are in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:321  list every uh zip in Downloads
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"list","src":{"folder":"Downloads","kind":"item","name":"uh zip"}}
+MISS 7-dictation-undo.txt:324  so like list every zip in Downloads
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 7-dictation-undo.txt:329  move the uh tax return from Downloads into Taxes
+     want {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"tax return"},"to":"Taxes"}
+     got  {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"uh tax return"},"to":"Taxes"}
+MISS 7-dictation-undo.txt:332  so like move the tax return from Downloads into Taxes
+     want {"intent":"move","src":{"folder":"Downloads","kind":"item","name":"tax return"},"to":"Taxes"}
+     got  "!"
+MISS 7-dictation-undo.txt:337  move my uh screenshots from today to the Archive
+     want {"intent":"move","src":{"filter":{"day":"today","type":"screenshots"},"kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 7-dictation-undo.txt:340  so like move my screenshots from today to the Archive
+     want {"intent":"move","src":{"filter":{"day":"today","type":"screenshots"},"kind":"set"},"to":"Archive"}
+     got  "!"

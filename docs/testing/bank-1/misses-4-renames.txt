@@ -1,0 +1,276 @@
+MISS 4-renames.txt:7  report.pdf should be called final report.pdf
+     want {"intent":"rename","new_name":"final report.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:10  renmae the file report.pdf to final report.pdf
+     want {"intent":"rename","new_name":"final report.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:11  could you call the file report.pdf final report.pdf instead
+     want {"intent":"rename","new_name":"final report.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:17  report should be called Final Report
+     want {"intent":"rename","new_name":"Final Report","src":{"kind":"item","name":"report"}}
+     got  "!"
+MISS 4-renames.txt:20  renmae report to Final Report
+     want {"intent":"rename","new_name":"Final Report","src":{"kind":"item","name":"report"}}
+     got  "!"
+MISS 4-renames.txt:27  report.pdf should be called summary.pdf
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:30  renmae report.pdf as summary.pdf
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:31  call report.pdf summary.pdf instead
+     want {"intent":"rename","new_name":"summary.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:37  the Claude dmg should be called Claude
+     want {"intent":"rename","new_name":"Claude","src":{"kind":"item","name":"Claude dmg"}}
+     got  "!"
+MISS 4-renames.txt:40  renmae the Claude dmg to Claude
+     want {"intent":"rename","new_name":"Claude","src":{"kind":"item","name":"Claude dmg"}}
+     got  "!"
+MISS 4-renames.txt:41  could you give the Claude dmg the new name Claude
+     want {"intent":"rename","new_name":"Claude","src":{"kind":"item","name":"Claude dmg"}}
+     got  {"intent":"rename","new_name":"Claude","src":{"kind":"item","name":"Claude dmg new"}}
+MISS 4-renames.txt:47  notes.txt should be called meeting notes.txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:48  notes.txt should be named meeting notes.txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:50  chnage the name of notes.txt to meeting notes.txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:51  can you give notes.txt the new name meeting notes.txt
+     want {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt"}}
+     got  {"intent":"rename","new_name":"meeting notes.txt","src":{"kind":"item","name":"notes.txt new"}}
+MISS 4-renames.txt:57  "Draft 2" should be called "Final"
+     want {"intent":"rename","new_name":"Final","src":{"kind":"item","name":"Draft 2"}}
+     got  "!"
+MISS 4-renames.txt:60  renmae "Draft 2" to "Final"
+     want {"intent":"rename","new_name":"Final","src":{"kind":"item","name":"Draft 2"}}
+     got  "!"
+MISS 4-renames.txt:67  "old notes.txt" should be called "new notes.txt"
+     want {"intent":"rename","new_name":"new notes.txt","src":{"kind":"item","name":"old notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:70  renmae "old notes.txt" to "new notes.txt"
+     want {"intent":"rename","new_name":"new notes.txt","src":{"kind":"item","name":"old notes.txt"}}
+     got  "!"
+MISS 4-renames.txt:71  could you give "old notes.txt" the new name "new notes.txt"
+     want {"intent":"rename","new_name":"new notes.txt","src":{"kind":"item","name":"old notes.txt"}}
+     got  {"intent":"rename","new_name":"new notes.txt","src":{"kind":"item","name":"\"old notes.txt\" new"}}
+MISS 4-renames.txt:77  invoice (final).pdf should be called invoice-v2.pdf
+     want {"intent":"rename","new_name":"invoice-v2.pdf","src":{"kind":"item","name":"invoice (final).pdf"}}
+     got  "!"
+MISS 4-renames.txt:80  renmae invoice (final).pdf to invoice-v2.pdf
+     want {"intent":"rename","new_name":"invoice-v2.pdf","src":{"kind":"item","name":"invoice (final).pdf"}}
+     got  "!"
+MISS 4-renames.txt:81  could you give invoice (final).pdf the new name invoice-v2.pdf
+     want {"intent":"rename","new_name":"invoice-v2.pdf","src":{"kind":"item","name":"invoice (final).pdf"}}
+     got  {"intent":"rename","new_name":"invoice-v2.pdf","src":{"kind":"item","name":"invoice (final).pdf new"}}
+MISS 4-renames.txt:87  report.pdf should be called "Report 2026.pdf"
+     want {"intent":"rename","new_name":"Report 2026.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:90  renmae report.pdf to "Report 2026.pdf"
+     want {"intent":"rename","new_name":"Report 2026.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:91  could you give report.pdf the new name "Report 2026.pdf"
+     want {"intent":"rename","new_name":"Report 2026.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"rename","new_name":"Report 2026.pdf","src":{"kind":"item","name":"report.pdf new"}}
+MISS 4-renames.txt:97  Scan 001.pdf should be called receipt-001.pdf
+     want {"intent":"rename","new_name":"receipt-001.pdf","src":{"kind":"item","name":"Scan 001.pdf"}}
+     got  "!"
+MISS 4-renames.txt:100  renmae Scan 001.pdf to receipt-001.pdf
+     want {"intent":"rename","new_name":"receipt-001.pdf","src":{"kind":"item","name":"Scan 001.pdf"}}
+     got  "!"
+MISS 4-renames.txt:101  could you give Scan 001.pdf the new name receipt-001.pdf
+     want {"intent":"rename","new_name":"receipt-001.pdf","src":{"kind":"item","name":"Scan 001.pdf"}}
+     got  {"intent":"rename","new_name":"receipt-001.pdf","src":{"kind":"item","name":"Scan 001.pdf new"}}
+MISS 4-renames.txt:107  report.pdf should be called final.pdf
+     want {"intent":"rename","new_name":"final.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:110  renmae the file report.pdf as final.pdf
+     want {"intent":"rename","new_name":"final.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 4-renames.txt:111  could you give report.pdf the new name final.pdf
+     want {"intent":"rename","new_name":"final.pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"rename","new_name":"final.pdf","src":{"kind":"item","name":"report.pdf new"}}
+MISS 4-renames.txt:117  scan001.pdf should be called Lease agreement.pdf
+     want {"intent":"rename","new_name":"Lease agreement.pdf","src":{"kind":"item","name":"scan001.pdf"}}
+     got  "!"
+MISS 4-renames.txt:120  renmae the file scan001.pdf to Lease agreement.pdf
+     want {"intent":"rename","new_name":"Lease agreement.pdf","src":{"kind":"item","name":"scan001.pdf"}}
+     got  "!"
+MISS 4-renames.txt:121  could you give scan001.pdf the new name Lease agreement.pdf
+     want {"intent":"rename","new_name":"Lease agreement.pdf","src":{"kind":"item","name":"scan001.pdf"}}
+     got  {"intent":"rename","new_name":"Lease agreement.pdf","src":{"kind":"item","name":"scan001.pdf new"}}
+MISS 4-renames.txt:127  IMG_0042.HEIC should be called beach.heic
+     want {"intent":"rename","new_name":"beach.heic","src":{"kind":"item","name":"IMG_0042.HEIC"}}
+     got  "!"
+MISS 4-renames.txt:130  renmae IMG_0042.HEIC to beach.heic
+     want {"intent":"rename","new_name":"beach.heic","src":{"kind":"item","name":"IMG_0042.HEIC"}}
+     got  "!"
+MISS 4-renames.txt:137  the folder Scans should be called Scanned Documents
+     want {"intent":"rename","new_name":"Scanned Documents","src":{"kind":"item","name":"Scans"}}
+     got  "!"
+MISS 4-renames.txt:140  renmae the folder Scans to Scanned Documents
+     want {"intent":"rename","new_name":"Scanned Documents","src":{"kind":"item","name":"Scans"}}
+     got  "!"
+MISS 4-renames.txt:141  could you give the folder Scans the new name Scanned Documents
+     want {"intent":"rename","new_name":"Scanned Documents","src":{"kind":"item","name":"Scans"}}
+     got  {"intent":"rename","new_name":"Scanned Documents","src":{"kind":"item","name":"Scans new"}}
+MISS 4-renames.txt:147  Holiday photos should be called Vacation
+     want {"intent":"rename","new_name":"Vacation","src":{"kind":"item","name":"Holiday photos"}}
+     got  "!"
+MISS 4-renames.txt:150  renmae Holiday photos to Vacation
+     want {"intent":"rename","new_name":"Vacation","src":{"kind":"item","name":"Holiday photos"}}
+     got  "!"
+MISS 4-renames.txt:151  could you give Holiday photos the new name Vacation
+     want {"intent":"rename","new_name":"Vacation","src":{"kind":"item","name":"Holiday photos"}}
+     got  {"intent":"rename","new_name":"Vacation","src":{"kind":"item","name":"Holiday photos new"}}
+MISS 4-renames.txt:157  put Invoice- in front of all PDFs in Downloads
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:158  stick the prefix Invoice- on all PDFs in Downloads
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:160  ad prefix Invoice- to all PDFs in Downloads
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:167  put 2026- in front of every file in Documents
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:168  stick 2026- in front of every file in Documents
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:170  ad prefix 2026- to every file in Documents
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:171  can you put the prefix 2026- on every file in Documents
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  {"intent":"move","src":{"folder":"files","kind":"item","name":"prefix 2026-"},"to":"Documents"}
+MISS 4-renames.txt:177  put Invoice dash in front of the PDFs in Documents
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:178  stick the prefix Invoice dash on the PDFs in Documents
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:180  ad prefix Invoice dash to PDFs in Documents
+     want {"intent":"add_prefix","prefix":"Invoice-","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:187  put 2026- in front of files in Downloads
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:188  stick 2026- in front of the files in Downloads
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:190  plese add prefix 2026- to files in Downloads
+     want {"intent":"add_prefix","prefix":"2026-","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:197  put a date in front of the screenshots in Pictures
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:198  stick a date prefix on screenshots in Pictures
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:200  ad a date prefix to screenshots in Pictures
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:207  put a date in front of screenshots on the Desktop
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  {"intent":"move","src":{"kind":"item","name":"a date"},"to":"front of screenshots on Desktop"}
+MISS 4-renames.txt:208  stick a date prefix on the screenshots in Desktop
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:210  ad a date prefix to screenshots in Desktop
+     want {"intent":"add_date_prefix","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:217  change spaces to underscores in names of files in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:218  swap spaces for underscores in names of files in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:220  repalce spaces with underscores in names of files in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:221  in names of files in Downloads replace spaces with underscores
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:227  take out the spaces in the file names in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:230  remvoe spaces from the file names in Downloads
+     want {"find":" ","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:231  make the file names in Downloads have no spaces
+     want {"find":" ","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:238  take the dashes out of names in Documents
+     want {"find":"-","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:240  strpi dashes from names in Documents
+     want {"find":"-","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:241  names in Documents should lose their dashes
+     want {"find":"-","intent":"replace_in_names","replace":"","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:247  change dashes to spaces in names of files in Documents
+     want {"find":"-","intent":"replace_in_names","replace":" ","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:248  swap dashes for spaces in names of files in Documents
+     want {"find":"-","intent":"replace_in_names","replace":" ","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:250  repalce dashes with spaces in names of files in Documents
+     want {"find":"-","intent":"replace_in_names","replace":" ","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:251  in names of files in Documents replace dashes with spaces
+     want {"find":"-","intent":"replace_in_names","replace":" ","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:257  change spaces to underscores in file names in Pictures
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:258  swap spaces for underscores in the file names in Pictures
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:260  replce spaces with underscores in file names in Pictures
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:261  in file names in Pictures replace spaces with underscores
+     want {"find":" ","intent":"replace_in_names","replace":"_","src":{"filter":{"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:267  give the photos in Trip numbered names like trip-001
+     want {"base":"trip-","intent":"number","src":{"filter":{"type":"images"},"folder":"Trip","kind":"set"},"width":3}
+     got  "!"
+MISS 4-renames.txt:270  nubmer the photos in Trip as trip-001
+     want {"base":"trip-","intent":"number","src":{"filter":{"type":"images"},"folder":"Trip","kind":"set"},"width":3}
+     got  "!"
+MISS 4-renames.txt:277  give the PDFs in Scans numbers like scan-01, scan-02
+     want {"base":"scan-","intent":"number","src":{"filter":{"type":"pdfs"},"folder":"Scans","kind":"set"},"width":2}
+     got  "!"
+MISS 4-renames.txt:280  nubmer PDFs in Scans as scan-01, scan-02
+     want {"base":"scan-","intent":"number","src":{"filter":{"type":"pdfs"},"folder":"Scans","kind":"set"},"width":2}
+     got  "!"
+MISS 4-renames.txt:281  number the PDFs in Scans as scan-01 and scan-02
+     want {"base":"scan-","intent":"number","src":{"filter":{"type":"pdfs"},"folder":"Scans","kind":"set"},"width":2}
+     got  {"base":"scan-01 and scan-","intent":"number","src":{"filter":{"type":"pdfs"},"folder":"Scans","kind":"set"},"width":2}
+MISS 4-renames.txt:288  change all the file names in Desktop to lowercase
+     want {"intent":"lowercase","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:290  lowrcase all the file names in Desktop
+     want {"intent":"lowercase","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:300  mkae the names of my PDFs lowercase
+     want {"intent":"lowercase","src":{"filter":{"type":"pdfs"},"kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:308  change the names of PDFs in Documents to lowercase
+     want {"intent":"lowercase","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:310  lowercse the names of PDFs in Documents
+     want {"intent":"lowercase","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 4-renames.txt:321  rename report.pdf to ../final.pdf
+     want "!"
+     got  {"intent":"rename","new_name":"../final.pdf","src":{"kind":"item","name":"report.pdf"}}
+MISS 4-renames.txt:323  rename report.pdf to a/final.pdf
+     want "!"
+     got  {"intent":"rename","new_name":"a/final.pdf","src":{"kind":"item","name":"report.pdf"}}

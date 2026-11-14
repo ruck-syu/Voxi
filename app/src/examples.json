@@ -1,0 +1,18 @@
+[
+  "move screenshots from today to Screenshots",
+  "delete dmg files from Downloads every 3 days",
+  "convert all HEIC in Pictures to jpg",
+  "sort Downloads by type",
+  "list files in Downloads larger than 500 MB",
+  "move PDFs from Downloads to Documents at 9 pm",
+  "merge PDFs in Documents named scan into scan-all.pdf",
+  "find duplicates in Downloads",
+  "replace spaces with dashes in files in Downloads",
+  "resize images in Desktop to 1200 px",
+  "zip Project into Project.zip",
+  "clean up Downloads older than 90 days",
+  "how big is Downloads",
+  "unzip archive.zip",
+  "split report.pdf into pages",
+  "undo last"
+]

@@ -16,6 +16,33 @@ pub struct Settings {
     pub onboarded: bool,
     /// Saved phrases that run several commands at once ("run my usuals").
     pub shortcuts: Vec<Shortcut>,
+    /// The user's own names for folders ("dev" for ~/Documents/Dev), learned
+    /// from a folder they picked or added in Settings.
+    pub nicknames: Vec<Nickname>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Nickname {
+    pub name: String,
+    pub path: String,
+}
+
+/// Names Voxi already gives the standard folders; a nickname can't take them.
+const RESERVED_NAMES: &[&str] = &["desktop", "downloads", "download", "documents", "document", "docs", "doc", "pictures", "picture", "photos", "photo", "screenshots", "screenshot", "home", "trash"];
+
+/// The part of a spoken folder name that identifies it: "the Dev folder" and
+/// "my dev directory" both become "dev".
+pub fn nickname_key(text: &str) -> String {
+    let lower = text.trim().trim_matches(|c: char| "\"'“”‘’.,!?".contains(c)).to_lowercase();
+    let mut words: Vec<&str> = lower.split_whitespace().collect();
+    while words.first().is_some_and(|w| ["the", "my", "our"].contains(w)) {
+        words.remove(0);
+    }
+    while words.len() > 1 && words.last().is_some_and(|w| ["folder", "directory", "dir"].contains(w)) {
+        words.pop();
+    }
+    words.join(" ")
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -77,7 +104,7 @@ fn edit_distance(a: &str, b: &str) -> usize {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { hotkey: DEFAULT_HOTKEY.into(), extra_folders: Vec::new(), start_at_login: false, onboarded: false, shortcuts: Vec::new() }
+        Settings { hotkey: DEFAULT_HOTKEY.into(), extra_folders: Vec::new(), start_at_login: false, onboarded: false, shortcuts: Vec::new(), nicknames: Vec::new() }
     }
 }
 
@@ -160,6 +187,48 @@ impl Settings {
         Ok(())
     }
 
+    /// Trims nicknames, keeps one per name (the newest), and refuses names
+    /// that would shadow a standard folder or paths that aren't folders.
+    pub fn validate_nicknames(&mut self, home: &Path) -> Result<(), String> {
+        let mut kept: Vec<Nickname> = Vec::new();
+        for n in self.nicknames.iter().rev() {
+            let name = nickname_key(&n.name);
+            let path = n.path.trim().to_string();
+            if name.is_empty() && path.is_empty() {
+                continue;
+            }
+            if name.is_empty() {
+                return Err("Give the folder a name to say, like “dev”.".into());
+            }
+            if name.contains('/') || name.chars().count() > 40 {
+                return Err(format!("“{name}” can't be a folder name. Use a short word or two."));
+            }
+            if RESERVED_NAMES.contains(&name.as_str()) {
+                return Err(format!("“{name}” already means a standard folder."));
+            }
+            let full = crate::fsx::expand_tilde(&path, home);
+            if !full.is_absolute() || crate::fsx::has_parent_ref(&full) || !full.is_dir() {
+                return Err(format!("“{path}” isn't a folder Voxi can find."));
+            }
+            if kept.iter().any(|k| k.name == name) {
+                continue;
+            }
+            kept.push(Nickname { name, path });
+        }
+        kept.reverse();
+        self.nicknames = kept;
+        Ok(())
+    }
+
+    /// `(name, folder)` for each nickname whose folder still exists.
+    pub fn nickname_paths(&self, home: &Path) -> Vec<(String, PathBuf)> {
+        self.nicknames
+            .iter()
+            .map(|n| (nickname_key(&n.name), crate::fsx::expand_tilde(n.path.trim(), home)))
+            .filter(|(name, p)| !name.is_empty() && p.is_absolute() && p.is_dir() && !crate::fsx::has_parent_ref(p))
+            .collect()
+    }
+
     pub fn extra_paths(&self, home: &Path) -> Vec<PathBuf> {
         self.extra_folders
             .iter()
@@ -213,6 +282,31 @@ mod tests {
         assert!(s.find_close_shortcut("run my usuels").is_some());
         assert!(s.find_close_shortcut("run my errands").is_none());
         assert!(s.find_close_shortcut("hello").is_none());
+    }
+
+    #[test]
+    fn nickname_keys_ignore_articles_and_the_word_folder() {
+        for said in ["dev", "the dev folder", "My Dev directory", "“Dev”", "the dev"] {
+            assert_eq!(nickname_key(said), "dev", "{said}");
+        }
+        assert_eq!(nickname_key("client work folder"), "client work");
+        assert_eq!(nickname_key("folder"), "folder");
+    }
+
+    #[test]
+    fn nicknames_are_validated_and_deduplicated() {
+        let dir = tempfile::tempdir().unwrap();
+        let dev = dir.path().join("Dev");
+        fs::create_dir(&dev).unwrap();
+        let nick = |name: &str, path: &Path| Nickname { name: name.into(), path: path.to_string_lossy().into() };
+        let mut s = Settings { nicknames: vec![nick("dev", dir.path()), nick("The Dev folder", &dev)], ..Default::default() };
+        s.validate_nicknames(dir.path()).unwrap();
+        assert_eq!(s.nicknames, vec![nick("dev", &dev)], "newest wins, name normalized");
+        let mut reserved = Settings { nicknames: vec![nick("downloads", &dev)], ..Default::default() };
+        assert!(reserved.validate_nicknames(dir.path()).is_err());
+        let mut missing = Settings { nicknames: vec![nick("gone", &dir.path().join("nope"))], ..Default::default() };
+        assert!(missing.validate_nicknames(dir.path()).is_err());
+        assert_eq!(s.nickname_paths(dir.path()), vec![("dev".to_string(), dev)]);
     }
 
     #[test]

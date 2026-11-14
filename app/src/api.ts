@@ -10,11 +10,13 @@ export type PreviewItem = { kind: string; primary: string; detail: string; note?
 export type InfoRow = { name: string; detail: string };
 
 export type Outcome =
-  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; warnings: string[]; isUndo: boolean }
-  | { status: "ambiguous"; name: string; candidates: string[] }
+  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; warnings: string[]; isUndo: boolean; scheduledFor?: string | null; repeats?: string | null }
+  | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
   | { status: "not_understood"; text: string };
+
+export type ScheduledTask = { id: number; command: string; due: string; status: "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"; summary: string; repeat?: string | null };
 
 export type RunResult = { done: number; total: number; error: string | null; undoable: boolean; summary: string };
 
@@ -23,11 +25,21 @@ export type FolderAccess = { name: string; path: string; allowed: boolean };
 /** A saved phrase ("run my usuals") that runs several commands at once. */
 export type Shortcut = { phrase: string; commands: string[] };
 
-export type Settings = { hotkey: string; extraFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[] };
+/** The user's own name for a folder ("dev" for ~/Documents/Dev). */
+export type Nickname = { name: string; path: string };
+
+export type Settings = { hotkey: string; extraFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
+/** "This was wrong" reports, saved only on this Mac. */
+export type Reports = { count: number; path: string };
 export type ResultScope = { count: number; visible: number; label: string };
 export type CommandReply = { outcome: Outcome; scope: ResultScope | null };
 
 export const api = {
+  schedulerNotice: () => invoke<string | null>("scheduler_notice"),
+  scheduledTasks: () => invoke<ScheduledTask[]>("scheduled_tasks"),
+  cancelScheduledTask: (id: number) => invoke<void>("cancel_scheduled_task", { id }),
+  pauseScheduledTask: (id: number) => invoke<void>("pause_scheduled_task", { id }),
+  resumeScheduledTask: (id: number) => invoke<void>("resume_scheduled_task", { id }),
   plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<CommandReply>("plan_command", { text, choices, requestId }),
   clearResultScope: () => invoke<void>("clear_result_scope"),
   resultScope: () => invoke<ResultScope | null>("result_scope"),
@@ -36,6 +48,12 @@ export const api = {
   confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: (requestId: number) => invoke<void>("hide_window", { requestId }),
+  reportWrong: (command: string, outcome: unknown, note: string) => invoke<Reports>("report_wrong", { command, outcome, note }),
+  reportsSummary: () => invoke<Reports>("reports_summary"),
+  clearReports: () => invoke<Reports>("clear_reports"),
+  revealReports: () => invoke<void>("reveal_reports"),
+  teachPhrase: (phrase: string, command: string) => invoke<Settings>("teach_phrase", { phrase, command }),
+  rememberFolder: (name: string, path: string) => invoke<Settings>("remember_folder", { name, path }),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   allowedFolders: () => invoke<string[]>("allowed_folders"),

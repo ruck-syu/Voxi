@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon/voxi-icon-256.png" width="128" height="128" alt="Voxi icon: a folder with a red spark" />
+  <img src="docs/icon/voxi-icon-256.png" width="128" height="128" alt="Voxi icon: a smiling face whose smile is a sound wave" />
 </p>
 
 <h1 align="center">Voxi</h1>
@@ -115,6 +115,33 @@ Open Settings → General → **Check for updates**. Voxi downloads the newest
 release with a progress bar, shows what's new, checks the update's signature,
 installs it, and restarts.
 
+## Scheduled commands
+
+Add a time or delay to a file command, then review the preview and choose
+**Schedule task**:
+
+- `move screenshots from Desktop to Screenshots folder at 9:40 pm`
+- `move PDFs from Downloads to Documents after 3 hours`
+- `clean up Downloads older than 90 days in 30 minutes`
+
+Clock times use your Mac's local timezone. A time that has passed means tomorrow;
+you can also say `at 9:40 pm tomorrow` or use a 24-hour time such as `at 21:40`.
+Delays accept whole hours or minutes, including spoken numbers through ninety-nine,
+such as “three” or “twenty-one”.
+Settings → Scheduled lists tasks, their results, and a cancellation button for
+pending tasks. Tasks survive restarting Voxi. Keep Voxi running for on-time
+execution; if it is closed or your Mac is asleep, overdue tasks run when Voxi
+next runs or your Mac wakes. No task wakes the Mac or launches Voxi.
+
+A task changes only the files in its approved preview, excluding files added
+later. Changed or missing source files stop the task; destination collisions
+never overwrite files. Completed changes enter History and can be undone with
+`undo last`. An interrupted task is marked failed and is never automatically
+retried. Undo, read-only, and Finder commands cannot be scheduled.
+If saved schedules cannot be read, Voxi preserves a backup and shows a recovery
+notice in Settings → Scheduled. A storage error disables scheduling for that
+session while the rest of the app remains available.
+
 ## Shortcuts
 
 Save a phrase and a list of commands in Settings → Shortcuts. Saying the
@@ -178,5 +205,3 @@ The workflow needs four repository secrets: `TAURI_SIGNING_PRIVATE_KEY` and
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` sign updates; `VOXI_SIGNING_CERT` and
 `VOXI_SIGNING_CERT_PASSWORD` give the app a stable code signature, so macOS
 remembers folder access across versions.
-
-

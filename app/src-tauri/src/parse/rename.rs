@@ -89,6 +89,31 @@ pub fn patterns() -> Vec<Pattern> {
             if bad_destination(target) { return None; }
             Some(Intent::Rename { src, new_name: clean_name(target) })
         }),
+        pat("give_name", r"^give\s+(.+?)\s+name\s+(.+)$", |c| {
+            let src = parse_source(&cap(c, 1)?)?;
+            let target = cap(c, 2)?;
+            if !matches!(src, Source::Item { .. }) || bad_destination(&target) { return None; }
+            Some(Intent::Rename { src, new_name: clean_name(&target) })
+        }),
+        pat("set_to_name", r"^set\s+(.+?)\s+to\s+name\s+(.+)$", |c| {
+            let src = parse_source(&cap(c, 1)?)?;
+            let target = cap(c, 2)?;
+            if !matches!(src, Source::Item { .. }) || bad_destination(&target) { return None; }
+            Some(Intent::Rename { src, new_name: clean_name(&target) })
+        }),
+        pat("make_called", r"^make\s+(.+?)\s+called\s+(.+)$", |c| {
+            let src = parse_source(&cap(c, 1)?)?;
+            let target = cap(c, 2)?;
+            if !matches!(src, Source::Item { .. }) || bad_destination(&target) { return None; }
+            Some(Intent::Rename { src, new_name: clean_name(&target) })
+        }),
+        pat("change_name", r"^change\s+(.+)$", |c| {
+            let text = cap(c, 1)?;
+            let (source, target) = split_arguments(&text, &["to"])?;
+            let src = parse_source(source)?;
+            if !matches!(src, Source::Item { .. }) || bad_destination(target) || !super::phrase::has_extension(target) { return None; }
+            Some(Intent::Rename { src, new_name: clean_name(target) })
+        }),
         pat("rename", r"^rename\s+(.+)$", |c| {
             let text = cap(c, 1)?;
             let (source, target) = split_arguments(&text, &["to", "as"])?;

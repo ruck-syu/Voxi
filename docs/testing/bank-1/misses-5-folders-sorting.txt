@@ -1,0 +1,195 @@
+MISS 5-folders-sorting.txt:5  in Documents make a folder called Taxes
+     want {"intent":"create_folders","names":["Taxes"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:8  set up a folder called Taxes in the Documents folder
+     want {"intent":"create_folders","names":["Taxes"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:9  mkae a folder called Taxes in Documents
+     want {"intent":"create_folders","names":["Taxes"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:14  create the Receipts folder in Documents
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:15  in Documents create folder Receipts
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:18  set up folder Receipts in Documents
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:19  creat folder Receipts in Documents
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:24  in Documents make a folder named Receipts
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:29  mke a folder named Receipts in Documents
+     want {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:33  on the desktop create a new folder named Invoices
+     want {"intent":"create_folders","names":["Invoices"],"parent":"desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:36  set up a new folder named Invoices on the desktop
+     want {"intent":"create_folders","names":["Invoices"],"parent":"desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:37  creat a new folder named Invoices on the desktop
+     want {"intent":"create_folders","names":["Invoices"],"parent":"desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:45  set up a new folder called Receipts
+     want {"intent":"create_folders","names":["Receipts"]}
+     got  "!"
+MISS 5-folders-sorting.txt:48  pleese new folder called Receipts
+     want {"intent":"create_folders","names":["Receipts"]}
+     got  "!"
+MISS 5-folders-sorting.txt:53  in Documents create folders for 2024 and 2025
+     want {"intent":"create_folders","names":["2024","2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:55  set up folders for 2024 and 2025 in Documents
+     want {"intent":"create_folders","names":["2024","2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:56  creat folders for 2024 and 2025 in Documents
+     want {"intent":"create_folders","names":["2024","2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:63  in Documents create folders Taxes, Receipts, and Photos
+     want {"intent":"create_folders","names":["Taxes","Receipts","Photos"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:65  set up folders Taxes, Receipts, and Photos in Documents
+     want {"intent":"create_folders","names":["Taxes","Receipts","Photos"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:66  creat folders Taxes, Receipts, and Photos in Documents
+     want {"intent":"create_folders","names":["Taxes","Receipts","Photos"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:72  in Documents make a folder called 'Tax 2025'
+     want {"intent":"create_folders","names":["Tax 2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:74  set up a folder called 'Tax 2025' in Documents
+     want {"intent":"create_folders","names":["Tax 2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:75  mkae a folder called 'Tax 2025' in Documents
+     want {"intent":"create_folders","names":["Tax 2025"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:82  in Documents create folder Invoices/2026
+     want {"intent":"create_folders","names":["Invoices/2026"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:84  set up folder Invoices/2026 in Documents
+     want {"intent":"create_folders","names":["Invoices/2026"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:85  creat folder Invoices/2026 in Documents
+     want {"intent":"create_folders","names":["Invoices/2026"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:92  in Documents create folders for Q1, Q2, Q3 and Q4
+     want {"intent":"create_folders","names":["Q1","Q2","Q3","Q4"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:94  set up folders for Q1, Q2, Q3 and Q4 in Documents
+     want {"intent":"create_folders","names":["Q1","Q2","Q3","Q4"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:95  creat folders for Q1, Q2, Q3 and Q4 in Documents
+     want {"intent":"create_folders","names":["Q1","Q2","Q3","Q4"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:101  on the Desktop make a new folder called Scans
+     want {"intent":"create_folders","names":["Scans"],"parent":"Desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:103  set up a new folder called Scans on the Desktop
+     want {"intent":"create_folders","names":["Scans"],"parent":"Desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:104  mkae a new folder called Scans on the Desktop
+     want {"intent":"create_folders","names":["Scans"],"parent":"Desktop"}
+     got  "!"
+MISS 5-folders-sorting.txt:111  in Documents make a folder called Medical Records
+     want {"intent":"create_folders","names":["Medical Records"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:113  set up a folder called Medical Records in Documents
+     want {"intent":"create_folders","names":["Medical Records"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:114  mkae a folder called Medical Records in Documents
+     want {"intent":"create_folders","names":["Medical Records"],"parent":"Documents"}
+     got  "!"
+MISS 5-folders-sorting.txt:121  in Archive create folders named 2023, 2024, and 2025
+     want {"intent":"create_folders","names":["2023","2024","2025"],"parent":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:123  set up folders named 2023, 2024, and 2025 in Archive
+     want {"intent":"create_folders","names":["2023","2024","2025"],"parent":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:124  creat folders named 2023, 2024, and 2025 in Archive
+     want {"intent":"create_folders","names":["2023","2024","2025"],"parent":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:132  file Documents away by month
+     want {"folder":"Documents","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:135  sotr Documents by month
+     want {"folder":"Documents","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:145  sotr Pictures by type
+     want {"folder":"Pictures","intent":"sort_by_type"}
+     got  "!"
+MISS 5-folders-sorting.txt:155  orgainze Downloads by type
+     want {"folder":"Downloads","intent":"sort_by_type"}
+     got  "!"
+MISS 5-folders-sorting.txt:162  tidy the downloads by date
+     want {"folder":"downloads","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:164  sotr the downloads by date
+     want {"folder":"downloads","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:172  file away the screenshots by month
+     want {"folder":"screenshots","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:175  sotr the screenshots by month
+     want {"folder":"screenshots","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:185  sotr my Desktop by date
+     want {"folder":"Desktop","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:189  please help me organize my pictures by month
+     want {"folder":"pictures","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:190  could you help me sort my pictures by month
+     want {"folder":"pictures","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:192  help me file my pictures away by month
+     want {"folder":"pictures","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:195  hlep me organize my pictures by month
+     want {"folder":"pictures","intent":"sort_by_month"}
+     got  "!"
+MISS 5-folders-sorting.txt:204  tidy the desktop by type
+     want {"folder":"desktop","intent":"sort_by_type"}
+     got  "!"
+MISS 5-folders-sorting.txt:205  tiddy up the desktop by type
+     want {"folder":"desktop","intent":"sort_by_type"}
+     got  "!"
+MISS 5-folders-sorting.txt:215  mvoe the Project folder to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Project"},"to":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:224  coppy the Thesis folder into Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Thesis"},"to":"Backup"}
+     got  "!"
+MISS 5-folders-sorting.txt:235  cpoy the Notes folder to Backup
+     want {"intent":"copy","src":{"kind":"item","name":"Notes"},"to":"Backup"}
+     got  "!"
+MISS 5-folders-sorting.txt:245  mvoe photos from Pictures/Trip to Archive
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Pictures/Trip","kind":"set"},"to":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:255  coppy the JPEGs from Pictures into Backup/Photos
+     want {"intent":"copy","src":{"filter":{"ext":["jpg","jpeg"],"type":"files"},"folder":"Pictures","kind":"set"},"to":"Backup/Photos"}
+     got  "!"
+MISS 5-folders-sorting.txt:265  mvoe the Downloads/Notes folder to Archive
+     want {"intent":"move","src":{"kind":"item","name":"Downloads/Notes"},"to":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:275  snd every photo from the Trip folder to Pictures
+     want {"intent":"move","src":{"filter":{"type":"images"},"folder":"Trip","kind":"set"},"to":"Pictures"}
+     got  "!"
+MISS 5-folders-sorting.txt:285  coppy the Q3 budget.xlsx to my Backup folder
+     want {"intent":"copy","src":{"kind":"item","name":"Q3 budget.xlsx"},"to":"Backup"}
+     got  "!"
+MISS 5-folders-sorting.txt:295  coppy all the images in Pictures to Backup
+     want {"intent":"copy","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"to":"Backup"}
+     got  "!"
+MISS 5-folders-sorting.txt:300  could you move the Invoices folder over from Documents to Archive
+     want {"intent":"move","src":{"folder":"Documents","kind":"item","name":"Invoices"},"to":"Archive"}
+     got  {"intent":"move","src":{"folder":"Documents","kind":"item","name":"Invoices folder over"},"to":"Archive"}
+MISS 5-folders-sorting.txt:305  mvoe the Invoices folder from Documents to Archive
+     want {"intent":"move","src":{"folder":"Documents","kind":"item","name":"Invoices"},"to":"Archive"}
+     got  "!"
+MISS 5-folders-sorting.txt:319  make a folder called Taxes in Documents and Pictures
+     want "!"
+     got  {"intent":"create_folders","names":["Taxes"],"parent":"Documents and Pictures"}

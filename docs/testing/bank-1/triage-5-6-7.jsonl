@@ -1,0 +1,202 @@
+{"at": "5-folders-sorting.txt:5", "command": "in Documents make a folder called Taxes", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:8", "command": "set up a folder called Taxes in the Documents folder", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up a folder\" phrasing and \"the Documents folder\" not parsed"}
+{"at": "5-folders-sorting.txt:9", "command": "mkae a folder called Taxes in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"mkae\" typo of make"}
+{"at": "5-folders-sorting.txt:14", "command": "create the Receipts folder in Documents", "label": "gap", "cluster": "folder_phrasing", "why": "\"create the X folder in Y\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:15", "command": "in Documents create folder Receipts", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:18", "command": "set up folder Receipts in Documents", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up folder\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:19", "command": "creat folder Receipts in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"creat\" typo of create"}
+{"at": "5-folders-sorting.txt:24", "command": "in Documents make a folder named Receipts", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:29", "command": "mke a folder named Receipts in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"mke\" typo of make"}
+{"at": "5-folders-sorting.txt:33", "command": "on the desktop create a new folder named Invoices", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"on the desktop\" word order not parsed"}
+{"at": "5-folders-sorting.txt:36", "command": "set up a new folder named Invoices on the desktop", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up a new folder\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:37", "command": "creat a new folder named Invoices on the desktop", "label": "gap", "cluster": "typo_verb", "why": "\"creat\" typo of create"}
+{"at": "5-folders-sorting.txt:45", "command": "set up a new folder called Receipts", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up a new folder\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:48", "command": "pleese new folder called Receipts", "label": "gap", "cluster": "leading_filler", "why": "\"pleese\" typo of please before a valid folder command"}
+{"at": "5-folders-sorting.txt:53", "command": "in Documents create folders for 2024 and 2025", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:55", "command": "set up folders for 2024 and 2025 in Documents", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up folders\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:56", "command": "creat folders for 2024 and 2025 in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"creat\" typo of create"}
+{"at": "5-folders-sorting.txt:63", "command": "in Documents create folders Taxes, Receipts, and Photos", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:65", "command": "set up folders Taxes, Receipts, and Photos in Documents", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up folders\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:66", "command": "creat folders Taxes, Receipts, and Photos in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"creat\" typo of create"}
+{"at": "5-folders-sorting.txt:72", "command": "in Documents make a folder called 'Tax 2025'", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:74", "command": "set up a folder called 'Tax 2025' in Documents", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up a folder\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:75", "command": "mkae a folder called 'Tax 2025' in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"mkae\" typo of make"}
+{"at": "5-folders-sorting.txt:82", "command": "in Documents create folder Invoices/2026", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:84", "command": "set up folder Invoices/2026 in Documents", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up folder\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:85", "command": "creat folder Invoices/2026 in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"creat\" typo of create"}
+{"at": "5-folders-sorting.txt:92", "command": "in Documents create folders for Q1, Q2, Q3 and Q4", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:94", "command": "set up folders for Q1, Q2, Q3 and Q4 in Documents", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up folders\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:95", "command": "creat folders for Q1, Q2, Q3 and Q4 in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"creat\" typo of create"}
+{"at": "5-folders-sorting.txt:101", "command": "on the Desktop make a new folder called Scans", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"on the Desktop\" word order not parsed"}
+{"at": "5-folders-sorting.txt:103", "command": "set up a new folder called Scans on the Desktop", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up a new folder\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:104", "command": "mkae a new folder called Scans on the Desktop", "label": "gap", "cluster": "typo_verb", "why": "\"mkae\" typo of make"}
+{"at": "5-folders-sorting.txt:111", "command": "in Documents make a folder called Medical Records", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Documents\" word order not parsed"}
+{"at": "5-folders-sorting.txt:113", "command": "set up a folder called Medical Records in Documents", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up a folder\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:114", "command": "mkae a folder called Medical Records in Documents", "label": "gap", "cluster": "typo_verb", "why": "\"mkae\" typo of make"}
+{"at": "5-folders-sorting.txt:121", "command": "in Archive create folders named 2023, 2024, and 2025", "label": "gap", "cluster": "folder_phrasing", "why": "leading \"in Archive\" word order not parsed"}
+{"at": "5-folders-sorting.txt:123", "command": "set up folders named 2023, 2024, and 2025 in Archive", "label": "gap", "cluster": "folder_phrasing", "why": "\"set up folders\" phrasing not parsed"}
+{"at": "5-folders-sorting.txt:124", "command": "creat folders named 2023, 2024, and 2025 in Archive", "label": "gap", "cluster": "typo_verb", "why": "\"creat\" typo of create"}
+{"at": "5-folders-sorting.txt:132", "command": "file Documents away by month", "label": "gap", "cluster": "verb_synonym", "why": "\"file X away\" is not a supported sort phrasing"}
+{"at": "5-folders-sorting.txt:135", "command": "sotr Documents by month", "label": "gap", "cluster": "typo_verb", "why": "\"sotr\" typo of sort"}
+{"at": "5-folders-sorting.txt:145", "command": "sotr Pictures by type", "label": "gap", "cluster": "typo_verb", "why": "\"sotr\" typo of sort"}
+{"at": "5-folders-sorting.txt:155", "command": "orgainze Downloads by type", "label": "gap", "cluster": "typo_verb", "why": "\"orgainze\" typo of organize"}
+{"at": "5-folders-sorting.txt:162", "command": "tidy the downloads by date", "label": "gap", "cluster": "verb_synonym", "why": "\"tidy\" as sort verb with \"by date\" not parsed"}
+{"at": "5-folders-sorting.txt:164", "command": "sotr the downloads by date", "label": "gap", "cluster": "typo_verb", "why": "\"sotr\" typo of sort"}
+{"at": "5-folders-sorting.txt:172", "command": "file away the screenshots by month", "label": "gap", "cluster": "verb_synonym", "why": "\"file away\" is not a supported sort phrasing"}
+{"at": "5-folders-sorting.txt:175", "command": "sotr the screenshots by month", "label": "gap", "cluster": "typo_verb", "why": "\"sotr\" typo of sort"}
+{"at": "5-folders-sorting.txt:185", "command": "sotr my Desktop by date", "label": "gap", "cluster": "typo_verb", "why": "\"sotr\" typo of sort"}
+{"at": "5-folders-sorting.txt:189", "command": "please help me organize my pictures by month", "label": "gap", "cluster": "leading_filler", "why": "\"please help me\" prefix before a valid sort command"}
+{"at": "5-folders-sorting.txt:190", "command": "could you help me sort my pictures by month", "label": "gap", "cluster": "leading_filler", "why": "\"could you help me\" prefix before a valid sort command"}
+{"at": "5-folders-sorting.txt:192", "command": "help me file my pictures away by month", "label": "gap", "cluster": "verb_synonym", "why": "\"file away\" phrasing plus \"help me\" prefix"}
+{"at": "5-folders-sorting.txt:195", "command": "hlep me organize my pictures by month", "label": "gap", "cluster": "leading_filler", "why": "\"hlep me\" typo prefix before a valid sort command"}
+{"at": "5-folders-sorting.txt:204", "command": "tidy the desktop by type", "label": "gap", "cluster": "verb_synonym", "why": "\"tidy the X by type\" not parsed"}
+{"at": "5-folders-sorting.txt:205", "command": "tiddy up the desktop by type", "label": "gap", "cluster": "typo_verb", "why": "\"tiddy\" typo of tidy"}
+{"at": "5-folders-sorting.txt:215", "command": "mvoe the Project folder to Archive", "label": "gap", "cluster": "typo_verb", "why": "\"mvoe\" typo of move"}
+{"at": "5-folders-sorting.txt:224", "command": "coppy the Thesis folder into Backup", "label": "gap", "cluster": "typo_verb", "why": "\"coppy\" typo of copy"}
+{"at": "5-folders-sorting.txt:235", "command": "cpoy the Notes folder to Backup", "label": "gap", "cluster": "typo_verb", "why": "\"cpoy\" typo of copy"}
+{"at": "5-folders-sorting.txt:245", "command": "mvoe photos from Pictures/Trip to Archive", "label": "gap", "cluster": "typo_verb", "why": "\"mvoe\" typo of move"}
+{"at": "5-folders-sorting.txt:255", "command": "coppy the JPEGs from Pictures into Backup/Photos", "label": "gap", "cluster": "typo_verb", "why": "\"coppy\" typo of copy"}
+{"at": "5-folders-sorting.txt:265", "command": "mvoe the Downloads/Notes folder to Archive", "label": "gap", "cluster": "typo_verb", "why": "\"mvoe\" typo of move"}
+{"at": "5-folders-sorting.txt:275", "command": "snd every photo from the Trip folder to Pictures", "label": "gap", "cluster": "typo_verb", "why": "\"snd\" typo of send"}
+{"at": "5-folders-sorting.txt:285", "command": "coppy the Q3 budget.xlsx to my Backup folder", "label": "gap", "cluster": "typo_verb", "why": "\"coppy\" typo of copy"}
+{"at": "5-folders-sorting.txt:295", "command": "coppy all the images in Pictures to Backup", "label": "gap", "cluster": "typo_verb", "why": "\"coppy\" typo of copy"}
+{"at": "5-folders-sorting.txt:300", "command": "could you move the Invoices folder over from Documents to Archive", "label": "wrong_parse", "cluster": "particle_word", "why": "\"over\" kept in item name, giving \"Invoices folder over\""}
+{"at": "5-folders-sorting.txt:305", "command": "mvoe the Invoices folder from Documents to Archive", "label": "gap", "cluster": "typo_verb", "why": "\"mvoe\" typo of move"}
+{"at": "5-folders-sorting.txt:319", "command": "make a folder called Taxes in Documents and Pictures", "label": "wrong_parse", "cluster": "multi_target_parent", "why": "\"and Pictures\" folded into parent; corpus refuses this shape"}
+{"at": "6-pdf-images-archives.txt:10", "command": "cmobine the PDFs in Documents into report-all.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"cmobine\" typo of combine"}
+{"at": "6-pdf-images-archives.txt:14", "command": "could you merge all pdfs in downloads into combined.pdf", "label": "label_error", "cluster": "expected_casing", "why": "Expected \"Downloads\" but spoken \"downloads\"; corpus keeps spoken folder case"}
+{"at": "6-pdf-images-archives.txt:19", "command": "mrege all PDFs in Downloads into combined.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"mrege\" typo of merge"}
+{"at": "6-pdf-images-archives.txt:23", "command": "could you join the pdfs in desktop as summary.pdf", "label": "label_error", "cluster": "expected_casing", "why": "Expected \"Desktop\" but spoken \"desktop\"; corpus keeps spoken folder case"}
+{"at": "6-pdf-images-archives.txt:28", "command": "jion the PDFs in Desktop as summary.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"jion\" typo of join"}
+{"at": "6-pdf-images-archives.txt:37", "command": "mergee PDFs in Documents named scan into scan-all.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"mergee\" typo of merge"}
+{"at": "6-pdf-images-archives.txt:44", "command": "split report.pdf apart into separate pages", "label": "wrong_parse", "cluster": "particle_word", "why": "\"apart\" kept in file name, giving \"report.pdf apart\""}
+{"at": "6-pdf-images-archives.txt:45", "command": "split up report.pdf into separate pages", "label": "wrong_parse", "cluster": "particle_word", "why": "\"up\" kept in file name, giving \"up report.pdf\""}
+{"at": "6-pdf-images-archives.txt:46", "command": "spilt report.pdf into separate pages", "label": "gap", "cluster": "typo_verb", "why": "\"spilt\" typo of split"}
+{"at": "6-pdf-images-archives.txt:53", "command": "split scan.pdf into each page", "label": "wrong_parse", "cluster": "split_phrasing", "why": "\"into each page\" not recognized; whole tail became file name"}
+{"at": "6-pdf-images-archives.txt:54", "command": "split up scan.pdf into individual pages", "label": "wrong_parse", "cluster": "particle_word", "why": "\"up\" kept in file name, giving \"up scan.pdf\""}
+{"at": "6-pdf-images-archives.txt:55", "command": "spli scan.pdf into individual pages", "label": "gap", "cluster": "typo_verb", "why": "\"spli\" typo of split"}
+{"at": "6-pdf-images-archives.txt:59", "command": "could you pull pages 2 to 5 out of report.pdf into excerpt.pdf", "label": "gap", "cluster": "extract_phrasing", "why": "\"pull pages X to Y out of\" phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:63", "command": "extract pages 2 to 5 from report.pdf and save as excerpt.pdf", "label": "gap", "cluster": "extract_phrasing", "why": "\"save as\" after extract phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:64", "command": "extrct pages 2 to 5 from report.pdf into excerpt.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"extrct\" typo of extract"}
+{"at": "6-pdf-images-archives.txt:69", "command": "pull pages 3 through 4 out of contract.pdf", "label": "gap", "cluster": "extract_phrasing", "why": "\"pull pages X through Y out of\" phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:73", "command": "extrat pages 3 through 4 from contract.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"extrat\" typo of extract"}
+{"at": "6-pdf-images-archives.txt:79", "command": "pull page 5 out of report.pdf", "label": "gap", "cluster": "extract_phrasing", "why": "\"pull page N out of\" phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:82", "command": "pul out page 5 of report.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"pul\" typo of pull"}
+{"at": "6-pdf-images-archives.txt:91", "command": "mkae a PDF out of the screenshots in Pictures", "label": "gap", "cluster": "typo_verb", "why": "\"mkae\" typo of make"}
+{"at": "6-pdf-images-archives.txt:100", "command": "mke a PDF from images in Scans named receipts", "label": "gap", "cluster": "typo_verb", "why": "\"mke\" typo of make"}
+{"at": "6-pdf-images-archives.txt:106", "command": "make screenshots into a PDF", "label": "gap", "cluster": "convert_phrasing", "why": "\"make X into a PDF\" phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:109", "command": "convrt screenshots to PDF", "label": "gap", "cluster": "typo_verb", "why": "\"convrt\" typo of convert"}
+{"at": "6-pdf-images-archives.txt:118", "command": "convrt all the photos in Pictures to PNG", "label": "gap", "cluster": "typo_verb", "why": "\"convrt\" typo of convert"}
+{"at": "6-pdf-images-archives.txt:127", "command": "convrt HEIC to JPEG", "label": "gap", "cluster": "typo_verb", "why": "\"convrt\" typo of convert"}
+{"at": "6-pdf-images-archives.txt:134", "command": "make photo.HEIC into a jpg", "label": "gap", "cluster": "convert_phrasing", "why": "\"make X into a jpg\" phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:136", "command": "covert photo.HEIC to jpeg", "label": "gap", "cluster": "typo_verb", "why": "\"covert\" typo of convert"}
+{"at": "6-pdf-images-archives.txt:143", "command": "make logo.png into webp", "label": "gap", "cluster": "convert_phrasing", "why": "\"make X into webp\" phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:145", "command": "convrt logo.png to webp", "label": "gap", "cluster": "typo_verb", "why": "\"convrt\" typo of convert"}
+{"at": "6-pdf-images-archives.txt:154", "command": "shirnk the photos to 1200 pixels", "label": "gap", "cluster": "typo_verb", "why": "\"shirnk\" typo of shrink"}
+{"at": "6-pdf-images-archives.txt:163", "command": "scal down all images in Pictures to 800 px wide", "label": "gap", "cluster": "typo_verb", "why": "\"scal\" typo of scale"}
+{"at": "6-pdf-images-archives.txt:172", "command": "zpi up the Project folder", "label": "gap", "cluster": "typo_verb", "why": "\"zpi\" typo of zip"}
+{"at": "6-pdf-images-archives.txt:180", "command": "compress Downloads/Project into a zip called Project.zip", "label": "wrong_parse", "cluster": "archive_phrasing", "why": "\"a zip called\" kept in output name, giving \"a zip called Project.zip\""}
+{"at": "6-pdf-images-archives.txt:181", "command": "compres Downloads/Project into Project.zip", "label": "gap", "cluster": "typo_verb", "why": "\"compres\" typo of compress"}
+{"at": "6-pdf-images-archives.txt:190", "command": "extrct archive.zip to Documents", "label": "gap", "cluster": "typo_verb", "why": "\"extrct\" typo of extract"}
+{"at": "6-pdf-images-archives.txt:199", "command": "expnad Downloads/bundle.zip into Downloads/bundle", "label": "gap", "cluster": "typo_verb", "why": "\"expnad\" typo of expand"}
+{"at": "6-pdf-images-archives.txt:206", "command": "unzip the archive.zip file", "label": "gap", "cluster": "archive_phrasing", "why": "trailing \"file\" after the archive name not parsed"}
+{"at": "6-pdf-images-archives.txt:208", "command": "unzp archive.zip", "label": "gap", "cluster": "typo_verb", "why": "\"unzp\" typo of unzip"}
+{"at": "6-pdf-images-archives.txt:217", "command": "mke a PDF from the photos in Downloads named trip", "label": "gap", "cluster": "typo_verb", "why": "\"mke\" typo of make"}
+{"at": "6-pdf-images-archives.txt:225", "command": "make IMG_2041.heic into a jpeg", "label": "gap", "cluster": "convert_phrasing", "why": "\"make X into a jpeg\" phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:226", "command": "convrt IMG_2041.heic to jpg", "label": "gap", "cluster": "typo_verb", "why": "\"convrt\" typo of convert"}
+{"at": "6-pdf-images-archives.txt:235", "command": "resze the PNGs in Desktop to 800 pixels wide", "label": "gap", "cluster": "typo_verb", "why": "\"resze\" typo of resize"}
+{"at": "6-pdf-images-archives.txt:244", "command": "merg PDFs in Documents named invoice into invoices-2026.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"merg\" typo of merge"}
+{"at": "6-pdf-images-archives.txt:248", "command": "could you pull pages 1 to 3 out of book.pdf into intro.pdf", "label": "gap", "cluster": "extract_phrasing", "why": "\"pull pages X to Y out of\" phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:252", "command": "extract pages 1 to 3 from book.pdf and save it as intro.pdf", "label": "gap", "cluster": "extract_phrasing", "why": "\"save it as\" after extract phrasing not parsed"}
+{"at": "6-pdf-images-archives.txt:253", "command": "extrac pages 1 to 3 from book.pdf into intro.pdf", "label": "gap", "cluster": "typo_verb", "why": "\"extrac\" typo of extract"}
+{"at": "6-pdf-images-archives.txt:262", "command": "zipp Thesis folder into Thesis.zip", "label": "gap", "cluster": "typo_verb", "why": "\"zipp\" typo of zip"}
+{"at": "6-pdf-images-archives.txt:271", "command": "convrt all PNGs in Desktop to jpg", "label": "gap", "cluster": "typo_verb", "why": "\"convrt\" typo of convert"}
+{"at": "7-dictation-undo.txt:5", "command": "move the uh report dot pdf file to my Documents folder", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" leaks into file name, giving \"uh report.pdf\""}
+{"at": "7-dictation-undo.txt:8", "command": "move the report dot pdf file to my Documents folder like thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"like\" leaks into destination, giving \"Documents folder like\""}
+{"at": "7-dictation-undo.txt:9", "command": "like move the report dot pdf file to my Documents folder okay", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" and trailing \"okay\" not stripped"}
+{"at": "7-dictation-undo.txt:15", "command": "so like please move all the PDFs in Downloads over to Documents", "label": "gap", "cluster": "leading_filler", "why": "\"so like\" before \"please\" not stripped"}
+{"at": "7-dictation-undo.txt:24", "command": "could you like copy notes dot txt over to my Desktop", "label": "gap", "cluster": "leading_filler", "why": "\"could you like\" filler before the verb not stripped"}
+{"at": "7-dictation-undo.txt:32", "command": "like copy my notes to Backup", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:33", "command": "so copy my notes to Backup uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" leaks into destination, giving \"Backup uh\""}
+{"at": "7-dictation-undo.txt:38", "command": "shift the uh zip files from Downloads to Archives", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh zip\" becomes a name filter instead of archives type"}
+{"at": "7-dictation-undo.txt:41", "command": "like shift the zip files from Downloads to Archives", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:49", "command": "so like move every PDF from Downloads into the Archive folder", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:55", "command": "send the uh invoice to Archive", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" leaks into item name, giving \"uh invoice\""}
+{"at": "7-dictation-undo.txt:58", "command": "like send the invoice to Archive", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:63", "command": "put the uh tax form into Documents", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" leaks into item name, giving \"uh tax form\""}
+{"at": "7-dictation-undo.txt:66", "command": "so like put the tax form into Documents", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:68", "command": "like put the tax form into Documents", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:75", "command": "so like move report final v2 dot docx to Documents", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:76", "command": "move report final v2 dot docx to Documents uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" leaks into destination, giving \"Documents uh\""}
+{"at": "7-dictation-undo.txt:80", "command": "relocate the uh zip files in Downloads to Archives", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh zip\" becomes a name filter instead of archives type"}
+{"at": "7-dictation-undo.txt:83", "command": "so like relocate the zip files in Downloads to Archives", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:91", "command": "so like change the name of draft dot docx to final dot docx", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:92", "command": "change the name of draft dot docx to final dot docx uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" leaks into new name, giving \"final.docx uh\""}
+{"at": "7-dictation-undo.txt:99", "command": "so like change the name of notes dot txt to meeting notes dot txt", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:100", "command": "change the name of notes dot txt to meeting notes dot txt uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" leaks into new name, giving \"meeting notes.txt uh\""}
+{"at": "7-dictation-undo.txt:107", "command": "so like rename report dot pdf as summary dot pdf", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:108", "command": "rename report dot pdf as summary dot pdf uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" leaks into new name, giving \"summary.pdf uh\""}
+{"at": "7-dictation-undo.txt:114", "command": "like delete everything", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:116", "command": "delete uh everything", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" leaks into item name; trash target becomes \"uh everything\""}
+{"at": "7-dictation-undo.txt:122", "command": "like delete everything in Downloads", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:124", "command": "delete everything in Downloads uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" leaks into folder, giving \"Downloads uh\""}
+{"at": "7-dictation-undo.txt:130", "command": "like move everything to the trash", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:132", "command": "move everything to the uh trash", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" breaks \"trash\": becomes a move of every file to \"uh trash\""}
+{"at": "7-dictation-undo.txt:138", "command": "like clean up my Downloads folder", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:140", "command": "clean up my Downloads folder uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" becomes a single-item trash target named \"uh\""}
+{"at": "7-dictation-undo.txt:144", "command": "delete the uh stuff in Downloads", "label": "policy", "cluster": "vague_target", "why": "\"the stuff\" is vague; corpus refuses vague delete targets"}
+{"at": "7-dictation-undo.txt:146", "command": "like delete the stuff in Downloads", "label": "policy", "cluster": "vague_target", "why": "\"the stuff\" is vague; corpus refuses vague delete targets"}
+{"at": "7-dictation-undo.txt:154", "command": "so like get rid of the screenshots in Desktop older than a week", "label": "gap", "cluster": "number_words", "why": "\"a week\" not parsed as 7 days; \"get rid of\" phrasing too"}
+{"at": "7-dictation-undo.txt:163", "command": "so like delete the file that's on the desktop called tmp dot txt", "label": "gap", "cluster": "item_phrasing", "why": "\"the file that's on the desktop called X\" phrasing not parsed"}
+{"at": "7-dictation-undo.txt:164", "command": "delete the file that's on the desktop called tmp dot txt uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" turns item into set filter nameContains \"tmp.txt uh\""}
+{"at": "7-dictation-undo.txt:171", "command": "so like move the video called intro dot mov to Videos", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:172", "command": "move the video called intro dot mov to Videos uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" leaks into destination, giving \"Videos uh\""}
+{"at": "7-dictation-undo.txt:174", "command": "um move every dot mov file from Downloads to Videos", "label": "wrong_parse", "cluster": "set_phrasing", "why": "\"every dot mov file\" read as single file named every.mov"}
+{"at": "7-dictation-undo.txt:175", "command": "okay so move every dot mov file from Downloads to Videos", "label": "wrong_parse", "cluster": "set_phrasing", "why": "\"every dot mov file\" read as single file named every.mov"}
+{"at": "7-dictation-undo.txt:176", "command": "move every dot mov file from Downloads to Videos thanks", "label": "wrong_parse", "cluster": "set_phrasing", "why": "\"every dot mov file\" read as single file named every.mov"}
+{"at": "7-dictation-undo.txt:177", "command": "uh move every dot mov file from Downloads to Videos please", "label": "wrong_parse", "cluster": "set_phrasing", "why": "\"every dot mov file\" read as single file named every.mov"}
+{"at": "7-dictation-undo.txt:178", "command": "move every dot mov file from Downloads to Videos period", "label": "wrong_parse", "cluster": "set_phrasing", "why": "\"every dot mov file\" read as single file named every.mov"}
+{"at": "7-dictation-undo.txt:179", "command": "so like move every dot mov file from Downloads to Videos", "label": "gap", "cluster": "leading_filler", "why": "\"so like\" causes refusal; also needs every-extension set phrasing"}
+{"at": "7-dictation-undo.txt:180", "command": "move every dot mov file from Downloads to Videos uh thanks", "label": "wrong_parse", "cluster": "set_phrasing", "why": "\"every dot mov\" read as file name; \"uh\" leaks into destination"}
+{"at": "7-dictation-undo.txt:186", "command": "so like move the screenshots on my desktop to Pictures", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:188", "command": "move the screenshots on my desktop to Pictures uh thanks", "label": "wrong_parse", "cluster": "trailing_filler", "why": "\"uh\" leaks into destination, giving \"Pictures uh\""}
+{"at": "7-dictation-undo.txt:194", "command": "so like move my installers to the trash", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped; \"installers\" is a valid type"}
+{"at": "7-dictation-undo.txt:196", "command": "move my uh installers to the trash", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" makes trash target item \"uh installers\" not the installers set"}
+{"at": "7-dictation-undo.txt:200", "command": "undo the uh last change", "label": "gap", "cluster": "mid_filler", "why": "\"uh\" mid-command causes refusal"}
+{"at": "7-dictation-undo.txt:203", "command": "so like undo the last change", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:205", "command": "undo the last change uh thanks", "label": "gap", "cluster": "trailing_filler", "why": "trailing \"uh thanks\" causes refusal"}
+{"at": "7-dictation-undo.txt:212", "command": "like undo", "label": "gap", "cluster": "leading_filler", "why": "leading \"like\" not stripped"}
+{"at": "7-dictation-undo.txt:220", "command": "so like take that back", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:228", "command": "so like revert that", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:231", "command": "um undo the last move", "label": "policy", "cluster": "undo_target", "why": "undo has no target; corpus refuses \"undo the last delete\""}
+{"at": "7-dictation-undo.txt:232", "command": "okay so undo the last move", "label": "policy", "cluster": "undo_target", "why": "undo has no target; corpus refuses \"undo the last delete\""}
+{"at": "7-dictation-undo.txt:233", "command": "undo the uh last move", "label": "policy", "cluster": "undo_target", "why": "undo has no target; corpus refuses \"undo the last delete\""}
+{"at": "7-dictation-undo.txt:234", "command": "undo the last move thanks", "label": "policy", "cluster": "undo_target", "why": "undo has no target; corpus refuses \"undo the last delete\""}
+{"at": "7-dictation-undo.txt:235", "command": "undo the last move please", "label": "policy", "cluster": "undo_target", "why": "undo has no target; corpus refuses \"undo the last delete\""}
+{"at": "7-dictation-undo.txt:236", "command": "so like undo the last move", "label": "policy", "cluster": "undo_target", "why": "undo has no target; corpus refuses \"undo the last delete\""}
+{"at": "7-dictation-undo.txt:237", "command": "undo the last move period", "label": "policy", "cluster": "undo_target", "why": "undo has no target; corpus refuses \"undo the last delete\""}
+{"at": "7-dictation-undo.txt:241", "command": "please take back what you uh just did", "label": "gap", "cluster": "undo_phrasing", "why": "\"take back what you just did\" paraphrase of undo not parsed"}
+{"at": "7-dictation-undo.txt:243", "command": "so like please take back what you just did", "label": "gap", "cluster": "undo_phrasing", "why": "\"take back what you just did\" paraphrase of undo not parsed"}
+{"at": "7-dictation-undo.txt:251", "command": "so like I want to undo the last thing I did", "label": "gap", "cluster": "undo_phrasing", "why": "\"undo the last thing I did\" paraphrase not parsed"}
+{"at": "7-dictation-undo.txt:257", "command": "show my uh history", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" leaks into list item name, giving \"uh history\""}
+{"at": "7-dictation-undo.txt:260", "command": "so like show my history", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:265", "command": "list my uh recent changes", "label": "gap", "cluster": "mid_filler", "why": "\"uh\" mid-command causes refusal"}
+{"at": "7-dictation-undo.txt:268", "command": "so like list my recent changes", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:273", "command": "show my uh recent actions please", "label": "gap", "cluster": "mid_filler", "why": "\"uh\" mid-command causes refusal"}
+{"at": "7-dictation-undo.txt:275", "command": "so like show my recent actions please", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:277", "command": "show my recent actions uh please", "label": "gap", "cluster": "trailing_filler", "why": "trailing \"uh please\" causes refusal"}
+{"at": "7-dictation-undo.txt:281", "command": "what uh changed recently", "label": "policy", "cluster": "history_question", "why": "history question refused in corpus (\"what did I just do\")"}
+{"at": "7-dictation-undo.txt:284", "command": "so like what changed recently", "label": "policy", "cluster": "history_question", "why": "history question refused in corpus (\"what did I just do\")"}
+{"at": "7-dictation-undo.txt:292", "command": "so like could you show me the recent actions", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like could you\" not stripped"}
+{"at": "7-dictation-undo.txt:297", "command": "hey voxi please delete the uh screenshots from yesterday", "label": "gap", "cluster": "mid_filler", "why": "\"hey voxi\" prefix and mid \"uh\" cause refusal"}
+{"at": "7-dictation-undo.txt:300", "command": "so like hey voxi please delete the screenshots from yesterday", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like hey voxi please\" not stripped"}
+{"at": "7-dictation-undo.txt:305", "command": "count the uh screenshots from yesterday", "label": "gap", "cluster": "mid_filler", "why": "\"uh\" mid-command causes refusal"}
+{"at": "7-dictation-undo.txt:308", "command": "so like count the screenshots from yesterday", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:313", "command": "how many PDFs are uh in Documents", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" makes count target \"PDFs are uh\""}
+{"at": "7-dictation-undo.txt:316", "command": "so like how many PDFs are in Documents", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:321", "command": "list every uh zip in Downloads", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" makes list target item \"uh zip\""}
+{"at": "7-dictation-undo.txt:324", "command": "so like list every zip in Downloads", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:329", "command": "move the uh tax return from Downloads into Taxes", "label": "wrong_parse", "cluster": "mid_filler", "why": "\"uh\" leaks into item name, giving \"uh tax return\""}
+{"at": "7-dictation-undo.txt:332", "command": "so like move the tax return from Downloads into Taxes", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}
+{"at": "7-dictation-undo.txt:337", "command": "move my uh screenshots from today to the Archive", "label": "gap", "cluster": "mid_filler", "why": "\"uh\" mid-command causes refusal"}
+{"at": "7-dictation-undo.txt:340", "command": "so like move my screenshots from today to the Archive", "label": "gap", "cluster": "leading_filler", "why": "leading \"so like\" not stripped"}

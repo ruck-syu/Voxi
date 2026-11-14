@@ -1,0 +1,30 @@
+# Bank 1 / renames. Variants carry their seed's expected intent.
+# Backlog: commands the parser still gets wrong. Fixing one moves it into src/parse/corpus/11-bank-1.txt.
+could you call the file report.pdf final report.pdf instead => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"final report.pdf"}
+call report.pdf summary.pdf instead => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"summary.pdf"}
+ad prefix Invoice- to all PDFs in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"prefix":"Invoice-"}
+ad prefix 2026- to every file in Documents => {"intent":"add_prefix","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"prefix":"2026-"}
+put Invoice dash in front of the PDFs in Documents => {"intent":"add_prefix","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}},"prefix":"Invoice-"}
+stick the prefix Invoice dash on the PDFs in Documents => {"intent":"add_prefix","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}},"prefix":"Invoice-"}
+ad prefix Invoice dash to PDFs in Documents => {"intent":"add_prefix","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}},"prefix":"Invoice-"}
+ad a date prefix to screenshots in Pictures => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Pictures","filter":{"type":"screenshots"}}}
+ad a date prefix to screenshots in Desktop => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Desktop","filter":{"type":"screenshots"}}}
+change spaces to underscores in names of files in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"_"}
+swap spaces for underscores in names of files in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"_"}
+in names of files in Downloads replace spaces with underscores => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"_"}
+take out the spaces in the file names in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":""}
+remvoe spaces from the file names in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":""}
+make the file names in Downloads have no spaces => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":""}
+take the dashes out of names in Documents => {"intent":"replace_in_names","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"find":"-","replace":""}
+names in Documents should lose their dashes => {"intent":"replace_in_names","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"find":"-","replace":""}
+change dashes to spaces in names of files in Documents => {"intent":"replace_in_names","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"find":"-","replace":" "}
+swap dashes for spaces in names of files in Documents => {"intent":"replace_in_names","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"find":"-","replace":" "}
+in names of files in Documents replace dashes with spaces => {"intent":"replace_in_names","src":{"kind":"set","folder":"Documents","filter":{"type":"files"}},"find":"-","replace":" "}
+change spaces to underscores in file names in Pictures => {"intent":"replace_in_names","src":{"kind":"set","folder":"Pictures","filter":{"type":"files"}},"find":" ","replace":"_"}
+swap spaces for underscores in the file names in Pictures => {"intent":"replace_in_names","src":{"kind":"set","folder":"Pictures","filter":{"type":"files"}},"find":" ","replace":"_"}
+in file names in Pictures replace spaces with underscores => {"intent":"replace_in_names","src":{"kind":"set","folder":"Pictures","filter":{"type":"files"}},"find":" ","replace":"_"}
+give the photos in Trip numbered names like trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+give the PDFs in Scans numbers like scan-01, scan-02 => {"intent":"number","src":{"kind":"set","folder":"Scans","filter":{"type":"pdfs"}},"base":"scan-","width":2}
+change all the file names in Desktop to lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}}}
+change the names of PDFs in Documents to lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+rename report.pdf to a/final.pdf => !

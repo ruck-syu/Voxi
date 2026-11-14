@@ -1,0 +1,144 @@
+MISS 6-pdf-images-archives.txt:10  cmobine the PDFs in Documents into report-all.pdf
+     want {"intent":"merge_pdf","output":"report-all.pdf","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:14  could you merge all pdfs in downloads into combined.pdf
+     want {"intent":"merge_pdf","output":"combined.pdf","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"merge_pdf","output":"combined.pdf","src":{"filter":{"type":"pdfs"},"folder":"downloads","kind":"set"}}
+MISS 6-pdf-images-archives.txt:19  mrege all PDFs in Downloads into combined.pdf
+     want {"intent":"merge_pdf","output":"combined.pdf","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:23  could you join the pdfs in desktop as summary.pdf
+     want {"intent":"merge_pdf","output":"summary.pdf","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"}}
+     got  {"intent":"merge_pdf","output":"summary.pdf","src":{"filter":{"type":"pdfs"},"folder":"desktop","kind":"set"}}
+MISS 6-pdf-images-archives.txt:28  jion the PDFs in Desktop as summary.pdf
+     want {"intent":"merge_pdf","output":"summary.pdf","src":{"filter":{"type":"pdfs"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:37  mergee PDFs in Documents named scan into scan-all.pdf
+     want {"intent":"merge_pdf","output":"scan-all.pdf","src":{"filter":{"nameContains":"scan","type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:44  split report.pdf apart into separate pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf apart"}}
+MISS 6-pdf-images-archives.txt:45  split up report.pdf into separate pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  {"intent":"split_pdf","src":{"kind":"item","name":"up report.pdf"}}
+MISS 6-pdf-images-archives.txt:46  spilt report.pdf into separate pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:53  split scan.pdf into each page
+     want {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf"}}
+     got  {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf into each page"}}
+MISS 6-pdf-images-archives.txt:54  split up scan.pdf into individual pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf"}}
+     got  {"intent":"split_pdf","src":{"kind":"item","name":"up scan.pdf"}}
+MISS 6-pdf-images-archives.txt:55  spli scan.pdf into individual pages
+     want {"intent":"split_pdf","src":{"kind":"item","name":"scan.pdf"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:59  could you pull pages 2 to 5 out of report.pdf into excerpt.pdf
+     want {"from":2,"intent":"extract_pages","output":"excerpt.pdf","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:63  extract pages 2 to 5 from report.pdf and save as excerpt.pdf
+     want {"from":2,"intent":"extract_pages","output":"excerpt.pdf","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:64  extrct pages 2 to 5 from report.pdf into excerpt.pdf
+     want {"from":2,"intent":"extract_pages","output":"excerpt.pdf","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:69  pull pages 3 through 4 out of contract.pdf
+     want {"from":3,"intent":"extract_pages","src":{"kind":"item","name":"contract.pdf"},"to":4}
+     got  "!"
+MISS 6-pdf-images-archives.txt:73  extrat pages 3 through 4 from contract.pdf
+     want {"from":3,"intent":"extract_pages","src":{"kind":"item","name":"contract.pdf"},"to":4}
+     got  "!"
+MISS 6-pdf-images-archives.txt:79  pull page 5 out of report.pdf
+     want {"from":5,"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:82  pul out page 5 of report.pdf
+     want {"from":5,"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"to":5}
+     got  "!"
+MISS 6-pdf-images-archives.txt:91  mkae a PDF out of the screenshots in Pictures
+     want {"intent":"images_to_pdf","src":{"filter":{"type":"screenshots"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:100  mke a PDF from images in Scans named receipts
+     want {"intent":"images_to_pdf","src":{"filter":{"nameContains":"receipts","type":"images"},"folder":"Scans","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:106  make screenshots into a PDF
+     want {"intent":"images_to_pdf","src":{"filter":{"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:109  convrt screenshots to PDF
+     want {"intent":"images_to_pdf","src":{"filter":{"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:118  convrt all the photos in Pictures to PNG
+     want {"format":"png","intent":"convert_image","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:127  convrt HEIC to JPEG
+     want {"format":"jpg","intent":"convert_image","src":{"filter":{"ext":["heic","heif"],"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:134  make photo.HEIC into a jpg
+     want {"format":"jpg","intent":"convert_image","src":{"kind":"item","name":"photo.HEIC"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:136  covert photo.HEIC to jpeg
+     want {"format":"jpg","intent":"convert_image","src":{"kind":"item","name":"photo.HEIC"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:143  make logo.png into webp
+     want {"format":"webp","intent":"convert_image","src":{"kind":"item","name":"logo.png"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:145  convrt logo.png to webp
+     want {"format":"webp","intent":"convert_image","src":{"kind":"item","name":"logo.png"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:154  shirnk the photos to 1200 pixels
+     want {"intent":"resize_image","src":{"filter":{"type":"images"},"kind":"set"},"width":1200}
+     got  "!"
+MISS 6-pdf-images-archives.txt:163  scal down all images in Pictures to 800 px wide
+     want {"intent":"resize_image","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"},"width":800}
+     got  "!"
+MISS 6-pdf-images-archives.txt:172  zpi up the Project folder
+     want {"intent":"zip","src":{"kind":"item","name":"Project"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:180  compress Downloads/Project into a zip called Project.zip
+     want {"intent":"zip","output":"Project.zip","src":{"kind":"item","name":"Downloads/Project"}}
+     got  {"intent":"zip","output":"a zip called Project.zip","src":{"kind":"item","name":"Downloads/Project"}}
+MISS 6-pdf-images-archives.txt:181  compres Downloads/Project into Project.zip
+     want {"intent":"zip","output":"Project.zip","src":{"kind":"item","name":"Downloads/Project"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:190  extrct archive.zip to Documents
+     want {"destination":"Documents","intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:199  expnad Downloads/bundle.zip into Downloads/bundle
+     want {"destination":"Downloads/bundle","intent":"unzip","src":{"kind":"item","name":"Downloads/bundle.zip"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:206  unzip the archive.zip file
+     want {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:208  unzp archive.zip
+     want {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:217  mke a PDF from the photos in Downloads named trip
+     want {"intent":"images_to_pdf","src":{"filter":{"nameContains":"trip","type":"images"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:225  make IMG_2041.heic into a jpeg
+     want {"format":"jpg","intent":"convert_image","src":{"kind":"item","name":"IMG_2041.heic"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:226  convrt IMG_2041.heic to jpg
+     want {"format":"jpg","intent":"convert_image","src":{"kind":"item","name":"IMG_2041.heic"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:235  resze the PNGs in Desktop to 800 pixels wide
+     want {"intent":"resize_image","src":{"filter":{"ext":["png"],"type":"files"},"folder":"Desktop","kind":"set"},"width":800}
+     got  "!"
+MISS 6-pdf-images-archives.txt:244  merg PDFs in Documents named invoice into invoices-2026.pdf
+     want {"intent":"merge_pdf","output":"invoices-2026.pdf","src":{"filter":{"nameContains":"invoice","type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:248  could you pull pages 1 to 3 out of book.pdf into intro.pdf
+     want {"from":1,"intent":"extract_pages","output":"intro.pdf","src":{"kind":"item","name":"book.pdf"},"to":3}
+     got  "!"
+MISS 6-pdf-images-archives.txt:252  extract pages 1 to 3 from book.pdf and save it as intro.pdf
+     want {"from":1,"intent":"extract_pages","output":"intro.pdf","src":{"kind":"item","name":"book.pdf"},"to":3}
+     got  "!"
+MISS 6-pdf-images-archives.txt:253  extrac pages 1 to 3 from book.pdf into intro.pdf
+     want {"from":1,"intent":"extract_pages","output":"intro.pdf","src":{"kind":"item","name":"book.pdf"},"to":3}
+     got  "!"
+MISS 6-pdf-images-archives.txt:262  zipp Thesis folder into Thesis.zip
+     want {"intent":"zip","output":"Thesis.zip","src":{"kind":"item","name":"Thesis"}}
+     got  "!"
+MISS 6-pdf-images-archives.txt:271  convrt all PNGs in Desktop to jpg
+     want {"format":"jpg","intent":"convert_image","src":{"filter":{"ext":["png"],"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"

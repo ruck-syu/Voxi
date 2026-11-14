@@ -1,0 +1,369 @@
+MISS 3-list-count-size.txt:3  what pdfs are in Downloads?
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:5  got any PDFs in Downloads?
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:7  i need to see the PDFs in Downloads
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:9  pull up the PDF files in Downloads
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:10  lsit PDFs in Downloads
+     want {"intent":"list","src":{"filter":{"type":"pdfs"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:12  what videos are in Downloads
+     want {"intent":"list","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:16  i need to see the videos in Downloads quickly
+     want {"intent":"list","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:19  lisst the videos in Downloads
+     want {"intent":"list","src":{"filter":{"type":"videos"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:21  what Word documents are in Documents?
+     want {"intent":"list","src":{"filter":{"ext":["doc","docx"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:25  i need to see the word documents in Documents
+     want {"intent":"list","src":{"filter":{"ext":["doc","docx"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:26  pull up the Word documents in Documents
+     want {"intent":"list","src":{"filter":{"ext":["doc","docx"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:28  shwo the Word documents in Documents
+     want {"intent":"list","src":{"filter":{"ext":["doc","docx"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:30  what zips are in Downloads?
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:34  i need to see the zips in Downloads
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:37  lisst the zips in Downloads
+     want {"intent":"list","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:39  what files have budget in the name in Documents
+     want {"intent":"list","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:43  i need to see the files called budget in Documents
+     want {"intent":"list","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:44  pull up files named budget in Documents
+     want {"intent":"list","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:46  lsit files named budget in Documents
+     want {"intent":"list","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:48  what's the file named passport.pdf?
+     want {"intent":"list","src":{"kind":"item","name":"passport.pdf"}}
+     got  "!"
+MISS 3-list-count-size.txt:52  i need to find the file named passport.pdf quickly
+     want {"intent":"list","src":{"kind":"item","name":"passport.pdf"}}
+     got  {"intent":"list","src":{"filter":{"nameContains":"passport.pdf quickly","type":"files"},"kind":"set"}}
+MISS 3-list-count-size.txt:55  fnid the file named passport.pdf
+     want {"intent":"list","src":{"kind":"item","name":"passport.pdf"}}
+     got  "!"
+MISS 3-list-count-size.txt:63  pull up files called Final Draft.docx
+     want {"intent":"list","src":{"kind":"item","name":"Final Draft.docx"}}
+     got  "!"
+MISS 3-list-count-size.txt:64  fnid files called Final Draft.docx
+     want {"intent":"list","src":{"kind":"item","name":"Final Draft.docx"}}
+     got  "!"
+MISS 3-list-count-size.txt:70  i need to see the files in Desktop bigger than 500 MB
+     want {"intent":"list","src":{"filter":{"largerThanMb":500.0,"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:73  lsit files bigger than 500 MB in Desktop
+     want {"intent":"list","src":{"filter":{"largerThanMb":500.0,"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:79  i need to see files between 10 and 50 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"smallerThanMb":50.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:80  pull up the files in Downloads between 10 and 50 MB
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"smallerThanMb":50.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:82  lsit files between 10 and 50 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"smallerThanMb":50.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:84  what png files are there
+     want {"intent":"list","src":{"filter":{"ext":["png"],"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:88  i need to see all the png files
+     want {"intent":"list","src":{"filter":{"ext":["png"],"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:91  lsit all png files
+     want {"intent":"list","src":{"filter":{"ext":["png"],"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:93  what HEIC photos are in Pictures
+     want {"intent":"list","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:97  i need to see the HEIC photos in Pictures
+     want {"intent":"list","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:98  pull up all the HEIC photos in Pictures
+     want {"intent":"list","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:100  lsit all the HEIC photos in Pictures
+     want {"intent":"list","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:102  what's in the Pictures/Trip folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Pictures/Trip","kind":"set"}}
+     got  {"intent":"list","src":{"kind":"item","name":"Pictures/Trip"}}
+MISS 3-list-count-size.txt:106  i need to see the files in Pictures/Trip folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Pictures/Trip","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:107  pull up the files in Pictures/Trip folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Pictures/Trip","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:109  shwo the files in Pictures/Trip folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Pictures/Trip","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:115  i need to see the photos in Pictures named cat
+     want {"intent":"list","src":{"filter":{"nameContains":"cat","type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:116  pull up the photos in Pictures named cat
+     want {"intent":"list","src":{"filter":{"nameContains":"cat","type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:118  lsit the photos in Pictures named cat
+     want {"intent":"list","src":{"filter":{"nameContains":"cat","type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:120  what text files are in Documents
+     want {"intent":"list","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:124  i need to see the text files in Documents
+     want {"intent":"list","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:125  pull up the text files in Documents
+     want {"intent":"list","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:127  lsit the text files in Documents
+     want {"intent":"list","src":{"filter":{"ext":["txt"],"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:132  could you tell me what's in the Desktop folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:133  i need to see what's in the Desktop folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:136  shwo me what's in the Desktop folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:139  what files are in my downloads folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:141  i need to see the files in my downloads folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:142  pull up the files in my downloads folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:145  lsit the files in my downloads folder
+     want {"intent":"list","src":{"filter":{"type":"files"},"folder":"downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:151  i need to see files at least 10 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:152  pull up files at least 10 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:154  lsit files at least 10 MB in Downloads
+     want {"intent":"list","src":{"filter":{"largerThanMb":10.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:159  i need to see everything with 'draft' in the name
+     want {"intent":"list","src":{"filter":{"nameContains":"draft","type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:160  pull up everything with 'draft' in the name
+     want {"intent":"list","src":{"filter":{"nameContains":"draft","type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:162  what has 'draft' in the name?
+     want {"intent":"list","src":{"filter":{"nameContains":"draft","type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:163  lsit everything with 'draft' in the name
+     want {"intent":"list","src":{"filter":{"nameContains":"draft","type":"files"},"kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:165  tell me how many PDFs are in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:167  number of PDFs in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:169  i need the count of PDFs in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:170  can you tell me how many PDFs are in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:172  cuont PDFs in Documents
+     want {"intent":"count","src":{"filter":{"type":"pdfs"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:176  number of images in Pictures
+     want {"intent":"count","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:178  i need the count of images in Pictures
+     want {"intent":"count","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:179  can you tell me how many images are in Pictures
+     want {"intent":"count","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:181  cuont the images in Pictures
+     want {"intent":"count","src":{"filter":{"type":"images"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:185  number of screenshots on my Desktop
+     want {"intent":"count","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:188  i need to know how many screenshots are on my Desktop
+     want {"intent":"count","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:190  hwo many screenshots are on my Desktop
+     want {"intent":"count","src":{"filter":{"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:194  number of HEIC files in Pictures
+     want {"intent":"count","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:196  i need the count of HEIC files in Pictures
+     want {"intent":"count","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:197  can you tell me how many HEIC files are in Pictures
+     want {"intent":"count","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:199  cuont the HEIC files in Pictures
+     want {"intent":"count","src":{"filter":{"ext":["heic","heif"],"type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:203  number of spreadsheets in Downloads
+     want {"intent":"count","src":{"filter":{"ext":["xlsx","xls","csv","numbers"],"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:205  i need the count of spreadsheets in Downloads
+     want {"intent":"count","src":{"filter":{"ext":["xlsx","xls","csv","numbers"],"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:206  can you tell me how many spreadsheets are in Downloads
+     want {"intent":"count","src":{"filter":{"ext":["xlsx","xls","csv","numbers"],"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:208  cuont the spreadsheets in Downloads
+     want {"intent":"count","src":{"filter":{"ext":["xlsx","xls","csv","numbers"],"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:212  number of zip files over 100 MB in Downloads
+     want {"intent":"count","src":{"filter":{"largerThanMb":100.0,"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:214  i need the count of zip files over 100 MB in Downloads
+     want {"intent":"count","src":{"filter":{"largerThanMb":100.0,"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:215  can you tell me how many zip files are over 100 MB in Downloads
+     want {"intent":"count","src":{"filter":{"largerThanMb":100.0,"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:217  cuont the zip files over 100 MB in Downloads
+     want {"intent":"count","src":{"filter":{"largerThanMb":100.0,"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:219  how many files have IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:221  number of files with IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:223  i need the count of files with IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:224  can you tell me how many files have IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:226  cuont the files with IMG in the name in Pictures
+     want {"intent":"count","src":{"filter":{"nameContains":"IMG","type":"files"},"folder":"Pictures","kind":"set"}}
+     got  "!"
+MISS 3-list-count-size.txt:231  what size is the Documents folder
+     want {"folder":"Documents","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:233  i need to know how big the Documents folder is
+     want {"folder":"Documents","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:235  hwo big is the Documents folder
+     want {"folder":"Documents","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:242  i need the size of the Desktop folder
+     want {"folder":"Desktop","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:244  sise of the Desktop folder
+     want {"folder":"Desktop","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:248  how much space is Downloads taking up
+     want {"folder":"Downloads","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:250  i need to know how much space Downloads is using
+     want {"folder":"Downloads","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:252  how much disk space is Downloads using
+     want {"folder":"Downloads","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:253  hwo much space is Downloads using
+     want {"folder":"Downloads","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:260  i need to know how big my screenshots folder is
+     want {"folder":"screenshots","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:262  hwo big is my screenshots folder
+     want {"folder":"screenshots","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:269  i need to see the size of my home folder
+     want {"folder":"home","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:271  chekc the size of my home folder
+     want {"folder":"home","intent":"size"}
+     got  "!"
+MISS 3-list-count-size.txt:273  look for duplicates in Documents
+     want {"folder":"Documents","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:278  any duplicates in Documents?
+     want {"folder":"Documents","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:280  fnid duplicates in Documents
+     want {"folder":"Documents","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:284  look for duplicate files in Downloads
+     want {"folder":"Downloads","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:286  i need to see duplicate files in Downloads
+     want {"folder":"Downloads","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:287  are there duplicate files in Downloads?
+     want {"folder":"Downloads","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:289  lsit duplicate files in Downloads
+     want {"folder":"Downloads","intent":"duplicates"}
+     got  "!"
+MISS 3-list-count-size.txt:296  i need Downloads open in Finder
+     want {"intent":"reveal","target":"Downloads"}
+     got  "!"
+MISS 3-list-count-size.txt:298  oepn Downloads in Finder
+     want {"intent":"reveal","target":"Downloads"}
+     got  "!"
+MISS 3-list-count-size.txt:300  where is report.pdf
+     want {"intent":"reveal","target":"report.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:301  where's report.pdf
+     want {"intent":"reveal","target":"report.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:302  where is report.pdf in Finder?
+     want {"intent":"reveal","target":"report.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:305  i need to find where report.pdf is
+     want {"intent":"reveal","target":"report.pdf"}
+     got  {"intent":"list","src":{"kind":"item","name":"where report.pdf is"}}
+MISS 3-list-count-size.txt:307  shwo me where report.pdf is
+     want {"intent":"reveal","target":"report.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:312  i need to see Invoice.pdf in Finder
+     want {"intent":"reveal","target":"Invoice.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:316  revael Invoice.pdf
+     want {"intent":"reveal","target":"Invoice.pdf"}
+     got  "!"
+MISS 3-list-count-size.txt:325  oepn the Downloads folder
+     want {"intent":"reveal","target":"Downloads"}
+     got  "!"
+MISS 3-list-count-size.txt:331  i need to see the Pictures folder in Finder
+     want {"intent":"reveal","target":"Pictures"}
+     got  "!"
+MISS 3-list-count-size.txt:334  shwo me the Pictures folder in Finder
+     want {"intent":"reveal","target":"Pictures"}
+     got  "!"
+MISS 3-list-count-size.txt:343  oepn my Pictures folder
+     want {"intent":"reveal","target":"Pictures"}
+     got  "!"

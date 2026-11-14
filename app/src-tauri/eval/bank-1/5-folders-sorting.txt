@@ -1,0 +1,9 @@
+# Bank 1 / folders and sorting. Variants carry their seed's expected intent.
+# Backlog: commands the parser still gets wrong. Fixing one moves it into src/parse/corpus/11-bank-1.txt.
+create the Receipts folder in Documents => {"intent":"create_folders","names":["Receipts"],"parent":"Documents"}
+file Documents away by month => {"intent":"sort_by_month","folder":"Documents"}
+tidy the downloads by date => {"intent":"sort_by_month","folder":"downloads"}
+file away the screenshots by month => {"intent":"sort_by_month","folder":"screenshots"}
+help me file my pictures away by month => {"intent":"sort_by_month","folder":"pictures"}
+tidy the desktop by type => {"intent":"sort_by_type","folder":"desktop"}
+make a folder called Taxes in Documents and Pictures => !

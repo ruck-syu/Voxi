@@ -1,0 +1,228 @@
+MISS 2-trash.txt:6  toss every installer out of Downloads please
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:7  i want to bin all the installers in Downloads real quick
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads real quick","kind":"set"}}
+MISS 2-trash.txt:8  delete any installers from the Downloads folder
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"any installers"}}
+MISS 2-trash.txt:10  clear out the installers in Downloads, thanks
+     want {"intent":"trash","src":{"filter":{"type":"installers"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:13  hey can you remvoe the claude.dmg file from Downloads
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"claude.dmg"}}
+     got  "!"
+MISS 2-trash.txt:18  throw away the claude.dmg file that's in Downloads
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"claude.dmg"}}
+     got  {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"claude.dmg file that's"}}
+MISS 2-trash.txt:19  delte the claude.dmg file in Downloads
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"claude.dmg"}}
+     got  "!"
+MISS 2-trash.txt:25  delete any screenshot older than 45 days for me
+     want {"intent":"trash","src":{"filter":{"olderThanDays":45,"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:26  toss the screenshots that are older than 45 days
+     want {"intent":"trash","src":{"filter":{"olderThanDays":45,"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:28  delet screenshots older than 45 days
+     want {"intent":"trash","src":{"filter":{"olderThanDays":45,"type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:34  toss the files bigger than 1 gigabyte in Downloads
+     want {"intent":"trash","src":{"filter":{"largerThanMb":1024.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:37  delte files larger than 1 GB in Downloads
+     want {"intent":"trash","src":{"filter":{"largerThanMb":1024.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:40  hey can you remvoe files smaller than 5 MB from Downloads
+     want {"intent":"trash","src":{"filter":{"smallerThanMb":5.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:44  delete any file under 5 mb in Downloads
+     want {"intent":"trash","src":{"filter":{"smallerThanMb":5.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:45  just delete the files under 5 MB in Downloads thanks
+     want {"intent":"trash","src":{"filter":{"smallerThanMb":5.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:46  toss files under 5 MB out of Downloads
+     want {"intent":"trash","src":{"filter":{"smallerThanMb":5.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:48  pleese delete the zip files in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:52  i want to bin the zip files that are in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:54  toss the zips out of Downloads please
+     want {"intent":"trash","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:55  clear out the zip files in Downloads for me
+     want {"intent":"trash","src":{"filter":{"type":"archives"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:63  toss "last" out
+     want {"intent":"trash","src":{"kind":"item","name":"last"}}
+     got  "!"
+MISS 2-trash.txt:64  delet "last"
+     want {"intent":"trash","src":{"kind":"item","name":"last"}}
+     got  "!"
+MISS 2-trash.txt:72  toss last dot pdf out
+     want {"intent":"trash","src":{"kind":"item","name":"last.pdf"}}
+     got  "!"
+MISS 2-trash.txt:73  dleete last.pdf
+     want {"intent":"trash","src":{"kind":"item","name":"last.pdf"}}
+     got  "!"
+MISS 2-trash.txt:81  toss the file "report.pdf" out
+     want {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 2-trash.txt:82  remvoe the file "report.pdf"
+     want {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+     got  "!"
+MISS 2-trash.txt:90  toss every file named "budget" out of Downloads
+     want {"intent":"trash","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:91  dellete files named "budget" in Downloads
+     want {"intent":"trash","src":{"filter":{"nameContains":"budget","type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:99  toss last.pdf out of Downloads
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"last.pdf"}}
+     got  "!"
+MISS 2-trash.txt:100  delete last.pdf from Downloads real quick
+     want {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"last.pdf"}}
+     got  {"intent":"trash","src":{"folder":"Downloads real quick","kind":"item","name":"last.pdf"}}
+MISS 2-trash.txt:104  trsah draft_v1.docx
+     want {"intent":"trash","src":{"kind":"item","name":"draft_v1.docx"}}
+     got  "!"
+MISS 2-trash.txt:108  toss draft_v1.docx out
+     want {"intent":"trash","src":{"kind":"item","name":"draft_v1.docx"}}
+     got  "!"
+MISS 2-trash.txt:117  toss the file called tmp.txt that's on the desktop
+     want {"intent":"trash","src":{"folder":"desktop","kind":"item","name":"tmp.txt"}}
+     got  "!"
+MISS 2-trash.txt:118  delte the file that's on the desktop called tmp.txt
+     want {"intent":"trash","src":{"folder":"desktop","kind":"item","name":"tmp.txt"}}
+     got  "!"
+MISS 2-trash.txt:123  clean up the desktop real quick
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"desktop","kind":"set"}}
+     got  {"intent":"trash","src":{"kind":"item","name":"desktop real quick"}}
+MISS 2-trash.txt:125  clean my desktop up please
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:127  claen up my desktop
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:132  clean up the Downloads folder real quick
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"folder":"Downloads","kind":"item","name":"real quick"}}
+MISS 2-trash.txt:134  clean my Downloads folder up please
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:136  claen up my Downloads folder
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:144  toss the stuff in Downloads out
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:145  delet the stuff in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:148  hey can you remvoe everything in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:153  toss everything in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:154  clear out everything in Downloads
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:162  toss everything out
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:163  delte everything
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:171  please move everything to the trash real quick
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  {"intent":"move","src":{"filter":{"type":"files"},"kind":"set"},"to":"trash real quick"}
+MISS 2-trash.txt:172  mvoe everything to the trash
+     want {"intent":"trash","src":{"filter":{"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:180  toss the files whose names have draft in them in Documents
+     want {"intent":"trash","src":{"filter":{"nameContains":"draft","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:181  delte the files whose names contain draft in Documents
+     want {"intent":"trash","src":{"filter":{"nameContains":"draft","type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:189  toss all files that start with invoice from Downloads
+     want {"intent":"trash","src":{"filter":{"nameStartsWith":"invoice","type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:190  delte files that start with invoice from Downloads
+     want {"intent":"trash","src":{"filter":{"nameStartsWith":"invoice","type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:197  throw away any PNG files older than 2 years in Downloads
+     want {"intent":"trash","src":{"filter":{"ext":["png"],"olderThanDays":730,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  {"intent":"trash","src":{"filter":{"nameContains":"any PNG","olderThanDays":730,"type":"files"},"folder":"Downloads","kind":"set"}}
+MISS 2-trash.txt:198  toss the PNGs older than 2 years in Downloads
+     want {"intent":"trash","src":{"filter":{"ext":["png"],"olderThanDays":730,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:199  delte all PNG files older than 2 years in Downloads
+     want {"intent":"trash","src":{"filter":{"ext":["png"],"olderThanDays":730,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:207  toss every screenshot in Desktop older than a week
+     want {"intent":"trash","src":{"filter":{"olderThanDays":7,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:215  toss screenshots older than 6 months in Desktop
+     want {"intent":"trash","src":{"filter":{"olderThanDays":180,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:216  clear out the screenshots older than 6 months in Desktop
+     want {"intent":"trash","src":{"filter":{"olderThanDays":180,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:217  delet screenshots older than 6 months in Desktop
+     want {"intent":"trash","src":{"filter":{"olderThanDays":180,"type":"screenshots"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:225  toss the files over 10GB out of Downloads
+     want {"intent":"trash","src":{"filter":{"largerThanMb":10240.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:226  delte files over 10 GB in Downloads
+     want {"intent":"trash","src":{"filter":{"largerThanMb":10240.0,"type":"files"},"folder":"Downloads","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:229  hey can you mvoe Thumbs.db to the trash for me
+     want {"intent":"trash","src":{"kind":"item","name":"Thumbs.db"}}
+     got  "!"
+MISS 2-trash.txt:233  throw Thumbs.db away
+     want {"intent":"trash","src":{"kind":"item","name":"Thumbs.db"}}
+     got  "!"
+MISS 2-trash.txt:243  toss files named untitled that are on Desktop
+     want {"intent":"trash","src":{"filter":{"nameContains":"untitled","type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:244  delte files named untitled on Desktop
+     want {"intent":"trash","src":{"filter":{"nameContains":"untitled","type":"files"},"folder":"Desktop","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:252  toss all the GIFs older than a year
+     want {"intent":"trash","src":{"filter":{"ext":["gif"],"olderThanDays":365,"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:253  delte all the GIFs older than a year
+     want {"intent":"trash","src":{"filter":{"ext":["gif"],"olderThanDays":365,"type":"files"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:261  Hey Voxi please toss the screenshots from yesterday
+     want {"intent":"trash","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:262  hey voxi pls delte the screenshots from yesterday
+     want {"intent":"trash","src":{"filter":{"day":"yesterday","type":"screenshots"},"kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:264  please clear out everything in Documents
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:269  chuck everything in Documents please
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:270  toss everything in Documents out
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:271  delte everything in Documents
+     want {"intent":"trash","src":{"filter":{"type":"files"},"folder":"Documents","kind":"set"}}
+     got  "!"
+MISS 2-trash.txt:302  um delete report.pdf permanently
+     want "!"
+     got  {"intent":"trash","src":{"kind":"item","name":"report.pdf permanently"}}
+MISS 2-trash.txt:304  delete report.pdf for good
+     want "!"
+     got  {"intent":"trash","src":{"kind":"item","name":"report.pdf for good"}}

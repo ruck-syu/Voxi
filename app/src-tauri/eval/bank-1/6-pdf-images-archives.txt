@@ -1,0 +1,4 @@
+# Bank 1 / pdf, images, archives. Variants carry their seed's expected intent.
+# Backlog: commands the parser still gets wrong. Fixing one moves it into src/parse/corpus/11-bank-1.txt.
+make screenshots into a PDF => {"intent":"images_to_pdf","src":{"kind":"set","filter":{"type":"screenshots"}}}
+unzip the archive.zip file => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}

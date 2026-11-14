@@ -11,6 +11,11 @@ fn output_name(text: &str) -> String { clean_name(&OUTPUT_LABEL.replace(text, ""
 
 pub fn patterns() -> Vec<Pattern> {
     vec![
+        pat("put_pdfs_together", r"^put\s+(.+?)\s+together\s+(?:as|into)\s+(.+)$", |c| {
+            let src = typed_src(c, 1, FileType::Pdfs)?;
+            if !matches!(src, crate::model::Source::Set { .. }) { return None; }
+            Some(Intent::MergePdf { src, output: output_name(&cap(c, 2)?) })
+        }),
         pat(
             "extract_pages",
             r"^(?:extract|pull\s+out|take\s+out|copy)\s+pages?\s+(\d+)\s*(?:to|through|thru|-|–|until)\s*(\d+)\s+(?:from|of|out\s+of|in)\s+(.+?)(?:\s+(?:into|as|to)\s+(.+))?$",

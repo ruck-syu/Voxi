@@ -1,0 +1,215 @@
+{"at":"1-moves-copies.txt:7","command":"to my Documents folder move the report.pdf file","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order; the forward form is already in the corpus."}
+{"at":"1-moves-copies.txt:8","command":"real quick transfer the report.pdf file to my Documents folder","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler not stripped; 'transfer' already works."}
+{"at":"1-moves-copies.txt:9","command":"mvoe the report.pdf file to my Documents folder","label":"gap","cluster":"typo_verb","why":"Typo of move; the move form is already supported."}
+{"at":"1-moves-copies.txt:10","command":"drag the report.pdf file into my Documents folder for me","label":"gap","cluster":"verb_synonym","why":"'drag' is not a supported move verb."}
+{"at":"1-moves-copies.txt:16","command":"from Downloads, move all the PDFs over to Documents","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Downloads,' clause; the trailing form works."}
+{"at":"1-moves-copies.txt:18","command":"relocate any PDF files in Downloads over to Documents","label":"wrong_parse","cluster":"quantifier_any_every","why":"'any PDF' became a nameContains literal instead of a PDF-type filter."}
+{"at":"1-moves-copies.txt:19","command":"sned all the PDFs in Downloads over to Documents","label":"gap","cluster":"typo_verb","why":"Typo of send; 'send' is already a corpus verb."}
+{"at":"1-moves-copies.txt:24","command":"make a copy of notes.txt in my Desktop","label":"gap","cluster":"copy_phrasing","why":"'make a copy of X in Y' phrasing unsupported; 'copy X to Y' works."}
+{"at":"1-moves-copies.txt:27","command":"over to my Desktop could you copy notes.txt","label":"gap","cluster":"reorder_destination_first","why":"Destination-first clause plus a 'could you' filler."}
+{"at":"1-moves-copies.txt:28","command":"coppy notes.txt over to my Desktop","label":"gap","cluster":"typo_verb","why":"Typo of copy; the forward form with 'over to' is supported."}
+{"at":"1-moves-copies.txt:34","command":"real quick transfer the invoice to Archive","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler; 'transfer' is supported."}
+{"at":"1-moves-copies.txt:35","command":"to Archive send the invoice","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order; 'send X to Y' is supported."}
+{"at":"1-moves-copies.txt:36","command":"drag the invoice into Archive please","label":"gap","cluster":"verb_synonym","why":"'drag' is not a supported move verb."}
+{"at":"1-moves-copies.txt:37","command":"sned the invoice to Archive","label":"gap","cluster":"typo_verb","why":"Typo of send."}
+{"at":"1-moves-copies.txt:40","command":"please make a copy of my notes in Backup","label":"gap","cluster":"copy_phrasing","why":"'make a copy of' phrasing; 'copy my notes to Backup' works."}
+{"at":"1-moves-copies.txt:42","command":"back up my notes to Backup","label":"gap","cluster":"copy_phrasing","why":"'back up X to Y' phrasing not recognized."}
+{"at":"1-moves-copies.txt:45","command":"to Backup copy my notes","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order for copy."}
+{"at":"1-moves-copies.txt:46","command":"coppy my notes to Backup please","label":"gap","cluster":"typo_verb","why":"Typo of copy; 'copy my notes to Backup' works."}
+{"at":"1-moves-copies.txt:49","command":"please make a copy of the whole Project folder in Backup","label":"gap","cluster":"copy_phrasing","why":"'make a copy of' phrasing unsupported; bare copy form works."}
+{"at":"1-moves-copies.txt:51","command":"back up the whole Project folder to Backup","label":"gap","cluster":"copy_phrasing","why":"'back up X to Y' phrasing unsupported."}
+{"at":"1-moves-copies.txt:53","command":"real quick, copy the whole Project folder to Backup","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler; the bare form is supported."}
+{"at":"1-moves-copies.txt:54","command":"to Backup copy the whole Project folder","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order for copy."}
+{"at":"1-moves-copies.txt:55","command":"cpoy the whole Project folder to Backup","label":"gap","cluster":"typo_verb","why":"Typo of copy."}
+{"at":"1-moves-copies.txt:61","command":"to Documents move Downloads/invoice.pdf","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order; the path-in-name form is in the corpus."}
+{"at":"1-moves-copies.txt:62","command":"drag Downloads/invoice.pdf into Documents for me","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; trailing 'for me' filler also present."}
+{"at":"1-moves-copies.txt:64","command":"mvoe Downloads/invoice.pdf to Documents","label":"gap","cluster":"typo_verb","why":"Typo of move; the path form is in the corpus."}
+{"at":"1-moves-copies.txt:70","command":"into Documents move the file called taxes 2025.pdf","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:71","command":"real quick, shift the file called taxes 2025.pdf into Documents","label":"gap","cluster":"verb_synonym","why":"'shift' unsupported; leading 'real quick' filler too."}
+{"at":"1-moves-copies.txt:73","command":"mvoe the file called taxes 2025.pdf into Documents","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:79","command":"from Desktop move all my PDFs to Documents","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Desktop' clause; the trailing form is in the corpus."}
+{"at":"1-moves-copies.txt:80","command":"drag all my PDFs from Desktop into Documents","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:81","command":"sned all my PDFs from Desktop to Documents","label":"gap","cluster":"typo_verb","why":"Typo of send."}
+{"at":"1-moves-copies.txt:82","command":"move any pdf files from Desktop to Documents","label":"wrong_parse","cluster":"quantifier_any_every","why":"'any pdf' became a nameContains literal, not a PDF-type filter."}
+{"at":"1-moves-copies.txt:86","command":"um make a copy of every JPEG from Pictures in Backup","label":"gap","cluster":"copy_phrasing","why":"'make a copy of' phrasing; leading 'um' filler."}
+{"at":"1-moves-copies.txt:88","command":"from Pictures copy every JPEG to Backup","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Pictures' clause for copy."}
+{"at":"1-moves-copies.txt:89","command":"back up every JPEG from Pictures to Backup","label":"gap","cluster":"copy_phrasing","why":"'back up X to Y' phrasing unsupported."}
+{"at":"1-moves-copies.txt:90","command":"real quick copy every JPEG file in Pictures to Backup","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:91","command":"coppy every JPEG from Pictures to Backup","label":"gap","cluster":"typo_verb","why":"Typo of copy."}
+{"at":"1-moves-copies.txt:97","command":"from Downloads move photos into Pictures","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Downloads' clause; the trailing form is in the corpus."}
+{"at":"1-moves-copies.txt:98","command":"drag any photos in Downloads into Pictures","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; 'any' quantifier also refused."}
+{"at":"1-moves-copies.txt:100","command":"mvoe photos from Downloads into Pictures","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:107","command":"to Invoices move the PDF named invoice","label":"gap","cluster":"reorder_destination_first","why":"Destination-first; 'move the PDF named invoice to Invoices' is in corpus."}
+{"at":"1-moves-copies.txt:108","command":"real quick transfer the PDF named invoice to Invoices","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:109","command":"sned the PDF named invoice to Invoices","label":"gap","cluster":"typo_verb","why":"Typo of send."}
+{"at":"1-moves-copies.txt:115","command":"to Documents move Q3 report.pdf","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:116","command":"real quick, drag Q3 report.pdf into Documents","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; leading 'real quick' filler too."}
+{"at":"1-moves-copies.txt:118","command":"mvoe Q3 report.pdf to Documents","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:124","command":"to Documents move the file 'Lease Agreement.pdf'","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:125","command":"real quick, transfer the file 'Lease Agreement.pdf' to Documents","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:127","command":"mvoe the file 'Lease Agreement.pdf' to Documents","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:133","command":"from Downloads move the zip files to Archives","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Downloads' clause."}
+{"at":"1-moves-copies.txt:134","command":"drag every zip file in Downloads into Archives","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:136","command":"sned the zip files from Downloads to Archives","label":"gap","cluster":"typo_verb","why":"Typo of send."}
+{"at":"1-moves-copies.txt:139","command":"please make a copy of the Q3 budget.xlsx in my Backup folder","label":"gap","cluster":"copy_phrasing","why":"'make a copy of' phrasing unsupported."}
+{"at":"1-moves-copies.txt:141","command":"back up the Q3 budget.xlsx to my Backup folder","label":"gap","cluster":"copy_phrasing","why":"'back up X to Y' phrasing unsupported."}
+{"at":"1-moves-copies.txt:143","command":"to my Backup folder copy the Q3 budget.xlsx","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:144","command":"real quick copy the Q3 budget.xlsx to Backup","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:145","command":"cpoy the Q3 budget.xlsx to my Backup folder","label":"gap","cluster":"typo_verb","why":"Typo of copy."}
+{"at":"1-moves-copies.txt:151","command":"from Documents move every PDF to Archive","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Documents' clause."}
+{"at":"1-moves-copies.txt:153","command":"drag every PDF in Documents into Archive for me","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; trailing 'for me' filler."}
+{"at":"1-moves-copies.txt:154","command":"mvoe every PDF in Documents to Archive","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:160","command":"from Desktop move the screenshots to Pictures","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Desktop' clause."}
+{"at":"1-moves-copies.txt:161","command":"drag every screenshot on Desktop into Pictures","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:163","command":"sned the screenshots from Desktop to Pictures","label":"gap","cluster":"typo_verb","why":"Typo of send."}
+{"at":"1-moves-copies.txt:167","command":"um make a copy of all the images from Pictures in Backup","label":"gap","cluster":"copy_phrasing","why":"'make a copy of' phrasing; leading 'um' filler."}
+{"at":"1-moves-copies.txt:169","command":"back up all the images in Pictures to Backup","label":"gap","cluster":"copy_phrasing","why":"'back up X to Y' phrasing unsupported."}
+{"at":"1-moves-copies.txt:170","command":"from Pictures copy all the images to Backup","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Pictures' clause."}
+{"at":"1-moves-copies.txt:171","command":"real quick copy all images in Pictures to Backup","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:172","command":"coppy all the images in Pictures to Backup","label":"gap","cluster":"typo_verb","why":"Typo of copy."}
+{"at":"1-moves-copies.txt:178","command":"from Downloads move the video files into Movies","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Downloads' clause."}
+{"at":"1-moves-copies.txt:179","command":"transfer every video file in Downloads to Movies","label":"wrong_parse","cluster":"type_noun_as_name","why":"'video file' became item named 'video' instead of a videos filter."}
+{"at":"1-moves-copies.txt:180","command":"drag the video files from Downloads into Movies for me","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; trailing 'for me' filler."}
+{"at":"1-moves-copies.txt:181","command":"mvoe the video files from Downloads to Movies","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:187","command":"into Pictures put photo.heic","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order; 'put' is already supported."}
+{"at":"1-moves-copies.txt:188","command":"real quick transfer photo.heic to Pictures","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:189","command":"drag photo.heic into Pictures please","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:190","command":"pt photo.heic into Pictures","label":"gap","cluster":"typo_verb","why":"Likely typo of 'put', which the corpus already supports."}
+{"at":"1-moves-copies.txt:196","command":"to Documents move the 2025 tax return.pdf","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:197","command":"real quick, transfer the 2025 tax return.pdf to Documents","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:198","command":"drag the 2025 tax return.pdf into Documents for me","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; trailing 'for me' filler."}
+{"at":"1-moves-copies.txt:199","command":"mvoe the 2025 tax return.pdf to Documents","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:205","command":"to Archive move Invoice Final v2.pdf","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:206","command":"real quick transfer Invoice Final v2.pdf to Archive","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:207","command":"stick Invoice Final v2.pdf in Archive please","label":"gap","cluster":"verb_synonym","why":"'stick' is not a supported move verb."}
+{"at":"1-moves-copies.txt:208","command":"mvoe Invoice Final v2.pdf to Archive","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:214","command":"to Documents send thesis draft dot docx","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order; 'send ... dot docx to Documents' is in corpus."}
+{"at":"1-moves-copies.txt:215","command":"real quick, drag thesis draft dot docx into Documents","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; leading 'real quick' filler too."}
+{"at":"1-moves-copies.txt:217","command":"sned thesis draft dot docx to Documents","label":"gap","cluster":"typo_verb","why":"Typo of send."}
+{"at":"1-moves-copies.txt:221","command":"um move Terms and Conditions.pdf to Archive","label":"gap","cluster":"leading_filler","why":"Leading 'um' filler; the bare move form is supported."}
+{"at":"1-moves-copies.txt:223","command":"to Archive move the file called Terms and Conditions.pdf","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:224","command":"real quick shift the file called Terms and Conditions dot pdf to Archive","label":"gap","cluster":"verb_synonym","why":"'shift' unsupported; leading 'real quick' filler too."}
+{"at":"1-moves-copies.txt:225","command":"drag the file called Terms and Conditions.pdf into Archive","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:226","command":"mvoe the file called Terms and Conditions.pdf to Archive","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:232","command":"to Videos move the video called intro.mov","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:233","command":"real quick transfer the video called intro.mov to Videos","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:234","command":"drag the video called intro.mov into Videos please","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:235","command":"mvoe the video called intro.mov to Videos","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:241","command":"from Downloads move all text files to Notes","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Downloads' clause."}
+{"at":"1-moves-copies.txt:243","command":"drag every text file from Downloads into Notes for me","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; trailing 'for me' filler."}
+{"at":"1-moves-copies.txt:244","command":"sned all text files from Downloads to Notes","label":"gap","cluster":"typo_verb","why":"Typo of send."}
+{"at":"1-moves-copies.txt:250","command":"from Pictures/Trip move photos to Archive","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Pictures/Trip' clause."}
+{"at":"1-moves-copies.txt:251","command":"transfer any photos in Pictures/Trip to Archive","label":"wrong_parse","cluster":"quantifier_any_every","why":"'any photos' became item named 'any photos' instead of an images filter."}
+{"at":"1-moves-copies.txt:252","command":"drag photos from Pictures/Trip into Archive for me","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; trailing 'for me' filler."}
+{"at":"1-moves-copies.txt:253","command":"mvoe photos from Pictures/Trip to Archive","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:259","command":"from Downloads move installers over 200 MB to External","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Downloads' clause."}
+{"at":"1-moves-copies.txt:261","command":"drag installers over 200 MB from Downloads into External","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:262","command":"mvoe installers over 200 MB from Downloads to External","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:268","command":"from Pictures move images smaller than 200 KB to Archive","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Pictures' clause."}
+{"at":"1-moves-copies.txt:269","command":"transfer any image under 200 KB in Pictures to Archive","label":"gap","cluster":"quantifier_any_every","why":"'any image' quantifier refused; 'transfer' and size filter work."}
+{"at":"1-moves-copies.txt:270","command":"drag images that are under 200 KB from Pictures into Archive","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:271","command":"mvoe images smaller than 200 KB from Pictures to Archive","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:275","command":"um make a copy of the JPEGs from Pictures in Backup/Photos","label":"gap","cluster":"copy_phrasing","why":"'make a copy of' phrasing; leading 'um' filler."}
+{"at":"1-moves-copies.txt:277","command":"from Pictures copy the JPEGs into Backup/Photos","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Pictures' clause."}
+{"at":"1-moves-copies.txt:278","command":"back up the JPEGs from Pictures to Backup/Photos","label":"gap","cluster":"copy_phrasing","why":"'back up X to Y' phrasing unsupported."}
+{"at":"1-moves-copies.txt:279","command":"real quick copy every JPEG in Pictures into Backup/Photos","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:280","command":"coppy the JPEGs from Pictures into Backup/Photos","label":"gap","cluster":"typo_verb","why":"Typo of copy."}
+{"at":"1-moves-copies.txt:283","command":"please make a copy of the Notes folder in Backup","label":"gap","cluster":"copy_phrasing","why":"'make a copy of' phrasing unsupported."}
+{"at":"1-moves-copies.txt:285","command":"back up the Notes folder to Backup","label":"gap","cluster":"copy_phrasing","why":"'back up X to Y' phrasing unsupported."}
+{"at":"1-moves-copies.txt:287","command":"to Backup copy the Notes folder","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:288","command":"real quick copy the Notes folder to Backup for me","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler; trailing 'for me' too."}
+{"at":"1-moves-copies.txt:289","command":"cpoy the Notes folder to Backup","label":"gap","cluster":"typo_verb","why":"Typo of copy."}
+{"at":"1-moves-copies.txt:295","command":"to Archive move the Downloads/Notes folder","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:296","command":"real quick transfer the Downloads/Notes folder to Archive","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:297","command":"drag the Downloads/Notes folder into Archive please","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported."}
+{"at":"1-moves-copies.txt:298","command":"mvoe the Downloads/Notes folder to Archive","label":"gap","cluster":"typo_verb","why":"Typo of move."}
+{"at":"1-moves-copies.txt:304","command":"from Downloads move installers to External Drive","label":"gap","cluster":"reorder_source_first","why":"Leading 'from Downloads' clause."}
+{"at":"1-moves-copies.txt:306","command":"drag the installers from Downloads into External Drive for me","label":"gap","cluster":"verb_synonym","why":"'drag' unsupported; trailing 'for me' filler."}
+{"at":"1-moves-copies.txt:307","command":"sned installers from Downloads to External Drive","label":"gap","cluster":"typo_verb","why":"Typo of send."}
+{"at":"1-moves-copies.txt:311","command":"um make a copy of last.txt in Desktop","label":"gap","cluster":"copy_phrasing","why":"'make a copy of' phrasing; leading 'um' filler."}
+{"at":"1-moves-copies.txt:313","command":"back up last.txt to Desktop","label":"gap","cluster":"copy_phrasing","why":"'back up X to Y' phrasing unsupported."}
+{"at":"1-moves-copies.txt:314","command":"to Desktop copy last.txt","label":"gap","cluster":"reorder_destination_first","why":"Destination-first order."}
+{"at":"1-moves-copies.txt:315","command":"real quick copy last.txt over to Desktop","label":"gap","cluster":"leading_filler","why":"Leading 'real quick' filler."}
+{"at":"1-moves-copies.txt:316","command":"coppy last.txt to Desktop","label":"gap","cluster":"typo_verb","why":"Typo of copy."}
+{"at":"1-moves-copies.txt:318","command":"move *.pdf to Documents","label":"wrong_parse","cluster":"glob_wildcard","why":"Literal '*.pdf' taken as item name; corpus refuses globs."}
+{"at":"1-moves-copies.txt:319","command":"copy *.png to Backup","label":"wrong_parse","cluster":"glob_wildcard","why":"Literal '*.png' taken as item name; corpus refuses globs."}
+{"at":"1-moves-copies.txt:320","command":"move Downloads/* to Archive","label":"wrong_parse","cluster":"glob_wildcard","why":"Literal 'Downloads/*' taken as item name; should refuse."}
+{"at":"1-moves-copies.txt:321","command":"copy *.jpg from Pictures to Backup","label":"wrong_parse","cluster":"glob_wildcard","why":"Literal '*.jpg' taken as item name; should refuse."}
+{"at":"1-moves-copies.txt:322","command":"move ../Downloads/report.pdf to Documents","label":"label_error","cluster":"dotdot_path","why":"Corpus accepts '..' at parse time (delete ../../etc/passwd); expectation conflicts."}
+{"at":"1-moves-copies.txt:323","command":"copy ../notes.txt to Backup","label":"label_error","cluster":"dotdot_path","why":"Corpus accepts '..' at parse time (make folder ../secret); expectation conflicts."}
+{"at":"2-trash.txt:6","command":"toss every installer out of Downloads please","label":"gap","cluster":"verb_synonym","why":"'toss' is not a supported trash verb."}
+{"at":"2-trash.txt:7","command":"i want to bin all the installers in Downloads real quick","label":"wrong_parse","cluster":"trailing_filler","why":"'real quick' absorbed into folder name 'Downloads real quick'."}
+{"at":"2-trash.txt:8","command":"delete any installers from the Downloads folder","label":"wrong_parse","cluster":"quantifier_any_every","why":"'any installers' became item name instead of a type filter."}
+{"at":"2-trash.txt:10","command":"clear out the installers in Downloads, thanks","label":"gap","cluster":"verb_synonym","why":"'clear out' phrasal verb unsupported."}
+{"at":"2-trash.txt:13","command":"hey can you remvoe the claude.dmg file from Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'remvoe' typo of remove; refusing a destructive typo is defensible."}
+{"at":"2-trash.txt:18","command":"throw away the claude.dmg file that's in Downloads","label":"wrong_parse","cluster":"the_X_file","why":"Name became 'claude.dmg file that's'; relative clause not stripped."}
+{"at":"2-trash.txt:19","command":"delte the claude.dmg file in Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete; refusal is the safer default."}
+{"at":"2-trash.txt:25","command":"delete any screenshot older than 45 days for me","label":"gap","cluster":"quantifier_any_every","why":"'any' quantifier refused; plain 'delete screenshots older than 45 days' works."}
+{"at":"2-trash.txt:26","command":"toss the screenshots that are older than 45 days","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:28","command":"delet screenshots older than 45 days","label":"policy","cluster":"typo_destructive_verb","why":"'delet' typo of delete; refusal is defensible."}
+{"at":"2-trash.txt:34","command":"toss the files bigger than 1 gigabyte in Downloads","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; size phrasing is in the corpus."}
+{"at":"2-trash.txt:37","command":"delte files larger than 1 GB in Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:40","command":"hey can you remvoe files smaller than 5 MB from Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'remvoe' typo of remove; leading filler too."}
+{"at":"2-trash.txt:44","command":"delete any file under 5 mb in Downloads","label":"gap","cluster":"quantifier_any_every","why":"'any file' quantifier refused; plain form works."}
+{"at":"2-trash.txt:45","command":"just delete the files under 5 MB in Downloads thanks","label":"gap","cluster":"leading_filler","why":"Leading 'just' filler not stripped."}
+{"at":"2-trash.txt:46","command":"toss files under 5 MB out of Downloads","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:48","command":"pleese delete the zip files in Downloads","label":"gap","cluster":"leading_filler","why":"Typo'd 'please' filler; the delete itself parses."}
+{"at":"2-trash.txt:52","command":"i want to bin the zip files that are in Downloads","label":"gap","cluster":"leading_filler","why":"Leading 'i want to' filler; 'bin' already works."}
+{"at":"2-trash.txt:54","command":"toss the zips out of Downloads please","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:55","command":"clear out the zip files in Downloads for me","label":"gap","cluster":"verb_synonym","why":"'clear out' phrasal verb unsupported."}
+{"at":"2-trash.txt:63","command":"toss \"last\" out","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; 'delete \"last\"' is in corpus."}
+{"at":"2-trash.txt:64","command":"delet \"last\"","label":"policy","cluster":"typo_destructive_verb","why":"'delet' typo of delete."}
+{"at":"2-trash.txt:72","command":"toss last dot pdf out","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; spoken 'dot pdf' is otherwise supported."}
+{"at":"2-trash.txt:73","command":"dleete last.pdf","label":"policy","cluster":"typo_destructive_verb","why":"'dleete' typo of delete."}
+{"at":"2-trash.txt:81","command":"toss the file \"report.pdf\" out","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:82","command":"remvoe the file \"report.pdf\"","label":"policy","cluster":"typo_destructive_verb","why":"'remvoe' typo of remove."}
+{"at":"2-trash.txt:90","command":"toss every file named \"budget\" out of Downloads","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; named-file filter is in corpus."}
+{"at":"2-trash.txt:91","command":"dellete files named \"budget\" in Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'dellete' typo of delete."}
+{"at":"2-trash.txt:99","command":"toss last.pdf out of Downloads","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:100","command":"delete last.pdf from Downloads real quick","label":"wrong_parse","cluster":"trailing_filler","why":"'real quick' absorbed into folder name 'Downloads real quick'."}
+{"at":"2-trash.txt:104","command":"trsah draft_v1.docx","label":"policy","cluster":"typo_destructive_verb","why":"'trsah' typo of trash; refusal is the safer default."}
+{"at":"2-trash.txt:108","command":"toss draft_v1.docx out","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:117","command":"toss the file called tmp.txt that's on the desktop","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; the 'that's on the desktop' clause may also fail."}
+{"at":"2-trash.txt:118","command":"delte the file that's on the desktop called tmp.txt","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete; refusal is defensible."}
+{"at":"2-trash.txt:123","command":"clean up the desktop real quick","label":"wrong_parse","cluster":"trailing_filler","why":"'real quick' taken as item name 'desktop real quick'."}
+{"at":"2-trash.txt:125","command":"clean my desktop up please","label":"gap","cluster":"particle_placement","why":"Particle 'up' after the object not accepted; 'clean up my desktop' works."}
+{"at":"2-trash.txt:127","command":"claen up my desktop","label":"policy","cluster":"typo_destructive_verb","why":"'claen' typo of clean, which maps to trash."}
+{"at":"2-trash.txt:132","command":"clean up the Downloads folder real quick","label":"wrong_parse","cluster":"trailing_filler","why":"'real quick' taken as item name in Downloads; trashes wrong target."}
+{"at":"2-trash.txt:134","command":"clean my Downloads folder up please","label":"gap","cluster":"particle_placement","why":"Particle 'up' after the object; 'clean up my Downloads folder' works."}
+{"at":"2-trash.txt:136","command":"claen up my Downloads folder","label":"policy","cluster":"typo_destructive_verb","why":"'claen' typo of clean."}
+{"at":"2-trash.txt:144","command":"toss the stuff in Downloads out","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; 'the stuff in Downloads' works in list."}
+{"at":"2-trash.txt:145","command":"delet the stuff in Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'delet' typo of delete."}
+{"at":"2-trash.txt:148","command":"hey can you remvoe everything in Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'remvoe' typo of remove; leading filler too."}
+{"at":"2-trash.txt:153","command":"toss everything in Downloads","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; 'delete everything in Downloads' works."}
+{"at":"2-trash.txt:154","command":"clear out everything in Downloads","label":"gap","cluster":"verb_synonym","why":"'clear out' phrasal verb unsupported."}
+{"at":"2-trash.txt:162","command":"toss everything out","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; 'delete everything' works."}
+{"at":"2-trash.txt:163","command":"delte everything","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:171","command":"please move everything to the trash real quick","label":"wrong_parse","cluster":"trailing_filler","why":"'real quick' absorbed into destination 'trash real quick'; wrong target."}
+{"at":"2-trash.txt:172","command":"mvoe everything to the trash","label":"gap","cluster":"typo_verb","why":"Typo of move; corpus maps 'move everything to the trash' to trash."}
+{"at":"2-trash.txt:180","command":"toss the files whose names have draft in them in Documents","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; the relative name clause is also unusual."}
+{"at":"2-trash.txt:181","command":"delte the files whose names contain draft in Documents","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:189","command":"toss all files that start with invoice from Downloads","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; 'delete files that start with invoice' works."}
+{"at":"2-trash.txt:190","command":"delte files that start with invoice from Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:197","command":"throw away any PNG files older than 2 years in Downloads","label":"wrong_parse","cluster":"quantifier_any_every","why":"'any PNG' became a nameContains literal instead of a PNG extension filter."}
+{"at":"2-trash.txt:198","command":"toss the PNGs older than 2 years in Downloads","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:199","command":"delte all PNG files older than 2 years in Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:207","command":"toss every screenshot in Desktop older than a week","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:215","command":"toss screenshots older than 6 months in Desktop","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; month-based age phrasing is not in corpus."}
+{"at":"2-trash.txt:216","command":"clear out the screenshots older than 6 months in Desktop","label":"gap","cluster":"verb_synonym","why":"'clear out' phrasal verb unsupported."}
+{"at":"2-trash.txt:217","command":"delet screenshots older than 6 months in Desktop","label":"policy","cluster":"typo_destructive_verb","why":"'delet' typo of delete."}
+{"at":"2-trash.txt:225","command":"toss the files over 10GB out of Downloads","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; 'over 10GB' size filter is in corpus."}
+{"at":"2-trash.txt:226","command":"delte files over 10 GB in Downloads","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:229","command":"hey can you mvoe Thumbs.db to the trash for me","label":"gap","cluster":"typo_verb","why":"Typo of move; corpus maps 'move X to the trash' to trash."}
+{"at":"2-trash.txt:233","command":"throw Thumbs.db away","label":"gap","cluster":"particle_placement","why":"Particle 'away' after the object; 'throw away the X file' works."}
+{"at":"2-trash.txt:243","command":"toss files named untitled that are on Desktop","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:244","command":"delte files named untitled on Desktop","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:252","command":"toss all the GIFs older than a year","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; 'delete all the GIFs older than a year' works."}
+{"at":"2-trash.txt:253","command":"delte all the GIFs older than a year","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:261","command":"Hey Voxi please toss the screenshots from yesterday","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported; 'from yesterday' day filter is in corpus."}
+{"at":"2-trash.txt:262","command":"hey voxi pls delte the screenshots from yesterday","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:264","command":"please clear out everything in Documents","label":"gap","cluster":"verb_synonym","why":"'clear out' phrasal verb unsupported."}
+{"at":"2-trash.txt:269","command":"chuck everything in Documents please","label":"gap","cluster":"verb_synonym","why":"'chuck' is not a supported trash verb."}
+{"at":"2-trash.txt:270","command":"toss everything in Documents out","label":"gap","cluster":"verb_synonym","why":"'toss' unsupported."}
+{"at":"2-trash.txt:271","command":"delte everything in Documents","label":"policy","cluster":"typo_destructive_verb","why":"'delte' typo of delete."}
+{"at":"2-trash.txt:302","command":"um delete report.pdf permanently","label":"wrong_parse","cluster":"permanent_suffix","why":"'permanently' absorbed into item name; corpus refuses permanent deletes."}
+{"at":"2-trash.txt:304","command":"delete report.pdf for good","label":"wrong_parse","cluster":"permanent_suffix","why":"'for good' absorbed into item name; should refuse like permanent delete."}

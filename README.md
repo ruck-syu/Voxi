@@ -205,9 +205,3 @@ The workflow needs four repository secrets: `TAURI_SIGNING_PRIVATE_KEY` and
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` sign updates; `VOXI_SIGNING_CERT` and
 `VOXI_SIGNING_CERT_PASSWORD` give the app a stable code signature, so macOS
 remembers folder access across versions.
-
-### Website
-
-`website/` is a static site with no build step. In Vercel, import this repo and
-set **Root Directory** to `website`. Pushes that only touch the website or docs
-don't build a new app.

@@ -23,7 +23,12 @@ static LEAD: LazyLock<Regex> = re!(
 );
 /// Fillers after the command that `normalize` doesn't catch.
 static TRAIL: LazyLock<Regex> = re!(
-    r"(?i)(?:,?\s+(?:real\s+quick|quickly|quick|right\s+now|now|asap|if\s+you\s+can|if\s+you\s+could|okay|ok|like|thanks|thank\s+you|thx|cheers|please|pl[sz]|for\s+me|period|full\s+stop))+$"
+    r"(?i)(?:,?\s+(?:real\s+quick|quickly|quick|right\s+now|now|asap|if\s+you\s+can|if\s+you\s+could|okay|ok|like|thanks|thank\s+you|thx|cheers|please|pl[sz]|for\s+me|for\s+us|period|full\s+stop))+$"
+);
+/// Regional sign-offs after a comma: ", ta", ", sweet as", ", lah". Only
+/// after a comma, so a short folder name such as "Ta" is never cut off.
+static SIGN_OFF: LazyLock<Regex> = re!(
+    r"(?i),\s*(?:ta|cheers(?:\s+mate)?|sweet\s+as|mate|ja|eh|lah|leh|lor|na|yaar|innit|chur|bro|boss|no\s+worries|for\s+us|thanks\s+(?:a\s+lot|mate)|nice\s+one)\s*$"
 );
 static SEE: LazyLock<Regex> = re!(r"(?i)^(?:i\s+(?:need|want|wanna|would\s+like)\s+to\s+see|(?:let\s+me|lemme)\s+see|i'?d\s+like\s+to\s+see|gimme)\s+");
 static SPACES: LazyLock<Regex> = re!(r"\s+");
@@ -63,6 +68,16 @@ static RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         (r"(?i)^(number\s+.+?\s+(?:as|like)\s+\S+?)(?:,\s*|\s+and\s+|\s*,\s*and\s+)\S+.*$", "$1"),
         // "find where report.pdf is" -> "show me where report.pdf is"
         (r"(?i)^find\s+where\s+(.+)$", "show me where $1"),
+        // "pee dee effs": how dictation spells PDFs out.
+        (r"(?i)\bpee\s+dee\s+effs?\b", "PDFs"),
+        // "put Screenshots in month order" -> "sort Screenshots by month"
+        (r"(?i)^(?:put|arrange|sort)\s+(?:the\s+)?(\S+?)(?:\s+files)?\s+(?:in|into)\s+month(?:ly)?\s+order$", "sort $1 by month"),
+        // "put the PDFs together into combined.pdf", "... into 1 file named combined.pdf" -> merge
+        (r"(?i)^(?:put|stick|join)\s+(.+?)\s+(?:together\s+)?(?:into|as)\s+(?:(?:1|a\s+single)\s+(?:file|pdf)\s+(?:named|called)\s+)?(\S+\.pdf)$", "merge $1 into $2"),
+        // "make Documents a new folder called Invoices"
+        (r"(?i)^(?:make|create|give)\s+(\S+)\s+a\s+new\s+folder\s+(?:called|named)\s+(.+)$", "create a folder named $2 in $1"),
+        // "make a zip archive from Project called Project.zip" -> "zip Project into Project.zip"
+        (r"(?i)^(?:make|create)\s+(?:a\s+)?zip(?:\s+archive|\s+file)?\s+(?:from|of|out\s+of)\s+(.+?)\s+(?:called|named)\s+(\S+\.zip)$", "zip $1 into $2"),
         // Deleting, said other ways. Everything still goes to the Trash with a preview.
         // "chuck a new Invoices folder in Documents": a new folder is made, never binned.
         (r"(?i)^(?:toss|chuck|throw|stick|pop|bung)\s+(?:a\s+)?new\s+(.+?)\s+folder\s+(?:in|into|on|inside)\s+(.+)$", "create a folder named $1 in $2"),
@@ -179,6 +194,7 @@ fn strip_fillers(s: &str, fix_typos: bool) -> String {
         let before = s.clone();
         s = LEAD.replace(&s, "").to_string();
         s = TRAIL.replace(&s, "").to_string();
+        s = SIGN_OFF.replace(&s, "").to_string();
         if fix_typos
             && let Some((first, rest)) = s.split_once(' ')
             && let Some(verb) = correct_verb(first)
@@ -242,6 +258,17 @@ mod tests {
             ("gimme all the clips in Movies", "show all the clips in Movies"),
             ("show vids in Movies pls", "show vids in Movies"),
             ("plz move report.pdf to Documents", "move report.pdf to Documents"),
+            // Regional sign-offs and phrasings (eval/bank-3).
+            ("send the installers in Downloads to the bin, ta", "delete the installers in Downloads"),
+            ("send Downloads installers to Trash, sweet as", "send Downloads installers to Trash"),
+            ("delete report.pdf, can or not, lah", "delete report.pdf, can or not"),
+            ("put Screenshots in month order", "sort Screenshots by month"),
+            ("put the Screenshots files in month order", "sort Screenshots by month"),
+            ("put all the pee dee effs in Downloads together into combined.pdf", "merge all the PDFs in Downloads into combined.pdf"),
+            ("put all Downloads PDFs into 1 file named combined.pdf", "merge all Downloads PDFs into combined.pdf"),
+            ("make Documents a new folder called Invoices", "create a folder named Invoices in Documents"),
+            ("make a zip archive from Project called Project.zip", "zip Project into Project.zip"),
+            ("move report.pdf to Ta", "move report.pdf to Ta"),
         ] {
             assert_eq!(canonical(said, true), want, "{said}");
         }

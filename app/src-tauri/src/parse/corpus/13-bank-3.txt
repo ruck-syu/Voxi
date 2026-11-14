@@ -1,0 +1,59 @@
+# From eval/bank-3: English accents and dialects. Regional sign-offs after a
+# comma (", ta", ", sweet as", ", ja", ", lah") are filler; "in month order"
+# sorts by month; "put ... together into X.pdf" merges; "make Documents a new
+# folder called X" creates; "make a zip archive from X called Y.zip" zips;
+# dictated "pee dee effs" are PDFs.
+Can you just send today’s screenshots over to Screenshots, ta => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+Can you just put report.pdf in Documents, ta => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+Can you just shift the videos on Desktop over to Movies, ta => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+Can you just make a copy of the Pictures images in Backup, ta => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+Can you just bin screenshots that are over 30 days old, ta => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+Can you just send the installers in Downloads to the bin, ta => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+Can you just bin report.pdf, ta => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+Can you just get rid of anything in Downloads over 1 GB, ta => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+Can you just bin anything called untitled on Desktop, ta => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+Can you just take back the last action, ta => {"intent":"undo"}
+Can you just make the names of files in Downloads all lowercase, ta => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Can you just group the Screenshots into month folders, ta => {"intent":"sort_by_month","folder":"Screenshots"}
+Can you just save photo.heic as a PNG, ta => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+Can you just put the PDFs from Downloads together as combined.pdf, ta => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+Can you just unpack archive.zip, ta => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+move every pee dee eff from Downloads into Documents, mate => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+move today's screenshots over to Screenshots, sweet as => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+move every video from Desktop over to Movies, sweet as => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+shift the files from Desktop over to Documents, mate => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+back up all images from Pictures to Backup, ja => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+copy report.pdf over to Desktop, mate => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+make a copy of report.pdf on Desktop, sweet as => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+send Downloads installers to Trash, sweet as => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+delete Downloads dmg files, mate => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+trash report.pdf, sweet as => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+delete report.pdf, mate => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+clear out all the files in Downloads, ja => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+delete files called untitled on Desktop, ja => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+show me files in Downloads bigger than 500 MB, mate => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+list the files in Downloads, sweet as => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+show PDFs in Downloads, chur => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+show files in Downloads more than 1 year old, ja => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+show videos in Movies, sweet as => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+count pee dee effs in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+how many PDFs are in Documents, ja => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+check the size of Downloads, ja => {"intent":"size","folder":"Downloads"}
+what is the size of Downloads, ja => {"intent":"size","folder":"Downloads"}
+undo the last thing, mate => {"intent":"undo"}
+make every filename in Downloads lower case, sweet as => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+organise Downloads by file type, mate => {"intent":"sort_by_type","folder":"Downloads"}
+put Screenshots in month order => {"intent":"sort_by_month","folder":"Screenshots"}
+sort the Screenshots folder by month, ja => {"intent":"sort_by_month","folder":"Screenshots"}
+save photo.heic as png, sweet as => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+turn the HEICs in Pictures into jpgs, mate => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+put all the pee dee effs in Downloads together into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+unpack archive.zip, sweet as => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+How many PDFs in Documents, na? => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+How big is Downloads, na? => {"intent":"size","folder":"Downloads"}
+Show the size of Downloads, please, na => {"intent":"size","folder":"Downloads"}
+make Documents a new folder called Invoices => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+put the Screenshots files in month order => {"intent":"sort_by_month","folder":"Screenshots"}
+join the Downloads PDFs together as combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+put all the Downloads PDFs into one file named combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+make a zip archive from Project called Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}

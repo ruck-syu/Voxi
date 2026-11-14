@@ -7,25 +7,37 @@
     <meta name="description" content="Press a hotkey, type or dictate what you want done with your files, check the preview, press Enter. A small menu-bar app for macOS." />
     <meta property="og:title" content="Voxi: organize your Mac by saying it" />
     <meta property="og:description" content="Press a hotkey, type or dictate what you want done with your files, check the preview, press Enter. A small menu-bar app for macOS." />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121a2e" media="(prefers-color-scheme: dark)" />
+    <script>
+      // Apply a saved light/dark choice before the page paints.
+      try {
+        const t = localStorage.getItem("voxi-theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&display=swap"
-    />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Gabarito:wght@400..900&display=swap" />
     <link rel="stylesheet" href="/assets/site.css" />
     <script src="/assets/site.js" defer></script>
   </head>
   <body>
     <header class="top">
       <div class="wrap">
-        <a class="brand" href="/"><img src="/assets/favicon.svg" alt="" />Voxi</a>
-        <nav aria-label="Main">
-          <a href="/commands">Commands</a>
-          <a href="/install">Install</a>
-          <a href="https://github.com/ruck-syu/Voxi">GitHub</a>
-        </nav>
+        <a class="brand" href="/"><span class="brand-tile"><svg class="glyph" viewBox="0 0 44 44" aria-hidden="true"><rect class="e" x="12.4" y="8" width="4.8" height="11.5" rx="2.4"/><rect class="e" x="26.8" y="8" width="4.8" height="11.5" rx="2.4"/><path class="m" d="M7.0 26.0L7.6 26.4L8.2 27.0L8.9 27.5L9.5 28.0L10.1 28.5L10.8 28.8L11.4 29.0L12.0 29.0L12.6 28.9L13.2 28.8L13.9 28.8L14.5 28.9L15.1 29.2L15.8 29.7L16.4 30.4L17.0 31.2L17.6 32.0L18.2 32.8L18.9 33.3L19.5 33.6L20.1 33.6L20.8 33.3L21.4 32.7L22.0 32.0L22.6 31.3L23.2 30.6L23.9 30.2L24.5 30.0L25.1 30.0L25.8 30.3L26.4 30.7L27.0 31.2L27.6 31.6L28.2 31.8L28.9 31.8L29.5 31.6L30.1 31.1L30.8 30.5L31.4 29.7L32.0 29.0L32.6 28.3L33.2 27.8L33.9 27.4L34.5 27.1L35.1 26.8L35.8 26.6L36.4 26.3L37.0 26.0"/></svg></span>Voxi</a>
+        <div class="end">
+          <nav aria-label="Main">
+            <a href="/commands">Commands</a>
+            <a href="/install">Install</a>
+            <a href="https://github.com/ruck-syu/Voxi">GitHub</a>
+          </nav>
+          <button class="theme-switch" type="button" data-theme-switch aria-label="Switch to dark mode">
+            <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+            <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>
+          </button>
+        </div>
       </div>
     </header>
     <main>
@@ -34,31 +46,36 @@
           <div class="hero-copy">
             <h1>Organize your Mac's files by saying what you want.</h1>
             <p class="lead">
-              Press <kbd>⌃⌥Space</kbd>, type or dictate, check the preview, and press Enter.
+              Press <kbd>⌃⌥Space</kbd> anywhere, type or dictate a sentence, and see exactly what will happen before anything does.
             </p>
-            <div class="download-options">
-              <div class="buttons">
-                <a class="button primary" data-download href="https://github.com/ruck-syu/Voxi/releases/latest">Download for Mac</a>
-                <a class="button" href="https://github.com/ruck-syu/Voxi">View on GitHub</a>
-              </div>
-              <div class="brew-window" data-copy-command>
-                <div class="brew-window-head">
-                  <span>Install with Homebrew</span>
-                  <button type="button" data-copy-button aria-label="Copy Homebrew install command">Copy</button>
-                </div>
-                <code data-copy-text>brew install --cask ruck-syu/tap/voxi</code>
-                <span class="visually-hidden" data-copy-status role="status" aria-live="polite"></span>
-              </div>
+            <div class="buttons">
+              <a class="button primary" data-download href="https://github.com/ruck-syu/Voxi/releases/latest">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5a1 1 0 0 1 1 1v8.09l2.8-2.8a1 1 0 1 1 1.4 1.42l-4.5 4.5a1 1 0 0 1-1.4 0l-4.5-4.5a1 1 0 1 1 1.4-1.42L9 11.6V3.5a1 1 0 0 1 1-1ZM4 16a1 1 0 0 1 1-1h10a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
+                Download for Mac
+              </a>
+              <a class="button" href="https://github.com/ruck-syu/Voxi">View source</a>
             </div>
-            <p class="fine" data-version>Free for macOS 12 or later.</p>
+            <div class="brew-window" data-copy-command>
+              <code data-copy-text>brew install --cask ruck-syu/tap/voxi</code>
+              <button type="button" data-copy-button aria-label="Copy Homebrew install command">Copy</button>
+              <span class="visually-hidden" data-copy-status role="status" aria-live="polite"></span>
+            </div>
+            <p class="fine" data-version>Free and open source, for macOS 12 or later.</p>
           </div>
-          <div class="demo" data-demo aria-label="Voxi's window planning a command" role="img">
-            <div class="demo-head">
-              <span class="demo-command"></span><span class="caret"></span>
-              <span class="dictating" aria-hidden="true"><i></i><i></i><i></i>Dictating</span>
+
+          <div class="face-tile">
+            <svg class="face" data-face viewBox="20 18 60 62" aria-hidden="true">
+              <rect class="eye" x="31" y="26" width="8" height="20" rx="4" />
+              <rect class="eye" x="61" y="26" width="8" height="20" rx="4" />
+              <path class="smile" d="M26 62 Q50 82 74 62" />
+            </svg>
+            <div class="demo" data-demo aria-label="Voxi's window previewing a command" role="img">
+              <div class="demo-head">
+                <span class="demo-command"></span><span class="caret"></span>
+              </div>
+              <div class="demo-body"></div>
+              <div class="demo-foot"><span>Enter to preview.</span><span>Settings</span></div>
             </div>
-            <div class="demo-body"></div>
-            <div class="demo-foot"><span>Enter to preview.</span><span>Settings</span></div>
           </div>
         </div>
       </section>
@@ -68,15 +85,15 @@
           <ul class="points">
             <li>
               <h3>Nothing changes until you press Enter</h3>
-              <p>Every command shows exactly which files will move, get renamed, or go to the Trash before anything happens.</p>
+              <p>Every command lists which files will move, get renamed, or go to the Trash. Press Esc and nothing happened.</p>
             </li>
             <li>
-              <h3>Talk or type</h3>
-              <p>The box is ready the moment it opens, so Wispr Flow dictation lands right in it. No microphone access needed.</p>
+              <h3>Nothing is erased or overwritten</h3>
+              <p>“Delete” moves files to the Trash. A name that's already taken becomes report&nbsp;2.pdf, and the preview tells you.</p>
             </li>
             <li>
-              <h3>Undo anything</h3>
-              <p>“Undo last” reverses the newest change. Deleting moves files to the Trash, never straight out of existence.</p>
+              <h3>Undo is one sentence</h3>
+              <p>Say “undo last” and the newest change is reversed as one step, after its own preview.</p>
             </li>
           </ul>
         </div>
@@ -85,14 +102,14 @@
       <section class="block">
         <div class="wrap">
           <div class="block-head">
-            <h2>Say it like this</h2>
-            <p class="lead">Plain sentences. Voxi ignores the “please” and the period Wispr adds.</p>
+            <h2>Say it the way you'd say it</h2>
+            <p class="lead">Plain sentences, typed or dictated. Voxi ignores the “please” and the period your dictation app adds.</p>
           </div>
           <ul class="say">
-            <li><q>move screenshots from today to Screenshots</q><span>Files today's screenshots, creating the folder if needed.</span></li>
+            <li><q>move screenshots from today to Screenshots</q><span>Files today's screenshots, wherever they are, creating the folder if needed.</span></li>
             <li><q>convert all HEIC in Pictures to jpg</q><span>Makes JPG copies next to the originals.</span></li>
             <li><q>merge PDFs in Documents named scan into scan-all.pdf</q><span>Combines every matching PDF, in name order.</span></li>
-            <li><q>delete the Claude dmg from Downloads</q><span>Finds Claude.dmg even without the dot, then moves it to the Trash.</span></li>
+            <li><q>list files in Downloads larger than 500 MB</q><span>Shows numbered matches. Then “delete 4” or “move 5 to Desktop” acts on that row.</span></li>
             <li><q>run my usuals</q><span>Runs a shortcut you saved in Settings, as one preview with one undo.</span></li>
           </ul>
           <p class="more"><a href="/commands">See everything Voxi understands</a></p>
@@ -100,34 +117,83 @@
       </section>
 
       <section class="block">
+        <div class="wrap split">
+          <div class="block-head">
+            <h2>Later, or every week</h2>
+            <p class="lead">End a command with a time or a repeat. Voxi shows the preview now and runs it when it's due.</p>
+            <p class="fine">Repeating tasks match whatever is there at each run, and every run can be undone from History. Voxi needs to be running; a missed run happens once when it next opens.</p>
+          </div>
+          <ul class="say">
+            <li><q>move PDFs from Downloads to Documents at 9 pm</q><span>Once, tonight, using exactly the files in the preview.</span></li>
+            <li><q>clean up Downloads older than 90 days in 30 minutes</q><span>Once, after a delay in minutes or hours.</span></li>
+            <li><q>delete dmg files from Downloads every 3 days</q><span>Clears installers on a schedule.</span></li>
+            <li><q>move screenshots from Desktop to Screenshots every Monday at 8 am</q><span>Weekly tidy-up. Without a time, weekdays run at 9 am.</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="block">
+        <div class="wrap split">
+          <div class="block-head">
+            <h2>It learns how you talk, on your Mac</h2>
+            <p class="lead">Voxi's parser runs locally and never sends your commands anywhere.</p>
+          </div>
+          <ul class="points stack">
+            <li>
+              <h3>Teach it a phrase</h3>
+              <p>If Voxi misses a sentence and you rephrase it, it offers to run the working command the next time you say the original.</p>
+            </li>
+            <li>
+              <h3>Name your folders</h3>
+              <p>When a name matches several folders, pick one and Voxi can remember it, so “the project folder” always means the same place.</p>
+            </li>
+            <li>
+              <h3>Report a wrong result</h3>
+              <p>Reports are saved as readable files on your Mac. Open or clear them from Settings; nothing is sent.</p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="block">
         <div class="wrap">
           <div class="block-head">
             <h2>Find just the files you mean</h2>
-            <p class="lead">Combine a name or file type with a date or size. Voxi previews the matching files before it changes anything.</p>
+            <p class="lead">Combine a name or file type with a date or size. Voxi searches the folder you name and its subfolders.</p>
           </div>
           <ul class="points">
             <li>
               <h3>Name or type</h3>
-              <p>Pick out PDFs, screenshots, or files with a certain name.</p>
+              <p>PDFs, screenshots, “mov files”, or anything named invoice. Spaces, dashes, and underscores count as the same.</p>
             </li>
             <li>
               <h3>Date</h3>
-              <p>Use today, this month, a date range, or files older than a given time.</p>
+              <p>Today, this week, in August, before July 2026, or older than 90 days.</p>
             </li>
             <li>
               <h3>Size</h3>
-              <p>Find large files, small files, or anything within a size range.</p>
+              <p>Larger than 100 MB, smaller than 2 gigs, or between 10 and 50 MB.</p>
             </li>
           </ul>
-          <p class="more"><a href="/commands#filters">Explore all the filters Voxi understands</a></p>
+          <p class="more"><a href="/commands#filters">Explore all the filters</a></p>
+        </div>
+      </section>
+
+      <section class="closing">
+        <div class="wrap">
+          <div class="mark"><svg class="glyph" viewBox="0 0 44 44" aria-hidden="true"><rect class="e" x="12.4" y="8" width="4.8" height="11.5" rx="2.4"/><rect class="e" x="26.8" y="8" width="4.8" height="11.5" rx="2.4"/><path class="m" d="M7.0 26.0L7.6 26.4L8.2 27.0L8.9 27.5L9.5 28.0L10.1 28.5L10.8 28.8L11.4 29.0L12.0 29.0L12.6 28.9L13.2 28.8L13.9 28.8L14.5 28.9L15.1 29.2L15.8 29.7L16.4 30.4L17.0 31.2L17.6 32.0L18.2 32.8L18.9 33.3L19.5 33.6L20.1 33.6L20.8 33.3L21.4 32.7L22.0 32.0L22.6 31.3L23.2 30.6L23.9 30.2L24.5 30.0L25.1 30.0L25.8 30.3L26.4 30.7L27.0 31.2L27.6 31.6L28.2 31.8L28.9 31.8L29.5 31.6L30.1 31.1L30.8 30.5L31.4 29.7L32.0 29.0L32.6 28.3L33.2 27.8L33.9 27.4L34.5 27.1L35.1 26.8L35.8 26.6L36.4 26.3L37.0 26.0"/></svg></div>
+          <h2>Ready when you are</h2>
+          <p class="lead">Voxi lives in your menu bar and touches only the folders you allow.</p>
+          <div class="buttons">
+            <a class="button primary" data-download href="https://github.com/ruck-syu/Voxi/releases/latest">Download for Mac</a>
+            <a class="button" href="/install">Installation guide</a>
+          </div>
         </div>
       </section>
     </main>
     <footer>
       <div class="wrap">
-        <p>
-          Voxi is open source on <a href="https://github.com/ruck-syu/Voxi">GitHub</a>.
-        </p>
+        <p>Voxi is open source on <a href="https://github.com/ruck-syu/Voxi">GitHub</a>.</p>
         <nav aria-label="Footer">
           <a href="/commands">Commands</a>
           <a href="/install">Install</a>

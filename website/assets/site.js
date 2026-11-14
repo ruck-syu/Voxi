@@ -1,4 +1,5 @@
-// Points the download buttons at the newest DMG, and plays the hero demo.
+// Points the download buttons at the newest DMG, switches light and dark
+// mode, and plays the hero demo.
 
 const REPO = "ruck-syu/Voxi";
 
@@ -21,6 +22,41 @@ const REPO = "ruck-syu/Voxi";
   } catch {
     // Offline or rate-limited: keep the releases-page link.
   }
+})();
+
+// ---- Light and dark mode -------------------------------------------------------
+
+// Follows the Mac's appearance until someone picks a mode with the switch;
+// that choice is remembered in this browser. The <head> applies it before paint.
+(() => {
+  const root = document.documentElement;
+  const system = matchMedia("(prefers-color-scheme: dark)");
+  const current = () => root.dataset.theme || (system.matches ? "dark" : "light");
+  const switches = document.querySelectorAll("[data-theme-switch]");
+
+  const label = () => {
+    const next = current() === "dark" ? "light" : "dark";
+    switches.forEach((b) => b.setAttribute("aria-label", `Switch to ${next} mode`));
+  };
+
+  switches.forEach((button) =>
+    button.addEventListener("click", () => {
+      const next = current() === "dark" ? "light" : "dark";
+      root.dataset.theme = next;
+      document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+        m.removeAttribute("media");
+        m.content = next === "dark" ? "#121a2e" : "#ffffff";
+      });
+      try {
+        localStorage.setItem("voxi-theme", next);
+      } catch {
+        // Storage blocked: the choice lasts for this page only.
+      }
+      label();
+    }),
+  );
+  system.addEventListener("change", label);
+  label();
 })();
 
 // ---- Copy the Homebrew install command ---------------------------------------
@@ -46,6 +82,60 @@ document.querySelectorAll("[data-copy-command]").forEach((panel) => {
     }, 1800);
   });
 });
+
+// ---- Hero face: the icon's smile is a sound wave that ripples while it listens --
+
+// Same curve as docs/icon/appicon.swift, in the icon's 100-unit box: a downward
+// arc with three ripples riding on it. `level` 0 is the icon at rest.
+function smilePath(level, phase) {
+  const n = 64;
+  const ripple = 2.6 + 3.4 * level;
+  let d = "";
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const s = Math.sin(Math.PI * t);
+    const x = 26 + 48 * t;
+    const y = 62 + 8 * s + ripple * Math.sin(6 * Math.PI * t - phase) * s;
+    d += `${i ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`;
+  }
+  return d;
+}
+
+function makeFace(svg) {
+  const smile = svg.querySelector(".smile");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let level = 0;
+  let target = 0;
+  let phase = 0;
+  let frame = 0;
+  smile.setAttribute("d", smilePath(0, 0));
+
+  const tick = () => {
+    level += (target - level) * 0.08;
+    // While listening the wave travels; at rest it eases back to the icon's phase.
+    const rest = Math.round(phase / (2 * Math.PI)) * 2 * Math.PI;
+    if (target > 0) phase += 0.09 + 0.05 * level;
+    else phase += (rest - phase) * 0.08;
+    smile.setAttribute("d", smilePath(level, phase));
+    const settled = target === 0 && level < 0.002 && Math.abs(rest - phase) < 0.002;
+    frame = settled ? 0 : requestAnimationFrame(tick);
+    if (settled) smile.setAttribute("d", smilePath(0, 0));
+  };
+
+  return {
+    listen(on) {
+      if (reduced) return;
+      target = on ? 1 : 0;
+      if (!frame) frame = requestAnimationFrame(tick);
+    },
+    blink() {
+      if (reduced) return;
+      svg.removeAttribute("data-blink");
+      void svg.getBoundingClientRect();
+      svg.setAttribute("data-blink", "");
+    },
+  };
+}
 
 // ---- Hero demo: a replica of Voxi's window --------------------------------------
 
@@ -77,27 +167,27 @@ const SCENES = [
     done: "Done. 14 changes.",
   },
   {
-    say: "Run my usuals.",
+    say: "Delete dmg files from Downloads every 3 days.",
     dictated: true,
-    title: "Run my usuals: 2 commands",
+    title: "Repeat every 3 days: move 3 files to the Trash",
     rows: [
-      ["Screenshot 2026-10-28 at 09.14.png", "→ ~/Desktop/Screenshots"],
-      ["Screenshot 2026-10-28 at 11.40.png", "→ ~/Desktop/Screenshots"],
       ["Notion-Setup.dmg", "→ Trash", true],
+      ["Arc-1.62.dmg", "→ Trash", true],
+      ["Hex.dmg", "→ Trash", true],
     ],
     more: null,
-    done: "Done. 3 changes.",
+    done: "Scheduled. Repeats every 3 days.",
   },
 ];
 
 const demo = document.querySelector("[data-demo]");
-if (demo) runDemo(demo);
+const faceSvg = document.querySelector("[data-face]");
+if (demo) runDemo(demo, faceSvg ? makeFace(faceSvg) : { listen() {}, blink() {} });
 
-function runDemo(root) {
+function runDemo(root, face) {
   const command = root.querySelector(".demo-command");
   const body = root.querySelector(".demo-body");
   const foot = root.querySelector(".demo-foot span");
-  const mic = root.querySelector(".dictating");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -130,27 +220,28 @@ function runDemo(root) {
       command.textContent = "";
       foot.textContent = "Enter to preview.";
       await wait(900);
+      face.listen(true);
       if (scene.dictated) {
-        // Dictation lands in bursts of words, the way Wispr Flow types.
-        mic.setAttribute("data-on", "");
-        await wait(1300);
+        // Dictation lands in bursts of words, the way dictation apps paste.
+        await wait(500);
         const words = scene.say.split(" ");
         for (let i = 0; i < words.length; i += 3) {
           command.textContent = words.slice(0, i + 3).join(" ");
           await wait(160);
         }
-        mic.removeAttribute("data-on");
       } else {
         for (let i = 1; i <= scene.say.length; i++) {
           command.textContent = scene.say.slice(0, i);
           await wait(34 + Math.random() * 40);
         }
       }
+      face.listen(false);
       await wait(600);
       command.textContent = "";
       preview(scene);
       await wait(3400);
       done(scene);
+      face.blink();
       await wait(2200);
     }
   })();

@@ -277,6 +277,9 @@ pub enum Outcome {
         items: Vec<PreviewItem>,
         warnings: Vec<String>,
         is_undo: bool,
+        scheduled_for: Option<chrono::DateTime<chrono::Local>>,
+        /// How often a repeating task runs, such as “every 3 days”.
+        repeats: Option<String>,
     },
     /// A name matched more than one file. The user picks one and the
     /// command is planned again with that choice.

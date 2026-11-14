@@ -14,6 +14,7 @@ mod presentation;
 mod settings;
 mod search;
 mod scope;
+mod scheduler;
 mod trash;
 #[cfg(test)]
 mod paraphrase_audit; // report-only, all tests #[ignore]
@@ -44,6 +45,7 @@ struct Pending {
     undo_of: Option<u64>,
     context_generation: Option<u64>,
     context_snapshot: Option<scope::Snapshot>,
+    scheduled: Option<scheduler::Job>,
 }
 impl Pending {
     fn validate_context(&self, context: &scope::State) -> Result<(), String> {
@@ -59,6 +61,8 @@ struct AppState {
     history: Mutex<History>,
     pending: Mutex<Option<Pending>>,
     settings: Mutex<Settings>,
+    schedules: Mutex<scheduler::Store>,
+    execution: Mutex<()>,
     settings_path: PathBuf,
     /// "This was wrong" reports, kept on this Mac.
     reports_path: PathBuf,
@@ -225,6 +229,13 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
         state.pending.lock().unwrap().take();
         *active = Some((request_id, control.clone()));
     }
+    let original_text = text.clone();
+    let (text, when) = match schedule_of(state, &text) {
+        Ok(value) => value,
+        Err(message) => return Outcome::Problem { message },
+    };
+    let scheduled_for = when.as_ref().map(|w| w.due);
+    let repeat = when.and_then(|w| w.rule);
     // A saved shortcut ("run my usuals") wins over the built-in commands.
     enum Work {
         Shortcut(String, Vec<(String, model::Intent)>),
@@ -277,6 +288,22 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
             Work::Command(intent) => planner.plan(intent, &history),
         }
     };
+    // Fingerprinting can walk a folder tree. Keep it cancellable and outside
+    // the publication lock; only installing the resulting preview is serialized.
+    let scheduled = match (&planned, scheduled_for) {
+        (Ok(Planned::Steps { actions, undo_of, .. }), Some(due)) => Some(
+            if undo_of.is_some() { Err("Undo cannot be scheduled.".into()) }
+            else if let Some(rule) = &repeat {
+                if use_scope { Err("A repeating task can't use a previous list. Name the files or folder instead.".into()) }
+                else {
+                    scheduler::check_actions(actions).map(|()| scheduler::Job::recurring(original_text.trim().to_string(), due,
+                        scheduler::Rule { choices: choices.clone(), ..rule.clone() }))
+                }
+            }
+            else { scheduler::Job::new_with_control(original_text.clone(), due, actions.clone(), &control) }
+        ),
+        _ => None,
+    };
     // Serialize publication with cancellation so a late response cannot create a live preview.
     let active = state.active_search.lock().unwrap();
     if control.is_cancelled() || !active.as_ref().is_some_and(|(id, _)| *id == request_id) {
@@ -289,6 +316,8 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
             folders: !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
         },
+        Ok(Planned::Info { .. } | Planned::Direct { .. }) if scheduled_for.is_some() =>
+            Outcome::Problem { message: "Schedule a command that changes files. Lists, History, and Finder commands run immediately when requested without a time.".into() },
         Ok(Planned::Info { title, summary, rows, total, listed }) => {
             let mut numbered = false;
             if listing {
@@ -311,23 +340,53 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
             }
         }
         Ok(Planned::Steps { title, actions, notes, mut warnings, undo_of }) => {
+            let scheduled = match scheduled.transpose() {
+                Ok(job) => job,
+                Err(message) => return Outcome::Problem { message },
+            };
+            match (scheduled_for, &repeat) {
+                (Some(due), Some(rule)) => warnings.insert(0, format!(
+                    "Repeats {}, first on {}. Each run changes whatever matches at that time, without a preview, and can be undone from History. These are the files that match now. Voxi must be running; a missed run happens once when it next opens.",
+                    rule.describe(due), scheduler::display(due))),
+                (Some(due), None) => warnings.insert(0, format!("Scheduled for {}. Only the files shown here will be changed. Voxi must be running; overdue tasks run when it next opens.", scheduler::display(due))),
+                _ => {}
+            }
             let id = state.next_plan.fetch_add(1, Ordering::SeqCst);
             if use_scope { warnings.insert(0, "Using files from the previous searched list.".into()); }
             let items = preview(&actions, &notes, &roots);
             let total = actions.len();
-            *state.pending.lock().unwrap() = Some(Pending { id, command: text.trim().to_string(), actions, undo_of, context_generation: use_scope.then_some(scope_generation), context_snapshot: scoped_snapshot });
-            Outcome::Plan { id, title, total, items, warnings, is_undo: undo_of.is_some() }
+            *state.pending.lock().unwrap() = Some(Pending { id, command: original_text.trim().to_string(), actions, undo_of, scheduled, context_generation: use_scope.then_some(scope_generation), context_snapshot: scoped_snapshot });
+            Outcome::Plan { id, title, total, items, warnings, is_undo: undo_of.is_some(), scheduled_for, repeats: repeat.as_ref().zip(scheduled_for).map(|(rule, due)| rule.describe(due)) }
         }
     }
 }
 
 #[tauri::command(async)]
 fn confirm_plan(state: State<AppState>, id: u64) -> Result<RunResult, String> {
+    confirm_input(&state, id)
+}
+
+fn confirm_input(state: &AppState, id: u64) -> Result<RunResult, String> {
     let pending = state.pending.lock().unwrap().take();
     let Some(p) = pending.filter(|p| p.id == id) else {
         return Err("That preview expired. Press Enter to plan it again.".into());
     };
+    let _execution = state.execution.lock().unwrap();
     p.validate_context(&state.result_scope.lock().unwrap())?;
+    if let Some(job) = &p.scheduled {
+        if job.due <= chrono::Local::now() { return Err("That scheduled time passed while reviewing. Preview the command again.".into()); }
+        job.validate()?;
+        state.schedules.lock().unwrap().add(job.clone())?;
+        let summary = match &job.repeat {
+            Some(rule) => format!("Repeats {}, first on {}. Manage tasks in Settings → Scheduled.", rule.describe(job.due), scheduler::display(job.due)),
+            None => format!("Scheduled for {}. Manage tasks in Settings → Scheduled.", scheduler::display(job.due)),
+        };
+        return Ok(RunResult { done: 0, total: p.actions.len(), error: None, undoable: false, summary });
+    }
+    Ok(execute_pending(state, p))
+}
+
+fn execute_pending(state: &AppState, p: Pending) -> RunResult {
     let roots = state.roots.read().unwrap().clone();
     let out = exec::run(&p.actions, &roots);
     {
@@ -356,7 +415,97 @@ fn confirm_plan(state: State<AppState>, id: u64) -> Result<RunResult, String> {
         (None, None) => format!("Done. {done} {}.", if done == 1 { "change" } else { "changes" }),
         (Some(_), _) => format!("Stopped after {done} of {} steps.", p.actions.len()),
     };
-    Ok(RunResult { done, total: p.actions.len(), error: out.error, undoable, summary })
+    RunResult { done, total: p.actions.len(), error: out.error, undoable, summary }
+}
+
+#[tauri::command]
+fn scheduled_tasks(state: State<AppState>) -> Vec<scheduler::Summary> {
+    state.schedules.lock().unwrap().jobs.iter().map(scheduler::Job::summary).collect()
+}
+
+#[tauri::command]
+fn scheduler_notice(state: State<AppState>) -> Option<String> {
+    state.schedules.lock().unwrap().notice()
+}
+
+#[tauri::command]
+fn cancel_scheduled_task(state: State<AppState>, id: u64) -> Result<(), String> {
+    state.schedules.lock().unwrap().cancel(id)
+}
+
+#[tauri::command]
+fn pause_scheduled_task(state: State<AppState>, id: u64) -> Result<(), String> {
+    state.schedules.lock().unwrap().pause(id)
+}
+
+#[tauri::command]
+fn resume_scheduled_task(state: State<AppState>, id: u64) -> Result<(), String> {
+    state.schedules.lock().unwrap().resume(id, chrono::Local::now())
+}
+
+/// Splits a schedule off the end of a command. A repeat phrase counts only
+/// when what is left is a command; “rename a.pdf to Daily” keeps its name.
+fn schedule_of(state: &AppState, text: &str) -> Result<(String, Option<scheduler::When>), String> {
+    let now = chrono::Local::now();
+    let (command, when) = scheduler::extract_schedule(text, now)?;
+    if when.as_ref().is_some_and(|w| w.rule.is_some()) {
+        let known = |t: &str| parse::parse(t).is_ok() || state.settings.lock().unwrap().find_shortcut(t).is_some();
+        if !known(&command) && known(text.trim()) {
+            return scheduler::extract(text, now).map(|(c, due)| (c, due.map(|due| scheduler::When { due, rule: None })));
+        }
+    }
+    Ok((command, when))
+}
+
+/// Plans a repeating task's command against the files that exist now, and runs it.
+fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule) -> String {
+    let roots = state.roots.read().unwrap().clone();
+    let shortcut = state.settings.lock().unwrap().find_shortcut(&rule.command).cloned();
+    let planned = {
+        let history = state.history.lock().unwrap();
+        let planner = Planner::new(&roots, &rule.choices).with_control(search::Control::default());
+        match shortcut {
+            Some(s) => match s.commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect::<Result<Vec<_>, _>>() {
+                Ok(commands) => planner.plan_shortcut(&s.phrase, &commands, &history),
+                Err(bad) => return format!("Skipped: Voxi doesn't understand “{bad}” in “{}”.", s.phrase),
+            },
+            None => match parse::parse(&rule.command) {
+                Ok(intent) => planner.plan(&intent, &history),
+                Err(_) => return format!("Skipped: Voxi doesn't understand “{}”.", rule.command),
+            },
+        }
+    };
+    match planned {
+        Ok(Planned::Steps { actions, undo_of: None, .. }) if actions.is_empty() => "Nothing to change.".into(),
+        Ok(Planned::Steps { actions, undo_of: None, .. }) => {
+            if let Err(message) = scheduler::check_actions(&actions) { return format!("Skipped: {message}"); }
+            let result = execute_pending(state, Pending { id: 0, command: job.command.clone(), actions,
+                undo_of: None, context_generation: None, context_snapshot: None, scheduled: None });
+            match result.error { Some(error) => format!("{} {error}", result.summary), None => result.summary }
+        }
+        Ok(_) => "Skipped: this command no longer changes files.".into(),
+        Err(Stop::Problem(message)) => format!("Nothing to change. {message}"),
+        Err(Stop::Ambiguous { name, .. }) => format!("Skipped: “{name}” matches more than one item. Schedule it again and pick one."),
+    }
+}
+
+fn run_due_tasks(state: &AppState) -> Result<(), String> {
+    let _execution = state.execution.lock().unwrap();
+    let Some(job) = state.schedules.lock().unwrap().claim(chrono::Local::now())? else { return Ok(()); };
+    if let Some(rule) = job.repeat.clone() {
+        let summary = run_recurring(state, &job, &rule);
+        return state.schedules.lock().unwrap().finish_recurring(job.id, summary, chrono::Local::now());
+    }
+    let result = match job.validate() {
+        Err(message) => ("failed", message),
+        Ok(()) => {
+            let result = execute_pending(state, Pending { id: 0, command: job.command.clone(), actions: job.actions,
+                undo_of: None, context_generation: None, context_snapshot: None, scheduled: None });
+            (if result.error.is_some() { "failed" } else { "completed" },
+                result.error.map_or(result.summary.clone(), |error| format!("{} {error}", result.summary)))
+        }
+    };
+    state.schedules.lock().unwrap().update(job.id, result.0, result.1)
 }
 
 #[tauri::command]
@@ -643,6 +792,8 @@ pub fn run() {
                 history: Mutex::new(History::load(data_dir.join("history.json"))),
                 pending: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
+                schedules: Mutex::new(scheduler::Store::load(data_dir.join("schedules.json"))),
+                execution: Mutex::new(()),
                 settings_path,
                 reports_path: learn::reports_path(&data_dir),
                 result_scope: Mutex::new(scope::State::default()),
@@ -651,6 +802,11 @@ pub fn run() {
                 presentation: Mutex::new(presentation::Presentation::default()),
             };
             app.manage(state);
+            let scheduler_app = app.handle().clone();
+            std::thread::spawn(move || loop {
+                if let Err(error) = run_due_tasks(&scheduler_app.state::<AppState>()) { eprintln!("Scheduler: {error}"); }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            });
 
             // Configure Writing Tools before WKWebView copies its configuration.
             // The window is created here rather than automatically from config.
@@ -721,6 +877,11 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             plan_command,
+            scheduled_tasks,
+            scheduler_notice,
+            cancel_scheduled_task,
+            pause_scheduled_task,
+            resume_scheduled_task,
             report_wrong,
             reports_summary,
             clear_reports,
@@ -763,6 +924,7 @@ mod result_context_tests {
                 pending: Mutex::new(None), settings: Mutex::new(Settings::default()), settings_path: home.join("settings.json"), reports_path: home.join("reports.jsonl"),
                 next_plan: AtomicU64::new(1), active_search: Mutex::new(None), presentation: Mutex::new(Default::default()),
                 result_scope: Mutex::new(Default::default()),
+                schedules: Mutex::new(scheduler::Store::load(home.join("schedules.json"))), execution: Mutex::new(()),
             };
             Self { _temp: temp, home, state, request: Cell::new(0) }
         }
@@ -773,6 +935,124 @@ mod result_context_tests {
         fn paths(&self) -> Vec<PathBuf> { self.state.result_scope.lock().unwrap().current.as_ref().unwrap().paths() }
         fn actions(&self) -> Vec<Action> { self.state.pending.lock().unwrap().as_ref().unwrap().actions.clone() }
         fn list(&self) { assert!(matches!(self.command("list the items in Downloads"), Outcome::Info { .. })); }
+    }
+    #[test]
+    fn scheduling_preserves_screenshot_names_and_later_time_clauses() {
+        let f = Fixture::new();
+        let screenshot = f.write("Desktop/Screenshot 2026-11-12 at 09.40.00.png");
+        let trip = f.write("Desktop/Trip at Home.txt");
+        for (name, source) in [("Screenshot 2026-11-12 at 09.40.00.png", &screenshot), ("Trip at Home.txt", &trip)] {
+            let outcome = f.command(&format!("move {name} to Documents"));
+            assert!(matches!(outcome, Outcome::Plan { scheduled_for: None, .. }), "{outcome:?}");
+            assert_eq!(f.actions(), vec![Action::Move { from: source.clone(), to: f.home.join("Documents").join(name) }]);
+            let outcome = f.command(&format!("move {name} to Documents at 9:40 pm"));
+            assert!(matches!(outcome, Outcome::Plan { scheduled_for: Some(_), .. }), "{outcome:?}");
+            assert_eq!(f.actions(), vec![Action::Move { from: source.clone(), to: f.home.join("Documents").join(name) }]);
+        }
+    }
+    #[test]
+    fn scheduled_move_is_deferred_persisted_and_undoable() {
+        let f = Fixture::new();
+        let source = f.write("Desktop/Screenshot 2026-11-12 at 09.40.00.png");
+        let outcome = f.command("Move the screenshots from desktop to Screenshots folder after 3 hours");
+        let Outcome::Plan { id, scheduled_for: Some(_), .. } = outcome else { panic!("{outcome:?}"); };
+        assert!(source.exists());
+        let result = confirm_input(&f.state, id).unwrap();
+        assert_eq!(result.done, 0); assert!(!result.undoable); assert!(source.exists());
+        assert!(f.state.history.lock().unwrap().entries.is_empty());
+        // Reload from disk, then make the saved task due without waiting.
+        let mut store = scheduler::Store::load(f.home.join("schedules.json"));
+        store.jobs[0].due = chrono::Local::now() - chrono::Duration::seconds(1);
+        *f.state.schedules.lock().unwrap() = store;
+        run_due_tasks(&f.state).unwrap();
+        assert!(!source.exists());
+        assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "completed");
+        assert_eq!(f.state.history.lock().unwrap().entries.len(), 1);
+        run_due_tasks(&f.state).unwrap();
+        assert_eq!(f.state.history.lock().unwrap().entries.len(), 1);
+        assert!(matches!(f.command("undo last"), Outcome::Plan { is_undo: true, .. }));
+    }
+    #[test]
+    fn repeating_task_replans_each_run_and_keeps_going() {
+        let f = Fixture::new();
+        let first = f.write("Downloads/a.dmg");
+        let outcome = f.command("delete dmg files from downloads every 3 days");
+        let Outcome::Plan { id, scheduled_for: Some(_), repeats: Some(repeats), .. } = outcome else { panic!("{outcome:?}"); };
+        assert!(repeats.starts_with("every 3 days"), "{repeats}");
+        let result = confirm_input(&f.state, id).unwrap();
+        assert!(result.summary.starts_with("Repeats every 3 days"), "{}", result.summary);
+        assert!(first.exists());
+        let due = |f: &Fixture| f.state.schedules.lock().unwrap().jobs[0].due;
+        let make_due = |f: &Fixture| f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::days(7);
+        // First run: the file that existed when it was scheduled.
+        make_due(&f);
+        run_due_tasks(&f.state).unwrap();
+        assert!(!first.exists());
+        let job = f.state.schedules.lock().unwrap().jobs[0].clone();
+        assert_eq!(job.status, "pending");
+        assert!(job.due > chrono::Local::now() && job.due <= chrono::Local::now() + chrono::Duration::days(3), "missed runs collapse into one");
+        assert!(job.summary.contains("Done. 1 change."), "{}", job.summary);
+        // A file added later is picked up by the next run.
+        let second = f.write("Downloads/b.dmg");
+        make_due(&f);
+        run_due_tasks(&f.state).unwrap();
+        assert!(!second.exists());
+        assert_eq!(f.state.history.lock().unwrap().entries.len(), 2);
+        // Nothing left to match: the series keeps going.
+        make_due(&f);
+        run_due_tasks(&f.state).unwrap();
+        assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "pending");
+        assert!(f.state.schedules.lock().unwrap().jobs[0].summary.contains("Nothing to change"));
+        // Paused tasks don't run; resuming skips the missed runs.
+        let third = f.write("Downloads/c.dmg");
+        f.state.schedules.lock().unwrap().pause(1).unwrap();
+        make_due(&f);
+        run_due_tasks(&f.state).unwrap();
+        assert!(third.exists());
+        f.state.schedules.lock().unwrap().resume(1, chrono::Local::now()).unwrap();
+        assert!(due(&f) > chrono::Local::now());
+        f.state.schedules.lock().unwrap().cancel(1).unwrap();
+        make_due(&f);
+        run_due_tasks(&f.state).unwrap();
+        assert!(third.exists());
+        // A stopped repeating task can be made active again; a one-time task can't.
+        f.state.schedules.lock().unwrap().resume(1, chrono::Local::now()).unwrap();
+        assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "pending");
+        assert!(due(&f) > chrono::Local::now());
+        let Outcome::Plan { id, .. } = f.command("move c.dmg from downloads to documents in 5 minutes") else { panic!("plan"); };
+        confirm_input(&f.state, id).unwrap();
+        f.state.schedules.lock().unwrap().cancel(2).unwrap();
+        assert!(f.state.schedules.lock().unwrap().resume(2, chrono::Local::now()).is_err());
+        // A name that only looks like a repeat stays a name.
+        f.write("Desktop/a.pdf");
+        let outcome = f.command("rename a.pdf on desktop to Daily");
+        assert!(matches!(outcome, Outcome::Plan { scheduled_for: None, .. }), "{outcome:?}");
+    }
+    #[test]
+    fn scheduled_changed_sources_and_collisions_stop_without_overwriting() {
+        for replace_source in [true, false] {
+            let f = Fixture::new(); let source = f.write("Downloads/a.pdf");
+            let Outcome::Plan { id, .. } = f.command("move a.pdf from Downloads to Documents in 5 minutes") else { panic!("plan"); };
+            confirm_input(&f.state, id).unwrap();
+            if replace_source { std::fs::write(&source, "changed source contents").unwrap(); }
+            else { f.write("Documents/a.pdf"); }
+            f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::seconds(1);
+            run_due_tasks(&f.state).unwrap();
+            assert!(source.exists());
+            assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "failed");
+            assert!(f.state.history.lock().unwrap().entries.is_empty());
+        }
+    }
+    #[test]
+    fn scheduled_cancellation_and_read_only_commands() {
+        let f = Fixture::new(); let source = f.write("Downloads/a.pdf");
+        let Outcome::Plan { id, .. } = f.command("move a.pdf from Downloads to Documents after 1 hour") else { panic!("plan"); };
+        confirm_input(&f.state, id).unwrap();
+        f.state.schedules.lock().unwrap().cancel(1).unwrap();
+        f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::seconds(1);
+        run_due_tasks(&f.state).unwrap(); assert!(source.exists());
+        assert!(matches!(f.command("list files in Downloads after 3 minutes"), Outcome::Problem { .. }));
+        assert!(f.state.pending.lock().unwrap().is_none());
     }
     #[test]
     fn last_file_is_the_last_displayed_result_and_no_global_scan_occurs() {
@@ -940,5 +1220,20 @@ mod result_context_tests {
         assert!(snapshot.paths().contains(&moved));
         fs::remove_file(&keep).unwrap(); snapshot.apply(&[Action::Trash{path:keep}]);
         assert_eq!(snapshot.paths(),vec![moved]);
+    }
+}
+
+/// The command box suggests these; each must parse, and "every"/"at" ones must schedule.
+#[cfg(test)]
+mod example_tests {
+    #[test]
+    fn suggested_examples_parse() {
+        let list: Vec<String> = serde_json::from_str(include_str!("../../src/examples.json")).unwrap();
+        for ex in list {
+            let (rest, when) = crate::scheduler::extract_schedule(&ex, chrono::Local::now()).unwrap();
+            let timed = ex.contains(" every ") || ex.contains(" at ");
+            assert_eq!(when.is_some(), timed, "{ex}: schedule");
+            assert!(crate::parse::parse(&rest).is_ok(), "{ex}: doesn't parse");
+        }
     }
 }

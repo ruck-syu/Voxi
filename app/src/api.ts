@@ -10,11 +10,13 @@ export type PreviewItem = { kind: string; primary: string; detail: string; note?
 export type InfoRow = { name: string; detail: string };
 
 export type Outcome =
-  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; warnings: string[]; isUndo: boolean }
+  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; warnings: string[]; isUndo: boolean; scheduledFor?: string | null; repeats?: string | null }
   | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
   | { status: "not_understood"; text: string };
+
+export type ScheduledTask = { id: number; command: string; due: string; status: "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"; summary: string; repeat?: string | null };
 
 export type RunResult = { done: number; total: number; error: string | null; undoable: boolean; summary: string };
 
@@ -33,6 +35,11 @@ export type ResultScope = { count: number; visible: number; label: string };
 export type CommandReply = { outcome: Outcome; scope: ResultScope | null };
 
 export const api = {
+  schedulerNotice: () => invoke<string | null>("scheduler_notice"),
+  scheduledTasks: () => invoke<ScheduledTask[]>("scheduled_tasks"),
+  cancelScheduledTask: (id: number) => invoke<void>("cancel_scheduled_task", { id }),
+  pauseScheduledTask: (id: number) => invoke<void>("pause_scheduled_task", { id }),
+  resumeScheduledTask: (id: number) => invoke<void>("resume_scheduled_task", { id }),
   plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<CommandReply>("plan_command", { text, choices, requestId }),
   clearResultScope: () => invoke<void>("clear_result_scope"),
   resultScope: () => invoke<ResultScope | null>("result_scope"),

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, inTauri, tildify, type FolderAccess, type Outcome, type Reports, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
+import { api, inTauri, tildify, type ScheduledTask, type FolderAccess, type Outcome, type Reports, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
 import { readChoice } from "./choice";
+import examples from "./examples.json";
 import { appVersion, checkAndInstall, type UpdateState } from "./updates";
 
-type View = "command" | "settings" | "welcome" | "access";
+type View = "command" | "settings" | "welcome";
 type Phase =
   | { k: "ready" }
   | { k: "parsing" }
@@ -26,11 +27,30 @@ type Offer =
 /** How long a missed phrase stays teachable by the command that follows it. */
 const TEACH_WINDOW_MS = 3 * 60_000;
 
-const EXAMPLES = [
-  "move screenshots from today to Screenshots",
-  "clean up Downloads older than 90 days",
-  "convert all HEIC in Pictures to jpg",
-];
+/** Example commands, one per kind of feature. A Rust test checks each parses. */
+const EXAMPLES: readonly string[] = examples;
+
+/** A few examples to click, picked once when shown. */
+function ExampleList({ onFill }: { onFill: (text: string) => void }) {
+  const [picked] = useState(() => someExamples(4));
+  return (
+    <ul className="examples">
+      {picked.map((ex, i) => (
+        <li key={ex} style={row(i)}>
+          <button className="example" onClick={() => onFill(ex)}>
+            {ex}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** `count` examples starting at a random one, so each opening shows different ones. */
+function someExamples(count: number): string[] {
+  const start = Math.floor(Math.random() * EXAMPLES.length);
+  return Array.from({ length: Math.min(count, EXAMPLES.length) }, (_, i) => EXAMPLES[(start + i) % EXAMPLES.length]);
+}
 
 function prettyHotkey(h: string): string {
   const map: Record<string, string> = {
@@ -50,6 +70,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [open, setOpen] = useState(!inTauri);
   const [pendingShow, setPendingShow] = useState<number | null>(null);
+  const [commandSession, setCommandSession] = useState(0);
   const [fontsReady, setFontsReady] = useState(false);
   const [height, setHeight] = useState<number | null>(null);
   const [glide, setGlide] = useState(false);
@@ -110,6 +131,7 @@ export default function App() {
       cancelClose();
       showId.current = requestId;
       awaitingShow.current = requestId;
+      setCommandSession(requestId);
       setView((v) => (mode === "command" && v === "welcome" ? v : mode));
       shownAt.current = performance.now();
       setOpen(false);
@@ -168,6 +190,7 @@ export default function App() {
     <div className="card" data-open={open || undefined} data-glide={glide || undefined} style={height ? { height } : undefined}>
       <div className="card-inner" ref={innerRef}>
         {view === "command" && <CommandView
+            key={commandSession}
             open={open}
             onClose={close}
             onBusy={setBusy}
@@ -178,12 +201,8 @@ export default function App() {
             settings={settings}
             onSaved={setSettings}
             onClose={() => setView("command")}
-            onAccess={() => setView("access")}
             setBusy={setBusy}
           />
-        )}
-        {view === "access" && settings && (
-          <AccessView settings={settings} firstRun={false} setBusy={setBusy} onDone={() => setView("settings")} />
         )}
         {view === "welcome" && settings && (
           <AccessView
@@ -218,7 +237,7 @@ function useTypedPlaceholder(active: boolean): string {
     (async () => {
       setShown(base);
       await wait(2600);
-      for (let i = 0; !cancelled; i = (i + 1) % EXAMPLES.length) {
+      for (let i = Math.floor(Math.random() * EXAMPLES.length); !cancelled; i = (i + 1) % EXAMPLES.length) {
         const ex = EXAMPLES[i];
         for (let n = 1; n <= ex.length && !cancelled; n++) {
           setShown(ex.slice(0, n));
@@ -300,23 +319,14 @@ function CommandView({
     });
   }, []);
 
+  // Each native show request mounts a fresh command session before layout is
+  // measured. Focus events only focus the input; they do not reset a live session.
   useEffect(() => {
-    const onFocus = () => {
-      setResultScope(null);
-      // A finished result doesn't carry over to the next time the window opens.
-      setPhase((p) => {
-        const live = p.k === "outcome" && (p.outcome.status === "plan" || p.outcome.status === "ambiguous");
-        if (p.k === "ready" || p.k === "parsing" || p.k === "running" || live) return p;
-        setSaid(null);
-        return { k: "ready" };
-      });
-      focusInput();
-    };
-    window.addEventListener("voxi-focus", onFocus);
+    window.addEventListener("voxi-focus", focusInput);
     window.addEventListener("focus", focusInput);
     focusInput();
     return () => {
-      window.removeEventListener("voxi-focus", onFocus);
+      window.removeEventListener("voxi-focus", focusInput);
       window.removeEventListener("focus", focusInput);
     };
   }, [focusInput]);
@@ -410,21 +420,31 @@ function CommandView({
   }, [phase, focusInput]);
 
   const reset = useCallback(() => {
-    ++requestId.current;
-    api.cancel();
+    const request = ++requestId.current;
+    void Promise.all([api.cancel(), api.clearResultScope()]).catch((e) => {
+      if (request === requestId.current) setPhase({ k: "error", message: String(e) });
+    });
     stopAsking();
+    setText("");
+    setResultScope(null);
+    setSearched(0);
     setHeard(null);
     setSaid(null);
     setOffer(null);
+    lastCommand.current = "";
+    missed.current = null;
+    pickedFolder.current = null;
     setPhase({ k: "ready" });
     focusInput();
-  }, [phase, focusInput, stopAsking]);
+  }, [focusInput, stopAsking]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        if (phase.k === "parsing" || phase.k === "outcome" || phase.k === "error" || phase.k === "done") reset();
+        if (e.repeat || phase.k === "running") return;
+        if (phase.k !== "ready" || text !== "" || resultScope) reset();
         else onClose();
       } else if (e.key === "," && e.metaKey) {
         e.preventDefault();
@@ -433,7 +453,7 @@ function CommandView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase, reset, onSettings, onClose]);
+  }, [phase, text, resultScope, reset, onSettings, onClose]);
 
   const answer = (said: string) => {
     if (!asking) return;
@@ -556,7 +576,7 @@ function CommandView({
       </div>}
       <Body
         searched={searched}
-        key={phaseKey(phase)}
+        key={`body-${phaseKey(phase)}`}
         phase={phase}
         asking={asking}
         heard={heard}
@@ -567,7 +587,7 @@ function CommandView({
         onUndo={undo}
       />
       {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onDone={() => { setOffer(null); focusInput(); }} />}
-      {reportable(phase) && <ReportRow key={phaseKey(phase)} command={lastCommand.current} phase={phase} onDone={focusInput} />}
+      {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
       <Footer phase={phase} asking={!!asking} onSettings={onSettings} />
     </>
   );
@@ -745,15 +765,7 @@ function Body(props: {
         <section className="body">
           <p className="title nudge">Didn't understand: “{o.text}”</p>
           <p className="quiet">Use a filename, folder, or a specific group of files. For example:</p>
-          <ul className="examples">
-            {EXAMPLES.map((ex, i) => (
-              <li key={ex} style={row(i)}>
-                <button className="example" onClick={() => props.onFill(ex)}>
-                  {ex}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <ExampleList onFill={props.onFill} />
         </section>
       );
     case "problem":
@@ -832,7 +844,7 @@ function Body(props: {
           ))}
           <div className="actions">
             <button className="primary-button" onClick={props.onConfirm}>
-              {o.isUndo ? "Undo" : `Run ${o.total} ${o.total === 1 ? "change" : "changes"}`}
+              {o.repeats ? "Schedule repeating task" : o.scheduledFor ? "Schedule task" : o.isUndo ? "Undo" : `Run ${o.total} ${o.total === 1 ? "change" : "changes"}`}
               <kbd>↩</kbd>
             </button>
             <button className="secondary" onClick={props.onCancel}>
@@ -853,10 +865,10 @@ function Footer({ phase, asking, onSettings }: { phase: Phase; asking: boolean; 
       : phase.k === "ready"
         ? "Enter to preview. Shift-Enter for a new line."
         : phase.k === "outcome" && phase.outcome.status === "plan"
-          ? "Enter to run. Nothing changes until then."
+          ? (phase.outcome.scheduledFor ? (phase.outcome.repeats ? "Enter to schedule. Later runs won't ask first. Esc to cancel." : "Enter to schedule. Esc to cancel.") : "Enter to run. Nothing changes until then.")
           : phase.k === "outcome" && phase.outcome.status === "ambiguous"
             ? "Esc to go back"
-            : "Say the next command. Esc clears this.";
+            : "Say the next command. Esc to go back.";
   return (
     <footer className="foot">
       <span>{hint}</span>
@@ -874,6 +886,7 @@ function Footer({ phase, asking, onSettings }: { phase: Phase; asking: boolean; 
 function Sheet(props: {
   title: string;
   aside?: React.ReactNode;
+  bodyClass?: string;
   foot: React.ReactNode;
   footRight?: React.ReactNode;
   children: React.ReactNode;
@@ -885,7 +898,7 @@ function Sheet(props: {
         <h1 className="sheet-title">{props.title}</h1>
         {props.aside}
       </div>
-      <section className="body sheet-body">{props.children}</section>
+      <section className={props.bodyClass ? `body sheet-body ${props.bodyClass}` : "body sheet-body"}>{props.children}</section>
       <footer className="foot">
         <span>{props.foot}</span>
         {props.footRight}
@@ -907,16 +920,167 @@ function comboFromEvent(e: React.KeyboardEvent): string | null {
   return [...mods, key].join("+");
 }
 
-type Tab = "general" | "dictation" | "shortcuts" | "folders" | "learning";
-const TABS: [Tab, string][] = [
-  ["general", "General"],
-  ["dictation", "Dictation"],
-  ["shortcuts", "Shortcuts"],
-  ["folders", "Folders"],
-  ["learning", "Learning"],
-];
+/** Everything a Settings tab can use. */
+type TabContext = {
+  settings: Settings;
+  persist: (s: Settings) => Promise<boolean>;
+  setBusy: (b: boolean) => void;
+  activeTasks: number | null;
+};
 
-function SettingsTabs({ value, saving, onSelect }: { value: Tab; saving: boolean; onSelect: (tab: Tab) => void }) {
+/** 16px line icons, drawn in the current text color. */
+const ICONS = {
+  general: <><circle cx="8" cy="8" r="2.2" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></>,
+  scheduled: <><circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.5 1.5" /></>,
+  shortcuts: <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />,
+  folders: <path d="M1.75 4.25c0-.7.55-1.25 1.25-1.25h3l1.5 1.5H13c.7 0 1.25.55 1.25 1.25v6c0 .7-.55 1.25-1.25 1.25H3c-.7 0-1.25-.55-1.25-1.25z" />,
+  keyboard: <><rect x="1.5" y="4" width="13" height="8" rx="1.5" /><path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M5 9.5h6" /></>,
+  power: <><path d="M8 1.75V7.5" /><path d="M4.6 3.6a5.25 5.25 0 1 0 6.8 0" /></>,
+  mic: <><rect x="5.75" y="1.5" width="4.5" height="8" rx="2.25" /><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" /></>,
+  update: <><path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1" /><path d="M13.5 2v3h-3" /></>,
+  shield: <path d="M8 1.75 2.75 3.75V7.5c0 3.1 2.2 5.6 5.25 6.75 3.05-1.15 5.25-3.65 5.25-6.75V3.75z" />,
+  tag: <><path d="M1.75 8.4V2.75c0-.55.45-1 1-1H8.4l5.85 5.85-6.65 6.65z" /><circle cx="5" cy="5" r="1" /></>,
+} as const;
+
+function Icon({ name }: { name: keyof typeof ICONS }) {
+  return <svg className="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>;
+}
+
+/** Settings sections, in sidebar order. Add a tab by adding an entry here. */
+const TABS = [
+  {
+    id: "general", label: "General", icon: "general", blurb: "How Voxi opens, updates, and keeps your data.",
+    badge: () => null,
+    render: (c: TabContext) => <GeneralTab settings={c.settings} persist={c.persist} />,
+  },
+  {
+    id: "scheduled", label: "Scheduled", icon: "scheduled", blurb: "Commands set to run later or on repeat.",
+    badge: (c: TabContext) => c.activeTasks || null,
+    render: () => <ScheduledTab />,
+  },
+  {
+    id: "shortcuts", label: "Shortcuts", icon: "shortcuts", blurb: "One phrase that runs several commands.",
+    badge: (c: TabContext) => c.settings.shortcuts.length || null,
+    render: (c: TabContext) => <ShortcutsTab settings={c.settings} persist={c.persist} />,
+  },
+  {
+    id: "folders", label: "Folders", icon: "folders", blurb: "Where Voxi may change files, and your names for them.",
+    badge: () => null,
+    render: (c: TabContext) => <FoldersTab settings={c.settings} persist={c.persist} setBusy={c.setBusy} />,
+  },
+] as const satisfies readonly {
+  id: string; label: string; icon: keyof typeof ICONS; blurb: string;
+  badge: (c: TabContext) => number | null; render: (c: TabContext) => React.ReactNode;
+}[];
+type Tab = (typeof TABS)[number]["id"];
+
+/** A titled group of rows on a soft card, like System Settings. */
+function Group({ title, action, foot, children }: { title: string; action?: React.ReactNode; foot?: React.ReactNode; children: React.ReactNode }) {
+  return <section className="group">
+    <div className="group-head">
+      <h3 className="group-title">{title}</h3>
+      {action}
+    </div>
+    <ul className="group-rows">{children}</ul>
+    {foot && <p className="group-foot">{foot}</p>}
+  </section>;
+}
+
+/** One setting: an optional icon, a label with a short description, and its control. */
+function Row({ icon, label, htmlFor, description, children, className }: {
+  icon?: keyof typeof ICONS; label?: React.ReactNode; htmlFor?: string; description?: React.ReactNode;
+  children?: React.ReactNode; className?: string;
+}) {
+  return <li className={className ? `row ${className}` : "row"}>
+    {icon && <span className="row-icon"><Icon name={icon} /></span>}
+    {label !== undefined && <div className="row-copy">
+      {htmlFor ? <label className="row-label" htmlFor={htmlFor}>{label}</label> : <span className="row-label">{label}</span>}
+      {description && <span className="row-desc">{description}</span>}
+    </div>}
+    {children}
+  </li>;
+}
+
+const ACTIVE_STATUSES: ScheduledTask["status"][] = ["pending", "running", "paused"];
+
+function ScheduledTab() {
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState<number | null>(null);
+  const [showing, setShowing] = useState<"active" | "done">("active");
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => Promise.all([api.scheduledTasks(), api.schedulerNotice()]).then(([next, message]) => {
+      if (alive) { setTasks(next); setNotice(message); setLoading(false); setError(null); }
+    }).catch((e) => { if (alive) { setError(String(e)); setLoading(false); } });
+    void refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
+  const act = async (id: number, action: (id: number) => Promise<void>) => {
+    setWorking(id);
+    try { await action(id); setTasks(await api.scheduledTasks()); setError(null); }
+    catch (e) { setError(String(e)); }
+    finally { setWorking(null); }
+  };
+  const when = (task: ScheduledTask) => {
+    const at = new Date(task.due).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    if (!task.repeat) return at;
+    const every = `${task.repeat[0].toUpperCase()}${task.repeat.slice(1)}`;
+    return task.status === "pending" ? `${every} · next ${at}` : every;
+  };
+  const STATUS: Record<ScheduledTask["status"], [string, string]> = {
+    pending: ["Scheduled", "ok"], running: ["Running", "ok"], paused: ["Paused", "muted"],
+    completed: ["Done", "muted"], cancelled: ["Stopped", "muted"], failed: ["Failed", "warn"],
+  };
+  const active = tasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).reverse();
+  const done = tasks.filter((t) => !ACTIVE_STATUSES.includes(t.status)).reverse();
+  const shown = showing === "active" ? active : done;
+  const button = (task: ScheduledTask, label: string, busy: string, action: (id: number) => Promise<void>) =>
+    <button className="link" disabled={working !== null} onClick={() => void act(task.id, action)}>{working === task.id ? busy : label}</button>;
+  return <>
+    <div className="segments" role="group" aria-label="Show tasks">
+      {([["active", "Active", active.length], ["done", "Done", done.length]] as const).map(([id, label, count]) =>
+        <button key={id} aria-pressed={showing === id} onClick={() => setShowing(id)}>{label} <span className="count">{count}</span></button>)}
+    </div>
+    {notice && <p className="settings-note warn" role="status">{notice}</p>}
+    {error && <p className="settings-note warn" role="alert">{error}</p>}
+    {loading ? <p className="quiet">Loading scheduled tasks…</p> : shown.length === 0 ? <div className="empty">
+      <span className="empty-icon"><Icon name="scheduled" /></span>
+      {showing === "active" ? <>
+        <p className="empty-title">Nothing scheduled</p>
+        <p className="empty-desc">End a command with a time to run it later.</p>
+        <p className="empty-examples"><kbd>at 9 pm</kbd><kbd>in 3 hours</kbd><kbd>every 3 days</kbd></p>
+      </> : <>
+        <p className="empty-title">No finished tasks yet</p>
+        <p className="empty-desc">Tasks that ran or were stopped show up here.</p>
+      </>}
+    </div> :
+      <ul className="group-rows tasks-list">{shown.map((task) => {
+        const [status, tone] = STATUS[task.status];
+        return <li className="row task" key={task.id}>
+          <span className="row-icon"><Icon name={task.repeat ? "update" : "scheduled"} /></span>
+          <div className="row-copy">
+            <span className="row-label task-command">{task.command}</span>
+            <span className="row-desc">{when(task)}</span>
+            {task.summary && <span className="row-desc task-summary">{task.summary}</span>}
+            {task.status !== "running" && <span className="task-actions">
+              {task.repeat && task.status === "pending" && button(task, "Pause", "Pausing…", api.pauseScheduledTask)}
+              {task.status === "paused" && button(task, "Resume", "Resuming…", api.resumeScheduledTask)}
+              {(task.status === "pending" || task.status === "paused") && button(task, task.repeat ? "Stop repeating" : "Cancel task", "Stopping…", api.cancelScheduledTask)}
+              {task.repeat && (task.status === "cancelled" || task.status === "failed") && button(task, "Move to active", "Moving…", api.resumeScheduledTask)}
+            </span>}
+          </div>
+          <span className={`pill ${tone}`}>{status}</span>
+        </li>;
+      })}</ul>}
+  </>;
+}
+
+/** The Settings tab bar, on the title row to the right of "Settings". */
+function SettingsTabs({ value, saving, context, onSelect }: { value: Tab; saving: boolean; context: TabContext; onSelect: (tab: Tab) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
   const [animate, setAnimate] = useState(false);
@@ -935,21 +1099,26 @@ function SettingsTabs({ value, saving, onSelect }: { value: Tab; saving: boolean
   }, [value]);
   return <div className="tabs" role="tablist" aria-label="Settings sections" ref={ref}>
     {indicator && <span className="tab-highlight" data-animate={animate || undefined} aria-hidden="true" style={indicator} />}
-    {TABS.map(([id, label], index) => <button key={id} role="tab" id={`settings-tab-${id}`}
-      aria-selected={value === id} aria-disabled={saving} aria-controls="settings-panel"
-      tabIndex={value === id ? 0 : -1} onClick={() => onSelect(id)}
-      onKeyDown={(event) => {
-        if (saving) return;
-        const next = event.key === "ArrowRight" ? (index + 1) % TABS.length
-          : event.key === "ArrowLeft" ? (index + TABS.length - 1) % TABS.length
-          : event.key === "Home" ? 0 : event.key === "End" ? TABS.length - 1 : null;
-        if (next === null) return;
-        event.preventDefault();
-        onSelect(TABS[next][0]);
-        ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-      }}>
-      {label}
-    </button>)}
+    {TABS.map((tab, index) => {
+      const badge = tab.badge(context);
+      return <button key={tab.id} role="tab" id={`settings-tab-${tab.id}`}
+        aria-selected={value === tab.id} aria-disabled={saving} aria-controls="settings-panel"
+        tabIndex={value === tab.id ? 0 : -1} onClick={() => onSelect(tab.id)}
+        onKeyDown={(event) => {
+          if (saving) return;
+          const next = event.key === "ArrowRight" ? (index + 1) % TABS.length
+            : event.key === "ArrowLeft" ? (index + TABS.length - 1) % TABS.length
+            : event.key === "Home" ? 0 : event.key === "End" ? TABS.length - 1 : null;
+          if (next === null) return;
+          event.preventDefault();
+          onSelect(TABS[next].id);
+          ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+        }}>
+        <Icon name={tab.icon} />
+        <span className="tab-label">{tab.label}</span>
+        {badge !== null && <span className="tab-badge" aria-label={`${badge}`}>{badge}</span>}
+      </button>;
+    })}
   </div>;
 }
 
@@ -958,18 +1127,17 @@ function SettingsView({
   settings,
   onSaved,
   onClose,
-  onAccess,
   setBusy,
 }: {
   settings: Settings;
   onSaved: (s: Settings) => void;
   onClose: () => void;
-  onAccess: () => void;
   setBusy: (b: boolean) => void;
 }) {
   const [tab, setTab] = useState<Tab>("general");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [activeTasks, setActiveTasks] = useState<number | null>(null);
   const savePending = useRef(false);
 
   useEffect(() => {
@@ -982,6 +1150,17 @@ function SettingsView({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // The sidebar's count of active scheduled tasks.
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => api.scheduledTasks()
+      .then((tasks) => { if (alive) setActiveTasks(tasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).length); })
+      .catch(() => {});
+    void refresh();
+    const timer = window.setInterval(refresh, 4000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
 
   const persist = async (next: Settings): Promise<boolean> => {
     if (savePending.current) return false;
@@ -1004,12 +1183,14 @@ function SettingsView({
     }
   };
 
+  const context: TabContext = { settings, persist, setBusy, activeTasks };
+  const current = TABS.find((t) => t.id === tab)!;
+
   return (
     <Sheet
       title="Settings"
-      aside={
-        <SettingsTabs value={tab} saving={saving} onSelect={(id) => { if (!savePending.current) setTab(id); }} />
-      }
+      aside={<SettingsTabs value={tab} saving={saving} context={context} onSelect={(id) => { if (!savePending.current) setTab(id); }} />}
+      bodyClass="settings-body"
       foot={error ? <span className="warn" role="alert">{error}</span> : "Changes save as you go. Esc to go back."}
       footRight={
         <button className="link" aria-disabled={saving} onClick={() => { if (!savePending.current) onClose(); }}>
@@ -1018,11 +1199,8 @@ function SettingsView({
       }
     >
       <fieldset key={tab} id="settings-panel" role="tabpanel" tabIndex={0} aria-labelledby={`settings-tab-${tab}`} className="tab-panel" disabled={saving} aria-busy={saving}>
-        {tab === "general" && <GeneralTab settings={settings} persist={persist} onAccess={onAccess} />}
-        {tab === "dictation" && <DictationTab />}
-        {tab === "shortcuts" && <ShortcutsTab settings={settings} persist={persist} />}
-        {tab === "folders" && <FoldersTab settings={settings} persist={persist} setBusy={setBusy} />}
-        {tab === "learning" && <LearningTab settings={settings} persist={persist} setBusy={setBusy} />}
+        <p className="panel-blurb">{current.blurb}</p>
+        {current.render(context)}
       </fieldset>
     </Sheet>
   );
@@ -1030,29 +1208,12 @@ function SettingsView({
 
 type TabProps = { settings: Settings; persist: (s: Settings) => Promise<boolean> };
 
-function DictationTab() {
+function GeneralTab({ settings, persist }: TabProps) {
+  const [recording, setRecording] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
   return <>
-    <ul className="prefs">
-      <li className="pref">
-        <div className="pref-copy">
-          <h2 className="pref-label pref-heading">Hex by Anomaly <span className="recommendation-badge">Recommended</span></h2>
-          <p className="settings-description">Free, open source dictation that runs on your device after a one-time model download.</p>
-        </div>
-        <button className="secondary small" onClick={() => { setLinkError(null); api.openHex().catch((e) => setLinkError(String(e))); }}>Get Hex</button>
-      </li>
-    </ul>
-    <p className="settings-note">Requires Apple silicon and macOS 15 or later. Other dictation apps work too.</p>
-    {linkError && <p className="settings-note warn" role="alert">{linkError}</p>}
-  </>;
-}
-
-function GeneralTab({ settings, persist, onAccess }: TabProps & { onAccess: () => void }) {
-  const [recording, setRecording] = useState(false);
-  return (
-    <ul className="prefs">
-      <li className="pref">
-        <span className="pref-label">Open Voxi</span>
+    <Group title="Startup">
+      <Row icon="keyboard" label="Open Voxi" description={recording ? "Press the new keys, or Esc to keep the current ones." : "Press this anywhere to open the command box."}>
         <button
           className={recording ? "hotkey recording" : "hotkey"}
           onClick={() => setRecording(true)}
@@ -1072,11 +1233,8 @@ function GeneralTab({ settings, persist, onAccess }: TabProps & { onAccess: () =
         >
           {recording ? "Press new keys" : prettyHotkey(settings.hotkey)}
         </button>
-      </li>
-      <li className="pref">
-        <label className="pref-label" htmlFor="login">
-          Open at login
-        </label>
+      </Row>
+      <Row icon="power" label="Open at login" htmlFor="login" description="Start Voxi in the menu bar when you log in.">
         <input
           id="login"
           className="switch"
@@ -1084,16 +1242,20 @@ function GeneralTab({ settings, persist, onAccess }: TabProps & { onAccess: () =
           checked={settings.startAtLogin}
           onChange={(e) => persist({ ...settings, startAtLogin: e.target.checked })}
         />
-      </li>
-      <li className="pref">
-        <span className="pref-label">Folder access</span>
-        <button className="secondary small" onClick={onAccess}>
-          Review
-        </button>
-      </li>
+      </Row>
+    </Group>
+    <Group title="Dictation" foot={linkError ? <span className="warn" role="alert">{linkError}</span> : "Requires Apple silicon and macOS 15 or later. Other dictation apps work too."}>
+      <Row icon="mic" label={<>Hex by Anomaly <span className="pill">Recommended</span></>} description="Free, open source dictation that runs on your Mac.">
+        <button className="secondary small" onClick={() => { setLinkError(null); api.openHex().catch((e) => setLinkError(String(e))); }}>Get Hex</button>
+      </Row>
+    </Group>
+    <Group title="Updates">
       <UpdatesRow />
-    </ul>
-  );
+    </Group>
+    <Group title="Privacy">
+      <ReportsRow />
+    </Group>
+  </>;
 }
 
 const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1);
@@ -1112,29 +1274,26 @@ function UpdatesRow() {
   const status =
     state.k === "checking"
       ? "Checking…"
-      : state.k === "latest"
-        ? "You're up to date."
-        : state.k === "downloading"
-          ? state.total
-            ? `Downloading ${state.version}: ${mb(state.done)} of ${mb(state.total)} MB`
-            : `Downloading ${state.version}…`
-          : state.k === "restarting"
-            ? `Installed ${state.version}. Restarting…`
-            : state.k === "error"
-              ? state.message
-              : null;
+      : state.k === "downloading"
+        ? state.total
+          ? `Downloading ${state.version}: ${mb(state.done)} of ${mb(state.total)} MB`
+          : `Downloading ${state.version}…`
+        : state.k === "restarting"
+          ? `Installed ${state.version}. Restarting…`
+          : state.k === "error"
+            ? state.message
+            : null;
   const fraction = state.k === "downloading" && state.total ? Math.min(state.done / state.total, 1) : null;
   const notes = state.k === "downloading" || state.k === "restarting" ? state.notes : [];
 
   return (
-    <li className="pref updates">
-      <span className="pref-label">Version {version}</span>
+    <Row icon="update" className="updates" label={<>Voxi {version} {state.k === "latest" && <span className="pill ok">Up to date</span>}</>}
+      description={status ? <span className={state.k === "error" ? "warn" : undefined} role="status">{status}</span> : "Your settings carry over."}>
       <button className="secondary small" disabled={busy} onClick={() => checkAndInstall(setState)}>
         Check for updates
       </button>
-      {status && (
-        <div className="update-status" role="status">
-          <span className={state.k === "error" ? "hint warn" : "hint"}>{status}</span>
+      {(state.k === "downloading" || state.k === "restarting" || notes.length > 0) && (
+        <div className="update-status">
           {(state.k === "downloading" || state.k === "restarting") && (
             <div
               className="progress"
@@ -1156,7 +1315,37 @@ function UpdatesRow() {
           )}
         </div>
       )}
-    </li>
+    </Row>
+  );
+}
+
+/** Wrong-result reports kept on this Mac, with ways to see or clear them. */
+function ReportsRow() {
+  const [reports, setReports] = useState<Reports | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.reportsSummary().then(setReports).catch(() => setReports(null));
+  }, []);
+
+  const reportAction = async (run: () => Promise<Reports | void>) => {
+    try {
+      const r = await run();
+      if (r) setReports(r);
+      setNote(null);
+    } catch (e) {
+      setNote(String(e));
+    }
+  };
+
+  const count = reports?.count ?? 0;
+  return (
+    <Row icon="shield" label="Wrong-result reports"
+      description={note ? <span className="warn" role="alert">{note}</span>
+        : `${count === 0 ? "None" : count} saved. Nothing leaves this Mac.`}>
+      <button className="secondary small" disabled={!count} onClick={() => reportAction(api.revealReports)}>Show in Finder</button>
+      <button className="link remove" disabled={!count} onClick={() => reportAction(api.clearReports)}>Clear</button>
+    </Row>
   );
 }
 
@@ -1172,80 +1361,87 @@ function ShortcutsTab({ settings, persist }: TabProps) {
   const commit = async (next: Shortcut[]) => {
     if (await persist({ ...settings, shortcuts: next })) setEditing(null);
   };
+  const add = () => {
+    setList((l) => [...l, { phrase: "", commands: [] }]);
+    setEditing(list.length);
+  };
+  const foot = "When Voxi misses a phrase and you then run a command that works, it offers to learn the phrase. Learned phrases appear here too.";
+
+  if (list.length === 0) {
+    return <>
+      <div className="empty">
+        <span className="empty-icon"><Icon name="shortcuts" /></span>
+        <p className="empty-title">No shortcuts yet</p>
+        <p className="empty-desc">Say “run my usuals” to move today's screenshots and clear old installers, all in one preview.</p>
+        <button className="secondary small" onClick={add}>Add shortcut</button>
+      </div>
+      <p className="group-foot">{foot}</p>
+    </>;
+  }
 
   return (
-    <>
-      <ul className="prefs">
-        <li className="pref">
-          <div className="pref-copy">
-            <h2 className="pref-label">Saved shortcuts</h2>
-            <p className="settings-description">Run several commands with one phrase, one preview, and one undo.</p>
-          </div>
-          {editing === null && (
-            <button className="secondary small" onClick={() => {
-              setList((l) => [...l, { phrase: "", commands: [] }]);
-              setEditing(list.length);
-            }}>Add shortcut</button>
-          )}
-        </li>
-        {list.map((s, i) =>
-          editing === i ? (
-            <li className="shortcut" key={i}>
-              <div className="shortcut-head">
-                <input
-                  className="phrase"
-                  value={s.phrase}
-                  placeholder="run my usuals"
-                  aria-label="Phrase to say"
-                  autoFocus={!s.phrase}
-                  onChange={(e) => update(i, { ...s, phrase: e.target.value })}
-                />
-                <button className="link strong" onClick={() => commit(list)}>
-                  Done
-                </button>
-              </div>
-              <textarea
-                writingsuggestions="false"
-                spellCheck={false}
-                autoCorrect="off"
-                className="plain"
-                rows={Math.max(2, s.commands.length)}
-                placeholder={"move screenshots from today to Screenshots\nclean up Downloads older than 90 days"}
-                aria-label="Commands, one per line"
-                value={s.commands.join("\n")}
-                onChange={(e) => update(i, { ...s, commands: e.target.value.split("\n") })}
+    <Group title="Saved shortcuts" action={editing === null && <button className="link strong" onClick={add}>+ Add</button>} foot={foot}>
+      {list.map((s, i) =>
+        editing === i ? (
+          <li className="row shortcut" key={i}>
+            <div className="shortcut-head">
+              <input
+                className="phrase"
+                value={s.phrase}
+                placeholder="run my usuals"
+                aria-label="Phrase to say"
+                autoFocus={!s.phrase}
+                onChange={(e) => update(i, { ...s, phrase: e.target.value })}
               />
-              <button
-                className="link remove"
-                onClick={() => {
-                  const next = list.filter((_, j) => j !== i);
-                  setList(next);
-                  commit(next);
-                }}
-              >
-                Remove shortcut
+              <button className="link strong" onClick={() => commit(list)}>
+                Done
               </button>
-            </li>
-          ) : (
-            <li className="pref" key={i}>
-              <button className="shortcut-row" onClick={() => setEditing(i)}>
-                <span className="phrase-text">{s.phrase || "Untitled"}</span>
-                <span className="pref-summary">
-                  {count(s)} {count(s) === 1 ? "command" : "commands"}
-                </span>
-              </button>
-            </li>
-          ),
-        )}
-      </ul>
-    </>
+            </div>
+            <textarea
+              writingsuggestions="false"
+              spellCheck={false}
+              autoCorrect="off"
+              className="plain commands"
+              rows={Math.max(2, s.commands.length)}
+              placeholder={"move screenshots from today to Screenshots\nclean up Downloads older than 90 days"}
+              aria-label="Commands, one per line"
+              value={s.commands.join("\n")}
+              onChange={(e) => update(i, { ...s, commands: e.target.value.split("\n") })}
+            />
+            <button
+              className="link remove"
+              onClick={() => {
+                const next = list.filter((_, j) => j !== i);
+                setList(next);
+                commit(next);
+              }}
+            >
+              Remove shortcut
+            </button>
+          </li>
+        ) : (
+          <li className="row clickable" key={i}>
+            <button className="shortcut-row" onClick={() => setEditing(i)}>
+              <span className="row-icon"><Icon name="shortcuts" /></span>
+              <span className="row-copy">
+                <span className="row-label">“{s.phrase || "Untitled"}”</span>
+                <span className="row-desc">{s.commands.filter((c) => c.trim()).slice(0, 2).join(" · ") || "No commands yet"}</span>
+              </span>
+              <span className="pill">{count(s)} {count(s) === 1 ? "command" : "commands"}</span>
+              <span className="chevron" aria-hidden="true">›</span>
+            </button>
+          </li>
+        ),
+      )}
+    </Group>
   );
 }
 
-/** The four standard folders are always allowed; more can be added. */
 /** "~/Work" from "/Users/me/Work/", the form allowed_folders returns. */
 const shownFolder = (path: string) => path.replace(/^\/Users\/[^/]+/, "~").replace(/\/$/, "");
 
+/** The four standard folders are always allowed; more can be added. Below
+ *  them, the nicknames Voxi knows folders by. */
 function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
   const [folders, setFolders] = useState<string[]>([]);
   const [adding, setAdding] = useState("");
@@ -1287,66 +1483,48 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
 
   const builtIn = folders.filter((f) => !extra.some((x) => shownFolder(x) === f));
 
-  return (
-    <div>
-      <ul className="prefs">
-        <li className="pref">
-          <div className="pref-copy">
-            <h2 className="pref-label">Allowed folders</h2>
-            <p className="settings-description">Voxi only changes files inside these folders.</p>
-          </div>
-        </li>
-        <li className="pref">
-          <input
-            className="path"
-            value={adding}
-            placeholder="Add a folder, like /Volumes/External"
-            aria-label="Folder path to add"
-            onChange={(e) => setAdding(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                add(adding.trim());
-              }
-            }}
-          />
-          <button className="secondary small" disabled={!adding.trim()} onClick={() => add(adding.trim())}>
-            Add
+  return <>
+    <Group title="Allowed folders" foot={note ? <span className="warn" role="status">{note}</span> : "Voxi only changes files inside these folders."}>
+      <Row className="add-row">
+        <input
+          className="path"
+          value={adding}
+          placeholder="Add a folder, like /Volumes/External"
+          aria-label="Folder path to add"
+          onChange={(e) => setAdding(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add(adding.trim());
+            }
+          }}
+        />
+        {adding.trim()
+          ? <button className="secondary small" onClick={() => add(adding.trim())}>Add</button>
+          : <button className="secondary small" onClick={choose}>Choose…</button>}
+      </Row>
+      {builtIn.map((f) => (
+        <Row key={f} className="compact" icon="folders" label={<span className="pref-folder">{f}</span>}>
+          <span className="pill">Built-in</span>
+        </Row>
+      ))}
+      {extra.map((f) => (
+        <Row key={f} className="compact" icon="folders" label={<span className="pref-folder">{tildify(f)}</span>}>
+          <span className="pill ok">Added</span>
+          <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
+            Remove
           </button>
-          <button className="secondary small" onClick={choose}>
-            Choose…
-          </button>
-        </li>
-        {builtIn.map((f) => (
-          <li className="pref" key={f}>
-            <span className="pref-folder">{f}</span>
-            <span className="pref-summary">Always</span>
-          </li>
-        ))}
-        {extra.map((f) => (
-          <li className="pref" key={f}>
-            <span className="pref-folder">{f}</span>
-            <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-      {note && <p className="settings-note warn" role="status">{note}</p>}
-    </div>
-  );
+        </Row>
+      ))}
+    </Group>
+    <NicknamesGroup settings={settings} persist={persist} setBusy={setBusy} />
+  </>;
 }
 
-/** What Voxi has learned: folder nicknames, and reports saved on this Mac. */
-function LearningTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
+/** Your names for folders, so “move it to dev” finds the right one. */
+function NicknamesGroup({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
   const [name, setName] = useState("");
   const [note, setNote] = useState<string | null>(null);
-  const [reports, setReports] = useState<Reports | null>(null);
-  const taught = settings.shortcuts.filter((s) => s.commands.length === 1).length;
-
-  useEffect(() => {
-    api.reportsSummary().then(setReports).catch(() => setReports(null));
-  }, []);
 
   // The picker takes focus, which would otherwise close the window.
   const choose = async () => {
@@ -1366,67 +1544,29 @@ function LearningTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: b
     }
   };
 
-  const reportAction = async (run: () => Promise<Reports | void>) => {
-    try {
-      const r = await run();
-      if (r) setReports(r);
-      setNote(null);
-    } catch (e) {
-      setNote(String(e));
-    }
-  };
-
   return (
-    <div>
-      <ul className="prefs">
-        <li className="pref">
-          <div className="pref-copy">
-            <h2 className="pref-label">Folder nicknames</h2>
-            <p className="settings-description">Your names for folders, so “move it to dev” finds the right one. Voxi also offers to remember a folder after you pick one.</p>
-          </div>
-        </li>
-        <li className="pref">
-          <input
-            className="path"
-            value={name}
-            placeholder="Name to say, like dev"
-            aria-label="Nickname to say"
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") { e.preventDefault(); choose(); }
-            }}
-          />
-          <button className="secondary small" onClick={choose}>Choose folder…</button>
-        </li>
-        {settings.nicknames.map((n) => (
-          <li className="pref" key={n.name}>
-            <span className="pref-folder">“{n.name}” → {tildify(n.path)}</span>
-            <button className="link remove" onClick={() => persist({ ...settings, nicknames: settings.nicknames.filter((x) => x.name !== n.name) })}>
-              Remove
-            </button>
-          </li>
-        ))}
-        <li className="pref">
-          <div className="pref-copy">
-            <h2 className="pref-label">Taught phrases</h2>
-            <p className="settings-description">
-              When Voxi misses a phrase and you then run a command that works, it offers to learn the phrase. {taught > 0 ? `${taught} saved under Shortcuts.` : "They're saved under Shortcuts."}
-            </p>
-          </div>
-        </li>
-        <li className="pref">
-          <div className="pref-copy">
-            <h2 className="pref-label">Wrong-result reports</h2>
-            <p className="settings-description">
-              {reports ? `${reports.count} ${reports.count === 1 ? "report" : "reports"} saved on this Mac.` : "Reports are saved on this Mac."} Nothing is sent anywhere.
-            </p>
-          </div>
-          <button className="secondary small" disabled={!reports?.count} onClick={() => reportAction(api.revealReports)}>Show in Finder</button>
-          <button className="link remove" disabled={!reports?.count} onClick={() => reportAction(api.clearReports)}>Clear</button>
-        </li>
-      </ul>
-      {note && <p className="settings-note warn" role="status">{note}</p>}
-    </div>
+    <Group title="Nicknames" foot={note ? <span className="warn" role="status">{note}</span> : "Say “move it to dev” and Voxi knows where. It also offers to remember a folder after you pick one."}>
+      <Row className="add-row">
+        <input
+          className="path"
+          value={name}
+          placeholder="Name to say, like dev"
+          aria-label="Nickname to say"
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); choose(); }
+          }}
+        />
+        <button className="secondary small" onClick={choose}>Choose folder…</button>
+      </Row>
+      {settings.nicknames.map((n) => (
+        <Row key={n.name} className="compact" icon="tag" label={`“${n.name}”`} description={tildify(n.path)}>
+          <button className="link remove" onClick={() => persist({ ...settings, nicknames: settings.nicknames.filter((x) => x.name !== n.name) })}>
+            Remove
+          </button>
+        </Row>
+      ))}
+    </Group>
   );
 }
 

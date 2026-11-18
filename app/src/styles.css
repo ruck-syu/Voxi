@@ -175,6 +175,18 @@ html:not([data-native]) .card[data-glide] {
   font-weight: 400;
 }
 
+/* Length refusal: stays mounted as a live region, shown only when over the
+   byte cap so screen readers announce it and aria-describedby always resolves.
+   Collapse it visually without display:none so it stays in the a11y tree. */
+.command-error:empty,
+.shortcut-error:empty {
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+}
+
 /* ---- Body ---- */
 
 .body {
@@ -457,6 +469,14 @@ button {
   background: transparent;
 }
 
+.stop-execution:hover:not(:disabled) {
+  border-color: var(--margin);
+}
+
+.stop-execution:active:not(:disabled) {
+  background: var(--rule);
+}
+
 .primary-button:focus-visible,
 .secondary:focus-visible,
 .hotkey:focus-visible,
@@ -495,6 +515,12 @@ kbd {
 
 .link:hover {
   color: var(--ink);
+}
+
+.link:disabled {
+  opacity: 0.5;
+  cursor: default;
+  text-decoration: none;
 }
 
 /* ---- Settings ---- */
@@ -686,19 +712,6 @@ kbd {
   width: 100%;
   padding: 7px 0;
   cursor: pointer;
-}
-
-.phrase-text {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 600;
-  font-variation-settings: "wdth" 92;
-}
-
-.shortcut-row:hover .phrase-text {
-  text-decoration: underline;
-  text-decoration-color: var(--rule);
-  text-underline-offset: 3px;
 }
 
 .shortcut {
@@ -903,6 +916,30 @@ kbd {
   animation: settle-in 200ms var(--settle) calc(var(--i, 0) * 40ms) both;
 }
 
+/* Live regions stay mounted so screen readers announce later failures. */
+.access-error {
+  margin: 8px 0 2px;
+}
+
+/* Collapse visually but keep the live region in the accessibility tree. */
+.access-error:empty {
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+}
+
+.access-error .hint {
+  margin: 0;
+}
+
+.access-error .hint:focus-visible {
+  outline: 2px solid var(--margin);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .link.strong {
   color: var(--ink);
   font-weight: 700;
@@ -963,37 +1000,19 @@ fieldset.tab-panel {
 .tab-panel .prefs { margin: 0; border-top: 0; }
 .tab-panel:focus-visible { outline: 2px solid var(--margin); outline-offset: -2px; border-radius: 4px; }
 .tab-panel .pref { min-height: 48px; padding: 9px 0; }
-.pref-copy { flex: 1; min-width: 0; }
-.pref-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.recommendation-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 8px;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  background: var(--wash);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-.tab-panel .pref-label,
-.tab-panel .phrase-text {
+.tab-panel .pref-label {
   margin: 0;
   font-family: var(--text);
   font-size: 15px;
   font-weight: 700;
   line-height: 1.4;
 }
-.settings-description,
 .settings-note {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+  margin: 12px 0 0;
 }
-.settings-description { margin: 4px 0 0; }
-.settings-note { margin: 12px 0 0; }
 .settings-note.warn { color: var(--margin); }
 .tab-panel .pref-summary { font-size: 13px; }
 .tab-panel .secondary,
@@ -1031,7 +1050,6 @@ fieldset.tab-panel {
   font-size: 9.5px; line-height: 15px; text-align: center;
 }
 
-.panel-blurb { margin: 2px 4px 12px; color: var(--muted); font-size: 12.5px; }
 
 .group { margin: 0 0 16px; }
 .group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 4px 6px; }
@@ -1163,11 +1181,15 @@ fieldset.tab-panel {
 .tasks-list .pill { margin-top: 4px; }
 .task-command { overflow-wrap: anywhere; }
 .task-summary { color: var(--ink); opacity: 0.8; }
-.tasks-list .task-actions { display: flex; gap: 14px; margin-top: 6px; }
+.tasks-list .task-actions:not(:empty) { display: flex; gap: 14px; margin-top: 6px; }
 .tasks-list .task-actions .link { font-weight: 700; color: var(--ink); }
-.tasks-list .task-actions .link:hover { color: var(--margin); }
+.tasks-list .task-actions .link:hover:not(:disabled) { color: var(--margin); }
 .row.compact { min-height: 40px; padding-block: 6px; }
 .row.compact .row-icon { width: 24px; height: 24px; border-radius: 7px; }
 .row.compact + .row.compact::before { left: 48px; }
 .row.compact .row-label { font-weight: 600; }
 .row.add-row + .row::before { left: 12px; }
+
+.recovery-notice pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.recovery-notice p:empty { display: none; }
+.recovery-notice p:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }

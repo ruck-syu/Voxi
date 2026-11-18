@@ -19,17 +19,39 @@ impl Presentation {
         request
     }
     pub fn acknowledge(&mut self, id: u64) -> bool {
-        if !self.ready || !self.pending.as_ref().is_some_and(|p| p.request_id == id) { return false; }
+        if !self.ready || self.pending.as_ref().is_none_or(|p| p.request_id != id) { return false; }
         self.pending = None;
         true
     }
     pub fn cancel(&mut self) { self.pending = None; self.closing = true; }
     pub fn is_current(&self, id: u64) -> bool { self.next == id }
+    /// A click in another app is meaningful even if this window never gained
+    /// focus. Pending layouts, hidden windows and an existing close are ignored.
+    pub fn outside_click_request(&self, visible: bool) -> Option<u64> {
+        (visible && self.next > 0 && self.pending.is_none() && !self.closing).then_some(self.next)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn outside_click_dismisses_presented_window_without_needing_focus() {
+        let mut p = Presentation { ready: true, ..Default::default() };
+        assert_eq!(p.outside_click_request(true), None);
+        let first = p.request("command");
+        assert_eq!(p.outside_click_request(true), None);
+        assert!(p.acknowledge(first.request_id));
+        assert_eq!(p.outside_click_request(false), None);
+        assert_eq!(p.outside_click_request(true), Some(first.request_id));
+        p.cancel();
+        assert_eq!(p.outside_click_request(true), None);
+        let next = p.request("command");
+        assert_eq!(p.outside_click_request(true), None);
+        assert!(p.acknowledge(next.request_id));
+        assert_eq!(p.outside_click_request(true), Some(next.request_id));
+        assert!(!p.is_current(first.request_id));
+    }
     #[test]
     fn early_open_waits_for_ready_and_the_matching_layout() {
         let mut p = Presentation::default();

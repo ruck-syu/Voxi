@@ -6,6 +6,14 @@ const invoke = <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
   inTauri ? tauriInvoke<T>(cmd, args) : (import("./mock").then((m) => m.mockInvoke(cmd, args)) as Promise<T>);
 export { inTauri };
 
+/** Turn a Tauri command rejection (or browser-mock throw) into text that is
+ *  safe to show in the UI. Backends sometimes reject with a bare string. */
+export function errorMessage(e: unknown): string {
+  if (e instanceof Error && e.message.trim()) return e.message;
+  if (typeof e === "string" && e.trim()) return e;
+  return "Something went wrong. Please try again.";
+}
+
 export type PreviewItem = { kind: string; primary: string; detail: string; note?: string };
 export type InfoRow = { name: string; detail: string };
 
@@ -18,7 +26,9 @@ export type Outcome =
 
 export type ScheduledTask = { id: number; command: string; due: string; status: "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"; summary: string; repeat?: string | null };
 
-export type RunResult = { done: number; total: number; error: string | null; undoable: boolean; summary: string };
+export type RecoveryStatus = { command: string; acknowledged: number; inFlight: Record<string, unknown> | null };
+
+export type RunResult = { done: number; total: number; error: string | null; cancelled: boolean; undoable: boolean; summary: string };
 
 export type FolderAccess = { name: string; path: string; allowed: boolean };
 
@@ -35,6 +45,10 @@ export type ResultScope = { count: number; visible: number; label: string };
 export type CommandReply = { outcome: Outcome; scope: ResultScope | null };
 
 export const api = {
+  /** The command box changed: the menu bar face talks along. Fire and forget. */
+  trayTyping: () => invoke<void>("tray_typing").catch(() => {}),
+  recoveryStatus: () => invoke<RecoveryStatus | null>("recovery_status"),
+  acknowledgeRecovery: () => invoke<void>("acknowledge_recovery"),
   schedulerNotice: () => invoke<string | null>("scheduler_notice"),
   scheduledTasks: () => invoke<ScheduledTask[]>("scheduled_tasks"),
   cancelScheduledTask: (id: number) => invoke<void>("cancel_scheduled_task", { id }),
@@ -46,6 +60,7 @@ export const api = {
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
+  stopExecution: (id: number, scheduledFor?: string) => invoke<void>("cancel_execution", { id, scheduledFor }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: (requestId: number) => invoke<void>("hide_window", { requestId }),
   reportWrong: (command: string, outcome: unknown, note: string) => invoke<Reports>("report_wrong", { command, outcome, note }),

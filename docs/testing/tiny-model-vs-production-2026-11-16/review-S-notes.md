@@ -1,0 +1,18 @@
+# S001–S100 semantic review notes
+
+Reviewed exactly S001–S100 against the captured production parser/planner, DEV rules, raw rewrite plus DEV replay, and guarded effective result. Verdicts are semantic judgments of the request, schedule, scope, and resulting plan; they are not counts of accepted parses. A planner-blocked or empty fixture result is not proof of safe behavior on arbitrary files. One-time schedules require the approved preview set; repeats must retain recurrence and re-resolve as documented in README.
+
+## Confirmed review findings
+
+- **Schedule loss in raw rewrites:** S001–S030 mostly drop their schedule clauses; S005, S007, S009, S016, S018, S027, S029, S030 also show invented date filters or changed grouping. Guarded output generally retains dev rules for these already accepted inputs, so that behavior is not an inference improvement.
+- **Schedule behavior with heuristic-label errors:** S089 has no named source folder, but allowed-root searches are supported; production/guarded can schedule that search. S093's every-three-days recurrence is valid. S096's unspecified-root search is likewise supported. These contradict heuristic expected-refusal labels and are treated according to public command semantics.
+- **Grouping semantic change:** S029 raw output changes “by type” to “by month”; S018 already requests sorting by month, and its raw rewrite only loses Friday 5:45 pm recurrence. S029 asks for monthly repetition of a type sort, not sorting by month.
+- **Scope and positional reference:** S068–S077 have no preceding displayed list in the frozen corpus. Literal number/name parses that planner blocks do not establish valid positional behavior. S090's “on screen” source is also unresolved; a schedule with a fixture-empty plan is not adequate evidence of a safe recurring scope.
+- **Other raw semantic errors:** S010 changes the target name; S016 changes size and invents age; S050 misplaces “from today” (production/dev treat it as destination text, raw date-filters but moves all files); S057 halves the size limit; S059 reverses replacement; S061 changes bill to invoice; S080 narrows broad files to images.
+- **Ambiguous literal names:** S064 and S099 may refer to an Archive folder or archive file. S098's report/report.pdf contains-match and captured one-file plan do not settle whether the command should ask for selection. These are label_uncertain.
+
+## Method and limitations
+
+Public semantics were read from README.md and website/commands.html. The reviewed production and dev results are source replays, not application/runtime integration, and no file operation executed. The model-generated commands are parsed by the captured DEV parser/planner; guarded retained DEV rule output is not attributed to model inference. Rejected candidate diagnostics were excluded from effective outcomes. Fixture results establish only what that fixture planner returned: missing matches, planner stops, and empty actions do not prove behavior for arbitrary directories or files. Heuristic expectations were not treated as ground truth and no aggregate accuracy score is reported.
+
+Source replay shows materially wrong effective plans at S012 and S050: production/dev create destination folders named “Documents before noon tomorrow” and “Documents from today” under Downloads rather than extracting timing/date language. At S003, production includes Downloads/Archive/old.pdf while dev and guarded plans omit it. Artifact summary also records five production and dev source-replay deviations from pre-existing results (T050, T051, T098, S043, S063); these do not invalidate the captured active artifacts but limit claims that source replay exactly reproduces earlier outputs.

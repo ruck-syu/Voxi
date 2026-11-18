@@ -37,16 +37,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("nested")).unwrap();
         fs::write(dir.path().join("nested/file.txt"), b"a").unwrap();
-        let mut search = Search::default();
-        search.depth = 0;
+        let search = Search { depth: 0, ..Default::default() };
         search.entries(dir.path());
-        assert!(search.status().unwrap().contains("depth limit"));
-        let mut search = Search::default();
-        search.limit = 1;
+        assert_eq!(search.status().unwrap(), "Search incomplete: skipped 1 folder nested too deeply. Try a smaller folder.");
+        // Many skipped folders still produce one short message without paths.
+        for n in 0..20 { fs::create_dir_all(dir.path().join(format!("deep{n}/inner"))).unwrap(); }
+        let search = Search { depth: 0, ..Default::default() };
+        search.entries(dir.path());
+        let message = search.status().unwrap();
+        assert!(message.contains("skipped 21 folders nested too deeply") && !message.contains(&*dir.path().to_string_lossy()), "{message}");
+        let search = Search { limit: 1, ..Default::default() };
         search.entries(dir.path());
         assert!(search.status().unwrap().contains("entry limit"));
-        let mut search = Search::default();
-        search.timeout = Duration::ZERO;
+        let search = Search { timeout: Duration::ZERO, ..Default::default() };
         search.entries(dir.path());
         assert!(search.status().unwrap().contains("time limit"));
         let search = Search::default();
@@ -82,6 +85,9 @@ pub struct Entry { pub path: PathBuf, pub is_dir: bool }
 pub struct Search {
     cache: RefCell<HashMap<PathBuf, Arc<Vec<Entry>>>>,
     issues: RefCell<Vec<String>>,
+    // Counted rather than listed so a large tree yields one short message.
+    too_deep: std::cell::Cell<usize>,
+    unreadable: std::cell::Cell<usize>,
     pub control: Control,
     started: Instant,
     pub depth: usize,
@@ -95,7 +101,7 @@ impl Default for Search {
 
 impl Search {
     pub fn new(control: Control) -> Self {
-        Self { cache: RefCell::new(HashMap::new()), issues: RefCell::new(Vec::new()), control,
+        Self { cache: RefCell::new(HashMap::new()), issues: RefCell::new(Vec::new()), too_deep: Default::default(), unreadable: Default::default(), control,
             started: Instant::now(), depth: MAX_DEPTH, limit: MAX_ENTRIES, timeout: Duration::from_secs(10) }
     }
 
@@ -106,8 +112,13 @@ impl Search {
 
     pub fn status(&self) -> Option<String> {
         if self.control.is_cancelled() { return Some("Search cancelled.".into()); }
-        let issues = self.issues.borrow();
-        (!issues.is_empty()).then(|| format!("Search incomplete: {}. Try a smaller folder or check folder access.", issues.join("; ")))
+        let mut parts = self.issues.borrow().clone();
+        let count = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        if self.too_deep.get() > 0 { parts.push(format!("skipped {} nested too deeply", count(self.too_deep.get(), "folder", "folders"))); }
+        if self.unreadable.get() > 0 { parts.push(format!("couldn't read {}", count(self.unreadable.get(), "item", "items"))); }
+        if parts.is_empty() { return None; }
+        let advice = if self.unreadable.get() > 0 { "Try a smaller folder or check folder access." } else { "Try a smaller folder." };
+        Some(format!("Search incomplete: {}. {advice}", parts.join("; ")))
     }
 
     pub fn stopped(&self) -> bool {
@@ -142,35 +153,35 @@ impl Search {
         if self.stopped() { return; }
         let rd = match fs::read_dir(dir) {
             Ok(rd) => rd,
-            Err(e) => { self.issue(format!("couldn't read {} ({e})", dir.display())); return; }
+            Err(_) => { self.unreadable.set(self.unreadable.get() + 1); return; }
         };
         let mut entries = Vec::new();
         for entry in rd {
             if self.stopped() { return; }
             match entry {
                 Ok(entry) => entries.push(entry),
-                Err(e) => self.issue(format!("couldn't enumerate {} ({e})", dir.display())),
+                Err(_) => self.unreadable.set(self.unreadable.get() + 1),
             }
             if entries.len() > *remaining { break; }
         }
         entries.sort_by_key(|e| e.file_name());
         for e in entries {
             if self.stopped() { return; }
-            if *remaining == 0 { self.issue(format!("entry limit reached in {}", dir.display())); return; }
+            if *remaining == 0 { self.issue("entry limit reached".into()); return; }
             *remaining -= 1;
             self.control.visited.fetch_add(1, Ordering::Relaxed);
             let path = e.path();
             if fsx::is_hidden_or_internal(&path) { continue; }
             let ft = match e.file_type() {
                 Ok(ft) => ft,
-                Err(e) => { self.issue(format!("couldn't inspect {} ({e})", path.display())); continue; }
+                Err(_) => { self.unreadable.set(self.unreadable.get() + 1); continue; }
             };
             let is_dir = ft.is_dir();
             if !is_dir { out.push(Entry { path, is_dir }); continue; }
             out.push(Entry { path: path.clone(), is_dir });
             let bundle = path.extension().is_some_and(|e| matches!(e.to_str(), Some("app" | "photoslibrary" | "bundle" | "framework")));
             if is_dir && !bundle {
-                if depth == 0 { self.issue(format!("depth limit reached at {}", path.display())); }
+                if depth == 0 { self.too_deep.set(self.too_deep.get() + 1); }
                 else { self.walk(&path, depth - 1, remaining, out); }
             }
         }

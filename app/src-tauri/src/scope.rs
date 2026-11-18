@@ -56,7 +56,7 @@ impl Snapshot {
                     Action::ResizeImage { path, .. } | Action::Restore { to: path, .. } => *path == entry.path,
                     _ => false,
                 };
-                if touched { if let Some(id) = identity(&entry.path) { entry.identity = id; } }
+                if touched && let Some(id) = identity(&entry.path) { entry.identity = id; }
             }
             // Keep the original row slots so later numbers never shift to another file.
             if let Action::Trash { path } = action {
@@ -73,6 +73,7 @@ static REFERENCES: LazyLock<Regex> = LazyLock::new(|| Regex::new(
 
 /// Only source arguments are substituted. Quoted names and destinations remain literal.
 pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>, String> {
+    crate::parse::check_length(text).map_err(|_| "That command is too long.".to_string())?;
     let cleaned = parse::phrase::normalize(text);
     let Some(unquoted) = parse::phrase::unquoted_text(&cleaned) else { return Ok(None) };
     for matched in REFERENCES.find_iter(&unquoted) {
@@ -112,9 +113,13 @@ pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>,
 }
 
 pub fn prepare(text: &str, snapshot: Option<&Snapshot>) -> Result<(Intent, bool), String> {
-    if let Some(snapshot) = snapshot {
-        if let Some(intent) = parse_followup(text, snapshot)? { return Ok((intent, true)); }
+    crate::parse::check_length(text).map_err(|_| "That command is too long.".to_string())?;
+    if let Ok(intent @ Intent::Chain { .. }) = parse::parse(text) {
+        if snapshot.is_some() { return Err("Clear the previous result list before chaining commands.".into()); }
+        return Ok((intent, false));
     }
+    if let Some(snapshot) = snapshot
+        && let Some(intent) = parse_followup(text, snapshot)? { return Ok((intent, true)); }
     let intent = parse::parse(text)?;
     let scoped = snapshot.is_some_and(|snapshot| match intent.source() {
         Some(Source::Set { folder: None, .. }) => true,

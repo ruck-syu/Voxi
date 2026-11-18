@@ -274,6 +274,7 @@ fn state_for(home: &Path) -> AppState {
         settings: Mutex::new(Settings::default()),
         schedules: Mutex::new(crate::scheduler::Store::load(home.join("schedules.json"))),
         execution: Mutex::new(()),
+        active_runs: Mutex::default(),
         settings_path: home.join("settings.json"),
         reports_path: home.join("reports.jsonl"),
         next_plan: AtomicU64::new(1),

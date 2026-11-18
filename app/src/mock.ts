@@ -11,7 +11,23 @@ let settings: Settings = {
 };
 let reports = 0;
 let scheduled: ScheduledTask[] = [];
-let pendingSchedule: ScheduledTask | null = null;
+let pendingSchedule: (ScheduledTask & { runNow?: boolean; total?: number; intervalMs?: number }) | null = null;
+
+// Browser-only permission scenarios, selected with ?mock=<name>:
+//   permission-reject  request_folder_access rejects -> error state + Retry
+//   permission-denied  request_folder_access resolves with every folder denied
+//   permission-flaky   first request rejects, the next succeeds -> Retry works
+//   settings-fail      open_privacy_settings rejects -> error + manual steps
+// These only affect the dev mock; the Tauri app never loads this file.
+const mockScenario = new URLSearchParams(location.search).get("mock");
+let permissionAttempts = 0;
+let recoveryReviewed = false;
+
+// Mirrors parse::MAX_COMMAND_BYTES and settings::check_shortcut_commands so
+// browser previews refuse exactly what the Rust backend refuses.
+const MAX_COMMAND_BYTES = 16_384;
+const TOO_LONG = "That command is too long.";
+const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length;
 
 function plan(text: string, choices: Record<string, string> = {}): Outcome {
   const t = text.toLowerCase();
@@ -72,10 +88,19 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
 export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
   await new Promise((r) => setTimeout(r, 250));
   switch (cmd) {
+    case "updater_failed": return;
     case "cancel_plan": pendingSchedule = null; return;
+    case "cancel_execution": return;
     case "search_progress": return 0;
     case "result_scope": return null;
     case "clear_result_scope": return;
+    case "recovery_status": return !recoveryReviewed && mockScenario?.startsWith("recovery") ? {
+      command: "move PDFs to Documents", acknowledged: 2,
+      inFlight: { kind: "move", from: "/Users/me/Downloads/a.pdf", to: "/Users/me/Documents/a.pdf" },
+    } : null;
+    case "acknowledge_recovery":
+      if (mockScenario === "recovery-fail") throw new Error("Cannot archive recovery evidence. Try Mark as reviewed again.");
+      recoveryReviewed = true; return;
     case "scheduler_notice": return null;
     case "scheduled_tasks": return scheduled;
     case "cancel_scheduled_task": {
@@ -90,14 +115,25 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     }
     case "plan_command": {
       const text = String(args.text);
-      const repeat = text.match(/\s+every\s+(\d+)\s+(days?|hours?)$/i);
+      if (utf8Bytes(text) > MAX_COMMAND_BYTES) return { outcome: { status: "problem", message: TOO_LONG }, scope: null };
+      pendingSchedule = null;
+      const repeat = text.match(/\s+(?:every\s+(?:(\d+)\s+)?(days?|hours?)|daily|everyday|hourly)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i);
       if (repeat) {
         const outcome = plan(text.slice(0, repeat.index), args.choices as Record<string, string>);
         if (outcome.status !== "plan") return { outcome, scope: null };
-        const every = `every ${repeat[1]} ${repeat[2]}`;
-        const due = new Date(Date.now() + Number(repeat[1]) * (repeat[2].startsWith("day") ? 86400000 : 3600000));
-        pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "", repeat: every };
-        return { outcome: { ...outcome, scheduledFor: due.toISOString(), repeats: every, warnings: [`Repeats ${every}, first on ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null };
+        const n = Number(repeat[1] || 1);
+        const unit = repeat[2] || (/hourly/i.test(repeat[0]) ? "hour" : "day");
+        const intervalMs = n * (unit.startsWith("day") ? 86400000 : 3600000);
+        const runNow = !repeat[3];
+        const every = `every ${n === 1 ? "" : `${n} `}${unit}${runNow ? "" : ` at ${repeat[3]}:${repeat[4] || "00"} ${repeat[5] || ""}`}`;
+        const due = new Date(Date.now() + intervalMs);
+        if (!runNow) {
+          due.setTime(Date.now());
+          due.setHours(Number(repeat[3]) % (repeat[5] ? 12 : 24) + (repeat[5]?.toLowerCase() === "pm" ? 12 : 0), Number(repeat[4] || 0), 0, 0);
+          if (due <= new Date()) due.setDate(due.getDate() + 1);
+        }
+        pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "", repeat: every, runNow, total: outcome.total, intervalMs };
+        return { outcome: { ...outcome, scheduledFor: due.toISOString(), repeats: runNow ? `Runs now, then ${every}` : every, warnings: [`${runNow ? `Runs now, then ${every}. Next run` : `Repeats ${every}, first on`} ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null };
       }
       const timing = text.match(/\s+(?:at\s+(.+)|(after|in)\s+(\d+)\s+(hours?|minutes?))$/i);
       let outcome = plan(timing ? text.slice(0, timing.index) : text, args.choices as Record<string, string>);
@@ -119,23 +155,32 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return { outcome, scope: null };
     }
     case "confirm_plan":
+      if (!recoveryReviewed && mockScenario?.startsWith("recovery")) throw new Error("Open Settings → Scheduled, check the files, then choose Mark as reviewed.");
       if (pendingSchedule) {
+        const { runNow, total = 3, intervalMs } = pendingSchedule;
+        if (runNow) pendingSchedule.due = new Date(Date.now() + intervalMs!).toISOString();
         scheduled.push(pendingSchedule);
         const first = new Date(pendingSchedule.due).toLocaleString();
-        const summary = pendingSchedule.repeat ? `Repeats ${pendingSchedule.repeat}, first on ${first}. Manage tasks in Settings → Scheduled.` : `Scheduled for ${first}. Manage tasks in Settings → Scheduled.`;
+        const summary = runNow ? `Done. ${total} ${total === 1 ? "change" : "changes"}. Repeats ${pendingSchedule.repeat}; next run ${first}. Manage tasks in Settings → Scheduled.` : pendingSchedule.repeat ? `Repeats ${pendingSchedule.repeat}, first on ${first}. Manage tasks in Settings → Scheduled.` : `Scheduled for ${first}. Manage tasks in Settings → Scheduled.`;
         pendingSchedule = null;
-        return { done: 0, total: 3, error: null, undoable: false, summary } satisfies RunResult;
+        return { done: runNow ? total : 0, total, error: null, cancelled: false, undoable: !!runNow, summary } satisfies RunResult;
       }
-      return { done: 26, total: 26, error: null, undoable: true, summary: "Done. 26 changes." } satisfies RunResult;
+      return { done: 26, total: 26, error: null, cancelled: false, undoable: true, summary: "Done. 26 changes." } satisfies RunResult;
     case "get_settings":
       return settings;
-    case "save_settings":
-      settings = args.settings as Settings;
+    case "save_settings": {
+      const incoming = args.settings as Settings;
+      for (const s of incoming.shortcuts) {
+        const total = s.commands.reduce((n, c) => n + utf8Bytes(c), 0);
+        if (utf8Bytes(s.phrase) > MAX_COMMAND_BYTES || s.commands.length > 8 || total > MAX_COMMAND_BYTES) throw TOO_LONG;
+      }
+      settings = incoming;
       settings.shortcuts = settings.shortcuts
         .map((s) => ({ phrase: s.phrase.trim(), commands: s.commands.map((c) => c.trim()).filter(Boolean) }))
         .filter((s) => s.phrase || s.commands.length);
       if (settings.shortcuts.some((s) => !s.phrase)) throw "Give each shortcut a phrase to say, like “run my usuals”.";
       return settings;
+    }
     case "report_wrong":
       return { count: ++reports, path: "~/Library/Application Support/voxi/reports.jsonl" };
     case "reports_summary":
@@ -145,21 +190,38 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return { count: 0, path: "~/Library/Application Support/voxi/reports.jsonl" };
     case "reveal_reports":
       return;
-    case "teach_phrase":
-      settings = { ...settings, shortcuts: [...settings.shortcuts, { phrase: String(args.phrase), commands: [String(args.command)] }] };
+    case "teach_phrase": {
+      const phrase = String(args.phrase);
+      const command = String(args.command);
+      if (utf8Bytes(phrase) > MAX_COMMAND_BYTES || utf8Bytes(command) > MAX_COMMAND_BYTES) throw TOO_LONG;
+      settings = { ...settings, shortcuts: [...settings.shortcuts, { phrase, commands: [command] }] };
       return settings;
+    }
     case "remember_folder": {
       const name = String(args.name).toLowerCase();
       settings = { ...settings, nicknames: [...settings.nicknames.filter((n) => n.name !== name), { name, path: String(args.path) }] };
       return settings;
     }
-    case "request_folder_access":
+    case "request_folder_access": {
+      if (mockScenario === "permission-reject" || (mockScenario === "permission-flaky" && permissionAttempts++ === 0))
+        throw new Error("Mock: the folder-access request was rejected by the system.");
+      if (mockScenario === "permission-denied")
+        return [
+          { name: "Desktop", path: "~/Desktop", allowed: false },
+          { name: "Downloads", path: "~/Downloads", allowed: false },
+          { name: "Documents", path: "~/Documents", allowed: false },
+          { name: "Pictures", path: "~/Pictures", allowed: false },
+        ];
       return [
         { name: "Desktop", path: "~/Desktop", allowed: true },
         { name: "Downloads", path: "~/Downloads", allowed: true },
         { name: "Documents", path: "~/Documents", allowed: false },
         { name: "Pictures", path: "~/Pictures", allowed: true },
       ];
+    }
+    case "open_privacy_settings":
+      if (mockScenario === "settings-fail") throw new Error("Mock: System Settings could not be opened.");
+      return;
     case "allowed_folders":
       return ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"];
     default:

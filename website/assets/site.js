@@ -1,6 +1,11 @@
-// Points the download buttons at the newest DMG, and plays the hero demo.
+// Points the download buttons at the newest DMG, copies the Homebrew command,
+// runs the live demo (the real Voxi frontend in /demo/, on its sample backend,
+// with the menu bar face talking as it does in the app), scroll reveals, and
+// the command search.
 
 const REPO = "ruck-syu/Voxi";
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- Download: newest release's DMG ------------------------------------------
 
@@ -17,7 +22,11 @@ const REPO = "ruck-syu/Voxi";
     const dmg = release.assets?.find((a) => a.name.endsWith(".dmg"));
     if (dmg) links.forEach((a) => (a.href = dmg.browser_download_url));
     const version = String(release.tag_name || "").replace(/^v/, "");
-    if (version) labels.forEach((el) => (el.textContent = `Version ${version} for macOS 12 or later.`));
+    if (version)
+      labels.forEach(
+        (el) =>
+          (el.textContent = `Version ${version}. Free and open source, for macOS 12 or later.`),
+      );
   } catch {
     // Offline or rate-limited: keep the releases-page link.
   }
@@ -30,7 +39,6 @@ document.querySelectorAll("[data-copy-command]").forEach((panel) => {
   const button = panel.querySelector("[data-copy-button]");
   const status = panel.querySelector("[data-copy-status]");
   if (!command || !button || !status) return;
-
   button.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(command.textContent.trim());
@@ -40,118 +48,329 @@ document.querySelectorAll("[data-copy-command]").forEach((panel) => {
       button.textContent = "Copy failed";
       status.textContent = "Copy failed. Select the command and copy it.";
     }
-
-    window.setTimeout(() => {
-      button.textContent = "Copy";
-    }, 1800);
+    setTimeout(() => (button.textContent = "Copy"), 1800);
   });
 });
 
-// ---- Hero demo: a replica of Voxi's window --------------------------------------
+// ---- Light and dark mode -------------------------------------------------------
+// Dark by default (set on <html>). The switch flips it and remembers the choice in this
+// browser; the <head> applies a saved choice before the page paints. The demo
+// iframe takes its colour scheme from its `color-scheme`, set in the CSS.
 
-const SCENES = [
-  {
-    say: "move all PDFs from Downloads to Documents",
-    dictated: false,
-    title: "Move 26 files to Documents",
-    rows: [
-      ["Q3 board deck.pdf", "→ ~/Documents"],
-      ["lease-renewal-2026.pdf", "→ ~/Documents"],
-      ["report.pdf", "→ ~/Documents/report 2.pdf"],
-      ["tax-receipt-march.pdf", "→ ~/Documents"],
-    ],
-    more: "and 22 more steps",
-    done: "Done. 26 changes.",
-  },
-  {
-    say: "Clean up Downloads older than 90 days.",
-    dictated: true,
-    title: "Move 14 files from Downloads to the Trash",
-    rows: [
-      ["Zoom.pkg", "→ Trash", true],
-      ["Figma-124.3.dmg", "→ Trash", true],
-      ["old-export.csv", "→ Trash", true],
-      ["IMG_2231 copy.heic", "→ Trash", true],
-    ],
-    more: "and 10 more steps",
-    done: "Done. 14 changes.",
-  },
-  {
-    say: "Run my usuals.",
-    dictated: true,
-    title: "Run my usuals: 2 commands",
-    rows: [
-      ["Screenshot 2026-10-28 at 09.14.png", "→ ~/Desktop/Screenshots"],
-      ["Screenshot 2026-10-28 at 11.40.png", "→ ~/Desktop/Screenshots"],
-      ["Notion-Setup.dmg", "→ Trash", true],
-    ],
-    more: null,
-    done: "Done. 3 changes.",
-  },
-];
-
-const demo = document.querySelector("[data-demo]");
-if (demo) runDemo(demo);
-
-function runDemo(root) {
-  const command = root.querySelector(".demo-command");
-  const body = root.querySelector(".demo-body");
-  const foot = root.querySelector(".demo-foot span");
-  const mic = root.querySelector(".dictating");
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const tidy = (s) => s.replace(/[.!?]+$/, "");
-
-  const preview = (scene) => {
-    const rows = scene.rows
-      .map(([name, to, trash], i) => `<li style="--i:${i}"${trash ? " data-trash" : ""}><b>${esc(name)}</b><span>${esc(to)}</span></li>`)
-      .join("");
-    const more = scene.more ? `<li style="--i:${scene.rows.length}"><span>${esc(scene.more)}</span></li>` : "";
-    body.innerHTML = `<p class="demo-said">“${esc(tidy(scene.say))}”</p><p class="demo-title">${esc(scene.title)}</p><ul class="demo-rows">${rows}${more}</ul>`;
-    foot.textContent = "Enter to run. Nothing changes until then.";
+(() => {
+  const root = document.documentElement;
+  const switches = document.querySelectorAll("[data-theme-switch]");
+  const meta = document.querySelector('meta[name="theme-color"]');
+  const sync = () => {
+    const dark = root.dataset.theme === "dark";
+    switches.forEach((b) =>
+      b.setAttribute("aria-label", `Switch to ${dark ? "light" : "dark"} mode`),
+    );
+    if (meta) meta.content = dark ? "#000000" : "#ffffff";
   };
+  switches.forEach((button) =>
+    button.addEventListener("click", () => {
+      const dark = root.dataset.theme !== "dark";
+      if (dark) root.dataset.theme = "dark";
+      else delete root.dataset.theme;
+      dispatchEvent(new Event("voxi-theme"));
+      try {
+        localStorage.setItem("voxi-theme", dark ? "dark" : "light");
+      } catch {
+        // Storage blocked: the choice lasts for this page only.
+      }
+      sync();
+    }),
+  );
+  sync();
+})();
 
-  const done = (scene) => {
-    body.innerHTML = `<p class="demo-said">“${esc(tidy(scene.say))}”</p><p class="demo-title"><svg class="tick" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10.5l4 4 8-9"/></svg>${esc(scene.done)}</p>`;
-    foot.textContent = "Say the next command.";
+// ---- The menu bar face ---------------------------------------------------------
+// Drawn exactly as docs/icon/appicon.swift draws the 88px tray template: two
+// eyes and a smile that is a sound wave, y = 62 + 8s + ripple·sin(6πt − phase)·s
+// with s = sin(πt). Resting: ripple 2.6. Talking: ripple 4.2, and twelve frames
+// a twelfth of a wave apart, 50ms each, lingering 450ms after the last
+// keystroke and finishing the sweep, as app/src-tauri/src/tray_face.rs plays it.
+
+const Tray = (() => {
+  const k = 1.45;
+  const p = (x, y) => [44 + (x - 50) * k, 44 + (y - 51) * k];
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const smile = (ripple, phase) => {
+    let d = "";
+    for (let i = 0; i <= 64; i++) {
+      const t = i / 64;
+      const s = Math.sin(Math.PI * t);
+      const [x, y] = p(26 + 48 * t, 62 + 8 * s + ripple * Math.sin(6 * Math.PI * t - phase) * s);
+      d += `${i ? "L" : "M"}${r2(x)} ${r2(y)}`;
+    }
+    return d;
   };
+  const eyes = [31, 61]
+    .map((x) => {
+      const [ax, ay] = p(x, 26);
+      const [bx, by] = p(x + 9, 46);
+      const r = (9 / 2) * k;
+      return `<rect class="eye" x="${r2(ax)}" y="${r2(ay)}" width="${r2(bx - ax)}" height="${r2(by - ay)}" rx="${r2(r)}"/>`;
+    })
+    .join("");
+  const REST = smile(2.6, 0);
+  const FRAMES = Array.from({ length: 12 }, (_, i) => smile(4.2, (i * Math.PI) / 6));
+  const FRAME = 50;
+  const LINGER = 450;
 
-  if (reduced) {
-    command.textContent = "";
-    preview(SCENES[0]);
-    return;
+  const el = document.querySelector("[data-tray]");
+  let path = null;
+  if (el) {
+    el.innerHTML = `<svg viewBox="0 0 88 88" aria-hidden="true">${eyes}<path class="smile" stroke-width="${7.5 * k}" d="${REST}"/></svg>`;
+    path = el.querySelector("path");
   }
 
-  (async () => {
-    for (let n = 0; ; n = (n + 1) % SCENES.length) {
-      const scene = SCENES[n];
-      body.innerHTML = "";
-      command.textContent = "";
-      foot.textContent = "Enter to preview.";
-      await wait(900);
-      if (scene.dictated) {
-        // Dictation lands in bursts of words, the way Wispr Flow types.
-        mic.setAttribute("data-on", "");
-        await wait(1300);
-        const words = scene.say.split(" ");
-        for (let i = 0; i < words.length; i += 3) {
-          command.textContent = words.slice(0, i + 3).join(" ");
-          await wait(160);
-        }
-        mic.removeAttribute("data-on");
-      } else {
-        for (let i = 1; i <= scene.say.length; i++) {
-          command.textContent = scene.say.slice(0, i);
-          await wait(34 + Math.random() * 40);
-        }
-      }
-      await wait(600);
-      command.textContent = "";
-      preview(scene);
-      await wait(3400);
-      done(scene);
-      await wait(2200);
+  let running = false;
+  let last = 0;
+  async function nudge() {
+    if (!path || reduced.matches) return;
+    last = performance.now();
+    if (running) return;
+    running = true;
+    let i = 0;
+    for (;;) {
+      const idle = performance.now() - last >= LINGER;
+      if (idle && i % FRAMES.length === 0) break;
+      path.setAttribute("d", FRAMES[i % FRAMES.length]);
+      i++;
+      await wait(FRAME);
     }
-  })();
-}
+    path.setAttribute("d", REST);
+    running = false;
+    if (performance.now() - last < LINGER) nudge();
+  }
+  return { nudge };
+})();
+
+// ---- Live demo: the real app, driven like a person would ----------------------
+
+(() => {
+  const mac = document.querySelector("[data-mac]");
+  const frame = mac?.querySelector("[data-app]");
+  if (!mac || !frame) return;
+  const status = mac.querySelector("[data-app-status]");
+
+  // A small Mac screen. The window is placed as the app places it
+  // (show_window in app/src-tauri/src/lib.rs): 680pt wide, centred, its top
+  // at 22% of the screen's height. On desktop it is shown at its real size.
+  const WINDOW_WIDTH = 680;
+  const SCREEN_H = 680;
+  function fit() {
+    const width = mac.clientWidth;
+    const logicalW = Math.max(WINDOW_WIDTH + 40, Math.min(1000, width));
+    mac.style.setProperty("--logical-w", logicalW);
+    mac.style.setProperty("--logical-h", SCREEN_H);
+    mac.style.setProperty("--scale", width / logicalW);
+  }
+  fit();
+  new ResizeObserver(fit).observe(mac);
+
+  // The app follows the Mac's appearance through its own
+  // (prefers-color-scheme: dark) rules. Point those rules at the site's
+  // switch instead, so the window shows its real light or dark styles.
+  function matchTheme() {
+    if (!app) return;
+    const dark = document.documentElement.dataset.theme === "dark";
+    for (const sheet of app.win.document.styleSheets) {
+      let rules;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue;
+      }
+      for (const rule of rules) {
+        if (!rule.media) continue;
+        rule.__voxiMedia ??= rule.media.mediaText;
+        if (!/prefers-color-scheme/.test(rule.__voxiMedia)) continue;
+        const wantsDark = /prefers-color-scheme:\s*dark/.test(rule.__voxiMedia);
+        rule.media.mediaText = wantsDark === dark ? "all" : "not all";
+      }
+    }
+  }
+  addEventListener("voxi-theme", matchTheme);
+
+  function placeWindow(doc) {
+    if (doc.getElementById("voxi-site-window")) return;
+    const style = doc.createElement("style");
+    style.id = "voxi-site-window";
+    style.textContent = `html:not([data-native]) body { padding: ${Math.round(SCREEN_H * 0.22)}px 0 0; }
+      .card { width: ${WINDOW_WIDTH}px; margin-inline: auto; }`;
+    doc.head.append(style);
+  }
+
+  const scenes = [
+    { say: "move all PDFs from Downloads to Documents", look: 3600, run: 2600 },
+    { say: "clean up Downloads every 3 days", look: 4400 },
+    { say: "show size of Downloads", look: 3600 },
+  ];
+
+  let token = 0;
+  let app = null; // { win, box }
+
+  function connect() {
+    const win = frame.contentWindow;
+    const box = win?.document.querySelector("textarea.command");
+    app = box ? { win, box } : null;
+    if (app) {
+      placeWindow(win.document);
+      matchTheme();
+    }
+    return app;
+  }
+  const key = (target, name) =>
+    target.dispatchEvent(
+      new app.win.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }),
+    );
+  function setText(value) {
+    const setter = Object.getOwnPropertyDescriptor(app.win.HTMLTextAreaElement.prototype, "value").set;
+    setter.call(app.box, value);
+    app.box.dispatchEvent(new app.win.Event("input", { bubbles: true }));
+  }
+
+  async function loop(id) {
+    const alive = () => id === token;
+    let n = 0;
+    while (alive()) {
+      const scene = scenes[n++ % scenes.length];
+      if (status) status.textContent = `Typed into Voxi: ${scene.say}`;
+      for (const ch of scene.say) {
+        if (!alive()) return;
+        setText(app.box.value + ch);
+        Tray.nudge();
+        await wait(38 + Math.random() * 52);
+      }
+      await wait(450);
+      if (!alive()) return;
+      key(app.box, "Enter"); // Preview
+      await wait(scene.look);
+      if (!alive()) return;
+      if (scene.run) {
+        key(app.box, "Enter"); // Enter on an empty box runs the preview.
+        await wait(scene.run);
+        if (!alive()) return;
+      }
+      key(app.win, "Escape"); // Back to an empty box.
+      await wait(1400);
+    }
+  }
+
+  function start() {
+    if (!app && !connect()) return;
+    const id = ++token;
+    if (reduced.matches) {
+      // No typing animation: show one finished preview and leave it.
+      setText(scenes[0].say);
+      key(app.box, "Enter");
+      return;
+    }
+    loop(id);
+  }
+  // Escape on an empty, idle box closes the window in the real app, so only
+  // reset when there is something to clear.
+  function stop() {
+    if (!app) return;
+    token++;
+    if (app.box.value || app.win.document.querySelector(".said")) key(app.win, "Escape");
+  }
+
+  let visible = false;
+  let ready = false;
+  const update = () => (visible && ready && !document.hidden ? start() : stop());
+
+  async function init() {
+    if (ready) return;
+    // Wait for the app to render its command box.
+    for (let i = 0; i < 80 && !connect(); i++) await wait(100);
+    if (ready || !app) return;
+    ready = true;
+    update();
+  }
+  frame.addEventListener("load", init);
+  if (frame.contentDocument?.readyState === "complete") init();
+  new IntersectionObserver(
+    ([entry]) => {
+      if (entry.isIntersecting === visible) return;
+      visible = entry.isIntersecting;
+      update();
+    },
+    { threshold: 0.35 },
+  ).observe(mac);
+  document.addEventListener("visibilitychange", update);
+})();
+
+// ---- Reveal on scroll ---------------------------------------------------------
+
+(() => {
+  const items = [...document.querySelectorAll(".reveal")];
+  if (!("IntersectionObserver" in window)) {
+    items.forEach((el) => el.classList.add("in"));
+    return;
+  }
+  const io = new IntersectionObserver(
+    (entries) =>
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("in");
+        io.unobserve(entry.target);
+      }),
+    { rootMargin: "0px 0px -8% 0px" },
+  );
+  items.forEach((el) => {
+    const siblings = [...el.parentElement.children].filter((c) => c.classList.contains("reveal"));
+    if (siblings.length > 1) el.style.transitionDelay = `${siblings.indexOf(el) * 90}ms`;
+    io.observe(el);
+  });
+})();
+
+// ---- Search the command reference ---------------------------------------------
+
+(() => {
+  const search = document.querySelector("[data-command-search]");
+  if (!search) return;
+  const sections = [...document.querySelectorAll(".catalog section")];
+  const status = document.querySelector("[data-search-status]");
+  const empty = document.querySelector("[data-search-empty]");
+  const links = [...document.querySelectorAll(".toc a")];
+  const total = sections.reduce((count, s) => count + s.querySelectorAll(".say li").length, 0);
+  function filter() {
+    const words = search.value.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+    let visible = 0;
+    sections.forEach((section) => {
+      const heading = section.querySelector("h2").textContent.toLocaleLowerCase();
+      let matches = 0;
+      section.querySelectorAll(".say li").forEach((row) => {
+        const text = heading + " " + row.textContent.toLocaleLowerCase();
+        row.hidden = !words.every((word) => text.includes(word));
+        if (!row.hidden) matches++;
+      });
+      section.hidden = matches === 0;
+      visible += matches;
+      const link = links.find((item) => item.hash === "#" + section.id);
+      if (link) link.parentElement.hidden = matches === 0;
+    });
+    empty.hidden = visible > 0;
+    status.textContent = words.length
+      ? `${visible} of ${total} examples match.`
+      : `${total} examples. Search by action, file type, or phrase.`;
+  }
+  search.addEventListener("input", filter);
+  filter();
+  const observer = new IntersectionObserver(
+    (entries) => {
+      const entry = entries.find((item) => item.isIntersecting);
+      if (!entry) return;
+      links.forEach((link) => {
+        if (link.hash === "#" + entry.target.id) link.setAttribute("aria-current", "location");
+        else link.removeAttribute("aria-current");
+      });
+    },
+    { rootMargin: "-120px 0px -60% 0px" },
+  );
+  sections.forEach((section) => observer.observe(section));
+})();

@@ -1,9 +1,11 @@
 //! Runs natural-language command files through the parser that Enter uses.
-//! Each line is `command => expected`: the intent JSON, or `!` for a refusal.
+//! Each line is `command => expected`: the intent JSON, `!hard` for a hard
+//! refusal, `!miss` for a grammar miss, or a bare `!` for either refusal
+//! (kept for backwards compatibility with older corpus lines).
 //! The regression corpus in `src/parse/corpus/` must always pass. Held-out
 //! sets in `eval/` only measure accuracy until they are used to fix something.
 
-use super::parse;
+use super::{ParseFailure, parse, parse_classified};
 use chrono::NaiveDate;
 use serde_json::Value;
 use std::fs;
@@ -38,20 +40,30 @@ fn cases_in(dir: &Path) -> Vec<(String, String, String)> {
     out
 }
 
-/// The intent the parser builds as JSON, or `!` when it refuses the command.
+/// The intent the parser builds as JSON, or the kind of refusal it returned.
 fn outcome(command: &str) -> Value {
-    match parse(command) {
+    match parse_classified(command) {
         Ok(intent) => strip_nulls(serde_json::to_value(&intent).unwrap()),
-        Err(_) => Value::String("!".into()),
+        Err(ParseFailure::HardRefusal(_)) => Value::String("!hard".into()),
+        Err(ParseFailure::GrammarMiss) => Value::String("!miss".into()),
     }
 }
 
-/// The expected value: the intent JSON, or `!` for a refusal.
+/// The expected value: the intent JSON, `!hard`, `!miss`, or bare `!` (either).
 fn expected_value(expected: &str, at: &str) -> Value {
+    match expected {
+        "!" | "!hard" | "!miss" => Value::String(expected.into()),
+        _ => serde_json::from_str(expected).unwrap_or_else(|e| panic!("{at}: expected JSON is invalid: {e}")),
+    }
+}
+
+/// A bare `!` expectation accepts either refusal kind; `!hard` and `!miss`
+/// each require that exact kind.
+fn matches_expected(got: &Value, want: &Value, expected: &str) -> bool {
     if expected == "!" {
-        Value::String("!".into())
+        matches!(got, Value::String(s) if s == "!hard" || s == "!miss")
     } else {
-        serde_json::from_str(expected).unwrap_or_else(|e| panic!("{at}: expected JSON is invalid: {e}"))
+        got == want
     }
 }
 
@@ -227,7 +239,7 @@ fn corpus_commands_build_the_intended_intent() {
     for (command, expected, at) in &cases {
         let want = expected_value(expected, at);
         let got = outcome(command);
-        if got != want {
+        if !matches_expected(&got, &want, expected) {
             failures.push(format!("{at}  {command}\n      want {want}\n      got  {got}"));
         }
     }
@@ -249,7 +261,7 @@ fn heldout_error_rate() {
     for (command, expected, at) in &cases {
         let want = expected_value(expected, at);
         let got = outcome(command);
-        if got != want {
+        if !matches_expected(&got, &want, expected) {
             misses += 1;
             println!("MISS {at}  {command}\n     want {want}\n     got  {got}");
         }
@@ -287,7 +299,7 @@ fn haiku_300_per_case_report() {
         let (command, expected) = line.rsplit_once(" => ").unwrap_or_else(|| panic!("{at}: missing \" => \""));
         let want = expected_value(expected.trim(), &at);
         let got = outcome(command);
-        let pass = got == want;
+        let pass = matches_expected(&got, &want, expected.trim());
         passed += usize::from(pass);
         let row = serde_json::json!({
             "id": format!("H{n:03}"), "line": i + 1, "category": category,
@@ -310,3 +322,7 @@ fn haiku_suite_contains_exactly_300_distinct_phrases() {
     let unique: std::collections::HashSet<_> = cases.iter().map(|(command, _, _)| command).collect();
     assert_eq!(unique.len(), 300);
 }
+
+#[cfg(test)]
+#[path = "feasibility.rs"]
+mod feasibility;

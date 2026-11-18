@@ -2,7 +2,10 @@
 
 `appicon.swift` draws `voxi-icon-1024.png`: a listening face (two eyes and a
 smile drawn as a sound wave) on a plain paper tile sized to Apple's icon grid.
-It also draws the menu bar icon, `app/src-tauri/icons/tray.png`. The website's
+It also draws the menu bar icon, `app/src-tauri/icons/tray.png`, and twelve
+`tray-talk-*.png` frames beside it, where the smile's ripple travels along.
+The menu bar face plays those frames while someone types or dictates into
+Voxi's command box (`app/src-tauri/src/tray_face.rs`), unless Reduce Motion is on. The website's
 `website/assets/favicon.svg` is the same face; keep the two in step by hand.
 
 To change the icon, edit the script, then from the repo root:

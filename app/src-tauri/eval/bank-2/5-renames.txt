@@ -1,0 +1,78 @@
+# Bank 2 / renames: slang, casual and regional phrasings that no corpus or eval file tests yet.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: rename report.pdf to Q3-report.pdf
+call report.pdf Q3-report.pdf instead => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+change report.pdf's name to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+rename report.pdf as Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+make report.pdf be called Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+retitle report.pdf to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+switch the name of report.pdf to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+relabel report.pdf as Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+name report.pdf Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+report.pdf should be called Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+rename report.pdf -> Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+
+# seed: replace spaces with dashes in files in Downloads
+swap spaces for dashes in Downloads file names => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+kebab-case the file names in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+turn spaces into dashes in Downloads files => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+change spaces to hyphens in files in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+use dashes instead of spaces in Downloads file names => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+get rid of spaces, use dashes, in Downloads files => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+replace the spaces with hyphens in Downloads names => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+dash-ify the names in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+switch spaces to dashes for files in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+make Downloads file names use dashes not spaces => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+spaces to dashes in Downloads => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+
+# seed: lowercase file names in Downloads
+make all the names in Downloads lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+lowercase everything in Downloads => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+no caps in Downloads file names => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+make Downloads filenames all lower case => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+convert names in Downloads to lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+turn Downloads file names lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+kill the capitals in Downloads names => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+lower-case all the files in Downloads => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+downcase the file names in Downloads => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+make every file in Downloads lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: add date prefix to files in Screenshots
+stick the date in front of files in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+date-stamp the files in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+put the date before the names in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+prefix files in Screenshots with their date => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+add the date at the start of names in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+slap a date on the front of files in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+date prefix everything in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+prepend dates to files in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+add dates to the start of Screenshots file names => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+timestamp the names of files in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+put dates on files in Screenshots => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+
+# seed: number images in Trip as trip-001
+number the pics in Trip as trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+rename the photos in Trip trip-001, trip-002 and so on => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+label images in Trip as trip-001 onwards => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+number off the images in Trip like trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+sequence the images in Trip as trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+give images in Trip numbers like trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+number all photos in Trip starting trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+renumber images in Trip as trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+number my Trip pics as trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+numbered names for images in Trip, trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+count off images in Trip as trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+
+# seed: add prefix Invoice- to files named bill in Downloads
+stick Invoice- in front of files named bill in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+prepend Invoice- to files named bill in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+put Invoice- before the name of bill files in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+slap Invoice- on the front of files named bill in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+prefix files named bill in Downloads with Invoice- => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+add Invoice- at the start of files named bill in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+tack Invoice- onto the start of files named bill in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+start files named bill in Downloads with Invoice- => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+add the prefix Invoice- to bill files in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+give files named bill in Downloads an Invoice- prefix => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+Invoice- prefix for files named bill in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}

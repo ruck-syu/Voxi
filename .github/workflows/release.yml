@@ -1,14 +1,9 @@
-# Builds Voxi on every push to main and publishes a GitHub release whose notes
-# list the changes since the previous version, with:
-#   - Voxi_<version>_universal.dmg   for first installs
-#   - Voxi.app.tar.gz + .sig         the signed update the app downloads
-#   - latest.json                    what "Check for updates" reads
 name: Release
 
 on:
+  pull_request:
   push:
     branches: [main]
-    # The website and docs deploy on their own; they don't need a new app.
     paths-ignore:
       - "website/**"
       - "**.md"
@@ -16,107 +11,265 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
-# One release at a time, newest push wins the queue.
 concurrency:
-  group: release
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# All Cargo invocations, including those made by Tauri, share this directory.
+env:
+  CARGO_TARGET_DIR: /tmp/voxi-target-final
+  VOXI_PLAN_MODEL_DIR: ""
+  VOXI_TINY_MODEL_DIR: ""
+
 jobs:
-  release:
+  quality:
     runs-on: macos-latest
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # tags and history, for the release notes
-
+      # Node 22 LTS and stable Rust match the PR gates; npm/Cargo resolution is locked.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: npm ci
+      - run: node scripts/check-versions.mjs
+      - run: npm run build
+      # Unset (rather than empty) model env vars for the no-weights feature suite.
+      - name: Default tests
+        working-directory: app/src-tauri
+        run: env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib
+      - name: Experimental feature tests without weights
+        working-directory: app/src-tauri
+        run: env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib --features tiny-model
+      - name: Rule-only cross-build equivalence
+        working-directory: app/src-tauri
+        run: env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --test rule_only_equivalence
+      - name: Experimental rule-only cross-build equivalence
+        working-directory: app/src-tauri
+        run: env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --test rule_only_equivalence --features tiny-model
+      - name: Strict Clippy
+        working-directory: app/src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Strict experimental feature Clippy
+        working-directory: app/src-tauri
+        run: cargo clippy --locked --all-targets --features tiny-model -- -D warnings
 
+  release:
+    needs: quality
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: npm ci
 
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: app/src-tauri -> target
-
-      # Every push gets a new version, so the updater always sees it as newer.
-      - name: Set version
+      - name: Assign one release version to all manifests and lockfiles
         run: |
-          VERSION="0.1.${{ github.run_number }}"
-          node -e '
-            const fs = require("fs");
-            const f = "src-tauri/tauri.conf.json";
-            const c = JSON.parse(fs.readFileSync(f, "utf8"));
-            c.version = process.argv[1];
-            fs.writeFileSync(f, JSON.stringify(c, null, 2) + "\n");
-          ' "$VERSION"
+          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          node scripts/check-versions.mjs --set "$VERSION"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      # "What's new": commit subjects since the previous release's tag.
-      - name: Release notes
-        id: notes
-        run: |
-          PREV=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)
-          RANGE=${PREV:+$PREV..}HEAD
-          NOTES=$(git log --no-merges --pretty='- %s' "$RANGE" | sed 's/ \[skip ci\]//')
-          [ -n "$NOTES" ] || NOTES="- Maintenance release."
-          { echo "notes<<VOXI_NOTES"; echo "$NOTES"; echo "VOXI_NOTES"; } >> "$GITHUB_OUTPUT"
-
-      # Signs the whole app with Voxi's own certificate, so macOS keeps the
-      # same identity across versions and remembers folder access and the
-      # first-launch approval. Skipped until the certificate secrets exist.
-      - name: Import signing certificate
+      - name: Require Developer ID, notary, and updater credentials
         env:
-          CERT: ${{ secrets.VOXI_SIGNING_CERT }}
-          CERT_PASSWORD: ${{ secrets.VOXI_SIGNING_CERT_PASSWORD }}
+          VOXI_SIGNING_CERT: ${{ secrets.VOXI_SIGNING_CERT }}
+          VOXI_SIGNING_CERT_PASSWORD: ${{ secrets.VOXI_SIGNING_CERT_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
-          if [ -z "$CERT" ]; then
-            echo "::warning::VOXI_SIGNING_CERT isn't set; building without a stable signature."
-            exit 0
-          fi
-          KC="$RUNNER_TEMP/voxi.keychain-db"
-          KC_PASSWORD=$(openssl rand -base64 18)
-          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/voxi.p12"
+          for name in VOXI_SIGNING_CERT VOXI_SIGNING_CERT_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8 TAURI_SIGNING_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Required release secret $name is missing"
+              exit 1
+            fi
+          done
+          # An unencrypted updater key may intentionally have an empty password.
+          [[ "$APPLE_SIGNING_IDENTITY" == "Developer ID Application: "*" ($APPLE_TEAM_ID)" ]]
+          umask 077
+          KC="$RUNNER_TEMP/voxi-signing.keychain-db"
+          security list-keychains -d user > "$RUNNER_TEMP/voxi-original-keychains"
+          KC_PASSWORD=$(openssl rand -base64 32)
+          echo "::add-mask::$KC_PASSWORD"
+          printf '%s' "$VOXI_SIGNING_CERT" | base64 --decode > "$RUNNER_TEMP/voxi-signing.p12"
+          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/voxi-notary.p8"
           security create-keychain -p "$KC_PASSWORD" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KC_PASSWORD" "$KC"
-          security import "$RUNNER_TEMP/voxi.p12" -k "$KC" -P "$CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PASSWORD" "$KC" > /dev/null
-          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          rm "$RUNNER_TEMP/voxi.p12"
-          echo "APPLE_SIGNING_IDENTITY=Voxi Self-Signed" >> "$GITHUB_ENV"
+          security import "$RUNNER_TEMP/voxi-signing.p12" -k "$KC" -P "$VOXI_SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASSWORD" "$KC" > /dev/null
+          # Search only this keychain: an unrelated runner identity cannot satisfy signing.
+          security list-keychains -d user -s "$KC"
+          security find-identity -v -p codesigning "$KC" | grep -F "\"$APPLE_SIGNING_IDENTITY\""
+          rm "$RUNNER_TEMP/voxi-signing.p12"
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/voxi-notary.p8" >> "$GITHUB_ENV"
 
-      - run: npm ci
-
-      - name: Test
-        working-directory: app/src-tauri
-        run: cargo test --lib
-
-      - uses: tauri-apps/tauri-action@v0
+      # npm pins tauri-cli 2.12.4 (bundler 2.10.4). Its API-key contract is
+      # APPLE_API_KEY + APPLE_API_ISSUER + APPLE_API_KEY_PATH, verified in:
+      # https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.4/crates/tauri-bundler/src/bundle/macos/sign.rs
+      # It notarizes/staples the app before producing the updater tarball/DMG.
+      # The DMG is separately notarized below; no --skip-stapling is permitted.
+      # No custom entitlements: this is a non-sandboxed Developer ID app.
+      # File access and LaunchAgent login registration need no sandbox grants;
+      # spawning Apple-signed ditto/mv/sips needs no disable-library-validation.
+      # WKWebView's JS runs in Apple's separate WebContent process, not Voxi:
+      # https://v2.tauri.app/concept/process-model/
+      # No host JIT, unsigned-executable-memory, debugger, or sandbox exceptions.
+      - name: Build signed, notarized, rule-only universal bundles
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: app
-          tagName: v${{ env.VERSION }}
-          releaseName: Voxi ${{ env.VERSION }}
-          releaseBody: |
-            ## What's new
-            ${{ steps.notes.outputs.notes }}
+        run: |
+          node scripts/check-versions.mjs
+          (cd src-tauri && cargo tree --locked --no-default-features --edges normal --prefix none) > "$RUNNER_TEMP/voxi-release-dependencies.txt"
+          if grep -q '^voxi-tiny-native v' "$RUNNER_TEMP/voxi-release-dependencies.txt"; then
+            echo '::error::Model runtime is present in the release dependency graph'
+            exit 1
+          fi
+          # --no-default-features is a Cargo flag, forwarded after Tauri's --.
+          npm run tauri -- build --target universal-apple-darwin --bundles app,dmg -- --locked --no-default-features
 
-            ## Install
-            Download **Voxi_${{ env.VERSION }}_universal.dmg** below, open it, and drag Voxi to Applications.
-            Already installed? Open Voxi's Settings and click **Check for updates**.
-          releaseDraft: false
-          prerelease: false
-          args: --target universal-apple-darwin
+      - name: Verify signed app, effective entitlements, version, and universal slices
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP="$CARGO_TARGET_DIR/universal-apple-darwin/release/bundle/macos/Voxi.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -d --verbose=4 "$APP" 2> "$RUNNER_TEMP/voxi-codesign.txt"
+          cat "$RUNNER_TEMP/voxi-codesign.txt"
+          grep -F "Authority=$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/voxi-codesign.txt"
+          grep -Fx "TeamIdentifier=$APPLE_TEAM_ID" "$RUNNER_TEMP/voxi-codesign.txt"
+          grep -E 'flags=.*\(runtime\)' "$RUNNER_TEMP/voxi-codesign.txt"
+          codesign -d --entitlements :- "$APP" > "$RUNNER_TEMP/voxi-entitlements.plist"
+          cat "$RUNNER_TEMP/voxi-entitlements.plist"
+          python3 - <<'PY'
+          import os, pathlib, plistlib
+          data = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'voxi-entitlements.plist').read_bytes()
+          assert not data.strip() or not plistlib.loads(data), 'Unexpected effective entitlements; review before publishing'
+          app = pathlib.Path(os.environ['CARGO_TARGET_DIR']) / 'universal-apple-darwin/release/bundle/macos/Voxi.app'
+          info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+          assert info['CFBundleShortVersionString'] == os.environ['VERSION']
+          assert info['CFBundleVersion'] == os.environ['VERSION']
+          forbidden = {'.gguf', '.safetensors', '.onnx', '.pt', '.pth', '.tflite'}
+          for path in app.rglob('*'):
+              assert path.suffix.lower() not in forbidden, f'Model file bundled: {path}'
+              assert path.name.lower() not in {'tokenizer.json', 'tokenizer.model', 'pytorch_model.bin', 'model.bin'}, f'Model file bundled: {path}'
+          PY
+          ARCHS=$(lipo -archs "$APP/Contents/MacOS/voxi")
+          echo "$ARCHS"
+          [[ " $ARCHS " == *" arm64 "* && " $ARCHS " == *" x86_64 "* ]]
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
+
+      - name: Notarize, staple, and verify the distribution DMG
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          DMG="$CARGO_TARGET_DIR/universal-apple-darwin/release/bundle/dmg/Voxi_${VERSION}_universal.dmg"
+          codesign --verify --strict --verbose=2 "$DMG"
+          xcrun notarytool submit "$DMG" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait --timeout 30m --output-format json > "$RUNNER_TEMP/voxi-dmg-notary.json"
+          cat "$RUNNER_TEMP/voxi-dmg-notary.json"
+          python3 - <<'PY'
+          import json, os, pathlib
+          result = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'voxi-dmg-notary.json').read_text())
+          assert result['status'] == 'Accepted', result
+          PY
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          codesign --verify --deep --strict --verbose=2 "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
+
+      - name: Prepare verified release assets and updater manifest
+        run: |
+          mkdir -p "$RUNNER_TEMP/voxi-release"
+          BUNDLE="$CARGO_TARGET_DIR/universal-apple-darwin/release/bundle"
+          cp "$BUNDLE/dmg/Voxi_${VERSION}_universal.dmg" "$BUNDLE/macos/Voxi.app.tar.gz" "$BUNDLE/macos/Voxi.app.tar.gz.sig" "$RUNNER_TEMP/voxi-release/"
+          # Verify the actual updater payload as well as the standalone app.
+          mkdir -p "$RUNNER_TEMP/voxi-updater-check"
+          tar -xzf "$BUNDLE/macos/Voxi.app.tar.gz" -C "$RUNNER_TEMP/voxi-updater-check"
+          UPDATE_APP="$RUNNER_TEMP/voxi-updater-check/Voxi.app"
+          codesign --verify --deep --strict --verbose=2 "$UPDATE_APP"
+          xcrun stapler validate "$UPDATE_APP"
+          cmp "$UPDATE_APP/Contents/MacOS/voxi" "$BUNDLE/macos/Voxi.app/Contents/MacOS/voxi"
+          python3 - <<'PY'
+          import datetime, json, os, pathlib
+          assets = pathlib.Path(os.environ['RUNNER_TEMP']) / 'voxi-release'
+          signature = (assets / 'Voxi.app.tar.gz.sig').read_text().strip()
+          assert signature, 'Updater signature missing'
+          url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/v{os.environ['VERSION']}/Voxi.app.tar.gz"
+          manifest = {'version': os.environ['VERSION'], 'notes': 'See the GitHub release notes.',
+                      'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
+                      'platforms': {f'darwin-{arch}': {'signature': signature, 'url': url} for arch in ('aarch64', 'x86_64')}}
+          (assets / 'latest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+          PREV=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)
+          RANGE=${PREV:+$PREV..}HEAD
+          git log --no-merges --pretty='- %s' "$RANGE" > "$RUNNER_TEMP/voxi-release-notes.md"
+          cat >> "$RUNNER_TEMP/voxi-release-notes.md" <<NOTES
+
+          Download Voxi_${VERSION}_universal.dmg and drag Voxi to Applications.
+          Existing users can use Settings → Check for updates.
+          NOTES
+
+      # This is the first step permitted to create/upload/publish a GitHub release.
+      # Stage as draft so all assets (especially latest.json) exist before visibility.
+      - name: Upload verified assets and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" "$RUNNER_TEMP/voxi-release/"* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Voxi $VERSION" --notes-file "$RUNNER_TEMP/voxi-release-notes.md" --draft
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+
+      - name: Remove temporary signing material and restore keychains
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, shlex, subprocess
+          temp = pathlib.Path(os.environ['RUNNER_TEMP'])
+          original = temp / 'voxi-original-keychains'
+          try:
+              if original.exists():
+                  subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', *shlex.split(original.read_text())], check=True)
+          finally:
+              try:
+                  kc = temp / 'voxi-signing.keychain-db'
+                  if kc.exists():
+                      subprocess.run(['security', 'delete-keychain', str(kc)], check=True)
+              finally:
+                  for name in ('voxi-signing.p12', 'voxi-notary.p8', 'voxi-original-keychains'):
+                      (temp / name).unlink(missing_ok=True)
+          PY

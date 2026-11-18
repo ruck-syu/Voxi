@@ -1,0 +1,99 @@
+# Bank 2 / trash: slang, casual and regional phrasings that no corpus or eval file tests yet.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: delete screenshots older than 30 days
+nuke screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+yeet screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+bin screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+ditch screenshots older than thirty days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+get rid of screenshots more than 30 days old => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+purge screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+toss any screenshot older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+chuck out screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+axe screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+delete screenshots that are over 30 days old => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+
+# seed: clean up Downloads older than 90 days
+declutter Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+tidy up Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+nuke stuff in Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+purge Downloads files older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+spring clean Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+clear out Downloads older than ninety days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+bin anything in Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+wipe old junk in Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+clean Downloads of files older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+get rid of Downloads files older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+Marie Kondo Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+
+# seed: move installers from Downloads to Trash
+nuke the installers in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+bin all installers from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+get rid of installer files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+trash the setup files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+ditch the installers sitting in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+purge installers from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+yeet installers out of Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+clear the installers out of Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+toss old installers from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+dump installers from Downloads in the Trash => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+
+# seed: delete dmg files from Downloads
+nuke the dmgs in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+bin all dmg files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+yeet every .dmg from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+get rid of the DMGs in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+trash dmgs from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+ditch the dmg files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+purge DMG files from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+clear out the dmg files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+toss the disk images in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+delete them dmgs in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+
+# seed: delete report.pdf
+nuke report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+yeet report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+bin report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+ditch report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+axe report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+toss report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+kill report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+report.pdf can go => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+
+# seed: delete everything in Downloads
+nuke Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+nuke everything in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+clear out Downloads entirely => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+bin everything in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+empty out Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+trash all the stuff in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+purge Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+get rid of all the junk in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+yeet everything in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+torch everything in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: delete files larger than 1 GB in Downloads
+nuke files over a gig in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+bin anything bigger than 1 gig in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+get rid of the chonky files over 1 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+trash files above 1 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+purge files that are over 1GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+delete the 1 GB plus files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+ditch files heavier than 1 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+yeet anything larger than 1 gb from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+delete files exceeding 1 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+delete stuff in Downloads that's more than 1 GB => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+toss huge files over 1 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+
+# seed: delete files named untitled on Desktop
+nuke the untitled files on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+bin every untitled file on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+get rid of all the untitled stuff on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+yeet files called untitled from Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+trash anything named untitled on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+purge untitled files from Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+ditch the files with untitled in the name on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+zap all the untitled docs on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+toss files named untitled off Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+clear the untitled files off Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+axe the untitled files on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}

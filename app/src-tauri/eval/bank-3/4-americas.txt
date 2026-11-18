@@ -1,0 +1,244 @@
+# Bank 3 / Americas: US regional, AAVE, Canadian, Caribbean English.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: move all PDFs from Downloads to Documents
+what PDFs can you shift over from Downloads into Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+send every PDF in Downloads across to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+move the PDFs outta Downloads and put them in Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Could you move awl PDFs from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+
+# seed: move screenshots from today to Screenshots
+put today's screenshots into the Screenshots folder => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+can you file today's screen grabs under Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+scoot the screenshots I took today over to Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+
+# seed: move report.pdf to Documents
+put report.pdf in Documents for me real quick => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+can you drop report.pdf into Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+send report.pdf over to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+
+# seed: move all videos from Desktop to Movies
+get every video off Desktop and into Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+put the Desktop videos away in Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+scoot all those videos from Desktop over to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+
+# seed: move files from Desktop to Documents
+shift the files on Desktop over to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+get the Desktop files filed in Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+put everything from Desktop into Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+Could you move files frum Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+
+# seed: copy all images from Pictures to Backup
+make a backup copy of every image in Pictures over in Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+duplicate the Pictures images into Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+save copies of all the pictures in Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+
+# seed: copy report.pdf to Desktop
+leave a copy of report.pdf on Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+put another report.pdf on the Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+duplicate report.pdf over to Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+
+# seed: delete screenshots older than 30 days
+trash the screenshots that are more than 30 days old => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+get rid of screenshots past the 30-day mark => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+clear out any screen grabs older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+
+# seed: clean up Downloads older than 90 days
+clear out files in Downloads that have been there over 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+get rid of the Downloads stuff older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+anything in Downloads past 90 days can go => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+Could you clean up Downloads older’n 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+
+# seed: move installers from Downloads to Trash
+send the installers in Downloads to the Trash => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+trash every installer sitting in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+get those Downloads installers outta here and into Trash => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+
+# seed: delete dmg files from Downloads
+get rid of them dmg files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+trash the disk image installers sitting in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+clear the DMG installers out of Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+
+# seed: delete report.pdf
+put report.pdf in the Trash => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+get report.pdf out of here => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+toss report.pdf in the bin => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+
+# seed: delete everything in Downloads
+send Downloads' entire contents to Trash => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+send all the files in Downloads to Trash => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+clear every file outta Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+clear the whole Downloads folder into Trash => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: delete files larger than 1 GB in Downloads
+trash Downloads files over 1 GB => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+get rid of anything in Downloads bigger than 1 GB => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+clear out the files past 1 GB in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":1024.0}}}
+
+# seed: delete files named untitled on Desktop
+trash the untitled files sitting on Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+get rid of Desktop files with untitled in the name => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+remove any files called untitled from Desktop => {"intent":"trash","src":{"kind":"set","folder":"Desktop","filter":{"type":"files","nameContains":"untitled"}}}
+
+# seed: list files in Downloads larger than 500 MB
+which Downloads files are over 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+show me what's in Downloads above 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+find the big files in Downloads, over 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+
+# seed: list files in Downloads
+which files have I got in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+show me what's in the Downloads folder => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+what all is in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+what sort of files are in my Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: list PDFs in Downloads
+what PDFs y'all got in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+show me the PDFs sitting in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+which files in Downloads are PDFs => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+
+# seed: list screenshots from today
+pull up the screen captures from today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+show the screen captures I made today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+pull up the screenshots from today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+
+# seed: list files in Downloads older than 1 year
+show Downloads files that are over a year old => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+which files in Downloads have been there for a year => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+find the year-old stuff in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+
+# seed: list videos in Movies
+what movie clips have I got saved in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+show me the videos filed under Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+which video files are in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+which video clips are filed in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+
+# seed: list files in Documents from this week
+what files landed in Documents this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+show me this week's Documents files => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+pull up the files added to Documents this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+
+# seed: count PDFs in Documents
+how many PDFs is in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+tell me the PDF count for Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+count up the PDFs saved in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+
+# seed: count files in Downloads
+how many files are sitting in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+give me a file count for Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+tell me how many things are in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: show size of Downloads
+what is Downloads taking up on disk => {"intent":"size","folder":"Downloads"}
+what's the total size of the Downloads folder => {"intent":"size","folder":"Downloads"}
+how much storage is the Downloads folder using => {"intent":"size","folder":"Downloads"}
+what amount of storage does Downloads use => {"intent":"size","folder":"Downloads"}
+
+# seed: list duplicate files in Downloads
+find the duplicates in Downloads => {"intent":"duplicates","folder":"Downloads"}
+show me any repeated files in the Downloads folder => {"intent":"duplicates","folder":"Downloads"}
+which files in Downloads got copies => {"intent":"duplicates","folder":"Downloads"}
+
+# seed: open Downloads in Finder
+bring up the Downloads folder in Finder => {"intent":"reveal","target":"Downloads"}
+show Downloads in a Finder window => {"intent":"reveal","target":"Downloads"}
+take me to Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+
+# seed: undo last
+back out the last thing I did => {"intent":"undo"}
+reverse my most recent change => {"intent":"undo"}
+undo that last action for me => {"intent":"undo"}
+
+# seed: show recent actions
+show my recent file changes => {"intent":"recent_actions"}
+pull up my latest file actions => {"intent":"recent_actions"}
+show me the last few things I did => {"intent":"recent_actions"}
+what were my latest file operations => {"intent":"recent_actions"}
+
+# seed: rename report.pdf to Q3-report.pdf
+switch the filename report.pdf over to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+change report.pdf's name over to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+rename that report file as Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+
+# seed: replace spaces with dashes in files in Downloads
+turn every space in Downloads filenames into a dash => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+swap spaces for dashes in the names of Downloads files => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+change the blanks in Downloads file names to hyphens => {"intent":"replace_in_names","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}},"find":" ","replace":"-"}
+
+# seed: lowercase file names in Downloads
+make every filename in Downloads lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+change the Downloads names to all small letters => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+put all the file names in Downloads in lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: add date prefix to files in Screenshots
+start each Screenshots file name with a date stamp => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+prefix the Screenshots files with their dates => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+start every filename in Screenshots with its date => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+stick a date stamp onto the beginning of every Screenshots filename => {"intent":"add_date_prefix","src":{"kind":"set","folder":"Screenshots","filter":{"type":"files"}}}
+
+# seed: number images in Trip as trip-001
+label the Trip pictures in order starting at trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+give each image in Trip a trip-001 style number => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+number the Trip images with trip-001 as the first name => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+
+# seed: add prefix Invoice- to files named bill in Downloads
+stick Invoice- at the start of each bill file in Downloads => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+prefix the bill files in Downloads with Invoice- => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+put Invoice- before the names of Downloads files containing bill => {"intent":"add_prefix","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"bill"}},"prefix":"Invoice-"}
+
+# seed: create folders 2026, 2027 in Documents
+make two folders called 2026 and 2027 under Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+add 2026 and 2027 folders inside Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+set up year folders 2026 and 2027 in Documents => {"intent":"create_folders","names":["2026","2027"],"parent":"Documents"}
+
+# seed: create a folder named Invoices in Documents
+mek a folder name Invoices inna Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+add an Invoices folder under Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+Could you create a folder naymed Invoices in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+
+# seed: sort Downloads by type
+group the Downloads files according to file type => {"intent":"sort_by_type","folder":"Downloads"}
+organize Downloads into types => {"intent":"sort_by_type","folder":"Downloads"}
+arrange the contents of Downloads by kind => {"intent":"sort_by_type","folder":"Downloads"}
+
+# seed: sort Screenshots by month
+organize Screenshots into monthly groups => {"intent":"sort_by_month","folder":"Screenshots"}
+sort the Screenshots folder into months => {"intent":"sort_by_month","folder":"Screenshots"}
+
+# seed: convert photo.heic to png
+save photo.heic as a PNG => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+turn photo.heic into a png image => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+change photo.heic over to PNG format => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+
+# seed: convert all HEIC in Pictures to jpg
+make the HEIC pictures in Pictures into JPGs => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+save every HEIC image in Pictures as a jpg => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+change Pictures' HEIC files over to jpg format => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+Could you convert awl HEIC in Pictures to jpg => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+
+# seed: resize all images in Trip to 1600 pixels wide
+make dem pictures in Trip 1600 pixels wide => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+set every Trip image to a width of 1600 pixels => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+shrink or expand the Trip pictures so they're 1600 pixels across => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+
+# seed: merge all PDFs in Downloads into combined.pdf
+combine the PDFs in Downloads and save the result as combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+
+# seed: split report.pdf into pages
+break report.pdf out into separate pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+make individual page files from report.pdf => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+separate report.pdf page by page => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+
+# seed: extract pages 2 to 5 from report.pdf into excerpt.pdf
+save pages 2 through 5 of report.pdf as excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+pull pages 2 to 5 out of report.pdf and call the file excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+make excerpt.pdf from pages 2 to 5 of report.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+Could you extract pages 2 to 5 frum report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+
+# seed: zip Project into Project.zip
+compress the Project folder and name the archive Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+package Project up in a file named Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+
+# seed: unzip archive.zip
+extract the contents of archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+unpack archive.zip for me => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+open up archive.zip and pull out its files => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}

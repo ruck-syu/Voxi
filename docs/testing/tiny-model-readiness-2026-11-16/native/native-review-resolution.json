@@ -1,0 +1,11 @@
+{
+  "fixed_at": "2026-11-16T06:58:42.168145+00:00",
+  "finding": "Native package identity not verified",
+  "resolution": "Versioned compile-time hashes for all3 files; exact verified buffers parsed; no TOCTOU second read",
+  "unit_identity_mismatch_test_passed": true,
+  "valid_config_mismatch_smoke_passed": true,
+  "native_real_model_retry_multi_instance_test_passed": true,
+  "parity_rechecked_rows": 300,
+  "parity_matches": 300,
+  "binary_sha256": "e18208f4ab4250aff646b5239bd4b55b19de3db77cf1118b0524c63b4b9b17ed"
+}

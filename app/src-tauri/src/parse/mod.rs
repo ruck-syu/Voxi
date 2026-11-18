@@ -1,8 +1,30 @@
 //! Rule-based command parser. Each category file contributes named regex
 //! patterns; they are tried in order, most specific first, and the first one
 //! that matches and builds an intent wins.
+//!
+//! T5 ingress handoff (checks must precede trimming, allocation and regexes):
+//! - `lib::plan_input`: check raw text before `scheduler::extract_schedule`,
+//!   `schedule_of`, scope handling or shortcut lookup.
+//! - `lib::schedule_of`: check text before its `known` probe.
+//! - `lib::plan_input` / `run_recurring`: validate saved shortcut expansion
+//!   before iterating its commands or passing it to `plan_shortcut`.
+//! - `scope::parse_followup` / `scope::prepare`: check raw text before
+//!   normalization or reference rewriting, including direct callers.
+//! - `scheduler::extract` / `extract_schedule`: check raw text before quote
+//!   masking or schedule regexes, including direct callers.
+//! - `settings::validate_shortcuts`: check raw phrase and each raw command,
+//!   reject more than eight commands and a checked sum over MAX_COMMAND_BYTES
+//!   before trimming or `shortcut_key`. Repeat expansion validation when
+//!   executing loaded shortcuts in both lib paths; reject the whole expansion.
+//! - `settings::shortcut_key` / `find_shortcut` / `find_close_shortcut`: bound
+//!   lookup text and stored phrases before normalization or edit distance.
+//!
+//! Remaining algorithmic debt: `rewrite::osa` allocates a full O(m*n) typo
+//! distance matrix. The byte cap bounds its inputs, but does not replace a
+//! length-difference precheck or a bounded/rolling-row distance implementation.
 
 mod archives;
+mod chain;
 mod cleanup;
 mod dates;
 mod files;
@@ -13,21 +35,25 @@ mod meta;
 mod pdf;
 pub mod phrase;
 mod rename;
+mod refusal;
 mod rewrite;
 
 use crate::model::{FileType, Intent, Source};
 use regex::{Captures, Regex};
 use std::sync::LazyLock;
 
+/// Raw UTF-8 command budget, measured before trimming or normalization.
+/// Shortcut callers must also cap the sum of command bytes at this budget
+/// and the expansion at eight commands before parsing any command (T5).
+pub const MAX_COMMAND_BYTES: usize = 16_384;
+
 pub struct Pattern {
-    #[allow(dead_code)] // identifies the pattern when debugging
-    pub name: &'static str,
     pub re: Regex,
     pub build: fn(&Captures) -> Option<Intent>,
 }
 
 pub fn pat(name: &'static str, re: &str, build: fn(&Captures) -> Option<Intent>) -> Pattern {
-    Pattern { name, re: Regex::new(&format!("(?i){re}")).expect(name), build }
+    Pattern { re: Regex::new(&format!("(?i){re}")).expect(name), build }
 }
 
 static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
@@ -50,46 +76,119 @@ static LEADING_SCOPE: LazyLock<Regex> = LazyLock::new(|| Regex::new(
     r#"(?i)^(?:in|inside|within|under)\s+("[^"]+"|'[^']+'|\S+)\s+((?:list|show|find|display|move|copy|rename|trash|delete|remove)\s+.+)$"#
 ).unwrap());
 
-/// Parses a command. `Err` carries the raw text for "Didn't understand".
+/// Deliberate refusals are terminal. Only a grammar miss may reach a model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RefusalReason {
+    TooLong,
+    MalformedInput,
+    RuleRestriction,
+    UnsupportedAction,
+    UnsupportedFilter,
+    MultipleActions,
+    InvalidConstraints,
+    /// A clause points at "it", "the original", "the copy" and the like
+    /// without a clean earlier item to bind to.
+    UnresolvedReference,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseFailure {
+    HardRefusal(RefusalReason),
+    GrammarMiss,
+}
+
+impl ParseFailure {
+    #[cfg(test)]
+    pub fn allows_fallback(self) -> bool { matches!(self, Self::GrammarMiss) }
+}
+
+/// Reject oversized input in constant time, without slicing UTF-8, allocating,
+/// normalizing, or initializing regexes. Ingress callers must use this before
+/// shortcut lookup, scope rewriting, or schedule extraction as well (T5).
+pub fn check_length(text: &str) -> Result<(), ParseFailure> {
+    if text.len() > MAX_COMMAND_BYTES {
+        Err(ParseFailure::HardRefusal(RefusalReason::TooLong))
+    } else {
+        Ok(())
+    }
+}
+
+/// Parses a command. `Err` carries the raw text for "Didn't understand",
+/// except oversized commands receive a bounded, explicit refusal message.
 /// A misspelled verb is corrected only when the command can't be read as
 /// typed, so a real word ("take that back") is never turned into another.
 pub fn parse(text: &str) -> Result<Intent, String> {
+    parse_classified(text).map_err(|failure| match failure {
+        ParseFailure::HardRefusal(RefusalReason::TooLong) => "That command is too long.".to_string(),
+        _ => text.trim().to_string(),
+    })
+}
+
+/// The policy-aware parser entry point for fallback callers. `parse` retains
+/// the existing UI error contract; its string error must not authorize fallback.
+pub fn parse_classified(text: &str) -> Result<Intent, ParseFailure> {
+    check_length(text)?;
     let cleaned = phrase::normalize(text);
-    if rewrite::refused(&cleaned) {
-        return Err(text.trim().to_string());
+    if let Some(chain) = chain::parse(&cleaned) { return chain; }
+    parse_single_classified(text)
+}
+
+fn parse_single_classified(text: &str) -> Result<Intent, ParseFailure> {
+    // Also bound synthesized chain clauses before their normalization.
+    check_length(text)?;
+    let cleaned = phrase::normalize(text);
+    if let Some(reason) = refusal::reason(&cleaned) {
+        return Err(ParseFailure::HardRefusal(reason));
     }
     let as_typed = rewrite::canonical(&cleaned, false);
-    if let Some(intent) = parse_canonical(&as_typed) {
+    if let Some(reason) = refusal::reason(&as_typed) {
+        return Err(ParseFailure::HardRefusal(reason));
+    }
+    if let Some(intent) = parse_canonical(&as_typed)? {
         return Ok(intent);
     }
     let corrected = rewrite::canonical(&cleaned, true);
-    if corrected != as_typed && let Some(intent) = parse_canonical(&corrected) {
-        return Ok(intent);
+    if corrected != as_typed {
+        if let Some(reason) = refusal::reason(&corrected) {
+            return Err(ParseFailure::HardRefusal(reason));
+        }
+        if let Some(intent) = parse_canonical(&corrected)? { return Ok(intent); }
     }
-    Err(text.trim().to_string())
+    if phrase::has_filter_after_destination(&as_typed) || phrase::has_filter_after_destination(&corrected) {
+        return Err(ParseFailure::HardRefusal(RefusalReason::InvalidConstraints));
+    }
+    if phrase::invalid_filters(&as_typed) {
+        return Err(ParseFailure::HardRefusal(RefusalReason::InvalidConstraints));
+    }
+    Err(ParseFailure::GrammarMiss)
 }
 
-fn parse_canonical(cleaned: &str) -> Option<Intent> {
+fn parse_canonical(cleaned: &str) -> Result<Option<Intent>, ParseFailure> {
     for p in PATTERNS.iter() {
         if let Some(caps) = p.re.captures(cleaned)
             && let Some(intent) = (p.build)(&caps)
         {
-            return Some(intent);
+            return Ok(Some(intent));
         }
     }
     if let Some(c) = LEADING_SCOPE.captures(cleaned)
         && !phrase::bad_destination(&c[1])
-        && let Ok(mut intent) = parse(&c[2])
     {
+        let mut intent = match parse_classified(&c[2]) {
+            Ok(intent) => intent,
+            Err(error @ ParseFailure::HardRefusal(_)) => return Err(error),
+            Err(ParseFailure::GrammarMiss) => return Ok(None),
+        };
         let folder = Some(phrase::clean_name(&c[1]));
         let source = match intent.source() {
             Some(Source::Item { name, folder: None }) => Some(Source::Item { name: name.clone(), folder }),
             Some(Source::Set { filter, folder: None }) => Some(Source::Set { filter: filter.clone(), folder }),
             _ => None,
         };
-        if let Some(source) = source { intent.replace_source(source); return Some(intent); }
+        if let Some(source) = source { intent.replace_source(source); return Ok(Some(intent)); }
     }
-    None
+    Ok(None)
 }
 
 /// Capture group `i` as a trimmed string, if present and non-empty.
@@ -117,6 +216,9 @@ pub(crate) fn typed_src(c: &Captures, i: usize, t: FileType) -> Option<Source> {
 
 #[cfg(test)]
 mod corpus_tests;
+
+#[cfg(test)]
+mod rule_regressions;
 
 #[cfg(test)]
 mod catalog_tests {
@@ -253,11 +355,11 @@ mod catalog_tests {
     }
     #[test]
     fn r17_sort_type() {
-        assert_eq!(p("sort Downloads by type"), SortByType { folder: "Downloads".into() });
+        assert_eq!(p("sort Downloads by type"), SortByType { folder: "Downloads".into(), include_subfolders: false });
     }
     #[test]
     fn r18_sort_month() {
-        assert_eq!(p("sort Screenshots by month"), SortByMonth { folder: "Screenshots".into() });
+        assert_eq!(p("sort Screenshots by month"), SortByMonth { folder: "Screenshots".into(), include_subfolders: false });
     }
     #[test]
     fn r19_convert_one() {
@@ -409,9 +511,14 @@ mod catalog_tests {
 
     #[test]
     fn who_did_it_clauses_are_ignored() {
+        super::dates::TEST_TODAY.with(|t| t.set(chrono::NaiveDate::from_ymd_opt(2026, 10, 28)));
         assert_eq!(
             p("List all the screenshots I took in the last week"),
-            List { src: set(None, Filter { newer_than_days: Some(7), ..of(Screenshots) }) }
+            List { src: set(None, Filter {
+                since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
+                before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
+                ..of(Screenshots)
+            }) }
         );
         assert_eq!(
             p("Show me the PDFs I downloaded yesterday."),
@@ -425,6 +532,7 @@ mod catalog_tests {
 
     #[test]
     fn month_filters() {
+        super::dates::TEST_TODAY.with(|t| t.set(chrono::NaiveDate::from_ymd_opt(2026, 10, 28)));
         assert_eq!(
             p("Find screenshots taken in the month of august."),
             List { src: set(None, Filter { month: Some(8), ..of(Screenshots) }) }
@@ -435,7 +543,11 @@ mod catalog_tests {
         );
         assert_eq!(
             p("list screenshots taken last week"),
-            List { src: set(None, Filter { newer_than_days: Some(7), ..of(Screenshots) }) }
+            List { src: set(None, Filter {
+                since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
+                before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
+                ..of(Screenshots)
+            }) }
         );
         assert_eq!(
             p("delete installers downloaded in Sept from Downloads"),
@@ -466,8 +578,13 @@ mod catalog_tests {
         ] {
             assert!(parse(command).is_err(), "unresolved reference must not search: {command}");
         }
+        super::dates::TEST_TODAY.with(|t| t.set(chrono::NaiveDate::from_ymd_opt(2026, 10, 28)));
         assert_eq!(p("delete files from the last week"), Trash {
-            src: set(None, Filter { newer_than_days: Some(7), ..of(Files) }),
+            src: set(None, Filter {
+                since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
+                before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
+                ..of(Files)
+            }),
         });
         assert_eq!(p("undo last"), Undo);
         assert_eq!(p("delete last.pdf"), Trash { src: item("last.pdf") });
@@ -627,5 +744,168 @@ mod catalog_tests {
         assert_eq!(p("list files named \"located in\" in Downloads"), List {
             src: set(Some("Downloads"), Filter { name_contains: Some("located in".into()), ..of(Files) }),
         });
+    }
+}
+
+#[cfg(test)]
+mod followup_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_paraphrases_preserve_the_full_intent() {
+        for (said, canonical) in [
+            ("Would you mind listing PDFs in Desktop?", "list PDFs in Desktop"),
+            ("Would you mind undoing?", "undo"),
+            ("Would you mind copying notes.txt to Archive?", "copy notes.txt to Archive"),
+            ("Would you mind deleting notes.txt?", "delete notes.txt"),
+            ("To Photos 2024, copy images in Downloads", "copy images in Downloads to Photos 2024"),
+            ("lowercase PDF names over in Pictures", "lowercase names of PDFs in Pictures"),
+            ("lowercase every file name", "lowercase names of files"),
+            ("add date prefix to names of files in Downloads", "add date prefix to files in Downloads"),
+            ("change menu.pdf's name to final.pdf", "rename menu.pdf to final.pdf"),
+            ("combine PDFs into one file called combined.pdf", "merge PDFs into combined.pdf"),
+            ("join PDFs into a single file, combined.pdf", "merge PDFs into combined.pdf"),
+            ("move PDFs in Downloads if they're larger than 5 MB to Archive", "move PDFs larger than 5 MB in Downloads to Archive"),
+            ("list files in Documents whose name is \"budget\"", "list files named budget in Documents"),
+            ("count files in Documents have \"budget\" as name", "count files named budget in Documents"),
+            ("count files have budget in title", "count files named budget"),
+            ("move \"invoice\" PDFs to Archive", "move PDFs named invoice to Archive"),
+            ("list out documents in Downloads", "list documents in Downloads"),
+            ("count PDFs stored on Desktop", "count PDFs in Desktop"),
+            ("how many PDFs there are in Desktop", "count PDFs in Desktop"),
+            ("put a copy of notes into Backup folder", "copy notes to Backup"),
+            ("list files starting with word invoice", "list files starting with invoice"),
+            ("make a folder labeled Reports in Documents", "make a folder named Reports in Documents"),
+            ("list images dated July 4 2025", "list images on July 4 2025"),
+            ("split each scan PDF in Archive into pages", "split PDFs named scan in Archive into pages"),
+            ("convert Downloads' scan images to jpg", "convert images named scan in Downloads to jpg"),
+            ("move today's screenshots to Pictures", "move screenshots from today to Pictures"),
+            ("list yesterday's screenshots", "list screenshots from yesterday"),
+            ("put Invoice- in front of names of PDFs in Projects", "add prefix Invoice- to PDFs in Projects"),
+            ("show history of what I did", "show history"),
+            ("show everything I've done so far", "show history"),
+            ("list screenshots in Downloads, under 5 MB only", "list screenshots smaller than 5 MB in Downloads"),
+            ("count how many PDFs are in Downloads", "count PDFs in Downloads"),
+            ("how many of documents in Desktop weigh over 100 MB", "count documents larger than 100 MB in Desktop"),
+            ("number of images on Desktop from today, quick count", "count images from today in Desktop"),
+            ("list videos in Downloads arrived within last 7 days", "list videos from last 7 days in Downloads"),
+            ("replace spaces with underscores in PDF names inside Clients", "replace spaces with underscores in names of PDFs in Clients"),
+            ("put Invoice- in front of every file's name", "add prefix Invoice- to files"),
+            ("list videos called invoice are sitting on Desktop", "list videos called invoice in Desktop"),
+            ("list PDFs labelled scan from School", "list PDFs named scan in School"),
+            ("count documents whose names include budget inside Documents", "count documents named budget inside Documents"),
+            ("pull up a list of files from last week over 10 MB", "list files from last week over 10 MB"),
+            ("copy every desktop image to Archive", "copy images in desktop to Archive"),
+            ("Please copy videos from Movies to Work, leaving originals alone", "copy videos from Movies to Work"),
+            ("show me what I've done so far", "show history"),
+            ("display log of commands I used", "show history"),
+            ("make a folder named Receipts within Invoices", "make a folder named Receipts in Invoices"),
+            ("add folders for Receipts and for Photos to Documents", "create folders named Receipts and Photos in Documents"),
+            ("move notes.txt to Documents, would you", "move notes.txt to Documents"),
+            ("Archive gets a copy of each Downloads video", "copy videos in Downloads to Archive"),
+            ("Archive needs every file dated July 4 2025 or later", "move files since July 4 2025 to Archive"),
+            ("count \"budget\" images lying around on Desktop, would you", "count images named budget in Desktop"),
+            ("show what installers are knocking about in Downloads, would you", "list installers in Downloads"),
+            ("put Tax 2025 in month order, would you", "sort Tax 2025 by month"),
+            ("organise Tax 2025 month by month, grand", "sort Tax 2025 by month"),
+            ("bin off today's screenshots in Downloads which come in above 10 MB, would you", "delete screenshots from today larger than 10 MB in Downloads"),
+            ("show us screenshots under 5 MB in Downloads, would you", "list screenshots smaller than 5 MB in Downloads"),
+            ("chuck out files from last week larger than 5 MB, would you", "delete files from last week larger than 5 MB"),
+            ("list screenshots in Downloads that have been around since July 4 2025", "list screenshots since July 4 2025 in Downloads"),
+            ("remove files dated within 7 days that weigh over 10 MB", "delete files from last 7 days larger than 10 MB"),
+            ("Desktop needs a copy of report.pdf", "copy report.pdf to Desktop"),
+            ("show us which videos in Documents are larger than 100 MB", "list videos larger than 100 MB in Documents"),
+        ] {
+            let expected = parse(canonical).unwrap_or_else(|_| panic!("bad test expectation: {canonical}"));
+            let actual = parse(said).unwrap_or_else(|_| panic!("refused: {said}"));
+            assert_eq!(serde_json::to_value(actual).unwrap(), serde_json::to_value(expected).unwrap(), "{said}");
+        }
+    }
+
+    #[test]
+    fn unsupported_filters_and_content_edits_are_refused() {
+        for command in [
+            "delete files bigger than 500 MB or older than 2 years in Movies",
+            "list files named budget or invoice in Documents",
+            "list screenshots from other day",
+            "find holiday.jpg from back in winter in Downloads",
+            "find holiday.jpg dated February 30 in Downloads",
+            "move photos dated 2026-04-31 to Archive",
+            "move April 31 screenshots to Archive",
+            "list files modified on 13/13/2025",
+            "Would you mind encrypting notes.txt?",
+            "Would you mind summarise notes.txt?",
+            "Please remove background from photo.png",
+            "remove fourth line from todo.txt",
+            "delete everything important from Desktop",
+            "copy rest of Downloads to Backup",
+            "create folder named Reports, put it in Documents",
+            "sort Documents by year and then by month",
+            "move Hannah's stuff to Archive",
+            "find photo.jpg from around Christmas in Pictures",
+            "move every photo in Documents excluding JPGs to Archive",
+            "copy documents bar spreadsheets to Backup",
+            "move everything apart from work files to Backup",
+            "copy scan[0-9][0-9].pdf to Backup",
+            "delete Img[1-9].jpg",
+            "delete for ever: notes.pdf",
+            "delete everything in bin",
+            "move files to Backup, leaving originals alone",
+            "to Archive, transfer \"invoice\" just now, sawa",
+            "count files named budget in Downloads just now, sawa",
+            "Projects needs sorting by month",
+            "Downloads needs a fresh Tax 2025 folder",
+            "every PDF needs a date prefix",
+            "Documents needs ~/Library/Keychains, relocate it",
+        ] {
+            assert!(parse(command).is_err(), "{command}");
+        }
+    }
+
+    #[test]
+    fn continuing_dates_do_not_swallow_a_folder_preposition() {
+        for command in [
+            "list files from August 1 2024 on",
+            "list files from August 1 2024 on that are over 5 MB",
+            "list files dated August 1 2024 onward",
+            "list files dated August 1 2024 and after",
+        ] {
+            let value = serde_json::to_value(parse(command).unwrap()).unwrap();
+            assert_eq!(value["src"]["filter"]["since"], "2024-08-01", "{command}");
+            assert!(value["src"]["filter"]["before"].is_null(), "{command}");
+        }
+        let value = serde_json::to_value(parse("list files from August 1 2024 on Desktop").unwrap()).unwrap();
+        assert_eq!(value["src"]["filter"]["since"], "2024-08-01");
+        assert_eq!(value["src"]["filter"]["before"], "2024-08-02");
+        assert_eq!(value["src"]["folder"], "Desktop");
+    }
+
+    #[test]
+    fn literal_names_and_supported_bound_forms_stay_literal() {
+        for command in [
+            "move Screenshot 2026-11-12 at 09.40.00.png to Documents",
+            "move screenshot 2026-10-01 at 9.41.12 AM.png to Pictures",
+            "copy \"July 31 notes.pdf\" to Archive",
+            "copy \"from around Christmas\" to Archive",
+            "copy \"encrypt notes.txt\" to Archive",
+            "copy \"scan[0-9].pdf\" to Archive",
+            "copy Report [final].pdf to Archive",
+            "copy notes.txt to \"Work, leaving originals alone\"",
+            "make folders named \"Photos to Documents\"",
+            "make folders named \"for Photos\" in Documents",
+            "list files 1 GB or more in Downloads",
+            "list files on or before July 4 2025",
+            "list files from 2024 or later",
+        ] {
+            assert!(parse(command).is_ok(), "{command}");
+        }
+        let intent = parse("move Screenshot 2026-11-12 at 09.40.00.png to Documents").unwrap();
+        assert_eq!(serde_json::to_value(intent).unwrap()["src"]["name"], "Screenshot 2026-11-12 at 09.40.00.png");
+        let intent = parse("copy King's report.pdf to Archive").unwrap();
+        assert_eq!(serde_json::to_value(intent).unwrap()["src"]["name"], "King's report.pdf");
+        let intent = parse("create folders named \"Reports, put it\" in Documents").unwrap();
+        assert_eq!(serde_json::to_value(intent).unwrap()["names"], serde_json::json!(["Reports, put it"]));
+        let intent = parse("copy \"Would you mind listing.pdf\" to Archive").unwrap();
+        assert_eq!(serde_json::to_value(intent).unwrap()["src"]["name"], "Would you mind listing.pdf");
     }
 }

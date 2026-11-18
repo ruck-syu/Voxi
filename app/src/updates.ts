@@ -2,6 +2,7 @@
 // progress, installs it, and restarts. Updates are signed; the app only
 // installs one whose signature matches the public key in tauri.conf.json.
 
+import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { inTauri } from "./api";
 
@@ -34,10 +35,10 @@ export async function appVersion(): Promise<string> {
 
 export async function checkAndInstall(onState: (s: UpdateState) => void): Promise<void> {
   if (!inTauri) return fakeUpdate(onState);
-  const { check } = await import("@tauri-apps/plugin-updater");
-  const { relaunch } = await import("@tauri-apps/plugin-process");
   onState({ k: "checking" });
   try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const { relaunch } = await import("@tauri-apps/plugin-process");
     const update = await check({ timeout: CHECK_TIMEOUT_MS });
     if (!update) return onState({ k: "latest" });
     const notes = whatsNew(update.body);
@@ -52,6 +53,8 @@ export async function checkAndInstall(onState: (s: UpdateState) => void): Promis
     onState({ k: "restarting", version: update.version, notes });
     await relaunch();
   } catch (e) {
+    // Diagnostics accepts only this fixed signal, never the rejection or payload.
+    void invoke<void>("updater_failed").catch(() => {});
     onState({ k: "error", message: `Couldn't update: ${e}` });
   }
 }

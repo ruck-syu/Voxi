@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, inTauri, tildify, type ScheduledTask, type FolderAccess, type Outcome, type Reports, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
+import { api, errorMessage, inTauri, tildify, type ScheduledTask, type FolderAccess, type Outcome, type Reports, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
 import { readChoice } from "./choice";
 import examples from "./examples.json";
 import { appVersion, checkAndInstall, type UpdateState } from "./updates";
@@ -11,7 +11,7 @@ type Phase =
   | { k: "ready" }
   | { k: "parsing" }
   | { k: "outcome"; outcome: Outcome }
-  | { k: "running"; title: string }
+  | { k: "running"; title: string; canStop: boolean; stopping: boolean; stopError?: string }
   | { k: "done"; result: RunResult; wasUndo: boolean }
   | { k: "error"; message: string };
 
@@ -26,6 +26,25 @@ type Offer =
 
 /** How long a missed phrase stays teachable by the command that follows it. */
 const TEACH_WINDOW_MS = 3 * 60_000;
+
+/** Mirrors parse::MAX_COMMAND_BYTES (src-tauri/src/parse/mod.rs): the backend
+ *  refuses raw UTF-8 input over this size before trimming or normalizing. */
+const MAX_COMMAND_BYTES = 16_384;
+/** Mirrors settings::check_shortcut_commands: at most eight commands, and one
+ *  shared byte budget for the whole expansion. */
+const MAX_SHORTCUT_COMMANDS = 8;
+const TOO_LONG = "That command is too long.";
+/** UTF-8 byte length, not code points: a dictated emoji can be four bytes. */
+const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length;
+
+/** Which parts of a saved shortcut the backend would refuse for length. Raw
+ *  values are checked (before trimming), matching check_shortcut_commands. */
+function shortcutLengthIssue(s: Shortcut): { phrase: boolean; commands: boolean; any: boolean } {
+  const phrase = utf8Bytes(s.phrase) > MAX_COMMAND_BYTES;
+  const total = s.commands.reduce((n, c) => n + utf8Bytes(c), 0);
+  const commands = s.commands.length > MAX_SHORTCUT_COMMANDS || total > MAX_COMMAND_BYTES;
+  return { phrase, commands, any: phrase || commands };
+}
 
 /** Example commands, one per kind of feature. A Rust test checks each parses. */
 const EXAMPLES: readonly string[] = examples;
@@ -76,13 +95,19 @@ export default function App() {
   const [glide, setGlide] = useState(false);
   const innerRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showId = useRef(0);
   const awaitingShow = useRef<number | null>(null);
 
+  const cancelBlurClose = useCallback(() => {
+    if (blurTimer.current !== null) clearTimeout(blurTimer.current);
+    blurTimer.current = null;
+  }, []);
   const cancelClose = useCallback(() => {
+    cancelBlurClose();
     if (closeTimer.current !== null) clearTimeout(closeTimer.current);
     closeTimer.current = null;
-  }, []);
+  }, [cancelBlurClose]);
   useEffect(() => cancelClose, [cancelClose]);
 
   // Plays the close animation, then hides the window. The card stays in its
@@ -105,19 +130,37 @@ export default function App() {
   // a macOS folder-access prompt can take focus mid-command. And not in the
   // moment right after opening, while macOS is still handing over focus.
   const busyRef = useRef(false);
-  const setBusy = useCallback((busy: boolean) => {
+  const executingRef = useRef(false);
+  const setBusy = useCallback((busy: boolean, executing = false) => {
     busyRef.current = busy;
+    executingRef.current = executing;
   }, []);
   const shownAt = useRef(0);
   useEffect(() => {
     if (!inTauri) return;
     const onBlur = () => {
-      if (busyRef.current || performance.now() - shownAt.current < 300) return;
-      close();
+      if (busyRef.current) return;
+      cancelBlurClose();
+      const requestId = showId.current;
+      // WebKit can briefly blur during activation, paste, or text services.
+      // A blur inside the opening grace still needs a deferred check: wait
+      // for the grace to end, then for focus to settle, before closing.
+      const graceLeft = Math.max(0, 300 - (performance.now() - shownAt.current));
+      blurTimer.current = setTimeout(() => {
+        blurTimer.current = null;
+        if (document.hasFocus() || busyRef.current || requestId !== showId.current
+          || awaitingShow.current !== null || performance.now() - shownAt.current < 300) return;
+        close();
+      }, graceLeft + 150);
     };
     window.addEventListener("blur", onBlur);
-    return () => window.removeEventListener("blur", onBlur);
-  }, [close]);
+    window.addEventListener("focus", cancelBlurClose, true);
+    return () => {
+      cancelBlurClose();
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", cancelBlurClose, true);
+    };
+  }, [close, cancelBlurClose]);
 
   useEffect(() => {
     api.getSettings().then((s) => {
@@ -131,8 +174,11 @@ export default function App() {
       cancelClose();
       showId.current = requestId;
       awaitingShow.current = requestId;
-      setCommandSession(requestId);
-      setView((v) => (mode === "command" && v === "welcome" ? v : mode));
+      // Keep the confirmation and Stop control if the window is reopened mid-run.
+      if (!executingRef.current) {
+        setCommandSession(requestId);
+        setView((v) => (mode === "command" && v === "welcome" ? v : mode));
+      }
       shownAt.current = performance.now();
       setOpen(false);
       setPendingShow(requestId);
@@ -146,12 +192,19 @@ export default function App() {
       window.dispatchEvent(new Event("voxi-focus"));
     });
     const unHide = listen("voxi://hide", close);
-    Promise.all([unShown, unPresented, unHide]).then(() => { if (!disposed) void invoke("frontend_ready"); });
+    const unOutsideClick = listen<number>("voxi://outside-click", ({ payload: requestId }) => {
+      if (disposed || requestId !== showId.current || awaitingShow.current !== null || busyRef.current) return;
+      // A real click in another app is not the transient focus handoff that
+      // blur's opening grace period protects against.
+      close();
+    });
+    Promise.all([unShown, unPresented, unHide, unOutsideClick]).then(() => { if (!disposed) void invoke("frontend_ready"); });
     return () => {
       disposed = true;
       unShown.then((f) => f());
       unPresented.then((f) => f());
       unHide.then((f) => f());
+      unOutsideClick.then((f) => f());
     };
   }, [close, cancelClose]);
 
@@ -269,7 +322,7 @@ function CommandView({
 }: {
   open: boolean;
   onClose: () => void;
-  onBusy: (busy: boolean) => void;
+  onBusy: (busy: boolean, executing?: boolean) => void;
   onSettings: () => void;
 }) {
   const [text, setText] = useState("");
@@ -282,6 +335,7 @@ function CommandView({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ruleRef = useRef<HTMLSpanElement>(null);
   const planShownAt = useRef(0);
+  const activeRun = useRef<{ id: number; canStop: boolean; stopping: boolean } | null>(null);
   const requestId = useRef(0);
   const [searched, setSearched] = useState(0);
   // The command behind the result on screen, exactly as entered.
@@ -291,6 +345,8 @@ function CommandView({
   const [offer, setOffer] = useState<Offer | null>(null);
   // A folder picked for an ambiguous name, offered as a nickname after the plan.
   const pickedFolder = useRef<{ name: string; path: string } | null>(null);
+  // Same bound the backend applies to every command; checked before trimming.
+  const tooLong = utf8Bytes(text) > MAX_COMMAND_BYTES;
 
   useEffect(() => () => {
     ++requestId.current;
@@ -346,6 +402,9 @@ function CommandView({
   const submit = useCallback(
     async (command: string, picked: Record<string, string> = {}) => {
       if (!command.trim()) return;
+      // Never send an oversized command, and never truncate one to fit: the
+      // text stays in the box with an inline message until it is shortened.
+      if (utf8Bytes(command) > MAX_COMMAND_BYTES) return;
       // Clear the box straight away so the next command starts fresh; the
       // command stays visible as the echo above its result.
       setSaid(command.trim().replace(/[.!?]+$/, ""));
@@ -399,9 +458,11 @@ function CommandView({
   }, []);
 
   const confirm = useCallback(async () => {
-    if (phase.k !== "outcome" || phase.outcome.status !== "plan") return;
+    if (activeRun.current || phase.k !== "outcome" || phase.outcome.status !== "plan") return;
     const plan = phase.outcome;
-    setPhase({ k: "running", title: plan.title });
+    const canStop = !plan.scheduledFor || !!plan.repeats?.startsWith("Runs now, then ");
+    activeRun.current = { id: plan.id, canStop, stopping: false };
+    setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
       const result = await api.confirm(plan.id);
       setResultScope(await api.resultScope().catch(() => null));
@@ -410,14 +471,30 @@ function CommandView({
       // be taught: next time the phrase runs this command.
       const miss = missed.current;
       missed.current = null;
-      if (!result.error && !plan.isUndo && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
+      if (!result.error && !result.cancelled && !plan.isUndo && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
         setOffer({ k: "phrase", phrase: miss.text, command: lastCommand.current });
       }
       focusInput();
     } catch (e) {
       setPhase({ k: "error", message: String(e) });
+    } finally {
+      activeRun.current = null;
     }
   }, [phase, focusInput]);
+
+  const stop = useCallback(async () => {
+    const run = activeRun.current;
+    if (!run?.canStop || run.stopping) return;
+    run.stopping = true;
+    setPhase((current) => current.k === "running" ? { ...current, stopping: true, stopError: undefined } : current);
+    try {
+      await api.stopExecution(run.id);
+    } catch (e) {
+      if (activeRun.current !== run) return;
+      run.stopping = false;
+      setPhase((current) => current.k === "running" ? { ...current, stopping: false, stopError: errorMessage(e) } : current);
+    }
+  }, []);
 
   const reset = useCallback(() => {
     const request = ++requestId.current;
@@ -443,17 +520,18 @@ function CommandView({
       if (e.defaultPrevented || e.isComposing) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        if (e.repeat || phase.k === "running") return;
+        if (e.repeat) return;
+        if (activeRun.current) { void stop(); return; }
         if (phase.k !== "ready" || text !== "" || resultScope) reset();
         else onClose();
       } else if (e.key === "," && e.metaKey) {
         e.preventDefault();
-        onSettings();
+        if (!activeRun.current) onSettings();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase, text, resultScope, reset, onSettings, onClose]);
+  }, [phase, text, resultScope, reset, stop, onSettings, onClose]);
 
   const answer = (said: string) => {
     if (!asking) return;
@@ -477,6 +555,8 @@ function CommandView({
     }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
+      if (tooLong) return; // submit is disabled until the command fits
+      if (activeRun.current) return;
       if (asking) return answer(text);
       const previewing = phase.k === "outcome" && phase.outcome.status === "plan";
       if (previewing && text.trim() === "") {
@@ -512,6 +592,7 @@ function CommandView({
   const onChange = (v: string) => {
     inkFeedback(v.length - text.length);
     setText(v);
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) api.trayTyping();
     // While asking, the box holds the answer; the question stays up.
     if (asking) return;
     // A pending plan is dropped as soon as a new command starts, so Enter can
@@ -536,11 +617,12 @@ function CommandView({
     submit("undo last", {});
   };
 
-  const busy = phase.k === "parsing" || phase.k === "running";
-  useEffect(() => {
-    onBusy(busy);
+  const executing = phase.k === "running";
+  const busy = phase.k === "parsing" || executing;
+  useLayoutEffect(() => {
+    onBusy(busy, executing);
     return () => onBusy(false);
-  }, [busy, onBusy]);
+  }, [busy, executing, onBusy]);
   const placeholder = useTypedPlaceholder(open && phase.k === "ready" && text === "");
 
   return (
@@ -558,9 +640,12 @@ function CommandView({
           autoCapitalize="off"
           placeholder={asking ? "Say or type a number" : placeholder}
           aria-label={asking ? "Which one?" : "Command"}
+          aria-invalid={tooLong || undefined}
+          aria-describedby="command-length-error"
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onInputKey}
         />
+        <p className="command-error hint warn" id="command-length-error" role="alert">{tooLong ? TOO_LONG : ""}</p>
       </div>
       {said && phase.k !== "ready" && (
         <p className="said" key={said}>
@@ -582,6 +667,7 @@ function CommandView({
         heard={heard}
         onConfirm={confirm}
         onCancel={reset}
+        onStop={stop}
         onPick={pick}
         onFill={fill}
         onUndo={undo}
@@ -708,6 +794,7 @@ function Body(props: {
   heard: string | null;
   onConfirm: () => void;
   onCancel: () => void;
+  onStop: () => void;
   onPick: (index: number) => void;
   onFill: (s: string) => void;
   onUndo: () => void;
@@ -725,7 +812,13 @@ function Body(props: {
     return (
       <section className="body">
         <p className="title">{phase.title}</p>
-        <p className="quiet">Working…</p>
+        <p className="quiet" role="status">{phase.stopping ? "Stopping…" : "Working…"}</p>
+        {phase.stopError && <p className="note warn" role="alert">{phase.stopError}</p>}
+        {phase.canStop && <div className="actions">
+          <button type="button" className="secondary stop-execution" disabled={phase.stopping} onClick={props.onStop}>
+            Stop <kbd>esc</kbd>
+          </button>
+        </div>}
       </section>
     );
   }
@@ -742,8 +835,8 @@ function Body(props: {
     const r = phase.result;
     return (
       <section className="body">
-        <p className={r.error ? "title warn nudge" : "title"}>
-          {!r.error && <Tick />}
+        <p className={r.error ? "title warn nudge" : "title"} role="status">
+          {!r.error && !r.cancelled && <Tick />}
           {r.summary}
         </p>
         {r.error && <p className="note">{r.error}</p>}
@@ -837,6 +930,7 @@ function Body(props: {
               </li>
             )}
           </ul>
+          {o.repeats?.startsWith("Runs now, then ") && <p className="quiet">{o.repeats}</p>}
           {o.warnings.map((w) => (
             <p key={w} className="quiet">
               {w}
@@ -844,7 +938,7 @@ function Body(props: {
           ))}
           <div className="actions">
             <button className="primary-button" onClick={props.onConfirm}>
-              {o.repeats ? "Schedule repeating task" : o.scheduledFor ? "Schedule task" : o.isUndo ? "Undo" : `Run ${o.total} ${o.total === 1 ? "change" : "changes"}`}
+              {o.repeats?.startsWith("Runs now, then ") ? "Run now and repeat" : o.repeats ? "Schedule repeating task" : o.scheduledFor ? "Schedule task" : o.isUndo ? "Undo" : `Run ${o.total} ${o.total === 1 ? "change" : "changes"}`}
               <kbd>↩</kbd>
             </button>
             <button className="secondary" onClick={props.onCancel}>
@@ -865,14 +959,14 @@ function Footer({ phase, asking, onSettings }: { phase: Phase; asking: boolean; 
       : phase.k === "ready"
         ? "Enter to preview. Shift-Enter for a new line."
         : phase.k === "outcome" && phase.outcome.status === "plan"
-          ? (phase.outcome.scheduledFor ? (phase.outcome.repeats ? "Enter to schedule. Later runs won't ask first. Esc to cancel." : "Enter to schedule. Esc to cancel.") : "Enter to run. Nothing changes until then.")
+          ? (phase.outcome.scheduledFor ? (phase.outcome.repeats?.startsWith("Runs now, then ") ? "Enter to run now and repeat. Later runs won't ask first. Esc to cancel." : phase.outcome.repeats ? "Enter to schedule. Later runs won't ask first. Esc to cancel." : "Enter to schedule. Esc to cancel.") : "Enter to run. Nothing changes until then.")
           : phase.k === "outcome" && phase.outcome.status === "ambiguous"
             ? "Esc to go back"
-            : "Say the next command. Esc to go back.";
+            : phase.k === "running" ? "" : "Say the next command. Esc to go back.";
   return (
     <footer className="foot">
       <span>{hint}</span>
-      <button className="link" onClick={onSettings} title="Settings (⌘,)">
+      <button className="link" onClick={onSettings} disabled={phase.k === "running"} title="Settings (⌘,)">
         Settings <kbd>⌘,</kbd>
       </button>
     </footer>
@@ -949,27 +1043,27 @@ function Icon({ name }: { name: keyof typeof ICONS }) {
 /** Settings sections, in sidebar order. Add a tab by adding an entry here. */
 const TABS = [
   {
-    id: "general", label: "General", icon: "general", blurb: "How Voxi opens, updates, and keeps your data.",
+    id: "general", label: "General", icon: "general",
     badge: () => null,
     render: (c: TabContext) => <GeneralTab settings={c.settings} persist={c.persist} />,
   },
   {
-    id: "scheduled", label: "Scheduled", icon: "scheduled", blurb: "Commands set to run later or on repeat.",
+    id: "scheduled", label: "Scheduled", icon: "scheduled",
     badge: (c: TabContext) => c.activeTasks || null,
     render: () => <ScheduledTab />,
   },
   {
-    id: "shortcuts", label: "Shortcuts", icon: "shortcuts", blurb: "One phrase that runs several commands.",
+    id: "shortcuts", label: "Shortcuts", icon: "shortcuts",
     badge: (c: TabContext) => c.settings.shortcuts.length || null,
     render: (c: TabContext) => <ShortcutsTab settings={c.settings} persist={c.persist} />,
   },
   {
-    id: "folders", label: "Folders", icon: "folders", blurb: "Where Voxi may change files, and your names for them.",
+    id: "folders", label: "Folders", icon: "folders",
     badge: () => null,
     render: (c: TabContext) => <FoldersTab settings={c.settings} persist={c.persist} setBusy={c.setBusy} />,
   },
 ] as const satisfies readonly {
-  id: string; label: string; icon: keyof typeof ICONS; blurb: string;
+  id: string; label: string; icon: keyof typeof ICONS;
   badge: (c: TabContext) => number | null; render: (c: TabContext) => React.ReactNode;
 }[];
 type Tab = (typeof TABS)[number]["id"];
@@ -1003,12 +1097,59 @@ function Row({ icon, label, htmlFor, description, children, className }: {
 
 const ACTIVE_STATUSES: ScheduledTask["status"][] = ["pending", "running", "paused"];
 
+function RecoveryNotice() {
+  const [reviewed, setReviewed] = useState(false);
+  const [recovery, setRecovery] = useState<Awaited<ReturnType<typeof api.recoveryStatus>>>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const actionRef = useRef<HTMLButtonElement>(null);
+  const messageRef = useRef<HTMLParagraphElement>(null);
+  const generation = useRef(0);
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      const started = generation.current;
+      return api.recoveryStatus().then((next) => {
+        if (alive && started === generation.current) { setRecovery(next); setError(null); }
+      }).catch((e) => { if (alive && started === generation.current) setError(errorMessage(e)); });
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
+  const review = async () => {
+    if (working) return;
+    setWorking(true);
+    try {
+      await api.acknowledgeRecovery();
+      ++generation.current; // ignore polls started before the acknowledgement
+      setRecovery(null); setError(null); setReviewed(true);
+      requestAnimationFrame(() => messageRef.current?.focus());
+    } catch (e) {
+      setError(errorMessage(e));
+      actionRef.current?.focus();
+    } finally { setWorking(false); }
+  };
+  return <div className="settings-note recovery-notice">
+    <p ref={messageRef} tabIndex={-1} role={recovery || error ? "alert" : "status"}>
+      {recovery ? `Interrupted operation “${recovery.command}”. ${recovery.acknowledged} steps acknowledged. Check the files below, then choose Mark as reviewed in Settings → Scheduled to allow new changes. No action was retried.` : error ? "Recovery status unavailable." : reviewed ? "Recovery evidence archived. New changes are allowed." : ""}
+      {error && ` ${error}`}
+    </p>
+    {recovery && <>
+      {recovery.inFlight && <pre>{JSON.stringify(recovery.inFlight, null, 2)}</pre>}
+      <button ref={actionRef} className="link" aria-disabled={working} onClick={() => void review()}>{working ? "Archiving…" : "Mark as reviewed"}</button>
+      <p className="hint">The recovery journal will be archived beside the original. Review does not retry or undo the interrupted step.</p>
+    </>}
+  </div>;
+}
+
 function ScheduledTab() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<number | null>(null);
+  const [stoppingRun, setStoppingRun] = useState<string | null>(null);
   const [showing, setShowing] = useState<"active" | "done">("active");
   useEffect(() => {
     let alive = true;
@@ -1024,6 +1165,15 @@ function ScheduledTab() {
     try { await action(id); setTasks(await api.scheduledTasks()); setError(null); }
     catch (e) { setError(String(e)); }
     finally { setWorking(null); }
+  };
+  const stopRun = async (task: ScheduledTask, run: string) => {
+    setStoppingRun(run);
+    try {
+      await api.stopExecution(task.id, task.due);
+    } catch (e) {
+      setStoppingRun((current) => current === run ? null : current);
+      setError(errorMessage(e));
+    }
   };
   const when = (task: ScheduledTask) => {
     const at = new Date(task.due).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -1045,6 +1195,7 @@ function ScheduledTab() {
       {([["active", "Active", active.length], ["done", "Done", done.length]] as const).map(([id, label, count]) =>
         <button key={id} aria-pressed={showing === id} onClick={() => setShowing(id)}>{label} <span className="count">{count}</span></button>)}
     </div>
+    <RecoveryNotice />
     {notice && <p className="settings-note warn" role="status">{notice}</p>}
     {error && <p className="settings-note warn" role="alert">{error}</p>}
     {loading ? <p className="quiet">Loading scheduled tasks…</p> : shown.length === 0 ? <div className="empty">
@@ -1060,18 +1211,22 @@ function ScheduledTab() {
     </div> :
       <ul className="group-rows tasks-list">{shown.map((task) => {
         const [status, tone] = STATUS[task.status];
+        const run = `${task.id}-${task.due}`;
         return <li className="row task" key={task.id}>
           <span className="row-icon"><Icon name={task.repeat ? "update" : "scheduled"} /></span>
           <div className="row-copy">
             <span className="row-label task-command">{task.command}</span>
             <span className="row-desc">{when(task)}</span>
             {task.summary && <span className="row-desc task-summary">{task.summary}</span>}
-            {task.status !== "running" && <span className="task-actions">
+            <span className="task-actions">
+              {task.status === "running" && <button type="button" className="link" disabled={stoppingRun === run} onClick={() => void stopRun(task, run)}>
+                {stoppingRun === run ? "Stopping…" : "Stop this run"}
+              </button>}
               {task.repeat && task.status === "pending" && button(task, "Pause", "Pausing…", api.pauseScheduledTask)}
               {task.status === "paused" && button(task, "Resume", "Resuming…", api.resumeScheduledTask)}
               {(task.status === "pending" || task.status === "paused") && button(task, task.repeat ? "Stop repeating" : "Cancel task", "Stopping…", api.cancelScheduledTask)}
               {task.repeat && (task.status === "cancelled" || task.status === "failed") && button(task, "Move to active", "Moving…", api.resumeScheduledTask)}
-            </span>}
+            </span>
           </div>
           <span className={`pill ${tone}`}>{status}</span>
         </li>;
@@ -1191,7 +1346,7 @@ function SettingsView({
       title="Settings"
       aside={<SettingsTabs value={tab} saving={saving} context={context} onSelect={(id) => { if (!savePending.current) setTab(id); }} />}
       bodyClass="settings-body"
-      foot={error ? <span className="warn" role="alert">{error}</span> : "Changes save as you go. Esc to go back."}
+      foot={error ? <span className="warn" role="alert">{error}</span> : "Esc to go back."}
       footRight={
         <button className="link" aria-disabled={saving} onClick={() => { if (!savePending.current) onClose(); }}>
           Done
@@ -1199,7 +1354,6 @@ function SettingsView({
       }
     >
       <fieldset key={tab} id="settings-panel" role="tabpanel" tabIndex={0} aria-labelledby={`settings-tab-${tab}`} className="tab-panel" disabled={saving} aria-busy={saving}>
-        <p className="panel-blurb">{current.blurb}</p>
         {current.render(context)}
       </fieldset>
     </Sheet>
@@ -1355,11 +1509,17 @@ function ReportsRow() {
 function ShortcutsTab({ settings, persist }: TabProps) {
   const [list, setList] = useState<Shortcut[]>(settings.shortcuts);
   const [editing, setEditing] = useState<number | null>(null);
-  const update = (i: number, s: Shortcut) => setList((l) => l.map((x, j) => (j === i ? s : x)));
+  const [showLengthError, setShowLengthError] = useState(false);
+  const update = (i: number, s: Shortcut) => { setList((l) => l.map((x, j) => (j === i ? s : x))); setShowLengthError(false); };
   const count = (s: Shortcut) => s.commands.filter((c) => c.trim()).length;
 
+  // Backend save_settings validates every shortcut: one oversized entry
+  // refuses the whole batch, so no save path may proceed while one is invalid.
   const commit = async (next: Shortcut[]) => {
-    if (await persist({ ...settings, shortcuts: next })) setEditing(null);
+    if (next.some((s) => shortcutLengthIssue(s).any)) { setShowLengthError(true); return; }
+    setShowLengthError(false);
+    // Leave the editor / drop the row only once the save actually succeeded.
+    if (await persist({ ...settings, shortcuts: next })) { setList(next); setEditing(null); }
   };
   const add = () => {
     setList((l) => [...l, { phrase: "", commands: [] }]);
@@ -1383,45 +1543,24 @@ function ShortcutsTab({ settings, persist }: TabProps) {
     <Group title="Saved shortcuts" action={editing === null && <button className="link strong" onClick={add}>+ Add</button>} foot={foot}>
       {list.map((s, i) =>
         editing === i ? (
-          <li className="row shortcut" key={i}>
-            <div className="shortcut-head">
-              <input
-                className="phrase"
-                value={s.phrase}
-                placeholder="run my usuals"
-                aria-label="Phrase to say"
-                autoFocus={!s.phrase}
-                onChange={(e) => update(i, { ...s, phrase: e.target.value })}
-              />
-              <button className="link strong" onClick={() => commit(list)}>
-                Done
-              </button>
-            </div>
-            <textarea
-              writingsuggestions="false"
-              spellCheck={false}
-              autoCorrect="off"
-              className="plain commands"
-              rows={Math.max(2, s.commands.length)}
-              placeholder={"move screenshots from today to Screenshots\nclean up Downloads older than 90 days"}
-              aria-label="Commands, one per line"
-              value={s.commands.join("\n")}
-              onChange={(e) => update(i, { ...s, commands: e.target.value.split("\n") })}
-            />
-            <button
-              className="link remove"
-              onClick={() => {
-                const next = list.filter((_, j) => j !== i);
-                setList(next);
-                commit(next);
-              }}
-            >
-              Remove shortcut
-            </button>
-          </li>
+          <ShortcutEditor
+            key={i}
+            shortcut={s}
+            errorId={`shortcut-length-${i}`}
+            canSave={!list.some((x) => shortcutLengthIssue(x).any)}
+            canRemove={!list.filter((_, j) => j !== i).some((x) => shortcutLengthIssue(x).any)}
+            onChange={(next) => update(i, next)}
+            showLengthError={showLengthError}
+            onDone={() => commit(list)}
+            onRemove={() => commit(list.filter((_, j) => j !== i))}
+          />
         ) : (
           <li className="row clickable" key={i}>
-            <button className="shortcut-row" onClick={() => setEditing(i)}>
+            <button className="shortcut-row" onClick={() => {
+              // An over-limit row stays open so its error remains visible;
+              // collapsing it would hide why the next row's Done is disabled.
+              if (editing === null || !list[editing] || !shortcutLengthIssue(list[editing]).any) setEditing(i);
+            }}>
               <span className="row-icon"><Icon name="shortcuts" /></span>
               <span className="row-copy">
                 <span className="row-label">“{s.phrase || "Untitled"}”</span>
@@ -1434,6 +1573,59 @@ function ShortcutsTab({ settings, persist }: TabProps) {
         ),
       )}
     </Group>
+  );
+}
+
+/** One expanded shortcut row. The message is the backend's exact refusal,
+ *  linked to whichever field is over the bound; text is never truncated. */
+function ShortcutEditor({
+  shortcut, errorId, canSave, canRemove, showLengthError, onChange, onDone, onRemove,
+}: {
+  shortcut: Shortcut;
+  errorId: string;
+  canSave: boolean;
+  canRemove: boolean;
+  showLengthError: boolean;
+  onChange: (s: Shortcut) => void;
+  onDone: () => void;
+  onRemove: () => void;
+}) {
+  const issue = shortcutLengthIssue(shortcut);
+  return (
+    <li className="row shortcut">
+      <div className="shortcut-head">
+        <input
+          className="phrase"
+          value={shortcut.phrase}
+          placeholder="run my usuals"
+          aria-label="Phrase to say"
+          aria-invalid={issue.phrase || undefined}
+          aria-describedby={issue.phrase ? errorId : undefined}
+          autoFocus={!shortcut.phrase}
+          onChange={(e) => onChange({ ...shortcut, phrase: e.target.value })}
+        />
+        <button className="link strong" disabled={!canSave} onClick={onDone}>
+          Done
+        </button>
+      </div>
+      <textarea
+        writingsuggestions="false"
+        spellCheck={false}
+        autoCorrect="off"
+        className="plain commands"
+        rows={Math.max(2, shortcut.commands.length)}
+        placeholder={"move screenshots from today to Screenshots\nclean up Downloads older than 90 days"}
+        aria-label="Commands, one per line"
+        aria-invalid={issue.commands || undefined}
+        aria-describedby={issue.commands ? errorId : undefined}
+        value={shortcut.commands.join("\n")}
+        onChange={(e) => onChange({ ...shortcut, commands: e.target.value.split("\n") })}
+      />
+      <p className="shortcut-error hint warn" id={errorId} role="alert">{issue.any || showLengthError ? TOO_LONG : ""}</p>
+      <button className="link remove" disabled={!canRemove} onClick={onRemove}>
+        Remove shortcut
+      </button>
+    </li>
   );
 }
 
@@ -1587,6 +1779,11 @@ function AccessView({
 }) {
   const [folders, setFolders] = useState<FolderAccess[] | null>(null);
   const [asking, setAsking] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [openingSettings, setOpeningSettings] = useState(false);
+  const actionRef = useRef<HTMLButtonElement>(null);
+  const settingsErrorRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
     if (firstRun) return;
@@ -1606,15 +1803,43 @@ function AccessView({
     return () => window.removeEventListener("keydown", onKey);
   }, [firstRun, onDone]);
 
+  // Keep keyboard focus on a recovery control when a call fails, instead of
+  // leaving it on a button whose label (or whole row) just changed.
+  useEffect(() => {
+    if (requestError) actionRef.current?.focus();
+  }, [requestError]);
+  useEffect(() => {
+    if (settingsError) settingsErrorRef.current?.focus();
+  }, [settingsError]);
+
   async function request() {
     setAsking(true);
+    setRequestError(null);
+    setSettingsError(null);
     // macOS's prompts take focus; don't let that close the window.
     setBusy(true);
     try {
       setFolders(await api.requestFolderAccess());
+    } catch (e) {
+      setRequestError(`Couldn't check folder access: ${errorMessage(e)}`);
     } finally {
       setBusy(false);
       setAsking(false);
+    }
+  }
+
+  async function openSettings() {
+    setSettingsError(null);
+    setRequestError(null);
+    setOpeningSettings(true);
+    setBusy(true);
+    try {
+      await api.openPrivacySettings();
+    } catch (e) {
+      setSettingsError(`Couldn't open System Settings: ${errorMessage(e)}`);
+    } finally {
+      setBusy(false);
+      setOpeningSettings(false);
     }
   }
 
@@ -1648,10 +1873,25 @@ function AccessView({
           </li>
         ))}
       </ul>
+      <div className="access-error" role="alert" aria-live="assertive">
+        {requestError && <p className="hint warn">{requestError} Choose “Retry” to try again.</p>}
+      </div>
+      <div className="access-error" role="alert" aria-live="assertive">
+        {settingsError && (
+          <p ref={settingsErrorRef} tabIndex={-1} className="hint warn">
+            {settingsError} Open System Settings yourself from the Apple menu, then go to Privacy &amp; Security → Files and Folders and turn on Voxi.
+          </p>
+        )}
+      </div>
       {missing.length > 0 && (
-        <p className="hint warn">
-          Turn on Voxi for {missing.map((f) => f.name).join(", ")} in System Settings, under Files and Folders, then check again.
-        </p>
+        <div className="access-help">
+          <p className="hint warn">
+            Turn on Voxi for {missing.map((f) => f.name).join(", ")} in System Settings → Privacy &amp; Security → Files and Folders → Voxi, then choose “Check again”.
+          </p>
+          <p className="hint">
+            That per-folder grant is all Voxi needs for Desktop, Documents, Downloads and Pictures. Voxi does not need Full Disk Access by default; don't grant it just to get started. Only if you ask Voxi to work in protected locations outside Desktop, Documents or Downloads — such as another app's container — and the folder grant isn't enough, enable Full Disk Access for Voxi under Privacy &amp; Security. Grant it only for those locations, then come back and check again.
+          </p>
+        </div>
       )}
       <div className="actions">
         {allSet ? (
@@ -1659,13 +1899,20 @@ function AccessView({
             {firstRun ? "Start using Voxi" : "Done"}
           </button>
         ) : (
-          <button className="primary-button" autoFocus disabled={asking} onClick={request}>
-            {asking ? "Waiting for macOS…" : folders === null ? "Allow access" : "Check again"}
+          <button
+            ref={actionRef}
+            className="primary-button"
+            autoFocus={firstRun && folders === null && !requestError}
+            disabled={asking}
+            onClick={request}
+            aria-label={requestError ? "Retry folder access request" : asking ? "Waiting for macOS" : folders === null ? "Allow folder access" : "Check folder access again"}
+          >
+            {asking ? "Waiting for macOS…" : requestError ? "Retry" : folders === null ? "Allow access" : "Check again"}
           </button>
         )}
         {missing.length > 0 && (
-          <button className="secondary" onClick={() => api.openPrivacySettings()}>
-            Open System Settings
+          <button className="secondary" disabled={openingSettings} onClick={openSettings}>
+            {openingSettings ? "Opening System Settings…" : "Open System Settings"}
           </button>
         )}
       </div>

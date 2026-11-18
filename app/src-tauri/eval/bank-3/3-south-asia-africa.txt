@@ -1,0 +1,282 @@
+# Bank 3 / South Asia and Africa: Indian, Pakistani, Bangladeshi, Sri Lankan, Nigerian, Ghanaian, Kenyan, Singaporean and Malaysian English.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: move all PDFs from Downloads to Documents
+Kindly move every PDF from Downloads into Documents please => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Please do the needful and move every PDF from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Move all PDFs from Downloads to Documents na => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Do one thing, shift the PDFs from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Abeg move all the PDFs from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Biko, move every PDF in Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Oya, move all PDF files from Downloads into Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Make you move all PDFs from Downloads to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Please move all PDFs from Downloads to Documents, can or not? => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+Move the PDF fails from Downloads to Documents please => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+
+# seed: move report.pdf to Documents
+Kindly move report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+Please shift report.pdf into Documents itself => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+Move report.pdf to Documents only, please => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+Abeg take report.pdf to Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+Biko, put report.pdf in Documents => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+Move report.pdf to Documents lah => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+Help me move report.pdf to Documents can? => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents"}
+
+# seed: move all videos from Desktop to Movies
+Kindly move all videos from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+Please shift every video on Desktop into Movies itself => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+Do one thing, move all videos from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+Abeg move all videos from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+Oya take all videos from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+Make you move the videos from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+Move all wideos from Desktop to Movies please => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+
+# seed: move files from Desktop to Documents
+Kindly move all files from Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+Please move the files from Desktop to Documents itself => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+Do one thing, shift all the files on Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+Abeg move files from Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+Biko, move every file from Desktop into Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+Make you transfer the files from Desktop to Documents => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+Move all fails from Desktop to Documents please => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"files"}},"to":"Documents"}
+
+# seed: copy all images from Pictures to Backup
+Kindly copy all images from Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+Please make copies of all images from Pictures in Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+Do one thing, copy every image in Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+Abeg copy all images from Pictures to Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+Oya duplicate all pictures from Pictures into Backup => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+Copy all images from Pictures to Backup lah => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+Copy all imajes from Pictures to Backup please => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+
+# seed: copy report.pdf to Desktop
+Kindly copy report.pdf to Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+Please put a copy of report.pdf on Desktop itself => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+Do one thing, duplicate report.pdf to Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+Abeg copy report.pdf to Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+Biko make a copy of report.pdf on Desktop => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+Copy report.pdf onto Desktop lah => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+Copy report.pdf to Desktop, can or not? => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"Desktop"}
+
+# seed: delete screenshots older than 30 days
+Kindly delete screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+Please remove all screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+Do one thing, delete screenshots more than 30 days old => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+Abeg delete screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+Oya trash screenshots that are over 30 days old => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+Delete screenshots older than 30 days only, na => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+Delete screenshots more than 30 days old, please => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+
+# seed: clean up Downloads older than 90 days
+Kindly clean up Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+Please delete files in Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+Do one thing, clean out files from Downloads over 90 days old => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+Abeg clean up Downloads files older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+Biko remove files in Downloads more than 90 days old => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+Clean up Downloads older than 90 days lah => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+Clean up Downloads with files older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+
+# seed: delete report.pdf
+Kindly delete report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+Please remove report.pdf only => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+Do the needful and delete report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+Abeg delete report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+Biko trash report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+Delete report.pdf lah => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+Delete report.pdf, can or not? => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+
+# seed: delete everything in Downloads
+Kindly delete everything in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Please remove all files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Do one thing, delete all the files in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Abeg delete everything in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Oya clear all files from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Delete every file in Downloads only, na => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Delete all fails in Downloads please => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: list files in Downloads
+Kindly show all files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+What all files are there in Downloads? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Please list out everything in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+What files are there in Downloads na? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Abeg show me the files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Biko, what files do I have in Downloads? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+What all fails are there in Downloads? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: list PDFs in Downloads
+Kindly show PDFs in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+What all PDFs are there in Downloads? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+Please list all PDF files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+Any PDFs in Downloads, leh? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+Abeg show the PDFs in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+Biko, list out PDFs in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+What all PDF fails are there in Downloads? => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+
+# seed: count PDFs in Documents
+How many PDFs are there in Documents? => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+Kindly count the PDFs in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+Please tell me how many PDF files are in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+Abeg count PDFs in Documents => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+How many PDF fails have I got in Documents? => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+PDF count in Documents can or not? => {"intent":"count","src":{"kind":"set","folder":"Documents","filter":{"type":"pdfs"}}}
+
+# seed: count files in Downloads
+How many files are there in Downloads? => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Kindly count all files in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Please tell me the number of files in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+How many files in Downloads itself? => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Abeg how many files are in Downloads? => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Biko count the files in Downloads => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+How many fails are there in Downloads? => {"intent":"count","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: show size of Downloads
+Kindly show me the size of Downloads => {"intent":"size","folder":"Downloads"}
+Please tell me how much space Downloads takes => {"intent":"size","folder":"Downloads"}
+Abeg show the size of Downloads => {"intent":"size","folder":"Downloads"}
+Biko, check how much space Downloads uses => {"intent":"size","folder":"Downloads"}
+Show size of Downloads lah => {"intent":"size","folder":"Downloads"}
+
+# seed: list duplicate files in Downloads
+Kindly find duplicate files in Downloads => {"intent":"duplicates","folder":"Downloads"}
+Please show me all duplicates in Downloads => {"intent":"duplicates","folder":"Downloads"}
+Check Downloads for duplicate files na => {"intent":"duplicates","folder":"Downloads"}
+Abeg find the duplicate files in Downloads => {"intent":"duplicates","folder":"Downloads"}
+Biko, list duplicate files in Downloads => {"intent":"duplicates","folder":"Downloads"}
+Find the duplicate fails in Downloads => {"intent":"duplicates","folder":"Downloads"}
+Any duplicate files in Downloads, can or not? => {"intent":"duplicates","folder":"Downloads"}
+
+# seed: open Downloads in Finder
+Kindly open Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+Please show Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+Take me to Downloads in Finder itself => {"intent":"reveal","target":"Downloads"}
+Abeg open Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+Oya bring up Downloads in Finder => {"intent":"reveal","target":"Downloads"}
+Open Downloads in Finder lah => {"intent":"reveal","target":"Downloads"}
+Help me open Downloads in Finder can? => {"intent":"reveal","target":"Downloads"}
+
+# seed: undo last
+Kindly undo the last action => {"intent":"undo"}
+Please reverse the last action => {"intent":"undo"}
+Undo last action na => {"intent":"undo"}
+Abeg undo last => {"intent":"undo"}
+Biko, undo what you just did => {"intent":"undo"}
+Undo the last one lah => {"intent":"undo"}
+Reverse the last action please => {"intent":"undo"}
+
+# seed: show recent actions
+Kindly show my recent actions => {"intent":"recent_actions"}
+Please list the recent actions => {"intent":"recent_actions"}
+What were the recent actions, na? => {"intent":"recent_actions"}
+Abeg show recent actions => {"intent":"recent_actions"}
+Biko, what actions happened recently? => {"intent":"recent_actions"}
+Show recent actions lah => {"intent":"recent_actions"}
+Show the recent actions please => {"intent":"recent_actions"}
+
+# seed: rename report.pdf to Q3-report.pdf
+Kindly rename report.pdf to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+Please change the name of report.pdf to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+Rename report.pdf as Q3-report.pdf itself => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+Abeg rename report.pdf to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+Biko, call report.pdf Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+Rename report.pdf to Q3-report.pdf lah => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+Rename report.pdf to Q3 report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+
+# seed: lowercase file names in Downloads
+Kindly lowercase the file names in Downloads => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Please make all filenames in Downloads lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Do one thing, change file names in Downloads to lowercase => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Abeg lowercase file names in Downloads => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Biko, make the file names in Downloads small letters => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Lowercase all fails in Downloads please => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+Lowercase filenames in Downloads lah => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+
+# seed: number images in Trip as trip-001
+Kindly number the images in Trip as trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+Please number all images in Trip using trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+Number the pictures in Trip starting as trip-001 itself => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+Abeg number images in Trip as trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+Biko, number the images in Trip with trip-001 => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+Number all imajes in Trip as trip-001 please => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+Number images in Trip as trip-001 can or not? => {"intent":"number","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"base":"trip-","width":3}
+
+# seed: create a folder named Invoices in Documents
+Kindly create a folder named Invoices in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+Please make one folder called Invoices inside Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+Create a folder called Invoices in Documents itself => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+Abeg create folder Invoices in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+Biko, make an Invoices folder in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+Create Invoices folder in Documents lah => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+Please create a folder called Invoices inside Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+
+# seed: sort Downloads by type
+Kindly sort Downloads by type => {"intent":"sort_by_type","folder":"Downloads"}
+Please organise Downloads by file type => {"intent":"sort_by_type","folder":"Downloads"}
+Sort the Downloads folder by type itself => {"intent":"sort_by_type","folder":"Downloads"}
+Abeg sort Downloads by type => {"intent":"sort_by_type","folder":"Downloads"}
+Biko, arrange Downloads by type => {"intent":"sort_by_type","folder":"Downloads"}
+Sort Downloads by type lah => {"intent":"sort_by_type","folder":"Downloads"}
+Please sort the fails in Downloads by type => {"intent":"sort_by_type","folder":"Downloads"}
+
+# seed: sort Screenshots by month
+Kindly sort Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+Please organise Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+Sort Screenshots by month itself => {"intent":"sort_by_month","folder":"Screenshots"}
+Abeg sort Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+Oya arrange Screenshots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+Sort Screenshots by month lah => {"intent":"sort_by_month","folder":"Screenshots"}
+Sort screen shots by month => {"intent":"sort_by_month","folder":"Screenshots"}
+
+# seed: convert photo.heic to png
+Kindly convert photo.heic to png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+Please change photo.heic into png format => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+Convert photo.heic to png itself => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+Abeg convert photo.heic to png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+Biko, make photo.heic a png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+Convert photo.heic to png lah => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+Convert photo.heic to ping => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+
+# seed: merge all PDFs in Downloads into combined.pdf
+Kindly merge all PDFs in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+Please join all PDFs in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+Put all the PDFs in Downloads together as combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+Abeg merge all PDFs in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+Biko combine all PDFs in Downloads as combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+Merge all PDF fails in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+Merge all PDFs in Downloads into combined.pdf lah => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+
+# seed: split report.pdf into pages
+Kindly split report.pdf into pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+Please separate report.pdf into individual pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+Split report.pdf page by page itself => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+Abeg split report.pdf into pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+Biko, break report.pdf into separate pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+Split report.pdf into pages lah => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+Split report.pdf into separate pegs => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+
+# seed: extract pages 2 to 5 from report.pdf into excerpt.pdf
+Kindly extract pages 2 to 5 from report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+Please take pages 2 to 5 of report.pdf and save as excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+Get pages 2 through 5 from report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+Abeg extract pages 2 to 5 from report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+Biko pull pages 2 to 5 out of report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+Extract pages 2 to 5 from report.pdf into excerpt.pdf lah => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+Extract pages 2 to 5 from report.pdf into excerpt dot pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+
+# seed: zip Project into Project.zip
+Kindly zip Project into Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+Please compress Project into Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+Make Project.zip out of Project itself => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+Abeg zip Project into Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+Biko, pack Project as Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+Zip Project to Project.zip lah => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+Jip Project into Project.zip please => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+
+# seed: unzip archive.zip
+Kindly unzip archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+Please extract archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+Unpack archive.zip itself => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+Abeg unzip archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+Biko, open up archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+Unzip archive.zip lah => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+Unzip archieve.zip please => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+

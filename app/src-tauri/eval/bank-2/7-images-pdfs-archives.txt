@@ -1,0 +1,101 @@
+# Bank 2 / images, PDFs, archives: slang, casual and regional phrasings that no corpus or eval file tests yet.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: convert photo.heic to png
+make photo.heic a png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+turn photo.heic into a png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+save photo.heic as png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+png-ify photo.heic => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+export photo.heic as a PNG => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+change photo.heic to png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+get me a png of photo.heic => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+photo.heic to png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+switch photo.heic to png format => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+transform photo.heic into png => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+
+# seed: convert all HEIC in Pictures to jpg
+turn all the HEICs in Pictures into jpgs => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+make jpgs of every HEIC in Pictures => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+save all HEIC files in Pictures as jpg => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+jpg-ify the HEICs in Pictures => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+export every HEIC in Pictures as JPG => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+change all HEIC in Pictures to jpg => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+convert the heic pics in Pictures to jpeg => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+get jpg versions of all HEIC in Pictures => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+HEIC to jpg for everything in Pictures => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+switch all HEIC images in Pictures to jpg => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+transform all heics in Pictures into jpgs => {"intent":"convert_image","src":{"kind":"set","folder":"Pictures","filter":{"type":"files","ext":["heic","heif"]}},"format":"jpg"}
+
+# seed: resize all images in Trip to 1600 pixels wide
+shrink all the pics in Trip to 1600 px wide => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+scale down images in Trip to 1600 pixels wide => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+make all images in Trip 1600 pixels wide => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+downsize the photos in Trip to 1600px => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+resize every photo in Trip to 1600 wide => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+squash the images in Trip down to 1600 pixels wide => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+make Trip pics 1600 px wide => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+resize Trip images to a width of 1600 => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+cap images in Trip at 1600 pixels wide => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+shrink Trip photos to 1600px wide pls => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+resize all images in Trip to 1600 pixel width => {"intent":"resize_image","src":{"kind":"set","folder":"Trip","filter":{"type":"images"}},"width":1600}
+
+# seed: merge all PDFs in Downloads into combined.pdf
+smoosh all the PDFs in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+mash every pdf in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+stitch the PDFs in Downloads together into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+glue all PDFs in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+combine all the pdfs in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+join every PDF in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+squash the PDFs in Downloads into one, combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+put all PDFs in Downloads together as combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+bundle all pdfs in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+merge the PDFs in Downloads into a single combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+concat all PDFs in Downloads into combined.pdf => {"intent":"merge_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"output":"combined.pdf"}
+
+# seed: split report.pdf into pages
+break report.pdf into pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+chop report.pdf into separate pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+explode report.pdf into single pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+split report.pdf page by page => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+separate report.pdf into individual pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+split up report.pdf into pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+pull report.pdf apart into pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+carve report.pdf into one pdf per page => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+break up report.pdf by page => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+split report.pdf into single page PDFs => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+unbind report.pdf into pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
+
+# seed: extract pages 2 to 5 from report.pdf into excerpt.pdf
+pull pages 2 to 5 out of report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+grab pages 2-5 from report.pdf as excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+rip pages 2 through 5 from report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+take pages 2 to 5 of report.pdf and save as excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+snip pages 2 to 5 from report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+copy pages 2-5 of report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+get pages two to five from report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+extract pp 2-5 from report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+lift pages 2 to 5 out of report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+excerpt pages 2 to 5 of report.pdf into excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+save pages 2 thru 5 of report.pdf as excerpt.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5,"output":"excerpt.pdf"}
+
+# seed: zip Project into Project.zip
+zip up Project into Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+compress Project to Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+squish Project into Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+pack Project into Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+bundle Project up as Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+archive Project as Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+make Project.zip out of Project => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+turn Project into Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+compress the Project folder into Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+zip Project -> Project.zip => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+
+# seed: unzip archive.zip
+unpack archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+crack open archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+open up archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+expand archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+uncompress archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+explode archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+pop open archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
+get the stuff out of archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}

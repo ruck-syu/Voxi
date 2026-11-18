@@ -1,11 +1,34 @@
 //! Renaming: single files and batch rules (prefix, replace, number, lowercase).
 
-use super::{Pattern, cap, pat, phrase::{bad_destination, clean_name, parse_source, split_arguments}, src, typed_src};
+use super::{Pattern, cap, pat, phrase::{bad_destination, clean_name, parse_source, split_arguments}, typed_src};
 use crate::model::{FileType, Intent, Source};
 use regex::Regex;
 use std::sync::LazyLock;
 
 static NUMBERED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*?)(\d+)$").unwrap());
+
+/// Turns a rename target into the base and width used by the existing
+/// numbering planner. "holiday-1, holiday-2" -> ("holiday-", 1); a bare base
+/// gets a separator and the default three-digit width.
+fn number_template(target: &str) -> Option<(String, usize)> {
+    let mut first = clean_name(target.split(',').next()?.trim());
+    first = first.trim_end_matches(|c: char| c.is_ascii_whitespace() || matches!(c, '.' | '!' | '?')).to_string();
+    for suffix in [" onwards", " onward"] {
+        if let Some(stem) = first.strip_suffix(suffix) { first = stem.trim().to_string(); }
+    }
+    if first.is_empty() { return None; }
+    let stem = match first.rsplit_once('.') {
+        Some((stem, ext)) if ext.chars().all(|ch| ch.is_ascii_alphabetic()) => stem.to_string(),
+        _ => first.to_string(),
+    };
+    if let Some(m) = NUMBERED.captures(&stem) {
+        return Some((m[1].to_string(), m[2].len()));
+    }
+    // Avoid doubling an existing separator ("holiday-" must not become
+    // "holiday--").
+    let base = if stem.ends_with(['-', '_', '.', ' ']) { stem } else { format!("{stem}-") };
+    Some((base, 3))
+}
 
 /// "spaces" -> " ", "dashes" -> "-", anything else unchanged.
 fn spoken_chars(s: &str) -> String {
@@ -42,6 +65,18 @@ fn name_source(text: &str) -> Option<Source> {
             parse_source(&format!("files in {}", &c[2]))
         } else { parse_source(&c[2]) };
     }
+    if ["name", "names", "file name", "file names"].iter().any(|n| text.eq_ignore_ascii_case(n)) {
+        return parse_source("files");
+    }
+    // "PDF names in Pictures" is a batch source, not an item named "PDF names".
+    static TYPE_NAMES: LazyLock<Regex> = LazyLock::new(|| Regex::new(
+        r"(?i)^(.+?)(?:'s|s')?\s+names?(\s+(?:in|from|on|inside|within|under)\s+.+)?$"
+    ).unwrap());
+    if let Some(c) = TYPE_NAMES.captures(text)
+        && super::phrase::type_word(&c[1]).is_some()
+    {
+        return parse_source(&format!("{}{}", &c[1], c.get(2).map_or("", |m| m.as_str())));
+    }
     parse_source(text)
 }
 
@@ -50,10 +85,10 @@ pub fn patterns() -> Vec<Pattern> {
         pat(
             "add_date_prefix",
             r"^add\s+(?:a\s+)?(?:date|dates|today's\s+date|creation\s+date)\s+(?:as\s+(?:a\s+)?)?prefix(?:es)?\s+to\s+(.+)$",
-            |c| Some(Intent::AddDatePrefix { src: src(c, 1)? }),
+            |c| Some(Intent::AddDatePrefix { src: name_source(&cap(c, 1)?)? }),
         ),
         pat("add_prefix", r"^add\s+(?:a\s+)?prefix\s+(.+?)\s+to\s+(.+)$", |c| {
-            Some(Intent::AddPrefix { src: src(c, 2)?, prefix: spoken_suffix(&cap(c, 1)?) })
+            Some(Intent::AddPrefix { src: name_source(&cap(c, 2)?)?, prefix: spoken_suffix(&cap(c, 1)?) })
         }),
         pat("replace_in_names", r"^replace\s+(.+?)\s+with\s+(.+?)\s+in\s+(.+)$", |c| {
             Some(Intent::ReplaceInNames { src: name_source(&cap(c, 3)?)?, find: spoken_chars(&cap(c, 1)?), replace: spoken_chars(&cap(c, 2)?) })
@@ -62,16 +97,24 @@ pub fn patterns() -> Vec<Pattern> {
             Some(Intent::ReplaceInNames { src: name_source(&cap(c, 2)?)?, find: spoken_chars(&cap(c, 1)?), replace: String::new() })
         }),
         pat("number", r"^(?:number|renumber|sequence)\s+(.+?)\s+(?:as|like|to)\s+(.+)$", |c| {
-            let first = cap(c, 2)?.split(',').next()?.trim().to_string();
-            let stem = match first.rsplit_once('.') {
-                Some((stem, ext)) if ext.chars().all(|ch| ch.is_ascii_alphabetic()) => stem.to_string(),
-                _ => first,
-            };
-            let (base, width) = match NUMBERED.captures(&stem) {
-                Some(m) => (m[1].to_string(), m[2].len()),
-                None => (format!("{stem}-"), 3),
-            };
+            // The first example is a format template. Quotes mark its literal
+            // text, while its trailing digits supply the sequence width.
+            let (base, width) = number_template(&cap(c, 2)?)?;
             Some(Intent::Number { src: typed_src(c, 1, FileType::Files)?, base, width })
+        }),
+        // "rename all screenshots to holiday-1, holiday-2" is a sequential
+        // batch rename, not one file to one literal new name. It reuses the
+        // same numbering planner as "number ... as ...".
+        pat("rename_batch", r"^rename\s+(.+?)\s+to\s+(.+)$", |c| {
+            let src = super::phrase::set_source(&cap(c, 1)?)?;
+            // "the photo named sunset" is one file, not a set to renumber;
+            // a single numbered example ("to Shot-1") stays ambiguous.
+            if matches!(&src, Source::Set { filter, .. } if filter.name_contains.is_some() || filter.name_starts_with.is_some()) { return None; }
+            let target = cap(c, 2)?;
+            let first = clean_name(target.split(',').next()?.trim());
+            if !target.contains(',') && NUMBERED.is_match(first.trim()) { return None; }
+            let (base, width) = number_template(&target)?;
+            Some(Intent::Number { src, base, width })
         }),
         pat("lowercase", r"^(?:lowercase|lower\s*case|make\s+lowercase)\s+(.+)$", |c| {
             Some(Intent::Lowercase { src: name_source(&cap(c, 1)?)? })
@@ -106,6 +149,12 @@ pub fn patterns() -> Vec<Pattern> {
             let target = cap(c, 2)?;
             if !matches!(src, Source::Item { .. }) || bad_destination(&target) { return None; }
             Some(Intent::Rename { src, new_name: clean_name(&target) })
+        }),
+        pat("change_possessive_name", r"^(?:change|set)\s+(.+?)'s\s+name\s+to\s+(.+)$", |c| {
+            let source = parse_source(&cap(c, 1)?)?;
+            let target = cap(c, 2)?;
+            if !matches!(source, Source::Item { .. }) || bad_destination(&target) { return None; }
+            Some(Intent::Rename { src: source, new_name: clean_name(&target) })
         }),
         pat("change_name", r"^change\s+(.+)$", |c| {
             let text = cap(c, 1)?;

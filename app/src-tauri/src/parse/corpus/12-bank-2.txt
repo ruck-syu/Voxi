@@ -1,0 +1,57 @@
+# From eval/bank-2: casual delete verbs. "chuck", "toss", and "throw" with a
+# destination ("into", "over to") move; with the bin or trash can they delete;
+# "zap" deletes and is never read as "zip"; "a new X folder" is created.
+chuck every PDF in Downloads over to Documents => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Documents"}
+chuck the screenshots I took today into Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+toss the videos from Desktop over to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+zap screenshots older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+chuck installers in Downloads in the bin => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"installers"}}}
+zap all dmgs in Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["dmg"]}}}
+zap report.pdf => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+chuck report.pdf in the bin => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+send report.pdf to the trash can => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+chuck a new Invoices folder in Documents => {"intent":"create_folders","names":["Invoices"],"parent":"Documents"}
+
+# Casual type words: "screenies", "screen grabs", "screencaps" are screenshots;
+# "vids", "clips", "footage" are videos.
+toss today's screenies into Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+move today's screen grabs to Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+move all of today's screencaps to Screenshots => {"intent":"move","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}},"to":"Screenshots"}
+chuck all the vids from Desktop into Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+move my clips from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+relocate all vids from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+move all footage from Desktop to Movies => {"intent":"move","src":{"kind":"set","folder":"Desktop","filter":{"type":"videos"}},"to":"Movies"}
+trash screenies older than 30 days => {"intent":"trash","src":{"kind":"set","filter":{"type":"screenshots","olderThanDays":30}}}
+show me today's screenies => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+find today's screencaps => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+what vids are in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+pull up my vids in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+find all the footage in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+
+# Texting shorthand: "gimme" and "lemme see" mean show; "pls" and "plz" are filler.
+copy every photo in Pictures into Backup pls => {"intent":"copy","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}},"to":"Backup"}
+get rid of report.pdf pls => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+gimme files in Downloads bigger than 500 megs => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+lemme see files in Downloads larger than 500 MB => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","largerThanMb":500.0}}}
+lemme see Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+gimme all the pdfs in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+lemme see every PDF in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+show pdfs in Downloads pls => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}}}
+gimme today's screenshots => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+lemme see today's screen grabs => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+show today's screenshots pls => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
+gimme Downloads files older than a year => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365}}}
+gimme all the clips in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+lemme see the videos in Movies => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+show vids in Movies pls => {"intent":"list","src":{"kind":"set","folder":"Movies","filter":{"type":"videos"}}}
+gimme Documents files from this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+lemme see Documents files from this week => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","since":"2026-10-26"}}}
+gimme the duplicates in Downloads => {"intent":"duplicates","folder":"Downloads"}
+open Downloads pls => {"intent":"reveal","target":"Downloads"}
+gimme the history => {"intent":"recent_actions"}
+lowercase Downloads pls => {"intent":"lowercase","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+sort my Downloads by type pls => {"intent":"sort_by_type","folder":"Downloads"}
+sort my Screenshots by month pls => {"intent":"sort_by_month","folder":"Screenshots"}
+convert photo.heic to a PNG pls => {"intent":"convert_image","src":{"kind":"item","name":"photo.heic"},"format":"png"}
+zip Project as Project.zip pls => {"intent":"zip","src":{"kind":"item","name":"Project"},"output":"Project.zip"}
+unzip archive.zip pls => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}

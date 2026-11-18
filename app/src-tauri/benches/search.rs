@@ -1,5 +1,9 @@
 //! Repeatable search baseline using the production parser, walker, and planner.
 #![allow(dead_code)]
+// The included production files carry #[cfg(test)] modules. Cargo compiles the
+// bench with --cfg test but no test harness, so #[test] bodies are stripped
+// while their imports remain; those imports are irrelevant to the benchmark.
+#![allow(unused_imports)]
 #[path = "../src/fsx.rs"] mod fsx;
 #[path = "../src/history.rs"] mod history;
 #[path = "../src/model.rs"] mod model;
@@ -7,9 +11,21 @@
 #[path = "../src/pdf.rs"] mod pdf;
 #[path = "../src/plan.rs"] mod plan;
 #[path = "../src/search.rs"] mod search;
+// Crate-root references made by the included files (`crate::settings`, etc.).
+#[path = "../src/scheduler.rs"] mod scheduler;
+#[path = "../src/scope.rs"] mod scope;
+#[path = "../src/settings.rs"] mod settings;
 
 use std::{collections::HashMap, fs, hint::black_box, path::Path, time::Instant};
 use serde_json::{Value, json};
+
+/// Benchmark-only walker: mirrors the production walk without exporting it
+/// from the library, where it has no production caller.
+fn walk(dir: &Path, depth: usize, f: &mut dyn FnMut(&Path, bool)) {
+    let mut search = search::Search::default();
+    search.depth = depth;
+    for e in search.entries(dir).iter() { f(&e.path, e.is_dir); }
+}
 
 fn fixture(home: &Path, files: usize, nested: bool) {
     for folder in ["Downloads", "Desktop", "Documents", "Pictures"] {
@@ -59,7 +75,7 @@ fn main() {
         let dl = roots.downloads();
         let walk = measure(|| {
             let mut count = 0;
-            plan::walk(&dl, 12, &mut |_, dir| if !dir { count += 1 });
+            walk(&dl, 12, &mut |_, dir| if !dir { count += 1 });
             (count, "walk".into())
         }, files, warmups, repeats);
         results.push(json!({"fixture": name, "files": files, "operation": "walk", "measurement": walk}));

@@ -3,3 +3,20 @@ dist/
 app/src-tauri/target/
 app/src-tauri/gen/
 .DS_Store
+__pycache__/
+
+# Bulky model/parser experiment data stays local. Keep the written summaries
+# (*.md), the experimental native model crate, and files cited by code/docs.
+docs/testing/parser-*-2026-11-15*.json
+docs/testing/parser-*-2026-11-15*.jsonl
+docs/testing/luna-dual-build-2026-11-16/**
+docs/testing/parser-audit-2026-11-15/**
+docs/testing/parser-review-2026-11-15/**
+docs/testing/plan-model-v4-2026-11-17/**
+docs/testing/tiny-model-readiness-2026-11-16/**
+docs/testing/tiny-model-vs-production-2026-11-16/**
+!docs/testing/**/
+!docs/testing/**/*.md
+!docs/testing/plan-model-v4-2026-11-17/challenge-003.jsonl
+!docs/testing/tiny-model-readiness-2026-11-16/native/**
+docs/testing/tiny-model-readiness-2026-11-16/native/target/

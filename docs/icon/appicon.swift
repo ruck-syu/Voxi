@@ -5,7 +5,9 @@ import AppKit
 //
 //   swift docs/icon/appicon.swift <icon.png> [tray.png]
 //
-// The optional second path also writes the 88px menu bar template icon.
+// The optional second path also writes the 88px menu bar template icon, plus
+// tray-talk-0.png … tray-talk-11.png beside it: the same face with the ripple
+// travelling along the smile, shown while someone types in Voxi's box.
 
 func hex(_ v: UInt32, _ a: CGFloat = 1) -> NSColor {
   NSColor(srgbRed: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255, blue: CGFloat(v & 255) / 255, alpha: a)
@@ -26,7 +28,7 @@ func render(_ size: Int, to path: String, _ draw: (CGContext) -> Void) {
 
 // The face in a 100-unit box. `p` maps face units to pixels.
 // The smile is a downward arc with three ripples riding on it, like a sound wave.
-func drawFace(eyes: NSColor, mouth: NSColor, eyeWidth: Double, mouthWidth: Double, _ p: (Double, Double) -> NSPoint, _ k: Double) {
+func drawFace(eyes: NSColor, mouth: NSColor, eyeWidth: Double, mouthWidth: Double, ripple: Double = 2.6, phase: Double = 0, _ p: (Double, Double) -> NSPoint, _ k: Double) {
   for x in [31.0, 61.0] {
     let a = p(x, 26), b = p(x + eyeWidth, 46)
     let r = eyeWidth / 2 * k
@@ -35,7 +37,7 @@ func drawFace(eyes: NSColor, mouth: NSColor, eyeWidth: Double, mouthWidth: Doubl
   let smile = NSBezierPath(), n = 64
   for i in 0...n {
     let t = Double(i) / Double(n), s = sin(Double.pi * t)
-    let pt = p(26 + 48 * t, 62 + 8 * s + 2.6 * sin(6 * Double.pi * t) * s)
+    let pt = p(26 + 48 * t, 62 + 8 * s + ripple * sin(6 * Double.pi * t - phase) * s)
     if i == 0 { smile.move(to: pt) } else { smile.line(to: pt) }
   }
   smile.lineWidth = mouthWidth * k; smile.lineCapStyle = .round; smile.lineJoinStyle = .round
@@ -62,8 +64,18 @@ render(1024, to: CommandLine.arguments[1]) { ctx in
 // Menu bar template icon: black on transparent; macOS tints it. Bolder strokes so
 // it holds up at 22pt, and the face is centred vertically in the frame.
 if CommandLine.arguments.count > 2 {
-  render(88, to: CommandLine.arguments[2]) { _ in
-    let k = 1.45
-    drawFace(eyes: .black, mouth: .black, eyeWidth: 9, mouthWidth: 7.5, { x, y in NSPoint(x: 44 + (x - 50) * k, y: 44 + (y - 51) * k) }, k)
+  let trayPath = CommandLine.arguments[2]
+  let tray = { (path: String, ripple: Double, phase: Double) in
+    render(88, to: path) { _ in
+      let k = 1.45
+      drawFace(eyes: .black, mouth: .black, eyeWidth: 9, mouthWidth: 7.5, ripple: ripple, phase: phase,
+        { x, y in NSPoint(x: 44 + (x - 50) * k, y: 44 + (y - 51) * k) }, k)
+    }
+  }
+  tray(trayPath, 2.6, 0)
+  // Talking frames: a livelier ripple, one twelfth of a wave further along each frame.
+  let dir = (trayPath as NSString).deletingLastPathComponent
+  for i in 0..<12 {
+    tray((dir as NSString).appendingPathComponent("tray-talk-\(i).png"), 4.2, Double(i) * Double.pi / 6)
   }
 }

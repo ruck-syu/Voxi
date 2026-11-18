@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-11-16T12:36:27.630249+05:30",
+  "package_hashes_verified": true,
+  "streaming_reply_before_stdin_eof": true,
+  "streaming_reply": {
+    "elapsed_ms": 28.883625,
+    "id": "verified-streaming",
+    "rewrite": "list files in Downloads",
+    "text": "find files in Downloads"
+  },
+  "native_unit_tests_passed": 3,
+  "real_model_multi_instance_after_host_pool_test_passed": true,
+  "binary_sha256": "e18208f4ab4250aff646b5239bd4b55b19de3db77cf1118b0524c63b4b9b17ed",
+  "valid_config_mismatch_rejected": true
+}

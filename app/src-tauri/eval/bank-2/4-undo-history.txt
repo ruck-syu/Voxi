@@ -1,0 +1,26 @@
+# Bank 2 / undo and history: slang, casual and regional phrasings that no corpus or eval file tests yet.
+# Variants carry their seed's expected intent. Status: see 0-README.txt.
+
+# seed: undo last
+oops undo that => {"intent":"undo"}
+ctrl z => {"intent":"undo"}
+cmd z => {"intent":"undo"}
+nvm undo => {"intent":"undo"}
+reverse that => {"intent":"undo"}
+revert the last thing => {"intent":"undo"}
+my bad, undo => {"intent":"undo"}
+whoops undo last => {"intent":"undo"}
+put it back how it was => {"intent":"undo"}
+roll back the last change => {"intent":"undo"}
+
+# seed: show recent actions
+what did you just do => {"intent":"recent_actions"}
+what have you done recently => {"intent":"recent_actions"}
+show me what you did => {"intent":"recent_actions"}
+recap what you did => {"intent":"recent_actions"}
+what changes did you make => {"intent":"recent_actions"}
+show your recent activity => {"intent":"recent_actions"}
+what's the log say => {"intent":"recent_actions"}
+show me the action log => {"intent":"recent_actions"}
+what did Voxi do lately => {"intent":"recent_actions"}
+list what you've done => {"intent":"recent_actions"}

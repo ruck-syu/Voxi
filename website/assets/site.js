@@ -1,6 +1,6 @@
 // Points the download buttons at the newest DMG, copies the Homebrew command,
-// runs the live demo (the real Voxi frontend in /demo/, on its sample backend,
-// with the menu bar face talking as it does in the app), scroll reveals, and
+// types the hero sentence and its plan, runs the live demo (the real Voxi frontend in /demo/, on its sample backend,
+// with the menu bar face talking as it does in the app), and
 // the command search.
 
 const REPO = "ruck-syu/Voxi";
@@ -66,7 +66,7 @@ document.querySelectorAll("[data-copy-command]").forEach((panel) => {
     switches.forEach((b) =>
       b.setAttribute("aria-label", `Switch to ${dark ? "light" : "dark"} mode`),
     );
-    if (meta) meta.content = dark ? "#000000" : "#ffffff";
+    if (meta) meta.content = dark ? "#0f1a36" : "#eef3fa";
   };
   switches.forEach((button) =>
     button.addEventListener("click", () => {
@@ -146,6 +146,163 @@ const Tray = (() => {
     if (performance.now() - last < LINGER) nudge();
   }
   return { nudge };
+})();
+
+// ---- Hero: a sentence typed out, understood phrase by phrase, then its plan ----
+// The page ships the first scene already finished, which is what people with
+// reduced motion (or no JavaScript) see. Otherwise the scenes type themselves
+// while the stage is on screen.
+
+(() => {
+  const stage = document.querySelector("[data-stage]");
+  if (!stage || reduced.matches) return;
+  const said = stage.querySelector("[data-said]");
+  const plan = stage.querySelector("[data-plan]");
+  const title = stage.querySelector("[data-plan-title]");
+  const rowsEl = stage.querySelector("[data-plan-rows]");
+  const foot = stage.querySelector("[data-plan-foot]");
+  const desc = stage.querySelector("[data-stage-status]");
+
+  const LABEL = {
+    do: "action", what: "which files", how: "how", as: "new format", where: "in",
+    from: "from", to: "to", when: "when",
+  };
+  const TAG = { how: "what", as: "what", where: "from" };
+  const tagOf = (kind) => TAG[kind] || kind;
+  const DOC = '<path d="M5 2h7l4 4v12H5Z"/><path d="M12 2v4h4"/>';
+  const DIR = '<path d="M2 5.5h6l1.5 2H18V16H2Z"/>';
+  // A row's `from` is optional: renames and conversions show old → new.
+  const scenes = [
+    {
+      parts: [["do", "move"], ["what", "PDFs"], [null, "from"], ["from", "Downloads"], [null, "to"], ["to", "Documents"]],
+      title: "3 files will move",
+      rows: [
+        { file: "invoice-april.pdf", from: "Downloads", to: "Documents" },
+        { file: "boarding-pass.pdf", from: "Downloads", to: "Documents" },
+        {
+          file: "lease.pdf",
+          from: "Downloads",
+          to: "Documents",
+          note: "Documents already has a lease.pdf, so this one becomes <b>lease 2.pdf</b>.",
+        },
+      ],
+      foot: "Nothing else in Downloads is touched.",
+    },
+    {
+      parts: [["do", "sort"], ["from", "Downloads"], ["how", "by type"], ["when", "every Monday at 8 am"]],
+      title: "Repeats every Monday at 8:00 AM",
+      rows: [
+        { file: "12 images", dir: true, from: "Downloads", to: "Images" },
+        { file: "7 PDFs", dir: true, from: "Downloads", to: "PDFs" },
+        { file: "3 videos", dir: true, from: "Downloads", to: "Videos" },
+      ],
+      foot: "Each run finds that week's files, and every run can be undone from History.",
+    },
+    {
+      parts: [["do", "convert"], ["what", "HEIC"], [null, "in"], ["where", "Pictures"], [null, "to"], ["as", "jpg"]],
+      title: "3 JPG copies will be made",
+      rows: [
+        { file: "IMG_4031.HEIC", to: "IMG_4031.jpg" },
+        { file: "IMG_4032.HEIC", to: "IMG_4032.jpg" },
+        { file: "beach-day.HEIC", to: "beach-day.jpg" },
+      ],
+      foot: "The originals stay as they are, next to their copies.",
+    },
+    {
+      parts: [["do", "clean up"], ["from", "Downloads"], ["what", "older than 90 days"]],
+      title: "4 files will go to the Trash",
+      rows: [
+        { file: "Zoom-installer.pkg", from: "Downloads", to: "Trash" },
+        { file: "IMG_2231.HEIC", from: "Downloads", to: "Trash" },
+        { file: "old-resume-v3.docx", from: "Downloads", to: "Trash" },
+        { file: "Figma-agent.dmg", from: "Downloads", to: "Trash" },
+      ],
+      foot: "The Trash, not erased. Tell it “undo last” to bring them all back.",
+    },
+    {
+      parts: [["do", "replace"], ["how", "spaces with dashes"], [null, "in"], ["what", "files"], [null, "in"], ["where", "Downloads"]],
+      title: "3 files will be renamed",
+      rows: [
+        { file: "Q3 report final.pdf", to: "Q3-report-final.pdf" },
+        { file: "team photo.png", to: "team-photo.png" },
+        { file: "notes from call.txt", to: "notes-from-call.txt" },
+      ],
+      foot: "Files stay in their folders. Only the names change.",
+    },
+    {
+      parts: [["do", "merge"], ["what", "PDFs"], [null, "in"], ["where", "Documents"], ["what", "named scan"], [null, "into"], ["to", "scan-all.pdf"]],
+      title: "3 PDFs will become one",
+      rows: [
+        { file: "scan-01.pdf", from: "Documents", to: "scan-all.pdf" },
+        { file: "scan-02.pdf", from: "Documents", to: "scan-all.pdf" },
+        { file: "scan-03.pdf", from: "Documents", to: "scan-all.pdf" },
+      ],
+      foot: "Pages go in name order. The three originals are kept.",
+    },
+  ];
+
+  function renderPlan(scene) {
+    title.textContent = scene.title;
+    rowsEl.innerHTML = scene.rows
+      .map(
+        (r, i) =>
+          `<li style="animation-delay:${i * 70}ms"><p class="file"><svg viewBox="0 0 20 20" aria-hidden="true">${
+            r.dir ? DIR : DOC
+          }</svg><span>${r.file}</span></p><p class="route">${r.from ? `<span class="from">${r.from}</span>` : ""}<span class="arrow" aria-label="to">→</span><span class="to">${r.to}</span></p>${
+            r.note ? `<p class="note">${r.note}</p>` : ""
+          }</li>`,
+      )
+      .join("");
+    foot.textContent = scene.foot;
+    plan.dataset.state = "shown";
+  }
+
+  let visible = false;
+  let wake = null;
+  const onScreen = () => (visible && !document.hidden ? Promise.resolve() : new Promise((r) => (wake = r)));
+  const update = () => {
+    if (visible && !document.hidden && wake) {
+      wake();
+      wake = null;
+    }
+  };
+  new IntersectionObserver(([e]) => ((visible = e.isIntersecting), update()), { threshold: 0.3 }).observe(stage);
+  document.addEventListener("visibilitychange", update);
+
+  const caret = document.createElement("span");
+  caret.className = "caret";
+
+  async function play(scene) {
+    said.textContent = "";
+    plan.dataset.state = "waiting";
+    desc.textContent = `Command: ${scene.parts.map((p) => p[1]).join(" ")}. ${scene.title}.`;
+    for (const [kind, text] of scene.parts) {
+      const part = document.createElement("span");
+      part.className = kind ? `part t-${tagOf(kind)}` : "part filler";
+      part.innerHTML = `<span class="w"></span><span class="k">${kind ? LABEL[kind] : ""}</span>`;
+      const w = part.firstChild;
+      const node = document.createTextNode("");
+      w.append(node, caret);
+      said.append(part);
+      for (const ch of text) {
+        await onScreen();
+        node.data += ch;
+        await wait(45 + Math.random() * 55);
+      }
+      if (kind) part.classList.add("got");
+      await wait(140);
+    }
+    await wait(650); // Enter.
+    caret.remove();
+    renderPlan(scene);
+    await wait(5200);
+    await onScreen();
+  }
+
+  (async () => {
+    await onScreen();
+    for (let n = 0; ; n++) await play(scenes[n % scenes.length]);
+  })();
 })();
 
 // ---- Live demo: the real app, driven like a person would ----------------------
@@ -302,30 +459,6 @@ const Tray = (() => {
     { threshold: 0.35 },
   ).observe(mac);
   document.addEventListener("visibilitychange", update);
-})();
-
-// ---- Reveal on scroll ---------------------------------------------------------
-
-(() => {
-  const items = [...document.querySelectorAll(".reveal")];
-  if (!("IntersectionObserver" in window)) {
-    items.forEach((el) => el.classList.add("in"));
-    return;
-  }
-  const io = new IntersectionObserver(
-    (entries) =>
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) return;
-        entry.target.classList.add("in");
-        io.unobserve(entry.target);
-      }),
-    { rootMargin: "0px 0px -8% 0px" },
-  );
-  items.forEach((el) => {
-    const siblings = [...el.parentElement.children].filter((c) => c.classList.contains("reveal"));
-    if (siblings.length > 1) el.style.transitionDelay = `${siblings.indexOf(el) * 90}ms`;
-    io.observe(el);
-  });
 })();
 
 // ---- Search the command reference ---------------------------------------------

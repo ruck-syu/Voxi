@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,12 +7,13 @@
     <meta name="description" content="Install Voxi on your Mac in about two minutes. Free and open source, macOS 12 or later, Apple silicon and Intel." />
     <meta property="og:title" content="Install · Voxi" />
     <meta property="og:description" content="Install Voxi on your Mac in about two minutes. Free and open source, macOS 12 or later, Apple silicon and Intel." />
-    <meta name="theme-color" content="#000000" />
+    <meta name="theme-color" content="#eef3fa" />
     <script>
-      // Dark by default; a choice made with the switch is remembered here.
+      // Follows the Mac's appearance; a choice made with the switch wins.
       try {
-        if (localStorage.getItem("voxi-theme") === "light")
-          delete document.documentElement.dataset.theme;
+        const saved = localStorage.getItem("voxi-theme");
+        if (saved === "dark" || (!saved && matchMedia("(prefers-color-scheme: dark)").matches))
+          document.documentElement.dataset.theme = "dark";
       } catch {}
     </script>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
@@ -86,7 +87,7 @@
               </p>
             </li>
             <li>
-              <h2>Talk to it, if you like</h2>
+              <h2>Dictate, if you like</h2>
               <p>
                 Optional. Voxi has no microphone access of its own; use a
                 dictation app such as <a href="https://anoma.ly/hex/">Hex</a> or
@@ -119,7 +120,7 @@
         <div class="wrap reveal">
           <p class="fine">Try your first command</p>
           <q>list files in Downloads larger than 500 MB</q>
-          <p class="subhead">Open Voxi with <kbd>⌃⌥Space</kbd>, type it, and press Enter. Listing files doesn't change anything.</p>
+          <p class="subhead">Open Voxi with <kbd>⌃⌥Space</kbd>, give it this command, and press Enter. Listing files doesn't change anything.</p>
           <div class="actions"><a class="more" href="/commands">Explore the command reference</a></div>
         </div>
       </section>

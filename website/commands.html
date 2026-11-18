@@ -1,18 +1,19 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Commands · Voxi</title>
-    <meta name="description" content="Everything you can say to Voxi: move, rename, convert, merge, zip, clean up, find, schedule and undo, in your own words." />
+    <meta name="description" content="Everything you can tell Voxi: move, rename, convert, merge, zip, clean up, find, schedule and undo, in your own words." />
     <meta property="og:title" content="Commands · Voxi" />
-    <meta property="og:description" content="Everything you can say to Voxi: move, rename, convert, merge, zip, clean up, find, schedule and undo, in your own words." />
-    <meta name="theme-color" content="#000000" />
+    <meta property="og:description" content="Everything you can tell Voxi: move, rename, convert, merge, zip, clean up, find, schedule and undo, in your own words." />
+    <meta name="theme-color" content="#eef3fa" />
     <script>
-      // Dark by default; a choice made with the switch is remembered here.
+      // Follows the Mac's appearance; a choice made with the switch wins.
       try {
-        if (localStorage.getItem("voxi-theme") === "light")
-          delete document.documentElement.dataset.theme;
+        const saved = localStorage.getItem("voxi-theme");
+        if (saved === "dark" || (!saved && matchMedia("(prefers-color-scheme: dark)").matches))
+          document.documentElement.dataset.theme = "dark";
       } catch {}
     </script>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
@@ -43,10 +44,10 @@
     <main id="main">
       <section class="page-head">
         <div class="wrap">
-          <h1>Say it like<br />you'd say it.</h1>
+          <h1>Tell it the way<br />you'd put it.</h1>
           <p class="subhead">
-            Say any of these, or something close. Words like “please”, “the”,
-            and “all” are ignored, and dictated numbers like “thirty” work.
+            Tell it any of these, or something close. Words like “please”, “the”,
+            and “all” are ignored, and numbers written as words, like “thirty”, work.
             Preview first, then press Enter to run.
           </p>
         </div>
@@ -266,7 +267,7 @@
                 <li>
                   <q>delete 4</q
                   ><span
-                    >After a list, acts on row 4. Spoken numbers like “four”
+                    >After a list, acts on row 4. Numbers as words, like “four”,
                     work too.</span
                   >
                 </li>
@@ -396,7 +397,7 @@
                 <li>
                   <q>run my usuals</q
                   ><span
-                    >Save a phrase and a list of commands in Settings. Saying it
+                    >Save a phrase and a list of commands in Settings. Using it
                     runs them all, as one preview with one undo.</span
                   >
                 </li>

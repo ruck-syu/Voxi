@@ -141,7 +141,7 @@ brew install --cask ruck-syu/tap/voxi
 Or by hand:
 
 1. Download the `.dmg` from the [latest release](https://github.com/ruck-syu/Voxi/releases/latest), open it, and drag Voxi to Applications.
-2. Open Voxi. Official releases are signed with an Apple Developer ID certificate and notarized, so macOS should open them without an "unidentified developer" warning. If you built Voxi yourself or installed an unsigned copy, Gatekeeper may block the first launch:
+2. Open Voxi. Releases are signed with Voxi's own certificate but are not notarized by Apple yet, so macOS blocks the first launch:
    - **macOS 15 or later:** open System Settings → Privacy & Security, scroll down, and click **Open Anyway** next to Voxi.
    - **macOS 14 or earlier:** right-click Voxi in Applications, choose **Open**, then **Open** again.
 
@@ -362,20 +362,31 @@ runs both Rust test suites, runs the rule-only cross-build equivalence suite in
 both feature sets, and runs strict Clippy in both feature sets. On `main`, the
 release job requires that gate, assigns one version to every manifest and
 lockfile, builds a universal app for Apple silicon and Intel with
-`--no-default-features`, signs it with a Developer ID Application identity,
-notarizes and staples the app and DMG, verifies signatures, effective
-entitlements, both CPU slices and Gatekeeper acceptance, and only then publishes:
+`--no-default-features`, signs it, verifies signatures, effective
+entitlements and both CPU slices, and only then publishes:
 
 - the `.dmg` for new installs,
 - a signed update bundle and `latest.json` for in-app updates,
 - release notes listing every change since the previous version.
 
-A release fails closed if any required credential is missing or the signing
-identity is not the expected Developer ID identity. The workflow consumes nine
-repository secrets: `VOXI_SIGNING_CERT` and `VOXI_SIGNING_CERT_PASSWORD` (the
-Developer ID certificate and .p12 password), `APPLE_SIGNING_IDENTITY` and
-`APPLE_TEAM_ID` (the signing identity and team), `APPLE_API_KEY`,
-`APPLE_API_ISSUER`, and `APPLE_API_KEY_P8` (notarization API credentials), and
+Versions are `0.2.N`: each release is one past the newest published
+`v0.2.N` tag, so pull request runs and failed runs never use up a number.
+Change `SERIES` in the workflow to start a new line.
+
+Signing has two modes, chosen by which secrets exist:
+
+- **Self-signed (current):** `VOXI_SIGNING_CERT` and
+  `VOXI_SIGNING_CERT_PASSWORD` hold the "Voxi Self-Signed" certificate and its
+  .p12 password. The app keeps one identity across versions, so macOS remembers
+  its folder access, but it is not notarized and Gatekeeper asks once on first
+  launch.
+- **Developer ID:** also set `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID` (the
+  signing identity and team), and `APPLE_API_KEY`, `APPLE_API_ISSUER` and
+  `APPLE_API_KEY_P8` (notarization API credentials), and replace
+  `VOXI_SIGNING_CERT` with the Developer ID certificate. The release is then
+  notarized and stapled, and Gatekeeper acceptance is verified.
+
+Setting only some of the Apple secrets fails the release. Both modes need
 `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (update
 signing). Everyday local, rule-based use needs none of them.
 

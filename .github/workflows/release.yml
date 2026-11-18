@@ -95,7 +95,11 @@ jobs:
           node scripts/check-versions.mjs --set "$VERSION"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      - name: Require Developer ID, notary, and updater credentials
+      # Developer ID mode (all APPLE_* secrets set): sign, notarize, staple.
+      # Self-signed mode (no APPLE_* secrets): sign with the stable "Voxi
+      # Self-Signed" identity from VOXI_SIGNING_CERT so macOS keeps folder
+      # access across updates, but skip notarization. Partial sets fail.
+      - name: Require signing and updater credentials
         env:
           VOXI_SIGNING_CERT: ${{ secrets.VOXI_SIGNING_CERT }}
           VOXI_SIGNING_CERT_PASSWORD: ${{ secrets.VOXI_SIGNING_CERT_PASSWORD }}
@@ -106,14 +110,28 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
-          for name in VOXI_SIGNING_CERT VOXI_SIGNING_CERT_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8 TAURI_SIGNING_PRIVATE_KEY; do
+          for name in VOXI_SIGNING_CERT VOXI_SIGNING_CERT_PASSWORD TAURI_SIGNING_PRIVATE_KEY; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Required release secret $name is missing"
               exit 1
             fi
           done
           # An unencrypted updater key may intentionally have an empty password.
-          [[ "$APPLE_SIGNING_IDENTITY" == "Developer ID Application: "*" ($APPLE_TEAM_ID)" ]]
+          APPLE_NAMES=(APPLE_SIGNING_IDENTITY APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_P8)
+          SET=0
+          for name in "${APPLE_NAMES[@]}"; do [[ -n "${!name}" ]] && SET=$((SET + 1)); done
+          if (( SET == ${#APPLE_NAMES[@]} )); then
+            [[ "$APPLE_SIGNING_IDENTITY" == "Developer ID Application: "*" ($APPLE_TEAM_ID)" ]]
+            echo "NOTARIZE=true" >> "$GITHUB_ENV"
+          elif (( SET == 0 )); then
+            echo "::warning::No Apple Developer ID secrets; signing with the self-signed identity without notarization. Gatekeeper will warn first-time users."
+            APPLE_SIGNING_IDENTITY="Voxi Self-Signed"
+            echo "NOTARIZE=false" >> "$GITHUB_ENV"
+          else
+            for name in "${APPLE_NAMES[@]}"; do [[ -z "${!name}" ]] && echo "::error::Release secret $name is missing; set all Apple secrets or none"; done
+            exit 1
+          fi
+          echo "SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
           umask 077
           KC="$RUNNER_TEMP/voxi-signing.keychain-db"
           security list-keychains -d user > "$RUNNER_TEMP/voxi-original-keychains"
@@ -128,9 +146,11 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASSWORD" "$KC" > /dev/null
           # Search only this keychain: an unrelated runner identity cannot satisfy signing.
           security list-keychains -d user -s "$KC"
-          security find-identity -v -p codesigning "$KC" | grep -F "\"$APPLE_SIGNING_IDENTITY\""
+          # A self-signed identity is not trusted on the runner, so -v would hide it.
+          if [[ "$SET" -gt 0 ]]; then VALID=-v; else VALID=; fi
+          security find-identity $VALID -p codesigning "$KC" | grep -F "\"$APPLE_SIGNING_IDENTITY\""
           rm "$RUNNER_TEMP/voxi-signing.p12"
-          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/voxi-notary.p8" >> "$GITHUB_ENV"
+          if [[ "$SET" -gt 0 ]]; then echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/voxi-notary.p8" >> "$GITHUB_ENV"; else rm "$RUNNER_TEMP/voxi-notary.p8"; fi
 
       # npm pins tauri-cli 2.12.4 (bundler 2.10.4). Its API-key contract is
       # APPLE_API_KEY + APPLE_API_ISSUER + APPLE_API_KEY_PATH, verified in:
@@ -143,15 +163,17 @@ jobs:
       # WKWebView's JS runs in Apple's separate WebContent process, not Voxi:
       # https://v2.tauri.app/concept/process-model/
       # No host JIT, unsigned-executable-memory, debugger, or sandbox exceptions.
-      - name: Build signed, notarized, rule-only universal bundles
+      - name: Build signed, rule-only universal bundles (notarized in Developer ID mode)
         env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          export APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY"
+          # Tauri notarizes whenever these are present, even if empty.
+          if [[ "$NOTARIZE" != true ]]; then unset APPLE_TEAM_ID APPLE_API_KEY APPLE_API_ISSUER APPLE_API_KEY_PATH; fi
           node scripts/check-versions.mjs
           (cd src-tauri && cargo tree --locked --no-default-features --edges normal --prefix none) > "$RUNNER_TEMP/voxi-release-dependencies.txt"
           if grep -q '^voxi-tiny-native v' "$RUNNER_TEMP/voxi-release-dependencies.txt"; then
@@ -163,15 +185,14 @@ jobs:
 
       - name: Verify signed app, effective entitlements, version, and universal slices
         env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           APP="$CARGO_TARGET_DIR/universal-apple-darwin/release/bundle/macos/Voxi.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           codesign -d --verbose=4 "$APP" 2> "$RUNNER_TEMP/voxi-codesign.txt"
           cat "$RUNNER_TEMP/voxi-codesign.txt"
-          grep -F "Authority=$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/voxi-codesign.txt"
-          grep -Fx "TeamIdentifier=$APPLE_TEAM_ID" "$RUNNER_TEMP/voxi-codesign.txt"
+          grep -F "Authority=$SIGNING_IDENTITY" "$RUNNER_TEMP/voxi-codesign.txt"
+          if [[ "$NOTARIZE" == true ]]; then grep -Fx "TeamIdentifier=$APPLE_TEAM_ID" "$RUNNER_TEMP/voxi-codesign.txt"; fi
           grep -E 'flags=.*\(runtime\)' "$RUNNER_TEMP/voxi-codesign.txt"
           codesign -d --entitlements :- "$APP" > "$RUNNER_TEMP/voxi-entitlements.plist"
           cat "$RUNNER_TEMP/voxi-entitlements.plist"
@@ -191,10 +212,13 @@ jobs:
           ARCHS=$(lipo -archs "$APP/Contents/MacOS/voxi")
           echo "$ARCHS"
           [[ " $ARCHS " == *" arm64 "* && " $ARCHS " == *" x86_64 "* ]]
-          xcrun stapler validate "$APP"
-          spctl --assess --type execute --verbose=4 "$APP"
+          if [[ "$NOTARIZE" == true ]]; then
+            xcrun stapler validate "$APP"
+            spctl --assess --type execute --verbose=4 "$APP"
+          fi
 
       - name: Notarize, staple, and verify the distribution DMG
+        if: env.NOTARIZE == 'true'
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -223,7 +247,7 @@ jobs:
           tar -xzf "$BUNDLE/macos/Voxi.app.tar.gz" -C "$RUNNER_TEMP/voxi-updater-check"
           UPDATE_APP="$RUNNER_TEMP/voxi-updater-check/Voxi.app"
           codesign --verify --deep --strict --verbose=2 "$UPDATE_APP"
-          xcrun stapler validate "$UPDATE_APP"
+          if [[ "$NOTARIZE" == true ]]; then xcrun stapler validate "$UPDATE_APP"; fi
           cmp "$UPDATE_APP/Contents/MacOS/voxi" "$BUNDLE/macos/Voxi.app/Contents/MacOS/voxi"
           python3 - <<'PY'
           import datetime, json, os, pathlib
@@ -244,6 +268,9 @@ jobs:
           Download Voxi_${VERSION}_universal.dmg and drag Voxi to Applications.
           Existing users can use Settings → Check for updates.
           NOTES
+          if [[ "$NOTARIZE" != true ]]; then
+            printf '\nThis build is not notarized yet. The first time you open it, right-click Voxi in Applications and choose Open.\n' >> "$RUNNER_TEMP/voxi-release-notes.md"
+          fi
 
       # This is the first step permitted to create/upload/publish a GitHub release.
       # Stage as draft so all assets (especially latest.json) exist before visibility.

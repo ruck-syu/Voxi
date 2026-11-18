@@ -1158,7 +1158,14 @@ fn updater_failed() { diagnostics::emit(Event::new(Code::Update, Stage::Failed))
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let context = tauri::generate_context!();
+    let mut context = tauri::generate_context!();
+    // Development builds get their own identity, so a dev build never shares
+    // settings, history, schedules, the undo journal or the login item with
+    // an installed Voxi on the same Mac.
+    if cfg!(debug_assertions) {
+        context.config_mut().identifier.push_str(".dev");
+        context.package_info_mut().name = "Voxi Dev".into();
+    }
     if let Some(data) = dirs::data_dir() { diagnostics::init(data.join(&context.config().identifier).join("diagnostics")); }
     diagnostics::emit(Event::new(Code::Startup, Stage::Begin));
     let app = tauri::Builder::default()

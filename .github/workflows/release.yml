@@ -90,8 +90,21 @@ jobs:
       - run: npm ci
 
       - name: Assign one release version to all manifests and lockfiles
+        # Next patch after the newest published v<SERIES>.N tag, or <SERIES>.0
+        # if none. Release tags only exist once a release is published, so PR
+        # runs and failed runs never use up a version. Bump SERIES for a new
+        # minor/major line.
+        env:
+          SERIES: "0.2"
         run: |
-          VERSION="0.1.${GITHUB_RUN_NUMBER}"
+          git fetch --force --tags --quiet origin
+          LAST=$(git tag --list "v${SERIES}.*" | sed -nE "s/^v${SERIES//./\\.}\.([0-9]+)$/\1/p" | sort -n | tail -1)
+          VERSION="${SERIES}.$(( ${LAST:--1} + 1 ))"
+          if git rev-parse -q --verify "refs/tags/v$VERSION" > /dev/null; then
+            echo "::error::Tag v$VERSION already exists"
+            exit 1
+          fi
+          echo "Releasing $VERSION (previous ${LAST:+v${SERIES}.$LAST}${LAST:-none in $SERIES})"
           node scripts/check-versions.mjs --set "$VERSION"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
@@ -278,6 +291,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A failed earlier run can leave an untagged draft with this version.
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
+            gh release delete "v$VERSION" --repo "$GITHUB_REPOSITORY" --yes
+          fi
           gh release create "v$VERSION" "$RUNNER_TEMP/voxi-release/"* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Voxi $VERSION" --notes-file "$RUNNER_TEMP/voxi-release-notes.md" --draft
           gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
 

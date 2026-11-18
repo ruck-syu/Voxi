@@ -28,8 +28,10 @@ fn serialized_public_outcomes_match_without_models() {
         // Cargo holds its target lock while this test runs. Execute the two
         // library test artifacts directly rather than recursively invoking Cargo.
         // Build both with cargo test --lib [--features tiny-model] first.
-        let deps = std::env::current_exe().expect("locate integration test executable")
-            .parent().expect("integration test deps directory").to_path_buf();
+        // Library and integration test binaries can live in different
+        // per-artifact folders (newer Cargo build-dir layout), so registrations
+        // go in the shared profile folder.
+        let deps = profile_dir(&std::env::current_exe().expect("locate integration test executable"));
         let variant = if tiny { "tiny-model" } else { "default" };
         let binary = registered_binary(&deps, variant).unwrap_or_else(|e| panic!("{e}"));
         let mut command = Command::new(binary);
@@ -48,6 +50,16 @@ fn serialized_public_outcomes_match_without_models() {
 // The lib suites register their exact executable after Cargo builds them. This
 // remains deterministic even when deps contains stale artifacts with the same
 // test names, and works with any target directory/profile.
+/// The profile folder (e.g. `target/debug`) above a test binary, in both the
+/// `debug/deps/<bin>` and `debug/build/<pkg>/<hash>/out/<bin>` layouts.
+fn profile_dir(exe: &std::path::Path) -> std::path::PathBuf {
+    exe.ancestors().skip(1)
+        .find(|dir| matches!(dir.file_name().and_then(|n| n.to_str()), Some("deps" | "build")))
+        .and_then(std::path::Path::parent)
+        .unwrap_or_else(|| exe.parent().expect("test binary folder"))
+        .to_path_buf()
+}
+
 fn registered_binary(deps: &std::path::Path, variant: &str) -> Result<std::path::PathBuf, String> {
     let instruction = format!("Run cargo test --locked --lib{} first, with the same target directory and profile.",
         if variant == "tiny-model" { " --features tiny-model" } else { "" });
@@ -71,6 +83,14 @@ fn registered_binary(deps: &std::path::Path, variant: &str) -> Result<std::path:
         }
     }
     Ok(binary)
+}
+
+#[test]
+fn registrations_use_the_shared_profile_folder_in_both_cargo_layouts() {
+    let old = std::path::Path::new("/t/debug/deps/voxi_lib-1");
+    let new = std::path::Path::new("/t/debug/build/voxi/abc/out/voxi_lib-abc");
+    assert_eq!(profile_dir(old), std::path::Path::new("/t/debug"));
+    assert_eq!(profile_dir(new), std::path::Path::new("/t/debug"));
 }
 
 #[test]

@@ -1514,7 +1514,13 @@ mod result_context_tests {
     fn register_equivalence_binary() {
         let binary = std::env::current_exe().unwrap();
         let variant = if cfg!(feature = "tiny-model") { "tiny-model" } else { "default" };
-        fs::write(binary.parent().unwrap().join(format!("voxi-equivalence-{variant}.json")),
+        // Must match profile_dir in tests/rule_only_equivalence.rs: the shared
+        // profile folder above deps/ or build/<pkg>/<hash>/out/.
+        let profile = binary.ancestors().skip(1)
+            .find(|dir| matches!(dir.file_name().and_then(|n| n.to_str()), Some("deps" | "build")))
+            .and_then(std::path::Path::parent)
+            .unwrap_or_else(|| binary.parent().unwrap());
+        fs::write(profile.join(format!("voxi-equivalence-{variant}.json")),
             serde_json::to_vec(&binary).unwrap()).unwrap();
     }
 

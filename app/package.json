@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:model": "node scripts/dev-model.mjs",
     "build": "tsc && vite build",
-    "build:site-demo": "vite build --base ./ --outDir ../website/demo --emptyOutDir",
+    "build:site-demo": "vite build --base /demo/ --outDir ../website/demo --emptyOutDir",
     "preview": "vite preview",
     "tauri": "tauri",
     "check:versions": "node scripts/check-versions.mjs"

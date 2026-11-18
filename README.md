@@ -282,6 +282,10 @@ cd app && npm install
 cd app && npm run tauri dev
 ```
 
+Development builds run as "Voxi Dev" (`dev.voxi.app.dev`), with their own
+settings, history, schedules and login item, so they never touch an installed
+Voxi on the same Mac. Give the dev build a different hotkey if both run at once.
+
 Tests cover one sentence per catalog row, safety rules, undo, and real runs of
 `sips`, `ditto`, and PDFKit in a temporary folder:
 

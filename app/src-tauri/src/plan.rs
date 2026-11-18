@@ -865,13 +865,14 @@ impl<'a> Planner<'a> {
                 self.warnings.push(format!("{nested} {} in subfolders left alone. Say “including subfolders” to sort them too.", plural(nested, "file was", "files were")));
             }
         }
+        let sorted_name = file_name(&dir);
         let mut left = 0;
         let mut moved = 0;
         for p in &paths {
             self.check(p)?;
             let sub = if by_type {
-                match type_folder(p) {
-                    Some(s) => s.to_string(),
+                match type_folder(p, &sorted_name) {
+                    Some(s) => s,
                     None => {
                         left += 1;
                         continue;
@@ -1258,18 +1259,29 @@ fn is_screenshot(p: &Path) -> bool {
     is_ext(&ext_of(p), IMAGE_EXTS) && (n.starts_with("screenshot") || n.starts_with("screen shot") || n.starts_with("cleanshot"))
 }
 
-fn type_folder(p: &Path) -> Option<&'static str> {
+/// The category folder a file belongs in. If that name would match the folder
+/// being sorted (case-insensitively) — sorting `~/Documents` would otherwise
+/// create `~/Documents/Documents` — use a short, distinct name instead.
+fn type_folder(p: &Path, sorted_name: &str) -> Option<String> {
     let e = ext_of(p);
     Some(match e.as_str() {
-        "pdf" => "PDFs",
-        _ if is_ext(&e, IMAGE_EXTS) => "Images",
-        _ if is_ext(&e, VIDEO_EXTS) => "Videos",
-        _ if is_ext(&e, DOC_EXTS) => "Documents",
-        _ if is_ext(&e, ARCHIVE_EXTS) => "Archives",
-        _ if is_ext(&e, INSTALLER_EXTS) => "Installers",
-        _ if is_ext(&e, AUDIO_EXTS) => "Audio",
+        "pdf" => category("PDFs", "PDF files", sorted_name),
+        _ if is_ext(&e, IMAGE_EXTS) => category("Images", "Image files", sorted_name),
+        _ if is_ext(&e, VIDEO_EXTS) => category("Videos", "Video files", sorted_name),
+        _ if is_ext(&e, DOC_EXTS) => category("Documents", "Document files", sorted_name),
+        _ if is_ext(&e, ARCHIVE_EXTS) => category("Archives", "Archive files", sorted_name),
+        _ if is_ext(&e, INSTALLER_EXTS) => category("Installers", "Installer files", sorted_name),
+        _ if is_ext(&e, AUDIO_EXTS) => category("Audio", "Audio files", sorted_name),
         _ => return None,
     })
+}
+
+fn category(name: &'static str, alternate: &'static str, sorted_name: &str) -> String {
+    if sorted_name.eq_ignore_ascii_case(name) {
+        alternate.to_string()
+    } else {
+        name.to_string()
+    }
 }
 
 fn type_label(f: &Filter) -> &'static str {
@@ -2395,6 +2407,59 @@ mod tests {
         assert!(a.contains(&Action::Move { from: d.join("a.pdf"), to: d.join("PDFs/a.pdf") }));
         assert!(a.contains(&Action::Move { from: d.join("b.png"), to: d.join("Images/b.png") }));
         assert_eq!(a.iter().filter(|x| matches!(x, Action::Move { .. })).count(), 2);
+    }
+
+    #[test]
+    fn sort_documents_by_type_avoids_a_documents_documents_folder() {
+        let h = home();
+        let docs = h.roots.home.join("Documents");
+        fs::write(docs.join("report.pdf"), b"x").unwrap();
+        fs::write(docs.join("notes.docx"), b"x").unwrap();
+        let a = steps(&h, "sort Documents by type");
+        let nested = docs.join("Documents");
+        assert!(!a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(&nested))),
+            "no file should land in {}: {a:?}", nested.display());
+        assert!(a.contains(&Action::Move { from: docs.join("report.pdf"), to: docs.join("PDFs/report.pdf") }));
+        assert!(a.contains(&Action::Move { from: docs.join("notes.docx"), to: docs.join("Document files/notes.docx") }));
+    }
+
+    #[test]
+    fn sort_by_type_uses_the_ordinary_category_name_when_there_is_no_collision() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("notes.docx"), b"x").unwrap();
+        let a = steps(&h, "sort Downloads by type");
+        assert!(a.contains(&Action::Move { from: dl.join("notes.docx"), to: dl.join("Documents/notes.docx") }));
+    }
+
+    #[test]
+    fn sort_by_type_avoids_a_self_named_folder_for_any_category() {
+        let h = home();
+        let pics = h.roots.home.join("Pictures/Images");
+        fs::create_dir(&pics).unwrap();
+        fs::write(pics.join("photo.png"), b"x").unwrap();
+        let a = steps(&h, "sort Images by type");
+        assert!(!a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(pics.join("Images")))),
+            "no nested Images/Images: {a:?}");
+        assert!(a.contains(&Action::Move { from: pics.join("photo.png"), to: pics.join("Image files/photo.png") }));
+    }
+
+    #[test]
+    fn resorting_a_sorted_documents_folder_does_not_nest_category_folders() {
+        let h = home();
+        let docs = h.roots.home.join("Documents");
+        let alternate = docs.join("Document files");
+        fs::create_dir(&alternate).unwrap();
+        fs::write(alternate.join("notes.docx"), b"x").unwrap();
+        fs::write(docs.join("fresh.docx"), b"y").unwrap();
+        let a = steps(&h, "sort Documents by type including subfolders");
+        // The file already in the alternate category stays put (the "already
+        // there" check is path-based, so it works with the new name too).
+        assert!(!a.iter().any(|action| matches!(action, Action::Move { from, .. } if from == &alternate.join("notes.docx"))),
+            "the already-sorted file should not move: {a:?}");
+        assert!(a.contains(&Action::Move { from: docs.join("fresh.docx"), to: alternate.join("fresh.docx") }));
+        assert!(!a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(alternate.join("Document files")))),
+            "category folders must not be nested: {a:?}");
     }
 
     #[test]

@@ -28,7 +28,7 @@ export type ScheduledTask = { id: number; command: string; due: string; status: 
 
 export type RecoveryStatus = { command: string; acknowledged: number; inFlight: Record<string, unknown> | null };
 
-export type RunResult = { done: number; total: number; error: string | null; undoable: boolean; summary: string };
+export type RunResult = { done: number; total: number; error: string | null; cancelled: boolean; undoable: boolean; summary: string };
 
 export type FolderAccess = { name: string; path: string; allowed: boolean };
 
@@ -60,6 +60,7 @@ export const api = {
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
+  stopExecution: (id: number, scheduledFor?: string) => invoke<void>("cancel_execution", { id, scheduledFor }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: (requestId: number) => invoke<void>("hide_window", { requestId }),
   reportWrong: (command: string, outcome: unknown, note: string) => invoke<Reports>("report_wrong", { command, outcome, note }),

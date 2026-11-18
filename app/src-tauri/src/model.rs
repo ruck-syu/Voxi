@@ -310,6 +310,7 @@ pub struct RunResult {
     pub done: usize,
     pub total: usize,
     pub error: Option<String>,
+    pub cancelled: bool,
     pub undoable: bool,
     pub summary: String,
 }

@@ -19,25 +19,38 @@ pub struct Outcome {
     /// Reverses `done`, newest step first.
     pub inverse: Vec<Action>,
     pub error: Option<String>,
+    pub cancelled: bool,
 }
+
+pub(crate) const CANCELLED: &str = "Execution cancelled.";
+
+fn check_cancel(is_cancelled: &dyn Fn() -> bool) -> Result<(), String> {
+    if is_cancelled() { Err(CANCELLED.into()) } else { Ok(()) }
+}
+
+fn never_cancel() -> bool { false }
 
 /// Runs `actions` in order and stops at the first failure. Every path is
 /// checked against the allowed folders again right before it is touched.
 pub fn run(actions: &[Action], roots: &Roots) -> Outcome {
+    run_with_cancel(actions, roots, &never_cancel)
+}
+
+pub(crate) fn run_with_cancel(actions: &[Action], roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Outcome {
     let mut done = Vec::new();
     let mut inverse = Vec::new();
     for a in actions {
-        if cancelled() { return Outcome { done, inverse, error: Some("Execution cancelled".into()) }; }
-        match step(a, roots) {
+        match step(a, roots, is_cancelled) {
             Ok(mut inv) => {
                 done.push(a.clone());
                 inv.reverse();
                 inverse.splice(0..0, inv);
             }
-            Err(e) => return Outcome { done, inverse, error: Some(e) },
+            Err(e) if e == CANCELLED => return Outcome { done, inverse, error: None, cancelled: true },
+            Err(e) => return Outcome { done, inverse, error: Some(e), cancelled: false },
         }
     }
-    Outcome { done, inverse, error: None }
+    Outcome { done, inverse, error: None, cancelled: false }
 }
 
 fn guard(roots: &Roots, paths: &[&Path]) -> Result<(), String> {
@@ -161,7 +174,7 @@ impl Default for ArchiveLimits {
 /// Strict classic-ZIP central/local header validation. ZIP64, encryption,
 /// non-UTF8 names, special files and ambiguous separators fail closed.
 /// Read headers individually so malicious metadata cannot allocate unbounded RAM.
-fn inspect_archive(path: &Path, limits: ArchiveLimits) -> Result<u64, String> {
+fn inspect_archive(path: &Path, limits: ArchiveLimits, is_cancelled: &dyn Fn() -> bool) -> Result<u64, String> {
     use std::io::{Read, Seek, SeekFrom};
     let invalid = || "Unsafe, unsupported, or over-budget ZIP archive".to_string();
     let mut f = fs::File::open(path).map_err(|e| e.to_string())?;
@@ -179,6 +192,7 @@ fn inspect_archive(path: &Path, limits: ArchiveLimits) -> Result<u64, String> {
     let mut pos = offset; let mut total = 0u64; let mut compressed = 0u64;
     let mut names = std::collections::HashSet::new();
     for _ in 0..count {
+        check_cancel(is_cancelled)?;
         f.seek(SeekFrom::Start(pos)).map_err(|e| e.to_string())?;
         let mut h = [0;46]; f.read_exact(&mut h).map_err(|e| e.to_string())?;
         if &h[..4] != b"PK\x01\x02" { return Err(invalid()); }
@@ -225,7 +239,7 @@ fn inspect_archive(path: &Path, limits: ArchiveLimits) -> Result<u64, String> {
 
 /// Polling detects byte/member overruns but cannot prevent transient writes
 /// between polls or stop a blocked filesystem syscall. This is not a disk quota.
-fn verify_extracted(root: &Path, limits: ArchiveLimits, extracting: bool) -> Result<(), String> {
+fn verify_extracted(root: &Path, limits: ArchiveLimits, extracting: bool, is_cancelled: &dyn Fn() -> bool) -> Result<(), String> {
     // ditto consumes and removes temporary AppleDouble files while restoring
     // metadata. A polling scan may race with those removals; the final scan
     // remains strict once the extractor has exited.
@@ -240,6 +254,7 @@ fn verify_extracted(root: &Path, limits: ArchiveLimits, extracting: bool) -> Res
     while let Some(dir) = pending.pop() {
         let Some(children) = observed(fs::read_dir(dir), extracting)? else { continue; };
         for entry in children {
+            check_cancel(is_cancelled)?;
             let Some(entry) = observed(entry, extracting)? else { continue; };
             let p = entry.path();
             let Some(m) = observed(fs::symlink_metadata(&p), extracting)? else { continue; };
@@ -255,7 +270,7 @@ fn verify_extracted(root: &Path, limits: ArchiveLimits, extracting: bool) -> Res
     }
     Ok(())
 }
-fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits) -> Result<(), String> {
+fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits, is_cancelled: &dyn Fn() -> bool) -> Result<(), String> {
     use std::os::unix::fs::OpenOptionsExt;
     let stage = fsx::Staging::new(destination)?;
     let result = (|| {
@@ -273,14 +288,15 @@ fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits) -> Re
     let mut remaining = archive_bytes;
     let mut buffer = [0; 65536];
     while remaining>0 {
-        if cancelled() || snapshot_started.elapsed()>std::time::Duration::from_secs(60) { return Err("ZIP snapshot cancelled or timed out".into()); }
+        check_cancel(is_cancelled)?;
+        if snapshot_started.elapsed()>std::time::Duration::from_secs(60) { return Err("ZIP snapshot timed out".into()); }
         let count = input.read(&mut buffer[..remaining.min(65536) as usize]).map_err(|e| e.to_string())?;
         if count==0 { return Err("ZIP input changed while snapshotting".into()); }
         output.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
         remaining -= count as u64;
     }
     drop(output);
-    let total = inspect_archive(&snapshot, limits)?;
+    let total = inspect_archive(&snapshot, limits, is_cancelled)?;
     // Available space already excludes the allocated archive snapshot. Thus
     // this reserves snapshot + extraction + margin across the two checks.
     if total.saturating_add(limits.margin)>fsx::available_space(&stage.dir)? { return Err("Insufficient free disk space for extraction".into()); }
@@ -289,17 +305,21 @@ fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits) -> Re
     // Both decompression passes share the extraction time budget.
     let extraction_started = std::time::Instant::now();
     let extraction_budget = std::time::Duration::from_secs(60);
+    check_cancel(is_cancelled)?;
     bounded_tool("/usr/bin/unzip", &["-tqq".as_ref(), snapshot.as_os_str()], extraction_budget, || Ok(()))?;
+    check_cancel(is_cancelled)?;
     fs::create_dir(&stage.path).map_err(|e| e.to_string())?;
     let observed = ArchiveLimits { total: total.min(limits.total), ..limits };
     bounded_tool("/usr/bin/ditto", &["-x".as_ref(), "-k".as_ref(), snapshot.as_os_str(), stage.path.as_os_str()], extraction_budget.saturating_sub(extraction_started.elapsed()), || {
-        verify_extracted(&stage.path, observed, true)?;
+        verify_extracted(&stage.path, observed, true, &never_cancel)?;
         if fsx::available_space(&stage.dir)? < limits.margin { return Err("Extraction disk-space reserve exhausted".into()); }
         Ok(())
     })?;
-    verify_extracted(&stage.path, observed, false)?;
+    check_cancel(is_cancelled)?;
+    verify_extracted(&stage.path, observed, false, is_cancelled)?;
     // Release the snapshot before making the extracted payload visible.
     fs::remove_file(&snapshot).map_err(|e| e.to_string())?;
+    check_cancel(is_cancelled)?;
     stage.publish(destination)
     })();
     stage.finish(result)
@@ -401,7 +421,10 @@ fn trash_inverse(p: &Path) -> Action {
 }
 
 /// Runs one step and returns the steps that undo it.
-pub(crate) fn step(a: &Action, roots: &Roots) -> Result<Vec<Action>, String> {
+pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Vec<Action>, String> {
+    // External mutation tools run to completion. Only private staging and
+    // read-only loops can abandon a step after it has started.
+    check_cancel(is_cancelled)?;
     match a {
         Action::Move { from, to } => {
             guard(roots, &[from, to])?;
@@ -488,14 +511,20 @@ pub(crate) fn step(a: &Action, roots: &Roots) -> Result<Vec<Action>, String> {
             guard(roots, &[output])?;
             guard(roots, &paths.iter().map(PathBuf::as_path).collect::<Vec<_>>())?;
             fresh(output)?;
-            fsx::staged_output(output, |out| pdf::merge(paths, out))?;
+            fsx::staged_output(output, |out| {
+                pdf::merge(paths, out, &|| check_cancel(is_cancelled))?;
+                check_cancel(is_cancelled)
+            })?;
             Ok(vec![trash_inverse(output)])
         }
         Action::ImagesToPdf { paths, output } => {
             guard(roots, &[output])?;
             guard(roots, &paths.iter().map(PathBuf::as_path).collect::<Vec<_>>())?;
             fresh(output)?;
-            fsx::staged_output(output, |out| pdf::images_to_pdf(paths, out))?;
+            fsx::staged_output(output, |out| {
+                pdf::images_to_pdf(paths, out, &|| check_cancel(is_cancelled))?;
+                check_cancel(is_cancelled)
+            })?;
             Ok(vec![trash_inverse(output)])
         }
         Action::SplitPdf { path, output_dir } => {
@@ -503,7 +532,7 @@ pub(crate) fn step(a: &Action, roots: &Roots) -> Result<Vec<Action>, String> {
             fresh(output_dir)?;
             fsx::staged_output(output_dir, |out| {
                 fs::create_dir(out).map_err(|e| e.to_string())?;
-                pdf::split(path, out).map(|_| ())
+                pdf::split(path, out, &|| check_cancel(is_cancelled)).map(|_| ())
             })?;
             Ok(vec![trash_inverse(output_dir)])
         }
@@ -522,7 +551,7 @@ pub(crate) fn step(a: &Action, roots: &Roots) -> Result<Vec<Action>, String> {
         Action::Unzip { path, destination } => {
             guard(roots, &[path, destination])?;
             fresh(destination)?;
-            extract_archive(path, destination, ArchiveLimits::default())?;
+            extract_archive(path, destination, ArchiveLimits::default(), is_cancelled)?;
             Ok(vec![trash_inverse(destination)])
         }
         Action::OpenInFinder { path, reveal } => {
@@ -697,17 +726,17 @@ mod tests {
         let limits = ArchiveLimits::default();
         for name in [b"../escape".as_slice(), b"/absolute", b"a/../../x", b"a\\evil"] {
             zip_fixture(&zip,name,1,1,0o100644);
-            assert!(inspect_archive(&zip,limits).is_err());
+            assert!(inspect_archive(&zip,limits, &|| false).is_err());
         }
         zip_fixture(&zip,b"link",1,1,0o120777);
-        assert!(inspect_archive(&zip,limits).is_err());
+        assert!(inspect_archive(&zip,limits, &|| false).is_err());
         zip_fixture(&zip,b"ok",101,1,0o100644);
-        assert!(inspect_archive(&zip,limits).is_err());
+        assert!(inspect_archive(&zip,limits, &|| false).is_err());
         zip_fixture(&zip,b"ok",2,2,0o100644);
-        assert_eq!(inspect_archive(&zip,limits).unwrap(),2);
-        assert!(inspect_archive(&zip,ArchiveLimits { entries:0,..limits }).is_err());
-        assert!(inspect_archive(&zip,ArchiveLimits { file:1,..limits }).is_err());
-        assert!(inspect_archive(&zip,ArchiveLimits { total:1,..limits }).is_err());
+        assert_eq!(inspect_archive(&zip,limits, &|| false).unwrap(),2);
+        assert!(inspect_archive(&zip,ArchiveLimits { entries:0,..limits }, &|| false).is_err());
+        assert!(inspect_archive(&zip,ArchiveLimits { file:1,..limits }, &|| false).is_err());
+        assert!(inspect_archive(&zip,ArchiveLimits { total:1,..limits }, &|| false).is_err());
     }
     #[test]
     fn extraction_polling_tolerates_removed_directories_but_final_scan_is_strict() {
@@ -717,15 +746,15 @@ mod tests {
         fs::remove_dir(&temporary).unwrap();
         let limits = ArchiveLimits::default();
         // Model a metadata directory removed after it was queued for scanning.
-        assert!(verify_extracted(&temporary, limits, true).is_ok());
-        assert!(verify_extracted(&temporary, limits, false).is_err());
+        assert!(verify_extracted(&temporary, limits, true, &never_cancel).is_ok());
+        assert!(verify_extracted(&temporary, limits, false, &never_cancel).is_err());
         // Polling still rejects unsafe members and enforces observed limits.
         let link = d.path().join("link");
         std::os::unix::fs::symlink(d.path(), &link).unwrap();
-        assert!(verify_extracted(d.path(), limits, true).is_err());
+        assert!(verify_extracted(d.path(), limits, true, &never_cancel).is_err());
         fs::remove_file(link).unwrap();
         fs::write(d.path().join("file"), b"too large").unwrap();
-        assert!(verify_extracted(d.path(), ArchiveLimits { file: 1, ..limits }, true).is_err());
+        assert!(verify_extracted(d.path(), ArchiveLimits { file: 1, ..limits }, true, &never_cancel).is_err());
     }
 
     #[test]
@@ -737,22 +766,22 @@ mod tests {
         let destination = d.path().join("out");
         let zip_link = d.path().join("archive-link.zip");
         std::os::unix::fs::symlink(&zip, &zip_link).unwrap();
-        assert!(extract_archive(&zip_link, &destination, ArchiveLimits::default()).is_err());
+        assert!(extract_archive(&zip_link, &destination, ArchiveLimits::default(), &|| false).is_err());
         assert!(!destination.exists());
-        assert!(extract_archive(&zip,&destination,ArchiveLimits { margin:u64::MAX,..ArchiveLimits::default() }).is_err());
+        assert!(extract_archive(&zip,&destination,ArchiveLimits { margin:u64::MAX,..ArchiveLimits::default() }, &|| false).is_err());
         assert!(!destination.exists());
-        extract_archive(&zip,&destination,ArchiveLimits::default()).unwrap();
+        extract_archive(&zip,&destination,ArchiveLimits::default(), &|| false).unwrap();
         assert_eq!(fs::read(destination.join("input")).unwrap(),b"hello archive");
         let link = d.path().join("link");
         std::os::unix::fs::symlink(&input,&link).unwrap();
         let hostile = d.path().join("links.zip");
         tool("/usr/bin/zip", &["-y".as_ref(),"-j".as_ref(),hostile.as_os_str(),link.as_os_str()]).unwrap();
         let rejected = d.path().join("rejected");
-        assert!(extract_archive(&hostile,&rejected,ArchiveLimits::default()).is_err());
+        assert!(extract_archive(&hostile,&rejected,ArchiveLimits::default(), &|| false).is_err());
         assert!(!rejected.exists());
         // ditto alone accepts this bad CRC: integrity validation must reject it.
         zip_fixture(&hostile,b"bad-crc",2,2,0o100644);
-        let err = extract_archive(&hostile,&rejected,ArchiveLimits::default()).unwrap_err();
+        let err = extract_archive(&hostile,&rejected,ArchiveLimits::default(), &|| false).unwrap_err();
         assert!(err.contains("/usr/bin/unzip failed"), "{err}");
         assert!(!rejected.exists());
         assert!(!fs::read_dir(d.path()).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with(".voxi-stage")));
@@ -952,7 +981,7 @@ mod tests {
         let listing = Command::new("/usr/bin/unzip").args(["-Z1"]).arg(&archive).output().unwrap();
         assert!(listing.status.success());
         assert!(String::from_utf8_lossy(&listing.stdout).contains("__MACOSX/"));
-        assert!(inspect_archive(&archive, ArchiveLimits { entries: 2, ..ArchiveLimits::default() }).is_err(),
+        assert!(inspect_archive(&archive, ArchiveLimits { entries: 2, ..ArchiveLimits::default() }, &|| false).is_err(),
             "metadata entries count toward archive-wide limits");
         let extracted = plan_and_run(&roots, &history, "unzip Project.zip into Documents/out");
         assert!(extracted.error.is_none(), "{:?}", extracted.error);

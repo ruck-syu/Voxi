@@ -469,6 +469,14 @@ button {
   background: transparent;
 }
 
+.stop-execution:hover:not(:disabled) {
+  border-color: var(--margin);
+}
+
+.stop-execution:active:not(:disabled) {
+  background: var(--rule);
+}
+
 .primary-button:focus-visible,
 .secondary:focus-visible,
 .hotkey:focus-visible,
@@ -1173,9 +1181,9 @@ fieldset.tab-panel {
 .tasks-list .pill { margin-top: 4px; }
 .task-command { overflow-wrap: anywhere; }
 .task-summary { color: var(--ink); opacity: 0.8; }
-.tasks-list .task-actions { display: flex; gap: 14px; margin-top: 6px; }
+.tasks-list .task-actions:not(:empty) { display: flex; gap: 14px; margin-top: 6px; }
 .tasks-list .task-actions .link { font-weight: 700; color: var(--ink); }
-.tasks-list .task-actions .link:hover { color: var(--margin); }
+.tasks-list .task-actions .link:hover:not(:disabled) { color: var(--margin); }
 .row.compact { min-height: 40px; padding-block: 6px; }
 .row.compact .row-icon { width: 24px; height: 24px; border-radius: 7px; }
 .row.compact + .row.compact::before { left: 48px; }

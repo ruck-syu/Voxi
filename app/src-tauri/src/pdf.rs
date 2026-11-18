@@ -65,14 +65,17 @@ pub fn page_count(path: &Path) -> Result<usize, String> {
     Ok(imp::page_count(&doc))
 }
 
-pub fn merge(paths: &[PathBuf], output: &Path) -> Result<(), String> {
+pub fn merge(paths: &[PathBuf], output: &Path, check: &dyn Fn() -> Result<(), String>) -> Result<(), String> {
     let out = imp::new_doc();
     for p in paths {
+        check()?;
         let doc = imp::open(p)?;
         for page in imp::pages(&doc) {
+            check()?;
             imp::append(&out, &page);
         }
     }
+    check()?;
     imp::write(&out, output)
 }
 
@@ -92,26 +95,30 @@ pub fn extract(path: &Path, from: u32, to: u32, output: &Path) -> Result<(), Str
 
 /// Writes one PDF per page into `out_dir` (which must already exist).
 /// Returns the files written.
-pub fn split(path: &Path, out_dir: &Path) -> Result<Vec<PathBuf>, String> {
+pub fn split(path: &Path, out_dir: &Path, check: &dyn Fn() -> Result<(), String>) -> Result<Vec<PathBuf>, String> {
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "page".into());
     let doc = imp::open(path)?;
     let pages = imp::pages(&doc);
     let width = pages.len().to_string().len().max(2);
     let mut written = Vec::new();
     for (i, page) in pages.iter().enumerate() {
+        check()?;
         let out = imp::new_doc();
         imp::append(&out, page);
         let file = out_dir.join(format!("{stem} page {:0width$}.pdf", i + 1));
         imp::write(&out, &file)?;
         written.push(file);
     }
+    check()?;
     Ok(written)
 }
 
-pub fn images_to_pdf(images: &[PathBuf], output: &Path) -> Result<(), String> {
+pub fn images_to_pdf(images: &[PathBuf], output: &Path, check: &dyn Fn() -> Result<(), String>) -> Result<(), String> {
     let out = imp::new_doc();
     for img in images {
+        check()?;
         imp::append_image(&out, img)?;
     }
+    check()?;
     imp::write(&out, output)
 }

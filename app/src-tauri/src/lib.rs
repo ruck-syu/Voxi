@@ -43,8 +43,8 @@ use settings::Settings;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State};
@@ -79,6 +79,7 @@ struct Pending {
     context_generation: Option<u64>,
     context_snapshot: Option<scope::Snapshot>,
     scheduled: Option<scheduler::Job>,
+    stop_requested: bool,
 }
 impl Pending {
     fn validate_context(&self, context: &scope::State) -> Result<(), String> {
@@ -89,6 +90,36 @@ impl Pending {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum RunKey {
+    Plan(u64),
+    Scheduled(u64, chrono::DateTime<chrono::Local>),
+}
+
+type ActiveRuns = Mutex<HashMap<RunKey, Arc<AtomicBool>>>;
+
+struct ActiveRun<'a> {
+    runs: &'a ActiveRuns,
+    key: RunKey,
+    stopped: Arc<AtomicBool>,
+}
+
+impl<'a> ActiveRun<'a> {
+    fn register(runs: &'a ActiveRuns, key: RunKey, stop_requested: bool) -> Result<Self, String> {
+        let stopped = Arc::new(AtomicBool::new(stop_requested));
+        runs.lock().map_err(|_| "Execution state unavailable. Restart Voxi.")?.insert(key, stopped.clone());
+        Ok(Self { runs, key, stopped })
+    }
+
+    fn is_stopped(&self) -> bool { self.stopped.load(Ordering::Relaxed) }
+}
+
+impl Drop for ActiveRun<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut runs) = self.runs.lock() { runs.remove(&self.key); }
+    }
+}
+
 struct AppState {
     roots: RwLock<Roots>,
     history: Mutex<History>,
@@ -96,6 +127,7 @@ struct AppState {
     settings: Mutex<Settings>,
     schedules: Mutex<scheduler::Store>,
     execution: Mutex<()>,
+    active_runs: ActiveRuns,
     settings_path: PathBuf,
     /// "This was wrong" reports, kept on this Mac.
     reports_path: PathBuf,
@@ -551,7 +583,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
             if use_scope { warnings.insert(0, "Using files from the previous searched list.".into()); }
             let items = preview(&actions, &notes, &roots);
             let total = actions.len();
-            *checked_state!(state.pending.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }) = Some(Pending { id, command: original_text.trim().to_string(), actions, undo_of, scheduled, context_generation: use_scope.then_some(scope_generation), context_snapshot: scoped_snapshot });
+            *checked_state!(state.pending.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }) = Some(Pending { id, command: original_text.trim().to_string(), actions, undo_of, scheduled, context_generation: use_scope.then_some(scope_generation), context_snapshot: scoped_snapshot, stop_requested: false });
             Outcome::Plan { id, title, total, items, warnings, is_undo: undo_of.is_some(), scheduled_for, repeats: repeat.as_ref().zip(scheduled_for).map(|(rule, due)| if scheduler::runs_on_confirm(&original_text) { format!("Runs now, then {}", rule.describe(due)) } else { rule.describe(due) }) }
         }
     }
@@ -563,10 +595,15 @@ fn confirm_plan(state: State<AppState>, id: u64) -> Result<RunResult, String> {
 }
 
 fn confirm_input(state: &AppState, id: u64) -> Result<RunResult, String> {
-    let pending = checked_state!(state.pending.lock(), Err("Voxi state is unavailable. Restart the app.".into())).take();
-    let Some(p) = pending.filter(|p| p.id == id) else {
-        return Err("That preview expired. Press Enter to plan it again.".into());
+    let (p, run) = {
+        let mut pending = checked_state!(state.pending.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
+        let p = pending.take_if(|p| p.id == id).ok_or("That preview expired. Press Enter to plan it again.")?;
+        // Publish the flag before releasing the preview lock, including when
+        // confirmation has to wait for an earlier filesystem operation.
+        let run = ActiveRun::register(&state.active_runs, RunKey::Plan(id), p.stop_requested)?;
+        (p, run)
     };
+    let is_cancelled = || run.is_stopped();
     let _execution = checked_state!(state.execution.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
     p.validate_context(&*checked_state!(state.result_scope.lock(), Err("Voxi state is unavailable. Restart the app.".into())))?;
     if let Some(mut job) = p.scheduled.clone() {
@@ -587,7 +624,7 @@ fn confirm_input(state: &AppState, id: u64) -> Result<RunResult, String> {
             store.add(job.clone())?;
             let job_id = store.jobs.last().ok_or("That task could not be saved.")?.id;
             drop(store);
-            let mut result = execute_pending(state, p);
+            let mut result = execute_pending(state, p, &is_cancelled);
             let run_summary = result.error.as_ref().map_or_else(|| result.summary.clone(), |error| format!("{} {error}", result.summary));
             // As with later recurring runs, execution failures retain the series:
             // missing files and collisions may be transient. Structural errors
@@ -606,37 +643,81 @@ fn confirm_input(state: &AppState, id: u64) -> Result<RunResult, String> {
             Some(rule) => format!("Repeats {}, first on {}. Manage tasks in Settings → Scheduled.", rule.describe(job.due), scheduler::display(job.due)),
             None => format!("Scheduled for {}. Manage tasks in Settings → Scheduled.", scheduler::display(job.due)),
         };
-        return Ok(RunResult { done: 0, total: p.actions.len(), error: None, undoable: false, summary });
+        return Ok(RunResult { done: 0, total: p.actions.len(), error: None, cancelled: false, undoable: false, summary });
     }
-    Ok(execute_pending(state, p))
+    Ok(execute_pending(state, p, &is_cancelled))
 }
 
-fn execute_pending(state: &AppState, p: Pending) -> RunResult {
-    match execute_durable(state, &p) {
+#[tauri::command]
+fn cancel_execution(state: State<AppState>, id: u64, scheduled_for: Option<chrono::DateTime<chrono::Local>>) -> Result<(), String> {
+    let key = scheduled_for.map_or(RunKey::Plan(id), |due| RunKey::Scheduled(id, due));
+    request_stop(&state, key)
+}
+
+fn request_stop(state: &AppState, key: RunKey) -> Result<(), String> {
+    if let RunKey::Plan(id) = key {
+        let mut pending = state.pending.lock().map_err(|_| "Preview state unavailable. Restart Voxi.")?;
+        if let Some(p) = pending.as_mut().filter(|p| p.id == id) {
+            p.stop_requested = true;
+            return Ok(());
+        }
+    }
+    if let Some(stopped) = state.active_runs.lock().map_err(|_| "Execution state unavailable. Restart Voxi.")?.get(&key) {
+        stopped.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+fn execute_pending(state: &AppState, p: Pending, is_cancelled: &dyn Fn() -> bool) -> RunResult {
+    match execute_durable(state, &p, is_cancelled) {
         Ok(result) => result,
         Err(error) => RunResult { done: 0, total: p.actions.len(), error: Some(error),
-            undoable: false, summary: "Stopped. Durable execution or undo could not be confirmed; review the recovery journal.".into() },
+            cancelled: false, undoable: false, summary: "Stopped. Durable execution or undo could not be confirmed; review the recovery journal.".into() },
     }
 }
 
-fn execute_durable(state: &AppState, p: &Pending) -> Result<RunResult, String> {
+fn execute_durable(state: &AppState, p: &Pending, is_cancelled: &dyn Fn() -> bool) -> Result<RunResult, String> {
     let roots = state.roots.read().map_err(|_| "Folder state is unavailable. Restart Voxi.")?.clone();
     let mut history = state.history.lock().map_err(|_| "History state is unavailable. Restart Voxi.")?;
     let path = history.journal_path();
     let entry = Entry { id: history.next_id(), time: chrono::Local::now(), command: p.command.clone(),
         done: vec![], inverse: vec![], undone: false, undo_of: p.undo_of };
-    let out = operation_journal::run(&path, &p.actions, &roots, entry, &mut history)?;
+    let out = operation_journal::run(&path, &p.actions, &roots, entry, &mut history, is_cancelled)?;
     let mut context = state.result_scope.lock().map_err(|_| "Result state is unavailable. Restart Voxi.")?;
     if p.context_generation == Some(context.generation)
         && let Some(snapshot) = &mut context.current { snapshot.apply(&out.done); }
     let done = out.done.len();
     let undoable = !out.inverse.is_empty() && p.undo_of.is_none();
-    let summary = match (&out.error, p.undo_of) {
-        (None, Some(_)) => "Undone.".to_string(),
-        (None, None) => format!("Done. {done} {}.", if done == 1 { "change" } else { "changes" }),
-        (Some(_), _) => format!("Stopped after {done} of {} steps.", p.actions.len()),
+    let summary = match (out.cancelled, &out.error, p.undo_of) {
+        (true, _, _) => stopped_summary(&p.actions, &out.done, undoable, p.undo_of.is_some()),
+        (false, None, Some(_)) => "Undone.".to_string(),
+        (false, None, None) => format!("Done. {done} {}.", if done == 1 { "change" } else { "changes" }),
+        (false, Some(_), _) => format!("Stopped after {done} of {} steps.", p.actions.len()),
     };
-    Ok(RunResult { done, total: p.actions.len(), error: out.error, undoable, summary })
+    Ok(RunResult { done, total: p.actions.len(), error: out.error, cancelled: out.cancelled, undoable, summary })
+}
+
+fn stopped_summary(actions: &[Action], done: &[Action], undoable: bool, was_undo: bool) -> String {
+    let is_move = |action: &Action| matches!(action, Action::Move { .. });
+    let is_trash = |action: &Action| matches!(action, Action::Trash { .. });
+    let mut summary = if was_undo {
+        format!("Stopped. Undid {} of {} steps.", done.len(), actions.len())
+    } else if actions.iter().all(|action| matches!(action, Action::Move { .. } | Action::CreateFolder { .. }))
+        && actions.iter().any(is_move) {
+        let moved = done.iter().filter(|action| is_move(action)).count();
+        let total = actions.iter().filter(|action| is_move(action)).count();
+        let items = if total == 1 { "item" } else { "items" };
+        format!("Stopped. Moved {moved} of {total} {items}.")
+    } else if actions.iter().all(is_trash) {
+        let total = actions.len();
+        let items = if total == 1 { "item" } else { "items" };
+        format!("Stopped. Moved {} of {total} {items} to the Trash.", done.len())
+    } else {
+        format!("Stopped. Completed {} of {} steps.", done.len(), actions.len())
+    };
+    if undoable { summary.push_str(" Undo reverses those changes."); }
+    if was_undo { summary.push_str(" Run Undo again to finish."); }
+    summary
 }
 
 #[tauri::command]
@@ -666,10 +747,15 @@ fn recovery_status(state: State<AppState>) -> Result<Option<operation_journal::R
 }
 
 fn recovery_status_for(state: &AppState) -> Result<Option<operation_journal::RecoveryStatus>, String> {
+    let _execution = match state.execution.try_lock() {
+        Ok(guard) => guard,
+        Err(std::sync::TryLockError::WouldBlock) => return Ok(None),
+        Err(_) => return Err("Execution state unavailable. Restart Voxi.".into()),
+    };
     operation_journal::status(&state.reports_path.with_file_name("operation-journal.json"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn acknowledge_recovery(state: State<AppState>) -> Result<(), String> {
     let _execution = state.execution.lock().map_err(|_| "Execution state unavailable. Restart Voxi.")?;
     let mut history = state.history.lock().map_err(|_| "History unavailable. Restart Voxi.")?;
@@ -711,7 +797,7 @@ fn schedule_of(state: &AppState, text: &str, now: chrono::DateTime<chrono::Local
 /// Plans a repeating task's command against the files that exist now, and runs it.
 fn sched_skip(job: &scheduler::Job) { diagnostics::emit(Event::new(Code::SchedulerSkip, Stage::Skipped).operation(job.id)); }
 
-fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule) -> String {
+fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule, is_cancelled: &dyn Fn() -> bool) -> String {
     let roots = checked_state!(state.roots.read(), "Voxi state is unavailable. Restart the app.".into()).clone();
     let shortcut = checked_state!(state.settings.lock(), "Voxi state is unavailable. Restart the app.".into()).find_shortcut(&rule.command).cloned();
     if let Err(e) = parse::check_length(&rule.command).map_err(|_| "That command is too long.".to_string()).and_then(|()| shortcut.as_ref().map_or(Ok(()), |s| settings::check_shortcut_commands(&s.commands))) { sched_skip(job); return e; }
@@ -740,7 +826,7 @@ fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule)
         Ok(Planned::Steps { actions, undo_of: None, .. }) => {
             if let Err(message) = scheduler::check_actions(&actions) { sched_skip(job); return format!("Skipped: {message}"); }
             let result = execute_pending(state, Pending { id: 0, command: job.command.clone(), actions,
-                undo_of: None, context_generation: None, context_snapshot: None, scheduled: None });
+                undo_of: None, context_generation: None, context_snapshot: None, scheduled: None, stop_requested: false }, is_cancelled);
             match result.error { Some(error) => { diagnostics::emit(Event::new(Code::SchedulerRun, Stage::Failed).operation(job.id)); format!("{} {error}", result.summary) }, None => result.summary }
         }
         Ok(_) => { sched_skip(job); "Skipped: this command no longer changes files.".into() },
@@ -759,17 +845,23 @@ fn run_due_tasks_inner(state: &AppState) -> Result<(), String> {
     let _execution = checked_state!(state.execution.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
     // Check under the execution lock, before persisting any job claim.
     if operation_journal::status(&state.reports_path.with_file_name("operation-journal.json"))?.is_some() { return Ok(()); }
-    let Some(job) = checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into())).claim(chrono::Local::now())? else { return Ok(()); };
+    let (job, run) = {
+        let mut store = checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
+        let Some(job) = store.claim(chrono::Local::now())? else { return Ok(()); };
+        let run = ActiveRun::register(&state.active_runs, RunKey::Scheduled(job.id, job.due), false)?;
+        (job, run)
+    };
+    let is_cancelled = || run.is_stopped();
     if let Some(rule) = job.repeat.clone() {
-        let summary = run_recurring(state, &job, &rule);
+        let summary = run_recurring(state, &job, &rule, &is_cancelled);
         return checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into())).finish_recurring(job.id, summary, chrono::Local::now());
     }
     let result = match job.validate() {
         Err(message) => ("failed", message),
         Ok(()) => {
             let result = execute_pending(state, Pending { id: 0, command: job.command.clone(), actions: job.actions,
-                undo_of: None, context_generation: None, context_snapshot: None, scheduled: None });
-            (if result.error.is_some() { "failed" } else { "completed" },
+                undo_of: None, context_generation: None, context_snapshot: None, scheduled: None, stop_requested: false }, &is_cancelled);
+            (if result.error.is_some() { "failed" } else if result.cancelled { "cancelled" } else { "completed" },
                 result.error.map_or(result.summary.clone(), |error| format!("{} {error}", result.summary)))
         }
     };
@@ -1109,6 +1201,7 @@ pub fn run() {
                 settings: Mutex::new(settings.clone()),
                 schedules: Mutex::new(scheduler::Store::load(data_dir.join("schedules.json"))),
                 execution: Mutex::new(()),
+                active_runs: Mutex::new(HashMap::new()),
                 settings_path,
                 reports_path: learn::reports_path(&data_dir),
                 result_scope: Mutex::new(scope::State::default()),
@@ -1210,6 +1303,7 @@ pub fn run() {
             clear_result_scope,
             result_scope,
             confirm_plan,
+            cancel_execution,
             cancel_plan,
             search_progress,
             open_hex,
@@ -1248,7 +1342,7 @@ mod result_context_tests {
                 pending: Mutex::new(None), settings: Mutex::new(Settings::default()), settings_path: home.join("settings.json"), reports_path: home.join("reports.jsonl"),
                 next_plan: AtomicU64::new(1), active_search: Mutex::new(None), presentation: Mutex::new(Default::default()),
                 result_scope: Mutex::new(Default::default()),
-                schedules: Mutex::new(scheduler::Store::load(home.join("schedules.json"))), execution: Mutex::new(()),
+                schedules: Mutex::new(scheduler::Store::load(home.join("schedules.json"))), execution: Mutex::new(()), active_runs: Mutex::new(HashMap::new()),
             };
             Self { _temp: temp, home, state, request: Cell::new(0) }
         }
@@ -1301,6 +1395,104 @@ mod result_context_tests {
     }
 
     #[test]
+    fn stopping_between_moves_persists_only_completed_changes_and_resolves_journal() {
+        let f = Fixture::new();
+        let a = f.write("Downloads/a.pdf");
+        let b = f.write("Downloads/b.pdf");
+        let moved_a = f.home.join("Documents/a.pdf");
+        let moved_b = f.home.join("Documents/b.pdf");
+        let actions = vec![
+            Action::Move { from: a.clone(), to: moved_a.clone() },
+            Action::Move { from: b.clone(), to: moved_b.clone() },
+        ];
+        let key = RunKey::Plan(1);
+        let run = ActiveRun::register(&f.state.active_runs, key, false).unwrap();
+        let result = execute_pending(&f.state, Pending {
+            id: 1, command: "move PDFs".into(), actions: actions.clone(), undo_of: None,
+            context_generation: None, context_snapshot: None, scheduled: None, stop_requested: false,
+        }, &|| {
+            if moved_a.exists() { request_stop(&f.state, key).unwrap(); }
+            run.is_stopped()
+        });
+        drop(run);
+        assert!(result.cancelled && result.error.is_none() && result.undoable);
+        assert_eq!(result.summary, "Stopped. Moved 1 of 2 items. Undo reverses those changes.");
+        assert!(!a.exists() && moved_a.exists() && b.exists() && !moved_b.exists());
+
+        let mut saved = History::load(f.home.join("history.json"));
+        let entry = saved.last_undoable().unwrap();
+        assert_eq!(entry.done, actions[..1]);
+        assert_eq!(entry.inverse, vec![Action::Move { from: moved_a.clone(), to: a.clone() }]);
+        let journal = saved.journal_path();
+        assert!(operation_journal::status(&journal).unwrap().is_none());
+        operation_journal::recover(&journal, &mut saved).unwrap();
+        assert_eq!(saved.entries.len(), 1);
+
+        let Outcome::Plan { id, total: 1, .. } = f.command("undo") else { panic!("expected one undo step") };
+        let undo = confirm_input(&f.state, id).unwrap();
+        assert!(undo.error.is_none() && !undo.cancelled);
+        assert!(a.exists() && !moved_a.exists() && b.exists() && !moved_b.exists());
+        assert!(History::load(f.home.join("history.json")).last_undoable().is_none());
+    }
+
+    #[test]
+    fn stop_requested_before_confirmation_never_changes_files_or_the_next_plan() {
+        let f = Fixture::new();
+        let source = f.write("Downloads/a.pdf");
+        let target = f.home.join("Documents/a.pdf");
+        let command = "move a.pdf from Downloads to Documents";
+        let Outcome::Plan { id, .. } = f.command(command) else { panic!("expected move plan") };
+        request_stop(&f.state, RunKey::Plan(id)).unwrap();
+        let stopped = confirm_input(&f.state, id).unwrap();
+        assert!(stopped.cancelled && stopped.error.is_none() && !stopped.undoable);
+        assert_eq!(stopped.done, 0);
+        assert!(source.exists() && !target.exists());
+        assert!(recovery_status_for(&f.state).unwrap().is_none());
+        assert!(f.state.history.lock().unwrap().entries.is_empty());
+
+        let Outcome::Plan { id: next_id, .. } = f.command(command) else { panic!("expected new move plan") };
+        request_stop(&f.state, RunKey::Plan(id)).unwrap();
+        let finished = confirm_input(&f.state, next_id).unwrap();
+        assert!(finished.error.is_none() && !finished.cancelled);
+        assert!(!source.exists() && target.exists());
+    }
+
+    #[test]
+    fn stopping_a_scheduled_occurrence_keeps_its_next_run() {
+        let f = Fixture::new();
+        let source = f.write("Downloads/a.pdf");
+        let command = "move a.pdf from Downloads to Documents";
+        let due = chrono::Local::now() - chrono::Duration::minutes(1);
+        let (_, when) = scheduler::extract_schedule(&format!("{command} daily"), chrono::Local::now()).unwrap();
+        let rule = when.unwrap().rule.unwrap();
+        f.state.schedules.lock().unwrap().add(scheduler::Job::recurring(command.into(), due, rule)).unwrap();
+        let state = &f.state;
+        std::thread::scope(|scope| {
+            // The job registers the occurrence before trying to acquire history.
+            let history = state.history.lock().unwrap();
+            let worker = scope.spawn(|| run_due_tasks_inner(state));
+            let start = std::time::Instant::now();
+            loop {
+                if state.schedules.lock().unwrap().jobs[0].status == "running" { break; }
+                assert!(start.elapsed() < std::time::Duration::from_secs(5), "job did not start");
+                std::thread::yield_now();
+            }
+            request_stop(state, RunKey::Scheduled(1, due)).unwrap();
+            drop(history);
+            worker.join().unwrap().unwrap();
+        });
+        assert!(source.exists());
+        let saved = scheduler::Store::load(f.home.join("schedules.json"));
+        let job = &saved.jobs[0];
+        assert_eq!(job.status, "pending");
+        assert!(job.due > chrono::Local::now());
+        assert!(job.summary.contains("Stopped. Moved 0 of 1 item."));
+        let next = ActiveRun::register(&state.active_runs, RunKey::Scheduled(job.id, job.due), false).unwrap();
+        request_stop(state, RunKey::Scheduled(job.id, due)).unwrap();
+        assert!(!next.is_stopped());
+    }
+
+    #[test]
     fn scheduler_leaves_due_job_pending_until_recovery_reviewed() {
         let f = Fixture::new();
         let output = f.home.join("Documents/scheduled");
@@ -1339,7 +1531,7 @@ mod result_context_tests {
             roots: RwLock::new(Roots::new(&home, None, &[])), history: Mutex::new(History::load(home.join("history.json"))),
             pending: Mutex::new(None), settings: Mutex::new(Settings::default()), settings_path: home.join("settings.json"), reports_path: home.join("reports.jsonl"),
             next_plan: AtomicU64::new(1), active_search: Mutex::new(None), presentation: Mutex::new(Default::default()),
-            result_scope: Mutex::new(Default::default()), schedules: Mutex::new(scheduler::Store::load(home.join("schedules.json"))), execution: Mutex::new(()),
+            result_scope: Mutex::new(Default::default()), schedules: Mutex::new(scheduler::Store::load(home.join("schedules.json"))), execution: Mutex::new(()), active_runs: Mutex::new(HashMap::new()),
         };
         let oversized = "x".repeat(parse::MAX_COMMAND_BYTES + 1);
         let mut outcomes = Vec::new();
@@ -1351,7 +1543,7 @@ mod result_context_tests {
         let actions = vec![Action::CreateFolder { path: home.join("Documents/created") },
             Action::Move { from: home.join("Downloads/missing"), to: home.join("Documents/missing") }];
         outcomes.push(serde_json::to_value(execute_pending(&state, Pending { id: 1, command: "partial failure".into(), actions,
-            undo_of: None, context_generation: None, context_snapshot: None, scheduled: None })).unwrap());
+            undo_of: None, context_generation: None, context_snapshot: None, scheduled: None, stop_requested: false }, &|| false)).unwrap());
         outcomes.push(serde_json::json!({
             "source": fs::read(home.join("Downloads/a.pdf")).unwrap(),
             "destinationExists": home.join("Documents/a.pdf").exists(),
@@ -1380,7 +1572,7 @@ mod result_context_tests {
         let result = execute_pending(&f.state, Pending { id: 1, command: "partial".into(),
             actions: vec![Action::CreateFolder { path: created.clone() }, Action::Move {
                 from: f.home.join("Downloads/missing"), to: f.home.join("Documents/missing") }],
-            undo_of: None, context_generation: None, context_snapshot: None, scheduled: None });
+            undo_of: None, context_generation: None, context_snapshot: None, scheduled: None, stop_requested: false }, &|| false);
         assert_eq!(result.done, 1); assert!(result.error.is_some()); assert!(result.undoable);
         assert_eq!(History::load(f.home.join("history.json")).entries[0].done.len(), 1);
         let Outcome::Plan { id, .. } = f.command("undo") else { panic!("expected undo plan") };

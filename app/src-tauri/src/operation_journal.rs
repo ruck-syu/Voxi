@@ -139,21 +139,26 @@ pub(crate) fn acknowledge(path: &Path, history: &mut History) -> Result<(), Stri
     Err("Cannot reserve a recovery archive. Try Mark as reviewed again.".into())
 }
 
-pub(crate) fn run(path: &Path, actions: &[Action], roots: &Roots, mut entry: Entry, history: &mut History) -> Result<exec::Outcome, String> {
+pub(crate) fn run(path: &Path, actions: &[Action], roots: &Roots, mut entry: Entry, history: &mut History, is_cancelled: &dyn Fn() -> bool) -> Result<exec::Outcome, String> {
     // Finder navigation has no filesystem mutation or undo to persist.
     if actions.iter().all(|a| matches!(a, Action::OpenInFinder { .. })) {
-        return Ok(exec::run(actions, roots));
+        return Ok(exec::run_with_cancel(actions, roots, is_cancelled));
     }
     history.ensure_writable()?;
     recover(path, history)?;
     let mut record = Record { entry: Some(entry.clone()), actions: actions.to_vec(), ..Record::default() };
     sync(path, &record)?;
     let mut error = None;
+    let mut cancelled = false;
     for (index, action) in actions.iter().enumerate() {
+        if is_cancelled() {
+            cancelled = true;
+            break;
+        }
         record.in_flight = Some(index);
         sync(path, &record)?;
         checkpoint("before_mutation");
-        let result = exec::step(action, roots);
+        let result = exec::step(action, roots, is_cancelled);
         checkpoint("after_mutation");
         match result {
             Ok(mut inverse) => {
@@ -168,9 +173,12 @@ pub(crate) fn run(path: &Path, actions: &[Action], roots: &Roots, mut entry: Ent
                 // The call returned: its error is evidence, not an interruption.
                 // Executor publication is staged/no-clobber; retained backups
                 // and cleanup errors are described by the returned error.
-                record.error = Some(e.clone());
                 record.in_flight = None;
-                error = Some(e);
+                cancelled = e == exec::CANCELLED;
+                if !cancelled {
+                    record.error = Some(e.clone());
+                    error = Some(e);
+                }
                 sync(path, &record)?;
                 break;
             }
@@ -180,7 +188,7 @@ pub(crate) fn run(path: &Path, actions: &[Action], roots: &Roots, mut entry: Ent
     if !entry.done.is_empty() { history.try_push(entry.clone())?; }
     record.finished = true;
     sync(path, &record)?;
-    Ok(exec::Outcome { done: entry.done, inverse: entry.inverse, error })
+    Ok(exec::Outcome { done: entry.done, inverse: entry.inverse, error, cancelled })
 }
 
 // Only test binaries honor crash injection; production environment variables
@@ -200,6 +208,9 @@ fn checkpoint(_point: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn run(path: &Path, actions: &[Action], roots: &Roots, entry: Entry, history: &mut History) -> Result<exec::Outcome, String> {
+        super::run(path, actions, roots, entry, history, &|| false)
+    }
     fn entry() -> Entry {
         Entry { id: 1, time: chrono::Local::now(), command: "move files".into(), done: vec![], inverse: vec![], undone: false, undo_of: None }
     }
@@ -264,6 +275,38 @@ mod tests {
         assert!(history.entries[0].undone);
         assert!(history.entries[0].inverse.is_empty());
         assert!(b.exists() && c.exists() && !a.exists());
+    }
+
+    #[test]
+    fn cancelled_undo_keeps_only_remaining_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let roots = Roots::new(dir.path(), None, &[]);
+        let documents = dir.path().join("Documents");
+        std::fs::create_dir(&documents).unwrap();
+        let first = Action::Move { from: documents.join("a"), to: documents.join("a-restored") };
+        let second = Action::Move { from: documents.join("b"), to: documents.join("b-restored") };
+        std::fs::write(documents.join("a"), b"first").unwrap();
+        std::fs::write(documents.join("b"), b"second").unwrap();
+        let history_path = dir.path().join("history.json");
+        let mut history = History::load(history_path.clone());
+        history.try_push(Entry { inverse: vec![first.clone(), second.clone()], ..entry() }).unwrap();
+        let path = history.journal_path();
+        let undo = Entry { id: 2, undo_of: Some(1), ..entry() };
+        let out = super::run(&path, &[first.clone(), second.clone()], &roots, undo, &mut history,
+            &|| documents.join("a-restored").exists()).unwrap();
+        assert!(out.cancelled && out.error.is_none());
+        assert_eq!(out.done, vec![first]);
+        let record = read(&path).unwrap();
+        assert!(record.finished && record.in_flight.is_none());
+        assert!(status(&path).unwrap().is_none());
+
+        let mut history = History::load(history_path.clone());
+        assert_eq!(history.last_undoable().unwrap().inverse, vec![second.clone()]);
+        let undo = Entry { id: 3, undo_of: Some(1), ..entry() };
+        assert!(run(&path, &[second], &roots, undo, &mut history).unwrap().error.is_none());
+        assert!(History::load(history_path).last_undoable().is_none());
+        assert_eq!(std::fs::read(documents.join("a-restored")).unwrap(), b"first");
+        assert_eq!(std::fs::read(documents.join("b-restored")).unwrap(), b"second");
     }
 
     #[test]

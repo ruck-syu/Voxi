@@ -90,6 +90,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   switch (cmd) {
     case "updater_failed": return;
     case "cancel_plan": pendingSchedule = null; return;
+    case "cancel_execution": return;
     case "search_progress": return 0;
     case "result_scope": return null;
     case "clear_result_scope": return;
@@ -162,9 +163,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         const first = new Date(pendingSchedule.due).toLocaleString();
         const summary = runNow ? `Done. ${total} ${total === 1 ? "change" : "changes"}. Repeats ${pendingSchedule.repeat}; next run ${first}. Manage tasks in Settings → Scheduled.` : pendingSchedule.repeat ? `Repeats ${pendingSchedule.repeat}, first on ${first}. Manage tasks in Settings → Scheduled.` : `Scheduled for ${first}. Manage tasks in Settings → Scheduled.`;
         pendingSchedule = null;
-        return { done: runNow ? total : 0, total, error: null, undoable: !!runNow, summary } satisfies RunResult;
+        return { done: runNow ? total : 0, total, error: null, cancelled: false, undoable: !!runNow, summary } satisfies RunResult;
       }
-      return { done: 26, total: 26, error: null, undoable: true, summary: "Done. 26 changes." } satisfies RunResult;
+      return { done: 26, total: 26, error: null, cancelled: false, undoable: true, summary: "Done. 26 changes." } satisfies RunResult;
     case "get_settings":
       return settings;
     case "save_settings": {

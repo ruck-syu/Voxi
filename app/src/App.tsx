@@ -11,7 +11,7 @@ type Phase =
   | { k: "ready" }
   | { k: "parsing" }
   | { k: "outcome"; outcome: Outcome }
-  | { k: "running"; title: string }
+  | { k: "running"; title: string; canStop: boolean; stopping: boolean; stopError?: string }
   | { k: "done"; result: RunResult; wasUndo: boolean }
   | { k: "error"; message: string };
 
@@ -130,8 +130,10 @@ export default function App() {
   // a macOS folder-access prompt can take focus mid-command. And not in the
   // moment right after opening, while macOS is still handing over focus.
   const busyRef = useRef(false);
-  const setBusy = useCallback((busy: boolean) => {
+  const executingRef = useRef(false);
+  const setBusy = useCallback((busy: boolean, executing = false) => {
     busyRef.current = busy;
+    executingRef.current = executing;
   }, []);
   const shownAt = useRef(0);
   useEffect(() => {
@@ -172,8 +174,11 @@ export default function App() {
       cancelClose();
       showId.current = requestId;
       awaitingShow.current = requestId;
-      setCommandSession(requestId);
-      setView((v) => (mode === "command" && v === "welcome" ? v : mode));
+      // Keep the confirmation and Stop control if the window is reopened mid-run.
+      if (!executingRef.current) {
+        setCommandSession(requestId);
+        setView((v) => (mode === "command" && v === "welcome" ? v : mode));
+      }
       shownAt.current = performance.now();
       setOpen(false);
       setPendingShow(requestId);
@@ -317,7 +322,7 @@ function CommandView({
 }: {
   open: boolean;
   onClose: () => void;
-  onBusy: (busy: boolean) => void;
+  onBusy: (busy: boolean, executing?: boolean) => void;
   onSettings: () => void;
 }) {
   const [text, setText] = useState("");
@@ -330,6 +335,7 @@ function CommandView({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ruleRef = useRef<HTMLSpanElement>(null);
   const planShownAt = useRef(0);
+  const activeRun = useRef<{ id: number; canStop: boolean; stopping: boolean } | null>(null);
   const requestId = useRef(0);
   const [searched, setSearched] = useState(0);
   // The command behind the result on screen, exactly as entered.
@@ -452,9 +458,11 @@ function CommandView({
   }, []);
 
   const confirm = useCallback(async () => {
-    if (phase.k !== "outcome" || phase.outcome.status !== "plan") return;
+    if (activeRun.current || phase.k !== "outcome" || phase.outcome.status !== "plan") return;
     const plan = phase.outcome;
-    setPhase({ k: "running", title: plan.title });
+    const canStop = !plan.scheduledFor || !!plan.repeats?.startsWith("Runs now, then ");
+    activeRun.current = { id: plan.id, canStop, stopping: false };
+    setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
       const result = await api.confirm(plan.id);
       setResultScope(await api.resultScope().catch(() => null));
@@ -463,14 +471,30 @@ function CommandView({
       // be taught: next time the phrase runs this command.
       const miss = missed.current;
       missed.current = null;
-      if (!result.error && !plan.isUndo && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
+      if (!result.error && !result.cancelled && !plan.isUndo && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
         setOffer({ k: "phrase", phrase: miss.text, command: lastCommand.current });
       }
       focusInput();
     } catch (e) {
       setPhase({ k: "error", message: String(e) });
+    } finally {
+      activeRun.current = null;
     }
   }, [phase, focusInput]);
+
+  const stop = useCallback(async () => {
+    const run = activeRun.current;
+    if (!run?.canStop || run.stopping) return;
+    run.stopping = true;
+    setPhase((current) => current.k === "running" ? { ...current, stopping: true, stopError: undefined } : current);
+    try {
+      await api.stopExecution(run.id);
+    } catch (e) {
+      if (activeRun.current !== run) return;
+      run.stopping = false;
+      setPhase((current) => current.k === "running" ? { ...current, stopping: false, stopError: errorMessage(e) } : current);
+    }
+  }, []);
 
   const reset = useCallback(() => {
     const request = ++requestId.current;
@@ -496,17 +520,18 @@ function CommandView({
       if (e.defaultPrevented || e.isComposing) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        if (e.repeat || phase.k === "running") return;
+        if (e.repeat) return;
+        if (activeRun.current) { void stop(); return; }
         if (phase.k !== "ready" || text !== "" || resultScope) reset();
         else onClose();
       } else if (e.key === "," && e.metaKey) {
         e.preventDefault();
-        onSettings();
+        if (!activeRun.current) onSettings();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase, text, resultScope, reset, onSettings, onClose]);
+  }, [phase, text, resultScope, reset, stop, onSettings, onClose]);
 
   const answer = (said: string) => {
     if (!asking) return;
@@ -531,6 +556,7 @@ function CommandView({
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (tooLong) return; // submit is disabled until the command fits
+      if (activeRun.current) return;
       if (asking) return answer(text);
       const previewing = phase.k === "outcome" && phase.outcome.status === "plan";
       if (previewing && text.trim() === "") {
@@ -591,11 +617,12 @@ function CommandView({
     submit("undo last", {});
   };
 
-  const busy = phase.k === "parsing" || phase.k === "running";
-  useEffect(() => {
-    onBusy(busy);
+  const executing = phase.k === "running";
+  const busy = phase.k === "parsing" || executing;
+  useLayoutEffect(() => {
+    onBusy(busy, executing);
     return () => onBusy(false);
-  }, [busy, onBusy]);
+  }, [busy, executing, onBusy]);
   const placeholder = useTypedPlaceholder(open && phase.k === "ready" && text === "");
 
   return (
@@ -640,6 +667,7 @@ function CommandView({
         heard={heard}
         onConfirm={confirm}
         onCancel={reset}
+        onStop={stop}
         onPick={pick}
         onFill={fill}
         onUndo={undo}
@@ -766,6 +794,7 @@ function Body(props: {
   heard: string | null;
   onConfirm: () => void;
   onCancel: () => void;
+  onStop: () => void;
   onPick: (index: number) => void;
   onFill: (s: string) => void;
   onUndo: () => void;
@@ -783,7 +812,13 @@ function Body(props: {
     return (
       <section className="body">
         <p className="title">{phase.title}</p>
-        <p className="quiet">Working…</p>
+        <p className="quiet" role="status">{phase.stopping ? "Stopping…" : "Working…"}</p>
+        {phase.stopError && <p className="note warn" role="alert">{phase.stopError}</p>}
+        {phase.canStop && <div className="actions">
+          <button type="button" className="secondary stop-execution" disabled={phase.stopping} onClick={props.onStop}>
+            Stop <kbd>esc</kbd>
+          </button>
+        </div>}
       </section>
     );
   }
@@ -800,8 +835,8 @@ function Body(props: {
     const r = phase.result;
     return (
       <section className="body">
-        <p className={r.error ? "title warn nudge" : "title"}>
-          {!r.error && <Tick />}
+        <p className={r.error ? "title warn nudge" : "title"} role="status">
+          {!r.error && !r.cancelled && <Tick />}
           {r.summary}
         </p>
         {r.error && <p className="note">{r.error}</p>}
@@ -927,11 +962,11 @@ function Footer({ phase, asking, onSettings }: { phase: Phase; asking: boolean; 
           ? (phase.outcome.scheduledFor ? (phase.outcome.repeats?.startsWith("Runs now, then ") ? "Enter to run now and repeat. Later runs won't ask first. Esc to cancel." : phase.outcome.repeats ? "Enter to schedule. Later runs won't ask first. Esc to cancel." : "Enter to schedule. Esc to cancel.") : "Enter to run. Nothing changes until then.")
           : phase.k === "outcome" && phase.outcome.status === "ambiguous"
             ? "Esc to go back"
-            : "Say the next command. Esc to go back.";
+            : phase.k === "running" ? "" : "Say the next command. Esc to go back.";
   return (
     <footer className="foot">
       <span>{hint}</span>
-      <button className="link" onClick={onSettings} title="Settings (⌘,)">
+      <button className="link" onClick={onSettings} disabled={phase.k === "running"} title="Settings (⌘,)">
         Settings <kbd>⌘,</kbd>
       </button>
     </footer>
@@ -1114,6 +1149,7 @@ function ScheduledTab() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<number | null>(null);
+  const [stoppingRun, setStoppingRun] = useState<string | null>(null);
   const [showing, setShowing] = useState<"active" | "done">("active");
   useEffect(() => {
     let alive = true;
@@ -1129,6 +1165,15 @@ function ScheduledTab() {
     try { await action(id); setTasks(await api.scheduledTasks()); setError(null); }
     catch (e) { setError(String(e)); }
     finally { setWorking(null); }
+  };
+  const stopRun = async (task: ScheduledTask, run: string) => {
+    setStoppingRun(run);
+    try {
+      await api.stopExecution(task.id, task.due);
+    } catch (e) {
+      setStoppingRun((current) => current === run ? null : current);
+      setError(errorMessage(e));
+    }
   };
   const when = (task: ScheduledTask) => {
     const at = new Date(task.due).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -1166,18 +1211,22 @@ function ScheduledTab() {
     </div> :
       <ul className="group-rows tasks-list">{shown.map((task) => {
         const [status, tone] = STATUS[task.status];
+        const run = `${task.id}-${task.due}`;
         return <li className="row task" key={task.id}>
           <span className="row-icon"><Icon name={task.repeat ? "update" : "scheduled"} /></span>
           <div className="row-copy">
             <span className="row-label task-command">{task.command}</span>
             <span className="row-desc">{when(task)}</span>
             {task.summary && <span className="row-desc task-summary">{task.summary}</span>}
-            {task.status !== "running" && <span className="task-actions">
+            <span className="task-actions">
+              {task.status === "running" && <button type="button" className="link" disabled={stoppingRun === run} onClick={() => void stopRun(task, run)}>
+                {stoppingRun === run ? "Stopping…" : "Stop this run"}
+              </button>}
               {task.repeat && task.status === "pending" && button(task, "Pause", "Pausing…", api.pauseScheduledTask)}
               {task.status === "paused" && button(task, "Resume", "Resuming…", api.resumeScheduledTask)}
               {(task.status === "pending" || task.status === "paused") && button(task, task.repeat ? "Stop repeating" : "Cancel task", "Stopping…", api.cancelScheduledTask)}
               {task.repeat && (task.status === "cancelled" || task.status === "failed") && button(task, "Move to active", "Moving…", api.resumeScheduledTask)}
-            </span>}
+            </span>
           </div>
           <span className={`pill ${tone}`}>{status}</span>
         </li>;

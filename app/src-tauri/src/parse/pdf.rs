@@ -5,16 +5,24 @@ use crate::model::{FileType, Intent};
 use regex::Regex;
 use std::sync::LazyLock;
 
-static OUTPUT_LABEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:a\s+)?(?:file\s+)?(?:called|named)\s+").unwrap());
+static OUTPUT_LABEL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:(?:(?:a|an|one|1)(?:\s+single)?|single)\s+)?(?:(?:file|pdf)\s*(?:,\s*|(?:called|named)\s+)|(?:called|named)\s+)").unwrap());
 
-fn output_name(text: &str) -> String { clean_name(&OUTPUT_LABEL.replace(text, "")) }
+/// "into one out.pdf" -> "out.pdf"
+static COUNT_WORD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^(?:an?\s+single|single|one|1)\s+(\S+\.[a-z0-9]{1,5})$").unwrap());
+
+fn output_name(text: &str) -> String { clean_name(&COUNT_WORD.replace(&OUTPUT_LABEL.replace(text, ""), "$1")) }
 
 pub fn patterns() -> Vec<Pattern> {
     vec![
         pat("put_pdfs_together", r"^put\s+(.+?)\s+together\s+(?:as|into)\s+(.+)$", |c| {
+            let output = output_name(&cap(c, 2)?);
+            if output.to_ascii_lowercase().ends_with(".zip") {
+                return Some(Intent::Zip { src: super::src(c, 1)?, output: Some(output) });
+            }
             let src = typed_src(c, 1, FileType::Pdfs)?;
             if !matches!(src, crate::model::Source::Set { .. }) { return None; }
-            Some(Intent::MergePdf { src, output: output_name(&cap(c, 2)?) })
+            Some(Intent::MergePdf { src, output })
         }),
         pat(
             "extract_pages",
@@ -37,7 +45,7 @@ pub fn patterns() -> Vec<Pattern> {
                 Some(Intent::ExtractPages { src: typed_src(c, 2, FileType::Pdfs)?, from: n, to: n, output: cap(c, 3).map(|s| clean_name(&s)) })
             },
         ),
-        pat("split_pdf", r"^split\s+(.+?)(?:\s+(?:into|to|by)\s+(?:(?:(?:separate|individual|single)\s+|(?:one|1)\s+(?:file\s+)?per\s+)?pages?|(?:one|1)\s+page\s+each))?$", |c| {
+        pat("split_pdf", r"^split\s+(?:up\s+)?(.+?)(?:\s+(?:into|to|by)\s+(?:(?:(?:its|their)\s+|(?:separate|individual|single)\s+|(?:one|1)\s+(?:file\s+)?per\s+)?pages?|(?:one|1)\s+page\s+each))?$", |c| {
             Some(Intent::SplitPdf { src: typed_src(c, 1, FileType::Pdfs)? })
         }),
         pat(

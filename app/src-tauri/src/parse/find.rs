@@ -26,17 +26,30 @@ pub fn specific() -> Vec<Pattern> {
             |c| Some(Intent::Duplicates { folder: folder(c, 1)? }),
         ),
         pat("count", r"^count\s+(.+)$", |c| Some(Intent::Count { src: src(c, 1)? })),
-        pat("how_many", r"^how\s+many\s+(.+?)\s+(?:are\s+there\s+|are\s+|do\s+i\s+have\s+)?(in|on|from)\s+(.+)$", |c| {
+        pat("how_many", r"^how\s+many\s+(.+?)\s+(?:there\s+are\s+|are\s+there\s+|are\s+|do\s+i\s+have\s+)?(in|on|from)\s+(.+)$", |c| {
             let phrase = format!("{} in {}", cap(c, 1)?, cap(c, 3)?);
             Some(Intent::Count { src: super::phrase::parse_source(&phrase)? })
+        }),
+        // "how many PDFs are there?": a count of a set with no folder named.
+        pat("how_many_there", r"^how\s+many\s+(.+?)\s+(?:are\s+there|there\s+are)(?:\s+(?:in|on|from)\s+(.+))?$", |c| {
+            let subject = cap(c, 1)?;
+            let phrase = match c.get(2) { Some(loc) => format!("{subject} in {}", loc.as_str()), None => subject };
+            Some(Intent::Count { src: super::phrase::set_source(&phrase)? })
         }),
         // "how many screenshots did I take today": a count of a set with a type or filter.
         pat("how_many_any", r"^how\s+many\s+(.+)$", |c| Some(Intent::Count { src: super::phrase::set_source(&cap(c, 1)?)? })),
         pat(
             "how_much_space",
-            r"^how\s+much\s+(?:space|storage|room)\s+(?:is\s+|does\s+)?(.+?)\s+(?:is\s+)?(?:using|takes?(?:\s+up)?|uses?)$",
+            r"^how\s+much\s+(?:space|storage|room)\s+(?:is\s+|does\s+|do\s+)?(.+?)\s+(?:is\s+)?(?:using|takes?(?:\s+up)?|uses?)$",
             |c| Some(Intent::Size { folder: folder(c, 1)? }),
         ),
+        // An answer about one file's facts uses the same read-only info path.
+        pat("file_info", r"^(?:info|information|details)\s+(?:about|of|for|on)\s+(.+)$", |c| {
+            Some(Intent::List { src: super::phrase::parse_source(&cap(c, 1)?)? })
+        }),
+        pat("file_modified_when", r"^(?:when\s+was|when\s+did|what'?s\s+the\s+(?:modified|creation|created)\s+(?:date|time)\s+of)\s+(.+?)(?:\s+(?:modified|created|changed|last\s+modified))?$", |c| {
+            Some(Intent::List { src: super::phrase::parse_source(&cap(c, 1)?)? })
+        }),
     ]
 }
 

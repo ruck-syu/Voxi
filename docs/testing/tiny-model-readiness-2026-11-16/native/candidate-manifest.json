@@ -1,0 +1,141 @@
+{
+  "candidate": "Voxi T5 Efficient Tiny v3, Candle Q8_0, CPU/arm64",
+  "created_utc": "2026-11-16T06:15:07Z",
+  "status": "native export prototype; parent integration and independent holdout gates remain",
+  "source_checkpoint": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-2026-11-15/legacy/out-v3/model_t5-efficient-tiny-v3",
+  "source_sha256": {
+    "model.safetensors": "c90edf63e27c839d4e56b90a328e3e07776bc7ee7eb6d2adaf91eec3419a8d86",
+    "config.json": "d833cc011ea12e96ff11e8c718223206a7a8985f35e553684602bcfb432aede9",
+    "generation_config.json": "2e6e2716f1925aac8fdbee6e61a49f809b7ecedd4f74e0e94b0517b5d9504c1a",
+    "tokenizer.json": "4629b0bb9b2c52f0a1364a8db3f609697e2ca4179e3d5ad3470a3267b4aeedd6",
+    "tokenizer_config.json": "e5a85ad07259a824fcb86ebd3ee9e27b1b79b0d4f2840c7b55a584f9c21c8970"
+  },
+  "export": {
+    "format": "GGUF tensors loaded by candle-transformers quantized_t5",
+    "quantization": "GGML Q8_0 for eligible 2D tensors, including shared.weight 32101x256; F32 for small relative_attention_bias tensors and 1D norms; omit duplicate lm_head.weight because tied to shared.weight",
+    "preserves": [
+      "full encoder-decoder T5",
+      "tied embeddings and output projection",
+      "relative position biases",
+      "original tokenizer including special-token behavior",
+      "original model config"
+    ],
+    "package_path": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/model",
+    "files": {
+      "model-q8_0.gguf": {
+        "bytes": 16562016,
+        "sha256": "10ee3c175bf71a77f9104cb6293416721bc81a174b97a1e6dc52715543986245"
+      },
+      "tokenizer.json": {
+        "bytes": 2422598,
+        "sha256": "4629b0bb9b2c52f0a1364a8db3f609697e2ca4179e3d5ad3470a3267b4aeedd6"
+      },
+      "config.json": {
+        "bytes": 786,
+        "sha256": "d833cc011ea12e96ff11e8c718223206a7a8985f35e553684602bcfb432aede9"
+      }
+    },
+    "package_bytes": 18985400,
+    "package_limit_bytes": 25000000,
+    "under_limit": true
+  },
+  "native_runtime": {
+    "source": "docs/testing/tiny-model-readiness-2026-11-16/native",
+    "api": "voxi_tiny_native::NativeRewriter::load_with_threads(model_dir, threads); NativeRewriter::rewrite(text)",
+    "cli": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/target/release/voxi-tiny-native",
+    "binary_bytes": 7595040,
+    "binary_sha256": "e18208f4ab4250aff646b5239bd4b55b19de3db77cf1118b0524c63b4b9b17ed",
+    "binary_arch": "arm64 Mach-O",
+    "dynamic_libraries": [
+      "/usr/lib/libSystem.B.dylib",
+      "/usr/lib/libiconv.2.dylib"
+    ],
+    "dependency_note": "Both dynamic libraries are OS-provided via the macOS shared cache; not bundled in the model package.",
+    "runtime_versions": {
+      "rustc": "1.96.0",
+      "candle-core": "0.11.1",
+      "candle-transformers": "0.11.1",
+      "tokenizers": "0.21.4",
+      "target_os": "macOS",
+      "machine": "arm64"
+    },
+    "generation": {
+      "device": "CPU",
+      "threads": 1,
+      "sampling": "greedy argmax",
+      "max_input_tokens": 64,
+      "max_new_tokens": 64,
+      "eos_token_id": 1,
+      "decoder_start_token_id": 0,
+      "input_truncation": "disabled; reject over limit",
+      "use_cache": false,
+      "argmax_tie_break": "first token ID, matching PyTorch"
+    },
+    "pool_scope": "one dedicated Rayon pool per NativeRewriter; never reconfigures host global pool",
+    "package_identity": "compile-time pinned SHA-256 for model/config/tokenizer; parse exact verified buffers; PackageMismatch refuses before inference"
+  },
+  "benchmark": {
+    "inputs": "300 evenly spread from pre-existing generated-development rows in v3-local-fp32 predictions; parity-only, not a new holdout",
+    "fp32_reference_rows": 9940,
+    "warmups": 3,
+    "timed_evenly_spread_rows": 40,
+    "threads": 1,
+    "model_load_ms": 107.545,
+    "latency_p50_ms": 41.5036455,
+    "latency_p95_ms": 67.040958,
+    "p95_method": "index floor of sorted 40 sample values at floor((n-1)*0.95)",
+    "exact_rewrite_matches": 300,
+    "mismatches_or_errors": 0,
+    "representative_mismatches": [],
+    "raw_native_predictions": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/parity-verified-package/predictions-native.jsonl",
+    "latency_and_parity_log": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/parity-verified-package/parity-latency.json",
+    "raw_predictions_sha256": "9a5965f71837b4f84f45e39bfa8508c52b94ab2f9f67142155c5645519d7930a",
+    "latency_log_sha256": "a5cd6fa50de25fa167254b4b62532c285205dfac4e3973bf304fa87583132b48",
+    "failure_path_results": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/failure-path-verified-package.json",
+    "failure_path_results_sha256": "d0507323e3e5c0779476bdd806c188179c9ba1ba63d7fe4ee377508f46fbbba5",
+    "fp32_reference": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-2026-11-15/v3-local-fp32/predictions.jsonl",
+    "fp32_reference_sha256": "cc0bae6ec545fdd15b87bd93db388864b9c7ae88ea37ed81489eeade670dbff7"
+  },
+  "failure_path_observations": {
+    "missing_model": "load error before serving",
+    "corrupt_gguf": "hash mismatch; load refuses before GGUF parsing",
+    "malformed_json": "per-line invalid_json error",
+    "empty_or_wrong_type_text": "per-line invalid_input error",
+    "overlong_input": "416 tokens rejected against 64-token limit; no truncation",
+    "no_eos": "fails closed; 453.327ms in current smoke test, not a worst-case latency guarantee",
+    "valid_but_replaced_config": "PackageMismatch before inference (changed decoder start token ID)"
+  },
+  "tool_hashes": {
+    "export_gguf.py": "944d4c558429f877da5c69fff6d6325dc658333ab8327bf2ce71c4eeb5fa047c",
+    "run_parity.py": "f172f22ab20eca0d838afd6d4162a54c2ab4502d2f477e999dfc3102e3031adc",
+    "failure_smoke.py": "535eb25500400b5742aba39c21b9772db119d46647da542ba33b84ffff65a85b",
+    "src/lib.rs": "52142642863b6fd22f8595503c0f4afbfb0ed2a2b5975213f185948e6f33e560",
+    "src/main.rs": "76460e1802317bace531da4c745bd37c4af76760932085fb67e3b06d8956d202",
+    "Cargo.toml": "16e397d4eeca60effb420073e7c85b50b42737a931144383a55bab0549a8e22d",
+    "Cargo.lock": "c0a97f091b7f79e254a548c4065f9f937553e913cc1a42cbbc7cb2cc83049dde"
+  },
+  "export_toolchain": {
+    "python": "3.14.7",
+    "gguf": "0.19.0",
+    "numpy": "2.5.5",
+    "safetensors": "0.8.0"
+  },
+  "integration_boundary": "Prototype does not include semantic guards, scheduler/app routing, or independent-bank evaluation. Parent owns those gates; model output is never executable authority.",
+  "adversarial_300_parity": {
+    "report": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/adversarial-300-isolated-pool/summary.json",
+    "sha256": "053980be7ea7fcfaec282410caefbb8eb608a5bf81db130a478e706a4a4eefcd",
+    "exact_rewrites": 297,
+    "differences": [
+      "T032",
+      "T073",
+      "S003"
+    ],
+    "note": "Different development sample from the 300 generated-development parity sample. No claim of complete FP32 equivalence. Original rule outputs take priority for all three differing commands; evaluate effective certificate routing separately."
+  },
+  "parent_runtime_checks": {
+    "file": "parent-runtime-checks.json",
+    "sha256": "0064e814b2e8d360310d07804ab0e35e47f29491eab3ccf5986dcec7adba00ef",
+    "status": "current package-verified runtime checks"
+  },
+  "updated_utc": "2026-11-16T06:58:42.168145+00:00"
+}

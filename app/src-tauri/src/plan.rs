@@ -17,6 +17,10 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime};
 
+#[cfg(test)]
+#[path = "plan_model_audit.rs"]
+mod model_audit;
+
 /// Why planning stopped early.
 #[derive(Debug)]
 pub enum Stop {
@@ -26,6 +30,32 @@ pub enum Stop {
 
 fn problem<T>(msg: impl Into<String>) -> Result<T, Stop> {
     Err(Stop::Problem(msg.into()))
+}
+
+/// Conservative path overlap used by the chain/shortcut dependency guard.
+fn overlaps(a: &Path, b: &Path) -> bool {
+    // Conservative on case-sensitive volumes too: a preview must not
+    // depend on two spellings denoting different filesystem objects.
+    let a = PathBuf::from(fsx::canonical(a).to_string_lossy().to_lowercase());
+    let b = PathBuf::from(fsx::canonical(b).to_string_lossy().to_lowercase());
+    a.starts_with(&b) || b.starts_with(&a)
+}
+
+/// True when two paths denote the same folder, for folders that may only be
+/// planned and not exist on disk yet. `overlaps` is symmetric (an ancestor
+/// overlaps its descendant), so it can't answer "is this the created folder".
+fn same_path(a: &Path, b: &Path) -> bool {
+    fsx::canonical(a).to_string_lossy().to_lowercase() == fsx::canonical(b).to_string_lossy().to_lowercase()
+}
+
+/// What earlier steps of one plan (a chain or a shortcut) touched, so a
+/// later step can be refused before it reads a folder those steps write.
+#[derive(Default)]
+struct Dependencies {
+    files: Vec<PathBuf>,
+    dirs: Vec<PathBuf>,
+    /// Folders written into, and whether the write was a CreateFolder.
+    writes: Vec<(PathBuf, bool)>,
 }
 
 /// One command's contribution: its title when it added steps to the shared
@@ -51,6 +81,7 @@ pub struct Planner<'a> {
     notes: Vec<Option<String>>,
     warnings: Vec<String>,
     planned_dirs: HashSet<PathBuf>,
+    chain_input: Option<PathBuf>,
     now: DateTime<Local>,
     search: search::Search,
     scope: Option<crate::scope::Snapshot>,
@@ -70,6 +101,7 @@ impl<'a> Planner<'a> {
             notes: Vec::new(),
             warnings: Vec::new(),
             planned_dirs: HashSet::new(),
+            chain_input: None,
             now: Local::now(),
             search: search::Search::default(),
             scope: None,
@@ -112,7 +144,8 @@ impl<'a> Planner<'a> {
     /// screenshots today, say) becomes a note instead of stopping the rest.
     pub fn plan_shortcut(mut self, name: &str, commands: &[(String, Intent)], history: &History) -> Result<Planned, Stop> {
         let mut notes_by_command = Vec::new();
-        for (text, intent) in commands {
+        let mut deps = Dependencies::default();
+        for (index, (text, intent)) in commands.iter().enumerate() {
             let (actions, notes, warnings, dirs) =
                 (self.actions.len(), self.notes.len(), self.warnings.len(), self.planned_dirs.clone());
             let result = self.step(intent, history);
@@ -122,7 +155,11 @@ impl<'a> Planner<'a> {
                     let why = self.warnings.drain(warnings..).next().unwrap_or_else(|| "nothing to change".into());
                     notes_by_command.push(format!("“{text}”: {why}"));
                 }
-                Ok(Step::Changes(_)) => {}
+                Ok(Step::Changes(_)) => {
+                    // A shortcut is one preview: give later commands the same
+                    // dependency guard “then” chains get.
+                    self.check_dependencies(actions, index + 1, &mut deps)?;
+                }
                 Ok(Step::Finished(_)) => {
                     return problem(format!("“{text}” only shows information, so it can't be part of “{name}”."));
                 }
@@ -154,6 +191,7 @@ impl<'a> Planner<'a> {
 
     fn step(&mut self, intent: &Intent, history: &History) -> Result<Step, Stop> {
         let title = match intent {
+            Intent::Chain { commands } => self.chain(commands, history)?,
             Intent::Move { src, to } => self.transfer(src, to, false)?,
             Intent::Copy { src, to } => self.transfer(src, to, true)?,
             Intent::Rename { src, new_name } => self.rename_one(src, new_name)?,
@@ -174,8 +212,8 @@ impl<'a> Planner<'a> {
             Intent::Lowercase { src } => self.batch_rename(src, "Lowercase", |name, _| Some(name.to_lowercase()))?,
             Intent::Number { src, base, width } => self.number(src, base, *width)?,
             Intent::CreateFolders { names, parent } => self.create_folders(names, parent.as_deref())?,
-            Intent::SortByType { folder } => self.sort(folder, true)?,
-            Intent::SortByMonth { folder } => self.sort(folder, false)?,
+            Intent::SortByType { folder, include_subfolders } => self.sort(folder, true, *include_subfolders)?,
+            Intent::SortByMonth { folder, include_subfolders } => self.sort(folder, false, *include_subfolders)?,
             Intent::ConvertImage { src, format } => self.convert(src, *format)?,
             Intent::ResizeImage { src, width } => self.resize(src, *width)?,
             Intent::MergePdf { src, output } => self.merge(src, output)?,
@@ -256,6 +294,9 @@ impl<'a> Planner<'a> {
             return problem("Paths with “..” aren't allowed.");
         }
         if let Some(p) = self.choices.get(name) {
+            // A picked folder is a path like any other: a stale or hostile
+            // choice must not skip the root/symlink check.
+            self.check(p)?;
             return Ok(p.clone());
         }
         if name.starts_with('/') || name.starts_with('~') {
@@ -293,6 +334,7 @@ impl<'a> Planner<'a> {
 
     /// Resolves a file or folder by name, searching the allowed folders.
     fn resolve_item(&self, name: &str, folder: Option<&str>) -> Result<PathBuf, Stop> {
+        if name == "\0chain-output" && folder.is_none() && let Some(path) = &self.chain_input { return Ok(path.clone()); }
         if name.trim().is_empty() { return problem("Name the file or folder to use."); }
         if let Some(scope) = &self.scope {
             let paths = scope.paths();
@@ -411,7 +453,19 @@ impl<'a> Planner<'a> {
             }
             // Screenshots can be anywhere: search every allowed folder.
             None if filter.file_type == Some(FileType::Screenshots) => Ok((self.roots.search_roots(), "your folders".into())),
+            // Deliberately narrow: widening an unscoped search would silently
+            // change which files a command touches. Make the limit visible in
+            // read-only answers instead of quietly skipping other roots.
             None => Ok((vec![self.roots.downloads(), self.roots.desktop()], "Downloads and Desktop".into())),
+        }
+    }
+
+    /// Extra summary text for read-only answers to unscoped searches.
+    fn search_scope_hint(src: &Source) -> &'static str {
+        match src {
+            Source::Set { folder: None, filter } if filter.file_type != Some(FileType::Screenshots) =>
+                "Searched only Downloads and Desktop. Say “in Documents” or “in Pictures” to search there. ",
+            _ => "",
         }
     }
 
@@ -463,16 +517,73 @@ impl<'a> Planner<'a> {
         Ok((paths, label))
     }
 
+    /// Moves, copies and deletes all read only the files *directly* in the
+    /// folders a set names, so "PDFs in Downloads" never reaches into a project
+    /// folder kept there. Screenshots with no folder are the one exception:
+    /// like moves, they keep the recursive hits from every searched root.
+    /// Returns how many matching files in subfolders were left out.
+    fn keep_direct_children(&self, src: &Source, paths: &mut Vec<PathBuf>) -> Result<usize, Stop> {
+        if let Source::Set { folder, filter } = src {
+            let anywhere = folder.is_none() && filter.file_type == Some(FileType::Screenshots);
+            if self.scope.is_none() && !anywhere {
+                let (dirs, _) = self.set_folders(folder.as_deref(), filter)?;
+                let before = paths.len();
+                paths.retain(|p| p.parent().is_some_and(|d| dirs.iter().any(|dir| fsx::same_file(d, dir))));
+                return Ok(before - paths.len());
+            }
+        }
+        Ok(0)
+    }
+
+    /// The shared "nothing directly in the folder" refusal for transfers and
+    /// deletes that had to drop subfolder matches.
+    fn no_direct_files(&self, label: &str, nested: usize) -> Stop {
+        if nested > 0 {
+            Stop::Problem(format!("No matching files directly in {label}; {nested} in its subfolders were left alone."))
+        } else {
+            Stop::Problem(format!("No files match in {label}."))
+        }
+    }
+
     // ---- Planners ----------------------------------------------------------
 
     fn transfer(&mut self, src: &Source, to: &str, copy: bool) -> Result<String, Stop> {
-        let (paths, _) = self.expand_nonempty(src)?;
+        let (mut paths, label) = self.expand(src)?;
+        let nested = self.keep_direct_children(src, &mut paths)?;
+        if paths.is_empty() {
+            return Err(self.no_direct_files(&label, nested));
+        }
         let src_dir = match src {
             Source::Set { folder: Some(folder), .. } => Some(self.resolve_folder(folder, None)?),
             _ => None,
         };
         let parent_for_new = src_dir.unwrap_or_else(|| self.roots.desktop());
         let dest = self.resolve_folder(to, Some(&parent_for_new))?;
+        // A filter after "to Trash" ("move files ... to Trash between 10 and
+        // 50 MB") parses as a Move, not the delete phrasing. Never create a
+        // folder called Trash: plan the Trash actions the delete phrasing
+        // would plan for the files already selected above.
+        let dest_name = file_name(&dest).to_ascii_lowercase();
+        if matches!(dest_name.as_str(), "trash" | "bin" | "recycle bin")
+            && !dest.exists()
+            && !self.planned_dirs.contains(&dest)
+        {
+            if copy {
+                return problem("Copying to the Trash isn't supported. Use “delete” instead.");
+            }
+            for p in &paths {
+                self.check(p)?;
+                if self.roots.is_root(p) {
+                    return problem(format!("Voxi won't remove {} itself.", file_name(p)));
+                }
+                self.push(Action::Trash { path: p.clone() }, None);
+            }
+            return Ok(if matches!(src, Source::Item { .. }) {
+                format!("Move {} to the Trash", count_label(&paths))
+            } else {
+                format!("Move {} from {label} to the Trash", count_label(&paths))
+            });
+        }
         self.ensure_dir(&dest)?;
         // A destination inside the source may already hold previous results.
         let destination_in_source = match src {
@@ -575,6 +686,150 @@ impl<'a> Planner<'a> {
         Ok(format!("Number {} in {label} as {base}{:0width$}…", count_label(&paths), 1))
     }
 
+    /// Refuses a step whose inputs overlap files used earlier, or whose source
+    /// folder is one an earlier step writes into. Every step's file list is
+    /// read from disk *before* the plan runs, so a later step can never see
+    /// what an earlier step creates or moves into a shared folder.
+    fn check_dependencies(&self, start: usize, index: usize, deps: &mut Dependencies) -> Result<(), Stop> {
+        let depends = || format!("Command {index} depends on files used earlier. Run those commands separately.");
+        let mut files = Vec::new();
+        let mut dirs = Vec::new();
+        let mut writes = Vec::new();
+        for action in &self.actions[start..] {
+            let (inputs, outputs): (Vec<PathBuf>, Vec<PathBuf>) = match action {
+                Action::CreateFolder { path } => {
+                    if deps.files.iter().any(|p| overlaps(path, p)) {
+                        return problem(depends());
+                    }
+                    dirs.push(path.clone());
+                    writes.push((path.clone(), true));
+                    continue;
+                }
+                Action::Move { from, to } | Action::Copy { from, to } => (vec![from.clone()], vec![to.clone()]),
+                Action::Rename { path, new_name } => (vec![path.clone()], path.parent().map(|p| vec![p.join(new_name)]).unwrap_or_default()),
+                Action::Trash { path } => (vec![path.clone()], Vec::new()),
+                Action::ConvertImage { path, output, .. } => (vec![path.clone()], vec![output.clone()]),
+                // The original is copied to `backup`, then `path` is resized in place.
+                Action::ResizeImage { path, backup, .. } => (vec![path.clone()], vec![backup.clone()]),
+                Action::ImagesToPdf { paths, output } | Action::MergePdf { paths, output } => (paths.clone(), vec![output.clone()]),
+                Action::SplitPdf { path, output_dir } => (vec![path.clone()], vec![output_dir.clone()]),
+                Action::ExtractPages { path, output, .. } => (vec![path.clone()], vec![output.clone()]),
+                Action::Zip { path, output } => (vec![path.clone()], vec![output.clone()]),
+                Action::Unzip { path, destination } => (vec![path.clone()], vec![destination.clone()]),
+                // Read-only, undo-only and other actions don't touch files here.
+                _ => continue,
+            };
+            // A later step reads its file list from the folder it draws from.
+            // If an earlier step writes into that folder, this list is stale.
+            // The one exception is "create X then move into X": there the
+            // created folder is the later move's destination, not a source.
+            for input in &inputs {
+                if let Some(source_dir) = input.parent() {
+                    let touched: Vec<_> = deps.writes.iter().filter(|(dir, _)| overlaps(source_dir, dir)).collect();
+                    if !touched.is_empty() {
+                        // A real move/copy destination inside this folder changes
+                        // the direct file list a later step would read, so that
+                        // preview is stale. Keep refusing those writes.
+                        let stale_from_write = touched.iter().any(|(_, created)| !*created);
+                        // A newly created empty folder can't change a direct-only
+                        // listing (moves, copies and deletes all read direct
+                        // children now). It only matters if this step reads the
+                        // created folder itself.
+                        let stale_from_create = touched.iter().any(|(dir, created)| {
+                            *created && same_path(source_dir, dir)
+                        });
+                        if stale_from_write || stale_from_create {
+                            return problem(depends());
+                        }
+                    }
+                }
+                if deps.files.iter().any(|p| overlaps(input, p) || outputs.iter().any(|out| overlaps(out, p)))
+                    || deps.dirs.iter().any(|p| overlaps(input, p))
+                {
+                    return problem(depends());
+                }
+            }
+            for out in &outputs {
+                if let Some(parent) = out.parent() {
+                    writes.push((parent.to_path_buf(), false));
+                }
+            }
+            files.extend(inputs);
+            files.extend(outputs);
+        }
+        deps.files.extend(files);
+        deps.dirs.extend(dirs);
+        deps.writes.extend(writes);
+        Ok(())
+    }
+
+    /// Shares reservations and binds explicit output dependencies to concrete
+    /// paths. Unbound disk searches still use the conservative stale-list guard.
+    fn chain(&mut self, commands: &[Intent], history: &History) -> Result<String, Stop> {
+        if self.scope.is_some() { return problem("Clear the previous result list before chaining commands."); }
+        if !(2..=8).contains(&commands.len()) { return problem("Chain between 2 and 8 commands."); }
+        let mut deps = Dependencies::default();
+        let mut previous = None;
+        let mut created_targets = HashSet::new();
+        for (index, intent) in commands.iter().enumerate() {
+            if !matches!(intent, Intent::CreateFolders { .. } | Intent::Move { .. } | Intent::Copy { .. } | Intent::Rename { .. } | Intent::Trash { .. } | Intent::Zip { .. } | Intent::Unzip { .. } | Intent::ConvertImage { .. } | Intent::ResizeImage { .. }) {
+                return problem("This command cannot be included in a file-changing chain.");
+            }
+            let mut bound = intent.clone();
+            let explicit_it = matches!(intent.source(), Some(Source::Item { name, folder: None }) if name == "\0chain-output");
+            // A named convert output is also an explicit dependency. Bind to
+            // the actual reserved output, including its collision suffix.
+            let converted = match (intent, self.actions.last()) {
+                (Intent::ResizeImage { src: Source::Item { name, folder: None }, .. }, Some(Action::ConvertImage { path, output, format })) => {
+                    let wanted = path.with_extension(format.ext());
+                    let requested = if Path::new(name).is_absolute() { PathBuf::from(name) } else { self.roots.home.join(name) };
+                    same_path(&wanted, &requested).then(|| output.clone())
+                },
+                _ => None,
+            };
+            self.chain_input = if explicit_it { previous.clone() } else { converted };
+            if explicit_it && self.chain_input.is_none() {
+                return problem(format!("Command {} uses ‘it’, but the previous command has no single output. Name one file or folder, or run the commands separately.", index + 1));
+            }
+            let dependent = self.chain_input.is_some();
+            if dependent { bound.replace_source(Source::item("\0chain-output")); }
+            let start = self.actions.len();
+            match self.step(&bound, history)? {
+                Step::Changes(_) => {},
+                Step::Finished(_) => return problem("Every step in a chain must change files."),
+            }
+            self.chain_input = None;
+            if dependent {
+                // This input is a concrete earlier output, never a fresh
+                // directory search. Execution and inverse actions are ordered.
+                let mut next = Dependencies::default();
+                self.check_dependencies(start, index + 1, &mut next)?;
+                deps.files.extend(next.files);
+                deps.dirs.extend(next.dirs);
+                deps.writes.extend(next.writes);
+            } else { self.check_dependencies(start, index + 1, &mut deps)?; }
+            if let Intent::CreateFolders { names, parent } = intent {
+                let parent = match parent { Some(p) => self.resolve_folder(p, None)?, None => self.roots.desktop() };
+                created_targets.extend(names.iter().map(|n| parent.join(n)));
+            }
+            let added = &self.actions[start..];
+            previous = match added.last() {
+                Some(Action::CreateFolder { path }) => Some(path.clone()),
+                Some(Action::Rename { path, new_name }) => Some(path.with_file_name(new_name)),
+                Some(Action::Move { to, .. } | Action::Copy { to, .. }) => {
+                    if to.parent().is_some_and(|p| created_targets.contains(p)) { to.parent().map(Path::to_path_buf) }
+                    else if added.iter().filter(|a| matches!(a, Action::Move { .. } | Action::Copy { .. })).count() == 1 { Some(to.clone()) }
+                    else { None }
+                },
+                Some(Action::ConvertImage { output, .. } | Action::Zip { output, .. }) => Some(output.clone()),
+                Some(Action::Unzip { destination, .. }) => Some(destination.clone()),
+                Some(Action::ResizeImage { path, .. }) => Some(path.clone()),
+                _ => None,
+            };
+        }
+        Ok(format!("Run {} commands", commands.len()))
+    }
+
     fn create_folders(&mut self, names: &[String], parent: Option<&str>) -> Result<String, Stop> {
         let parent = match parent {
             Some(p) => self.resolve_folder(p, None)?,
@@ -586,6 +841,7 @@ impl<'a> Planner<'a> {
             }
             let p = parent.join(n);
             if p.exists() {
+                if !p.is_dir() { return problem(format!("A file named “{n}” already exists in {}. Choose another folder name.", file_name(&parent))); }
                 self.warnings.push(format!("{n} already exists in {}.", file_name(&parent)));
             } else {
                 self.ensure_dir(&p)?;
@@ -595,10 +851,20 @@ impl<'a> Planner<'a> {
         Ok(format!("Create {what} in {}", file_name(&parent)))
     }
 
-    fn sort(&mut self, folder: &str, by_type: bool) -> Result<String, Stop> {
+    fn sort(&mut self, folder: &str, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
         let dir = self.resolve_folder(folder, None)?;
         let filter = Filter { file_type: Some(FileType::Files), ..Default::default() };
-        let (paths, _) = self.expand(&Source::Set { folder: Some(dir.to_string_lossy().into()), filter })?;
+        let (mut paths, _) = self.expand(&Source::Set { folder: Some(dir.to_string_lossy().into()), filter })?;
+        // A sort rearranges the folder's own files. Reaching into the user's
+        // existing subfolders is only done on an explicit opt-in.
+        if !include_subfolders {
+            let before = paths.len();
+            paths.retain(|p| p.parent().is_some_and(|parent| fsx::same_file(parent, &dir)));
+            let nested = before - paths.len();
+            if nested > 0 {
+                self.warnings.push(format!("{nested} {} in subfolders left alone. Say “including subfolders” to sort them too.", plural(nested, "file was", "files were")));
+            }
+        }
         let mut left = 0;
         let mut moved = 0;
         for p in &paths {
@@ -767,7 +1033,7 @@ impl<'a> Planner<'a> {
 
     fn zip(&mut self, src: &Source, output: Option<&str>) -> Result<String, Stop> {
         let (paths, _) = self.expand_nonempty(src)?;
-        let [p] = paths.as_slice() else { return problem("Name one file or folder to zip.") };
+        let [p] = paths.as_slice() else { return problem("Name one file or folder to zip. To archive several files, put them in one folder and zip that folder.") };
         self.check(p)?;
         if self.roots.is_root(p) {
             return problem(format!("Zipping all of {} isn't supported; name a folder inside it.", file_name(p)));
@@ -795,12 +1061,19 @@ impl<'a> Planner<'a> {
     }
 
     fn trash(&mut self, src: &Source) -> Result<String, Stop> {
-        if let Source::Set { filter, .. } = src {
-            if !filter.is_narrowing() && self.scope.is_none() {
-                return problem("To be safe, clean-up needs a filter, like “older than 90 days”, “installers”, or “larger than 500 MB”.");
-            }
+        if let Source::Set { filter, .. } = src
+            && !filter.is_narrowing() && self.scope.is_none()
+        {
+            return problem("To be safe, clean-up needs a filter, like “older than 90 days”, “installers”, or “larger than 500 MB”.");
         }
-        let (paths, label) = self.expand_nonempty(src)?;
+        let (mut paths, label) = self.expand(src)?;
+        let nested = self.keep_direct_children(src, &mut paths)?;
+        if paths.is_empty() {
+            return Err(self.no_direct_files(&label, nested));
+        }
+        if nested > 0 {
+            self.warnings.push(format!("{nested} more matching {} left alone in subfolders.", plural(nested, "file was", "files were")));
+        }
         for p in &paths {
             self.check(p)?;
             if self.roots.is_root(p) {
@@ -812,7 +1085,7 @@ impl<'a> Planner<'a> {
         if matches!(src, Source::Item { .. }) {
             return Ok(format!("Move {} to the Trash", count_label(&paths)));
         }
-        Ok(format!("Move {} from {label}, including subfolders to the Trash", count_label(&paths)))
+        Ok(format!("Move {} from {label} to the Trash", count_label(&paths)))
     }
 
     // ---- Read-only ---------------------------------------------------------
@@ -837,8 +1110,12 @@ impl<'a> Planner<'a> {
         let rows = paths.iter().take(200).map(|p| self.file_row(p)).collect();
         Ok(Planned::Info {
             listed: Some((paths.clone(), label.clone())),
-            title: format!("{} in {label}", count_label(&paths)),
-            summary: if paths.is_empty() { "Nothing matches.".into() } else { format!("{} in total, including subfolders.", human_size(total_bytes)) },
+            // A single named file's label is its own name; title it by its folder instead.
+            title: match paths.as_slice() {
+                [one] if file_name(one) == label => format!("{label} in {}", one.parent().map_or_else(|| label.clone(), file_name)),
+                _ => format!("{} in {label}", count_label(&paths)),
+            },
+            summary: format!("{}{}", Self::search_scope_hint(src), if paths.is_empty() { "Nothing matches.".into() } else { format!("{} in total, including subfolders.", human_size(total_bytes)) }),
             rows,
             total: paths.len(),
         })
@@ -853,7 +1130,7 @@ impl<'a> Planner<'a> {
         Ok(Planned::Info {
             listed: None,
             title: format!("{} {what} in {label}", paths.len()),
-            summary: "Including subfolders.".into(),
+            summary: format!("{}Including subfolders.", Self::search_scope_hint(src)),
             rows: paths.iter().take(20).map(|p| self.file_row(p)).collect(),
             total: paths.len(),
         })
@@ -1099,16 +1376,15 @@ fn base_name(name: &str) -> String {
             s = t.to_string();
         }
     }
-    if s.ends_with(')') {
-        if let Some(i) = s.rfind(" (").or_else(|| s.rfind('(')) {
-            if s[i..].trim_start_matches([' ', '(']).trim_end_matches(')').chars().all(|c| c.is_ascii_digit()) {
-                s.truncate(i);
-            }
-        }
-    } else if let Some((head, tail)) = s.rsplit_once(' ') {
-        if !tail.is_empty() && tail.len() <= 2 && tail.chars().all(|c| c.is_ascii_digit()) {
-            s = head.to_string();
-        }
+    if s.ends_with(')')
+        && let Some(i) = s.rfind(" (").or_else(|| s.rfind('('))
+        && s[i..].trim_start_matches([' ', '(']).trim_end_matches(')').chars().all(|c| c.is_ascii_digit())
+    {
+        s.truncate(i);
+    } else if let Some((head, tail)) = s.rsplit_once(' ')
+        && !tail.is_empty() && tail.len() <= 2 && tail.chars().all(|c| c.is_ascii_digit())
+    {
+        s = head.to_string();
     }
     match ext {
         Some(e) => format!("{s}.{e}"),
@@ -1179,7 +1455,7 @@ fn closest(name: &str, entries: Vec<PathBuf>) -> Vec<PathBuf> {
         } else {
             continue;
         };
-        if seen.insert(fsx::canonical(&p)) {
+        if seen.insert(fsx::canonical(p)) {
             scored.push((score, created(p), p.clone()));
         }
     }
@@ -1249,6 +1525,7 @@ fn near_typo(a: &str, b: &str) -> bool {
 /// Asks Spotlight for entries below `dirs` with every word of `name` in their
 /// file name, which finds what the walks are too shallow to reach. Answers
 /// nothing if Spotlight is off or slow: searching just stops at the walks.
+#[cfg(test)]
 fn spotlight(name: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
     spotlight_checked(name, dirs, None)
 }
@@ -1308,7 +1585,7 @@ fn collect_spotlight(mut child: std::process::Child, search: Option<&search::Sea
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    if !status.success() { if let Some(s) = search { s.issue("Spotlight exited unsuccessfully".into()); } }
+                    if !status.success() && let Some(s) = search { s.issue("Spotlight exited unsuccessfully".into()); }
                     break;
                 }
                 Err(_) => { if let Some(s) = search { s.issue("Spotlight status unavailable".into()); } break; }
@@ -1324,8 +1601,10 @@ fn collect_spotlight(mut child: std::process::Child, search: Option<&search::Sea
     }
     let _ = child.kill();
     let _ = child.wait();
-    if lines.len() > MAX_INDEXED {
-        if let Some(s) = search { s.issue("Spotlight result limit reached".into()); }
+    if lines.len() > MAX_INDEXED
+        && let Some(s) = search
+    {
+        s.issue("Spotlight result limit reached".into());
     }
     lines.into_iter().take(MAX_INDEXED).map(PathBuf::from).collect()
 }
@@ -1340,14 +1619,6 @@ fn walkable(rel: &Path) -> bool {
 
 fn is_bundle(p: &Path) -> bool {
     matches!(ext_of(p).as_str(), "app" | "photoslibrary" | "bundle" | "framework")
-}
-
-/// Visits entries below `dir` up to `depth` extra levels, skipping hidden
-/// files, `_to_delete/`, app bundles, and symlinked folders.
-pub fn walk(dir: &Path, depth: usize, f: &mut dyn FnMut(&Path, bool)) {
-    let mut search = search::Search::default();
-    search.depth = depth;
-    for e in search.entries(dir).iter() { f(&e.path, e.is_dir); }
 }
 
 fn plural<'s>(n: usize, one: &'s str, many: &'s str) -> &'s str {
@@ -1418,6 +1689,41 @@ mod tests {
             Ok(_) => panic!("expected steps"),
             Err(e) => panic!("{e:?}"),
         }
+    }
+
+    #[test]
+    fn opening_an_allowed_root_folder_plans_a_finder_reveal() {
+        let h = home();
+        let Ok(Planned::Direct { action, .. }) = plan(&h, "open the Documents folder") else { panic!("expected a direct reveal") };
+        assert_eq!(action, Action::OpenInFinder { path: h.roots.home.join("Documents"), reveal: false });
+    }
+
+    #[test]
+    fn quoted_number_template_produces_the_requested_preview_names() {
+        let h = home();
+        fs::write(h.roots.home.join("Pictures/one.png"), b"1").unwrap();
+        fs::write(h.roots.home.join("Pictures/two.jpg"), b"2").unwrap();
+        let actions = steps(&h, "number images in Pictures as \"shot-001\", \"shot-002\"");
+        let mut names: Vec<_> = actions.iter().map(|action| match action {
+            Action::Rename { new_name, .. } => new_name.clone(),
+            other => panic!("expected rename action, got {other:?}"),
+        }).collect();
+        names.sort();
+        assert_eq!(names, ["shot-001.png", "shot-002.jpg"]);
+    }
+
+    #[test]
+    fn archive_and_dmg_rules_plan_only_the_requested_extensions() {
+        let h = home();
+        for (name, bytes) in [("Archive.zip", b"z".as_slice()), ("notes.txt", b"t".as_slice()),
+            ("installer.dmg", b"d".as_slice()), ("installer.pkg", b"p".as_slice())] {
+            fs::write(h.roots.home.join("Downloads").join(name), bytes).unwrap();
+        }
+        let archive_actions = steps(&h, "move archive files from Downloads to External");
+        assert!(archive_actions.iter().any(|action| matches!(action, Action::Move { from, .. } if file_name(from) == "Archive.zip")));
+        assert!(!archive_actions.iter().any(|action| matches!(action, Action::Move { from, .. } if file_name(from) == "notes.txt")));
+        let dmg_actions = steps(&h, "delete dmg files from Downloads");
+        assert!(matches!(&dmg_actions[..], [Action::Trash { path }] if file_name(path) == "installer.dmg"));
     }
 
     #[test]
@@ -1529,8 +1835,6 @@ mod tests {
             fs::write(nested.join(name), b"fixture").unwrap();
         }
         for command in [
-            "move PDFs from Downloads to Archive",
-            "copy PDFs from Downloads to Archive",
             "add prefix Invoice- to PDFs in Downloads",
             "add date prefix to PDFs in Downloads",
             "replace spaces with dashes in files in Downloads",
@@ -1540,9 +1844,11 @@ mod tests {
             "resize all images in Downloads to 1600 pixels wide",
             "merge all PDFs in Downloads into combined.pdf",
             "make a PDF from images in Downloads",
-            "delete installers from Downloads",
-            "sort Downloads by type",
-            "sort Downloads by month",
+            // Deletes read only direct children, so they don't include the
+            // deeply nested files this fixture sets up (see the delete tests).
+            // Sorts are top-level only unless subfolders are asked for.
+            "sort Downloads by type including subfolders",
+            "sort Downloads by month including subfolders",
         ] {
             assert!(!steps(&h, command).is_empty(), "{command}");
         }
@@ -1554,24 +1860,192 @@ mod tests {
     }
 
     #[test]
-    fn nested_transfers_keep_the_destination_under_the_named_source() {
+    fn chains_preserve_existing_folder_contents_and_destination_collisions() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::create_dir(dl.join("PDFS")).unwrap();
+        fs::write(dl.join("bill.pdf"), b"new").unwrap();
+        fs::write(dl.join("PDFS/bill.pdf"), b"old").unwrap();
+        let actions = steps(&h, "create a folder in Downloads called PDFS and move PDFs into it");
+        assert_eq!(actions, vec![Action::Move { from: dl.join("bill.pdf"), to: dl.join("PDFS/bill 2.pdf") }]);
+        assert_eq!(fs::read(dl.join("PDFS/bill.pdf")).unwrap(), b"old");
+        assert!(dl.join("bill.pdf").exists());
+    }
+
+    #[test]
+    fn chain_steps_share_output_reservations_and_reject_file_dependencies() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("a.pdf"), b"a").unwrap();
+        fs::write(h.roots.desktop().join("a.pdf"), b"b").unwrap();
+        let actions = steps(&h, "copy a.pdf from Downloads to Documents then copy a.pdf from Desktop to Documents");
+        assert_eq!(actions.len(), 2);
+        assert!(matches!(&actions[0], Action::Copy { to, .. } if *to == h.roots.home.join("Documents/a.pdf")));
+        assert!(matches!(&actions[1], Action::Copy { to, .. } if *to == h.roots.home.join("Documents/a 2.pdf")));
+        assert!(plan(&h, "move a.pdf from Downloads to Documents then copy a.pdf from Downloads to Pictures").is_err());
+        assert!(plan(&h, "create folder named Archive in Downloads then delete Archive in Downloads").is_err());
+        fs::write(dl.join("Archive"), b"existing file").unwrap();
+        assert!(plan(&h, "create folder named Archive in Downloads then move PDFs into it").is_err());
+    }
+
+    #[test]
+    fn chain_rejects_a_later_step_reading_a_folder_an_earlier_step_writes() {
+        let h = home();
+        let dl = h.roots.downloads();
+        let archive = dl.join("Archive");
+        fs::create_dir(&archive).unwrap();
+        fs::write(dl.join("bill.pdf"), b"new").unwrap();
+        fs::write(archive.join("old.txt"), b"old").unwrap();
+        // The second step's file list comes from disk before the first step
+        // runs, so it can never include the bill.pdf that step moves in.
+        assert!(matches!(
+            plan(&h, "move PDFs from Downloads to Archive then move files from Archive to Documents"),
+            Err(Stop::Problem(message)) if message == "Command 2 depends on files used earlier. Run those commands separately."
+        ));
+        // "create X then move into X" must keep working.
+        let actions = steps(&h, "create a folder in Downloads called PDFS and move PDFs into it");
+        assert!(matches!(actions.last(), Some(Action::Move { to, .. }) if to.starts_with(dl.join("PDFS"))));
+    }
+
+    #[test]
+    fn move_into_a_planned_trash_folder_keeps_it_a_normal_folder() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("a.pdf"), b"a").unwrap();
+        let actions = steps(&h, "create a folder in Downloads called Trash and move PDFs into it");
+        assert!(actions.iter().any(|a| matches!(a, Action::CreateFolder { path } if path == &dl.join("Trash"))), "{actions:?}");
+        assert!(actions.iter().any(|a| matches!(a, Action::Move { to, .. } if to.starts_with(dl.join("Trash")))), "{actions:?}");
+        assert!(!actions.iter().any(|a| matches!(a, Action::Trash { .. })),
+            "the PDFs go into the folder planned earlier, not the macOS Trash");
+    }
+
+    #[test]
+    fn creating_a_folder_does_not_block_a_later_direct_move_from_its_parent() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("a.pdf"), b"a").unwrap();
+        let actions = steps(&h, "create folder named Taxes in Downloads then move PDFs from Downloads to Archive");
+        assert!(actions.iter().any(|a| matches!(a, Action::CreateFolder { path } if path == &dl.join("Taxes"))), "{actions:?}");
+        assert!(actions.iter().any(|a| matches!(a, Action::Move { from, to }
+            if from == &dl.join("a.pdf") && to.starts_with(dl.join("Archive")))), "{actions:?}");
+    }
+
+    #[test]
+    fn creating_a_folder_no_longer_blocks_a_later_delete_but_writes_still_do() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("a.pdf"), b"a").unwrap();
+        // Deletes read only direct children now, so an empty folder created
+        // earlier can't make their file list stale.
+        let actions = steps(&h, "create folder named Taxes in Downloads then delete PDFs from Downloads");
+        assert!(actions.iter().any(|a| matches!(a, Action::CreateFolder { path } if path == &dl.join("Taxes"))), "{actions:?}");
+        assert!(actions.iter().any(|a| matches!(a, Action::Trash { path } if path == &dl.join("a.pdf"))), "{actions:?}");
+        // A real move destination inside the folder still makes a later
+        // direct-only read stale.
+        assert!(matches!(
+            plan(&h, "move PDFs from Downloads to Archive then move PDFs from Downloads to Pictures"),
+            Err(Stop::Problem(message)) if message == "Command 2 depends on files used earlier. Run those commands separately."
+        ));
+    }
+
+    #[test]
+    fn a_later_step_reading_the_created_folder_itself_is_still_refused() {
+        let h = home();
+        let created = h.roots.downloads().join("Taxes");
+        let mut deps = Dependencies::default();
+        deps.writes.push((created.clone(), true));
+        let choices = HashMap::new();
+        let mut planner = Planner::new(&h.roots, &choices);
+        planner.push(Action::Move { from: created.join("a.pdf"), to: h.roots.home.join("Documents/a.pdf") }, None);
+        assert!(planner.check_dependencies(0, 2, &mut deps).is_err());
+    }
+
+    #[test]
+    fn shortcut_applies_the_chain_dependency_guard() {
+        let h = home();
+        fs::write(h.roots.downloads().join("bill.pdf"), b"new").unwrap();
+        let commands: Vec<(String, Intent)> = ["move PDFs from Downloads to Archive", "delete PDFs in Downloads"]
+            .iter()
+            .map(|c| (c.to_string(), parse(c).unwrap()))
+            .collect();
+        let choices = HashMap::new();
+        let history = History::load(h.roots.home.join("history.json"));
+        assert!(matches!(
+            Planner::new(&h.roots, &choices).plan_shortcut("tidy", &commands, &history),
+            Err(Stop::Problem(message)) if message == "Command 2 depends on files used earlier. Run those commands separately."
+        ));
+    }
+
+    #[test]
+    fn shortcut_refuses_a_pdf_step_reading_images_trashed_earlier() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("one.png"), b"a").unwrap();
+        fs::write(dl.join("two.jpg"), b"b").unwrap();
+        let commands: Vec<(String, Intent)> = ["delete all images in Downloads", "make a PDF from images in Downloads"]
+            .iter()
+            .map(|c| (c.to_string(), parse(c).unwrap()))
+            .collect();
+        let choices = HashMap::new();
+        let history = History::load(h.roots.home.join("history.json"));
+        assert!(matches!(
+            Planner::new(&h.roots, &choices).plan_shortcut("tidy", &commands, &history),
+            Err(Stop::Problem(message)) if message == "Command 2 depends on files used earlier. Run those commands separately."
+        ));
+    }
+
+    #[test]
+    fn shortcut_refuses_a_delete_of_images_used_by_an_earlier_pdf_step() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::write(dl.join("one.png"), b"a").unwrap();
+        fs::write(dl.join("two.jpg"), b"b").unwrap();
+        let commands: Vec<(String, Intent)> = ["make a PDF from images in Downloads", "delete all images in Downloads"]
+            .iter()
+            .map(|c| (c.to_string(), parse(c).unwrap()))
+            .collect();
+        let choices = HashMap::new();
+        let history = History::load(h.roots.home.join("history.json"));
+        assert!(matches!(
+            Planner::new(&h.roots, &choices).plan_shortcut("tidy", &commands, &history),
+            Err(Stop::Problem(message)) if message == "Command 2 depends on files used earlier. Run those commands separately."
+        ));
+    }
+
+    #[test]
+    fn transfers_leave_files_in_subfolders_alone() {
         for verb in ["move", "copy"] {
             let h = home();
             let dl = h.roots.downloads();
-            fs::create_dir_all(dl.join("nested/deep")).unwrap();
-            fs::create_dir_all(dl.join("Archive/old")).unwrap();
-            fs::write(dl.join("nested/deep/report.pdf"), b"a").unwrap();
-            fs::write(dl.join("Archive/report.pdf"), b"b").unwrap();
-            fs::write(dl.join("Archive/old/existing.pdf"), b"c").unwrap();
+            fs::create_dir_all(dl.join("Project/docs")).unwrap();
+            fs::write(dl.join("bill.pdf"), b"a").unwrap();
+            fs::write(dl.join("Project/docs/spec.pdf"), b"b").unwrap();
             let actions = steps(&h, &format!("{verb} PDFs from Downloads to Archive"));
-            let from = dl.join("nested/deep/report.pdf");
-            let to = dl.join("Archive/report 2.pdf");
+            let (from, to) = (dl.join("bill.pdf"), dl.join("Archive/bill.pdf"));
             let expected = if verb == "move" { Action::Move { from, to } } else { Action::Copy { from, to } };
-            assert_eq!(actions, vec![expected]);
+            assert_eq!(actions, vec![Action::CreateFolder { path: dl.join("Archive") }, expected]);
 
-            let actions = steps(&h, &format!("{verb} PDFs from Downloads to NewArchive"));
-            assert_eq!(actions[0], Action::CreateFolder { path: dl.join("NewArchive") });
+            fs::remove_file(dl.join("bill.pdf")).unwrap();
+            let Err(err) = plan(&h, &format!("{verb} PDFs from Downloads to Archive")) else { panic!("{verb}: expected a refusal") };
+            assert!(format!("{err:?}").contains("1 in its subfolders were left alone"), "{err:?}");
         }
+    }
+
+    #[test]
+    fn delete_leave_files_in_subfolders_alone_with_a_warning() {
+        let h = home();
+        let dl = h.roots.downloads();
+        fs::create_dir_all(dl.join("Project/docs")).unwrap();
+        fs::write(dl.join("bill.pdf"), b"a").unwrap();
+        fs::write(dl.join("Project/docs/spec.pdf"), b"b").unwrap();
+        let Ok(Planned::Steps { actions, warnings, .. }) = plan(&h, "delete PDFs in Downloads") else { panic!("expected a plan") };
+        assert_eq!(actions, vec![Action::Trash { path: dl.join("bill.pdf") }]);
+        assert!(warnings.iter().any(|w| w == "1 more matching file was left alone in subfolders."), "{warnings:?}");
+        assert!(dl.join("Project/docs/spec.pdf").exists());
+        // When only subfolder files match, refuse just like move/copy do.
+        fs::remove_file(dl.join("bill.pdf")).unwrap();
+        let Err(err) = plan(&h, "delete PDFs in Downloads") else { panic!("expected a refusal") };
+        assert!(format!("{err:?}").contains("1 in its subfolders were left alone"), "{err:?}");
     }
 
     #[test]
@@ -1649,7 +2123,11 @@ mod tests {
         fs::create_dir_all(dl.join("PDFs")).unwrap();
         fs::write(dl.join("nested/report.pdf"), b"a").unwrap();
         fs::write(dl.join("PDFs/report.pdf"), b"b").unwrap();
-        let actions = steps(&h, "sort Downloads by type");
+        // By default a sort touches only top-level files, so the two files in
+        // subfolders stay put and there is nothing to change.
+        assert!(matches!(plan(&h, "sort Downloads by type"), Err(Stop::Problem(message)) if message.starts_with("Nothing to change.")));
+        // The explicit opt-in keeps the historical recursive behaviour.
+        let actions = steps(&h, "sort Downloads by type including subfolders");
         assert_eq!(actions, vec![Action::Move {
             from: dl.join("nested/report.pdf"), to: dl.join("PDFs/report 2.pdf")
         }]);
@@ -1697,7 +2175,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_named_files_includes_matching_files_in_subfolders() {
+    fn delete_named_files_leaves_matches_in_subfolders_alone() {
         let h = home();
         let dl = h.roots.downloads();
         let names = ["AEROGUARD_Report.pdf", "project/AEROGUARD_Case.stl", "project/models/AEROGUARD_Clip.step"];
@@ -1719,14 +2197,14 @@ mod tests {
             "delete files containing Aeroguard from Downloads",
             "delete files starting with Aeroguard from Downloads",
         ] {
-            let Ok(Planned::Steps { actions, title, .. }) = plan(&h, command) else { panic!("expected a plan") };
-            let expected: HashSet<_> = names.iter().map(|name| dl.join(name)).collect();
+            let Ok(Planned::Steps { actions, warnings, .. }) = plan(&h, command) else { panic!("expected a plan: {command}") };
+            let expected: HashSet<_> = [dl.join(names[0])].into_iter().collect();
             let actual: HashSet<_> = actions.into_iter().map(|a| match a {
                 Action::Trash { path } => path,
                 _ => panic!("expected only Trash actions"),
             }).collect();
             assert_eq!(actual, expected, "{command}");
-            assert!(title.contains("including subfolders"));
+            assert!(warnings.iter().any(|w| w == "2 more matching files were left alone in subfolders."), "{command}: {warnings:?}");
             assert!(names.iter().all(|name| dl.join(name).exists()));
         }
     }
@@ -1804,6 +2282,19 @@ mod tests {
     }
 
     #[test]
+    fn picked_folder_is_checked_against_the_allowed_roots() {
+        let h = home();
+        fs::write(h.roots.downloads().join("report.pdf"), b"a").unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let choices = HashMap::from([("offsite".to_string(), outside.path().to_path_buf())]);
+        let history = History::load(h.roots.home.join("history.json"));
+        assert!(matches!(
+            Planner::new(&h.roots, &choices).plan(&parse("move report.pdf to offsite").unwrap(), &history),
+            Err(Stop::Problem(message)) if message.contains("outside the folders Voxi may change")
+        ));
+    }
+
+    #[test]
     fn shortcut_plans_all_commands_and_notes_the_idle_ones() {
         let h = home();
         let desk = h.roots.home.join("Desktop");
@@ -1874,6 +2365,23 @@ mod tests {
         let dest = h.roots.home.join("Downloads/Invoices");
         assert_eq!(a[0], Action::CreateFolder { path: dest.clone() });
         assert_eq!(a[1], Action::Move { from: h.roots.home.join("Downloads/invoice-1.pdf"), to: dest.join("invoice-1.pdf") });
+    }
+
+    #[test]
+    fn moving_to_trash_with_a_filter_plans_trash_without_creating_a_folder() {
+        let h = home();
+        let dl = h.roots.downloads();
+        let big = dl.join("big.bin");
+        let f = fs::File::create(&big).unwrap();
+        f.set_len(20 * 1024 * 1024).unwrap();
+        let actions = steps(&h, "move files from Downloads to Trash between 10 and 50 MB");
+        assert_eq!(actions, vec![Action::Trash { path: big.clone() }]);
+        assert!(!dl.join("Trash").exists(), "planning must not create a folder");
+        // A real folder named Trash is still a normal destination.
+        fs::create_dir(dl.join("Trash")).unwrap();
+        let actions = steps(&h, "move files from Downloads to Trash between 10 and 50 MB");
+        assert!(matches!(&actions[..], [Action::Move { from, to, .. }]
+            if from == &big && to.starts_with(dl.join("Trash"))));
     }
 
     #[test]
@@ -2036,20 +2544,20 @@ mod tests {
         touch(&dl.join("sub/c.pdf"), 10);
         touch(&docs.join("d.pdf"), 10);
         touch(&desk.join("e.pdf"), 10);
-        let mut want = vec![dl.join("a.pdf"), dl.join("sub/c.pdf")];
-        want.sort();
-        assert_eq!(trash_paths(&steps(&h, "delete PDFs in Downloads")), want);
+        // Deletes take only direct children, so the PDF in `sub` stays put.
+        assert_eq!(trash_paths(&steps(&h, "delete PDFs in Downloads")), vec![dl.join("a.pdf")]);
     }
 
     #[test]
-    fn haiku_group_includes_subfolders_but_skips_hidden_ones() {
+    fn haiku_group_takes_direct_children_but_skips_hidden_ones() {
         let h = home();
         let dl = h.roots.downloads();
         fs::create_dir_all(dl.join("Old")).unwrap();
         fs::create_dir_all(dl.join(".hidden")).unwrap();
+        touch(&dl.join("root.pdf"), 10);
         touch(&dl.join("Old/x.pdf"), 10);
         touch(&dl.join(".hidden/y.pdf"), 10);
-        assert_eq!(trash_paths(&steps(&h, "delete PDFs in Downloads")), vec![dl.join("Old/x.pdf")]);
+        assert_eq!(trash_paths(&steps(&h, "delete PDFs in Downloads")), vec![dl.join("root.pdf")]);
     }
 
     #[test]
@@ -2277,7 +2785,7 @@ mod tests {
         let moved_names: std::collections::BTreeSet<_> = moved.iter().filter_map(|a| match a {
             Action::Move { from, .. } => Some(file_name(from)), _ => None,
         }).collect();
-        assert_eq!(moved_names, ["UPPER.STL", "nested.stl", "part.stl"].into_iter().map(str::to_string).collect());
+        assert_eq!(moved_names, ["UPPER.STL", "part.stl"].into_iter().map(str::to_string).collect());
 
         let trashed = steps(&h, "delete the STL files in Downloads");
         let trashed_names: std::collections::BTreeSet<_> = trashed.iter().filter_map(|a| match a {

@@ -1,0 +1,76 @@
+# Regression corpus for the implementation fixes on fix-login-item.
+# Dates are pinned to Wed 28 Oct 2026 by corpus_tests.rs, so previous-calendar
+# period bounds are stable: previous week 19-26 Oct, previous month Sep,
+# previous year 2025.
+
+# 1. Unscoped sets still parse to a set; the planner makes the search scope
+#    explicit in its summary (see result_context_tests).
+find all PDFs => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs"}}}
+find all vids => {"intent":"list","src":{"kind":"set","filter":{"type":"videos"}}}
+find all docs => {"intent":"list","src":{"kind":"set","filter":{"type":"documents"}}}
+find all audio => {"intent":"list","src":{"kind":"set","filter":{"type":"audio"}}}
+show files modified yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","day":"yesterday"}}}
+find files from 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2025-01-01","before":"2026-01-01"}}}
+
+# 2. Opening an allowed root is a plain reveal (executor permits root opens).
+open the Documents folder => {"intent":"reveal","target":"Documents"}
+
+# 3. A type word followed by "files" is a type, never a folder name.
+show me the music files => {"intent":"list","src":{"kind":"set","filter":{"type":"audio"}}}
+find music files => {"intent":"list","src":{"kind":"set","filter":{"type":"audio"}}}
+list music => {"intent":"list","src":{"kind":"set","filter":{"type":"audio"}}}
+list photo files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"images"}}}
+list video files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"videos"}}}
+list movie files in Pictures => {"intent":"list","src":{"kind":"set","folder":"Pictures","filter":{"type":"videos"}}}
+list audio files in Downloads => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"audio"}}}
+
+# 4. Bare last week/month/year are previous calendar periods; numbered spans
+#    stay rolling; "this month" stays a single lower bound.
+list files in Downloads from last month => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","since":"2026-09-01","before":"2026-10-01"}}}
+list files in Downloads from last week => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","since":"2026-10-19","before":"2026-10-26"}}}
+list files in Downloads from last year => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","since":"2025-01-01","before":"2026-01-01"}}}
+list files in Downloads from this month => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","since":"2026-10-01"}}}
+list files in Downloads from past 30 days => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","newerThanDays":30}}}
+list files in Downloads from last 30 days => {"intent":"list","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","newerThanDays":30}}}
+
+# 5. Delivery destinations are hard refusals, not local moves.
+send screenshot 3 to my phone => !hard
+send notes.pdf to my mom => !hard
+send report.pdf to my email => !hard
+share report.pdf with Alex => !hard
+send report.pdf to the trash can => {"intent":"trash","src":{"kind":"item","name":"report.pdf"}}
+send the invoice to Archive => {"intent":"move","src":{"kind":"item","name":"invoice"},"to":"Archive"}
+
+# 6. Bulk sequential renames reuse the numbering planner.
+rename all screenshots in Downloads to holiday-1, holiday-2, holiday-3 => {"intent":"number","src":{"kind":"set","folder":"Downloads","filter":{"type":"screenshots"}},"base":"holiday-","width":1}
+rename all screenshots to holiday => {"intent":"number","src":{"kind":"set","filter":{"type":"screenshots"}},"base":"holiday-","width":3}
+rename all PNGs in Downloads to pic-1, pic-2 => {"intent":"number","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["png"]}},"base":"pic-","width":1}
+number the screenshots in Downloads as holiday-1 onwards => {"intent":"number","src":{"kind":"set","folder":"Downloads","filter":{"type":"screenshots"}},"base":"holiday-","width":1}
+number the screenshots in Downloads as holiday- => {"intent":"number","src":{"kind":"set","folder":"Downloads","filter":{"type":"screenshots"}},"base":"holiday-","width":3}
+rename the photo named sunset to dusk => !miss
+rename report.pdf to Q3-report.pdf => {"intent":"rename","src":{"kind":"item","name":"report.pdf"},"new_name":"Q3-report.pdf"}
+
+# 7. Trailing location phrases and leading "it:" filler are stripped.
+open report.pdf on my desktop => {"intent":"reveal","target":"desktop/report.pdf"}
+bin it: budget.txt in Documents => {"intent":"trash","src":{"kind":"item","folder":"Documents","name":"budget.txt"}}
+
+# 8. One- or two-edit typos in the four standard folder names only.
+show me whats in donwloads => {"intent":"list","src":{"kind":"set","folder":"downloads","filter":{"type":"files"}}}
+show me whats in documets => {"intent":"list","src":{"kind":"set","folder":"documents","filter":{"type":"files"}}}
+show me whats in deskop => {"intent":"list","src":{"kind":"set","folder":"desktop","filter":{"type":"files"}}}
+show me whats in picturs => {"intent":"list","src":{"kind":"set","folder":"pictures","filter":{"type":"files"}}}
+list files in Project => {"intent":"list","src":{"kind":"set","folder":"Project","filter":{"type":"files"}}}
+
+# 9. Sorting is top-level by default; "including subfolders" opts in.
+sort Downloads by type => {"intent":"sort_by_type","folder":"Downloads"}
+organise my documents by file type => {"intent":"sort_by_type","folder":"documents"}
+sort Downloads by type including subfolders => {"intent":"sort_by_type","folder":"Downloads","include_subfolders":true}
+sort Downloads by month including subfolders => {"intent":"sort_by_month","folder":"Downloads","include_subfolders":true}
+
+# 10. Info answers use the existing size/count/list read-only machinery.
+how much space do the documents take up? => {"intent":"size","folder":"documents"}
+how many PDFs are there? => {"intent":"count","src":{"kind":"set","filter":{"type":"pdfs"}}}
+how many videos are there? => {"intent":"count","src":{"kind":"set","filter":{"type":"videos"}}}
+info about report.pdf => {"intent":"list","src":{"kind":"item","name":"report.pdf"}}
+when was report.pdf modified => {"intent":"list","src":{"kind":"item","name":"report.pdf"}}
+details of report.pdf => {"intent":"list","src":{"kind":"item","name":"report.pdf"}}

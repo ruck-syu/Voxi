@@ -26,7 +26,7 @@ pub fn to_trash(p: &Path, home: &Path) -> Result<PathBuf, String> {
     let bin = home.join(".Trash");
     std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
     let to = crate::fsx::unique_path(&bin, &crate::fsx::file_name(p), &mut Default::default());
-    std::fs::rename(p, &to).map_err(|e| e.to_string())?;
+    crate::fsx::rename_exclusive(p, &to)?;
     Ok(to)
 }
 

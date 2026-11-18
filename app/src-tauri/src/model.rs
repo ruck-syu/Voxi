@@ -163,6 +163,7 @@ impl ImageFormat {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "intent", rename_all = "snake_case")]
 pub enum Intent {
+    Chain { commands: Vec<Intent> },
     Move { src: Source, to: String },
     Copy { src: Source, to: String },
     Rename { src: Source, new_name: String },
@@ -172,8 +173,18 @@ pub enum Intent {
     Number { src: Source, base: String, width: usize },
     Lowercase { src: Source },
     CreateFolders { names: Vec<String>, parent: Option<String> },
-    SortByType { folder: String },
-    SortByMonth { folder: String },
+    SortByType {
+        folder: String,
+        /// Only "including subfolders" reaches into nested folders; by default
+        /// a sort leaves the user's existing subfolders untouched.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        include_subfolders: bool,
+    },
+    SortByMonth {
+        folder: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        include_subfolders: bool,
+    },
     ConvertImage { src: Source, format: ImageFormat },
     ResizeImage { src: Source, width: u32 },
     MergePdf { src: Source, output: String },

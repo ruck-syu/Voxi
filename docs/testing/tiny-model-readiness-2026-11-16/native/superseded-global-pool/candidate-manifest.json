@@ -1,0 +1,80 @@
+{
+  "candidate": "Voxi T5 Efficient Tiny v3, Candle Q8_0, CPU/arm64",
+  "created_utc": "2026-11-16T06:15:07Z",
+  "status": "native export prototype; parent integration and independent holdout gates remain",
+  "source_checkpoint": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-2026-11-15/legacy/out-v3/model_t5-efficient-tiny-v3",
+  "source_sha256": {
+    "model.safetensors": "c90edf63e27c839d4e56b90a328e3e07776bc7ee7eb6d2adaf91eec3419a8d86",
+    "config.json": "d833cc011ea12e96ff11e8c718223206a7a8985f35e553684602bcfb432aede9",
+    "generation_config.json": "2e6e2716f1925aac8fdbee6e61a49f809b7ecedd4f74e0e94b0517b5d9504c1a",
+    "tokenizer.json": "4629b0bb9b2c52f0a1364a8db3f609697e2ca4179e3d5ad3470a3267b4aeedd6",
+    "tokenizer_config.json": "e5a85ad07259a824fcb86ebd3ee9e27b1b79b0d4f2840c7b55a584f9c21c8970"
+  },
+  "export": {
+    "format": "GGUF tensors loaded by candle-transformers quantized_t5",
+    "quantization": "GGML Q8_0 for eligible 2D tensors, including shared.weight 32101x256; F32 for small relative_attention_bias tensors and 1D norms; omit duplicate lm_head.weight because tied to shared.weight",
+    "preserves": ["full encoder-decoder T5", "tied embeddings and output projection", "relative position biases", "original tokenizer including special-token behavior", "original model config"],
+    "package_path": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/model",
+    "files": {
+      "model-q8_0.gguf": {"bytes": 16562016, "sha256": "10ee3c175bf71a77f9104cb6293416721bc81a174b97a1e6dc52715543986245"},
+      "tokenizer.json": {"bytes": 2422598, "sha256": "4629b0bb9b2c52f0a1364a8db3f609697e2ca4179e3d5ad3470a3267b4aeedd6"},
+      "config.json": {"bytes": 786, "sha256": "d833cc011ea12e96ff11e8c718223206a7a8985f35e553684602bcfb432aede9"}
+    },
+    "package_bytes": 18985400,
+    "package_limit_bytes": 25000000,
+    "under_limit": true
+  },
+  "native_runtime": {
+    "source": "docs/testing/tiny-model-readiness-2026-11-16/native",
+    "api": "voxi_tiny_native::NativeRewriter::load_with_threads(model_dir, threads); NativeRewriter::rewrite(text)",
+    "cli": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/target/release/voxi-tiny-native",
+    "binary_bytes": 7570288,
+    "binary_sha256": "4a207d59dab8799457b2104ca41a2f2a20a9baf34d5ae65ae501aacc7cdf6d3a",
+    "binary_arch": "arm64 Mach-O",
+    "dynamic_libraries": ["/usr/lib/libSystem.B.dylib", "/usr/lib/libiconv.2.dylib"],
+    "dependency_note": "Both dynamic libraries are OS-provided via the macOS shared cache; not bundled in the model package.",
+    "runtime_versions": {"rustc": "1.96.0", "candle-core": "0.11.1", "candle-transformers": "0.11.1", "tokenizers": "0.21.4", "target_os": "macOS", "machine": "arm64"},
+    "generation": {"device": "CPU", "threads": 1, "sampling": "greedy argmax", "max_input_tokens": 64, "max_new_tokens": 64, "eos_token_id": 1, "decoder_start_token_id": 0, "input_truncation": "disabled; reject over limit", "use_cache": false}
+  },
+  "benchmark": {
+    "inputs": "300 evenly spread from pre-existing generated-development rows in v3-local-fp32 predictions; parity-only, not a new holdout",
+    "fp32_reference_rows": 9940,
+    "warmups": 3,
+    "timed_evenly_spread_rows": 40,
+    "threads": 1,
+    "model_load_ms": 43.282,
+    "latency_p50_ms": 48.525666,
+    "latency_p95_ms": 82.848375,
+    "p95_method": "index floor of sorted 40 sample values at floor((n-1)*0.95)",
+    "exact_rewrite_matches": 300,
+    "mismatches_or_errors": 0,
+    "representative_mismatches": [],
+    "raw_native_predictions": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/parity-q8-api-final/predictions-native.jsonl",
+    "latency_and_parity_log": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/parity-q8-api-final/parity-latency.json",
+    "raw_predictions_sha256": "eb0452ec50dca659c0841a023048b576da145cba779238ed195764d5464d0e48",
+    "latency_log_sha256": "923276a677002a8facb12bbf4053d8a420d0490b8a76f4861de1e96d1c22a9a6",
+    "failure_path_results": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/failure-path-results.json",
+    "failure_path_results_sha256": "225ea02d8eaa6b59ac1efd60b57071d225f4214fabd5c1bfdbabc46be06297ee",
+    "fp32_reference": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-2026-11-15/v3-local-fp32/predictions.jsonl",
+    "fp32_reference_sha256": "cc0bae6ec545fdd15b87bd93db388864b9c7ae88ea37ed81489eeade670dbff7"
+  },
+  "failure_path_observations": {
+    "missing_model": "load error before serving",
+    "corrupt_gguf": "load error: unknown GGUF magic",
+    "malformed_json": "per-line invalid_json error",
+    "empty_or_wrong_type_text": "per-line invalid_input error",
+    "overlong_input": "416 tokens rejected against 64-token limit; no truncation",
+    "no_eos": "returns max_new_tokens reached without eos; observed at 631 ms on deliberately long but under-limit synthetic input (one earlier run: 380 ms)"
+  },
+  "tool_hashes": {
+    "export_gguf.py": "944d4c558429f877da5c69fff6d6325dc658333ab8327bf2ce71c4eeb5fa047c",
+    "run_parity.py": "819a4d39b4e1844dab40b99916d30e376ec0623d841b8d91e92f8cbb6e7fcf4d",
+    "failure_smoke.py": "e6c9dfb0a4ed9d1b5c0f42a5012133a441a550c3fb1c5e7a7bd2930a0664983b",
+    "src/lib.rs": "c61725aee5bcdd8c2d047aa71b54f83f2a1f8706fbb5044e1adee70af2660577",
+    "src/main.rs": "ba4a9203cbc8d977ded8f6517d5369c129a44f6ccfe2a530a834e99acc6a34e2",
+    "Cargo.toml": "2a67ba3e380ab2c9713a1be2e02c58e9c3c37d5bf7bbb750f168e401b05b873d",
+    "Cargo.lock": "dfa76f5aeaf358b94a0824ff364dc98930c6678345ffcaafc8748cd7b4633147"
+  },
+  "export_toolchain": {"python": "3.14.7", "gguf": "0.19.0", "numpy": "2.5.5", "safetensors": "0.8.0"},
+  "integration_boundary": "Prototype does not include semantic guards, scheduler/app routing, or independent-bank evaluation. Parent owns those gates; model output is never executable authority."
+}

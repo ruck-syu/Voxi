@@ -1,192 +1,418 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Commands: Voxi</title>
-    <meta name="description" content="Everything Voxi understands, from moving and renaming to PDFs, images, and clean-up." />
-    <meta property="og:title" content="Commands: Voxi" />
-    <meta property="og:description" content="Everything Voxi understands, from moving and renaming to PDFs, images, and clean-up." />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#121a2e" media="(prefers-color-scheme: dark)" />
+    <title>Commands · Voxi</title>
+    <meta name="description" content="Everything you can say to Voxi: move, rename, convert, merge, zip, clean up, find, schedule and undo, in your own words." />
+    <meta property="og:title" content="Commands · Voxi" />
+    <meta property="og:description" content="Everything you can say to Voxi: move, rename, convert, merge, zip, clean up, find, schedule and undo, in your own words." />
+    <meta name="theme-color" content="#000000" />
     <script>
-      // Apply a saved light/dark choice before the page paints.
+      // Dark by default; a choice made with the switch is remembered here.
       try {
-        const t = localStorage.getItem("voxi-theme");
-        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+        if (localStorage.getItem("voxi-theme") === "light")
+          delete document.documentElement.dataset.theme;
       } catch {}
     </script>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Gabarito:wght@400..900&display=swap" />
+    <link rel="preload" href="/assets/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="stylesheet" href="/assets/site.css" />
+    <script>
+      document.documentElement.classList.add("js");
+    </script>
     <script src="/assets/site.js" defer></script>
   </head>
   <body>
-    <header class="top">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="nav">
       <div class="wrap">
-        <a class="brand" href="/"><span class="brand-tile"><svg class="glyph" viewBox="0 0 44 44" aria-hidden="true"><rect class="e" x="12.4" y="8" width="4.8" height="11.5" rx="2.4"/><rect class="e" x="26.8" y="8" width="4.8" height="11.5" rx="2.4"/><path class="m" d="M7.0 26.0L7.6 26.4L8.2 27.0L8.9 27.5L9.5 28.0L10.1 28.5L10.8 28.8L11.4 29.0L12.0 29.0L12.6 28.9L13.2 28.8L13.9 28.8L14.5 28.9L15.1 29.2L15.8 29.7L16.4 30.4L17.0 31.2L17.6 32.0L18.2 32.8L18.9 33.3L19.5 33.6L20.1 33.6L20.8 33.3L21.4 32.7L22.0 32.0L22.6 31.3L23.2 30.6L23.9 30.2L24.5 30.0L25.1 30.0L25.8 30.3L26.4 30.7L27.0 31.2L27.6 31.6L28.2 31.8L28.9 31.8L29.5 31.6L30.1 31.1L30.8 30.5L31.4 29.7L32.0 29.0L32.6 28.3L33.2 27.8L33.9 27.4L34.5 27.1L35.1 26.8L35.8 26.6L36.4 26.3L37.0 26.0"/></svg></span>Voxi</a>
-        <div class="end">
-          <nav aria-label="Main">
-            <a href="/commands" aria-current="page">Commands</a>
-            <a href="/install">Install</a>
-            <a href="https://github.com/ruck-syu/Voxi">GitHub</a>
-          </nav>
+        <a class="brand" href="/"><img src="/assets/product/voxi-icon.webp" width="26" height="26" alt="" />Voxi</a>
+        <nav class="nav-links" aria-label="Main">
+          <a href="/commands" aria-current="page">Commands</a>
+          <a href="/install">Install</a>
+          <a class="hide-sm" href="https://github.com/ruck-syu/Voxi">GitHub</a>
           <button class="theme-switch" type="button" data-theme-switch aria-label="Switch to dark mode">
-            <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
-            <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>
+            <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" /></svg>
+            <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4" /></svg>
           </button>
-        </div>
+          <a class="nav-download" data-download href="https://github.com/ruck-syu/Voxi/releases/latest">Download</a>
+        </nav>
       </div>
     </header>
-    <main>
+    <main id="main">
       <section class="page-head">
         <div class="wrap">
-          <div class="block-head">
-            <h1>What Voxi understands</h1>
-            <p class="lead">Say any of these, or something close. Words like “please”, “the”, and “all” are ignored, and dictated numbers like “thirty” work.</p>
-          </div>
-          <ul class="toc">
-            <li><a href="#move">Move and copy</a></li>
-            <li><a href="#rename">Rename</a></li>
-            <li><a href="#folders">Folders and sorting</a></li>
-            <li><a href="#images">Images</a></li>
-            <li><a href="#pdf">PDFs</a></li>
-            <li><a href="#archives">Zip and unzip</a></li>
-            <li><a href="#cleanup">Clean up</a></li>
-            <li><a href="#find">Find, without changing anything</a></li>
-            <li><a href="#followup">Follow up on a list</a></li>
-            <li><a href="#schedule">Later and repeating</a></li>
-            <li><a href="#undo">Undo and history</a></li>
-            <li><a href="#filters">Filters</a></li>
-            <li><a href="#shortcuts">Shortcuts</a></li>
-          </ul>
+          <h1>Say it like<br />you'd say it.</h1>
+          <p class="subhead">
+            Say any of these, or something close. Words like “please”, “the”,
+            and “all” are ignored, and dictated numbers like “thirty” work.
+            Preview first, then press Enter to run.
+          </p>
         </div>
       </section>
-      <div class="wrap catalog">
-        <section id="move">
-          <h2>Move and copy</h2>
-          <ul class="say">
-            <li><q>move report.pdf to Documents</q><span>Moves one file. If Documents already has a report.pdf, the new one becomes report 2.pdf.</span></li>
-            <li><q>move all PDFs from Downloads to Documents</q><span>Moves every matching file.</span></li>
-            <li><q>move files larger than 100 MB from Downloads to External</q><span>Size filters work with any set of files.</span></li>
-            <li><q>copy all images from Pictures to Backup</q><span>Copies, leaving the originals in place.</span></li>
-          </ul>
-        </section>
-        <section id="rename">
-          <h2>Rename</h2>
-          <ul class="say">
-            <li><q>rename report.pdf to Q3-report.pdf</q><span>Renames one file, keeping its extension if you leave it off.</span></li>
-            <li><q>add prefix Invoice- to files named bill in Downloads</q><span>Adds text to the start of each name.</span></li>
-            <li><q>add date prefix to files in Screenshots</q><span>Puts the file's date first, like 2026-10-28 shot.png.</span></li>
-            <li><q>replace spaces with dashes in files in Downloads</q><span>Swaps text in names; also “remove spaces from names in…”.</span></li>
-            <li><q>number images in Trip as trip-001</q><span>Renames in order: trip-001, trip-002, and so on.</span></li>
-            <li><q>lowercase file names in Downloads</q><span>Makes every name lowercase.</span></li>
-          </ul>
-        </section>
-        <section id="folders">
-          <h2>Folders and sorting</h2>
-          <ul class="say">
-            <li><q>create folders 2026, 2027 in Documents</q><span>Makes one or several folders.</span></li>
-            <li><q>sort Downloads by type</q><span>Moves files into Images, PDFs, Videos, Documents, Archives, Installers, and Audio.</span></li>
-            <li><q>sort Screenshots by month</q><span>Moves files into folders like 2026-10.</span></li>
-          </ul>
-        </section>
-        <section id="images">
-          <h2>Images</h2>
-          <ul class="say">
-            <li><q>convert photo.heic to png</q><span>Writes a PNG copy; also jpg and heic.</span></li>
-            <li><q>resize all images in Trip to 1600 pixels wide</q><span>Shrinks anything wider. Undo restores the originals.</span></li>
-          </ul>
-        </section>
-        <section id="pdf">
-          <h2>PDFs</h2>
-          <ul class="say">
-            <li><q>merge all PDFs in Downloads into combined.pdf</q><span>Combines PDFs in name order.</span></li>
-            <li><q>split report.pdf into pages</q><span>One PDF per page, in a new folder.</span></li>
-            <li><q>extract pages 2 to 5 from report.pdf into excerpt.pdf</q><span>Copies a page range into a new PDF.</span></li>
-            <li><q>make a PDF from images in Scans named receipts</q><span>Turns images into a single PDF.</span></li>
-          </ul>
-        </section>
-        <section id="archives">
-          <h2>Zip and unzip</h2>
-          <ul class="say">
-            <li><q>zip Project into Project.zip</q><span>Compresses a file or folder.</span></li>
-            <li><q>unzip archive.zip into Downloads/archive</q><span>Extracts into a new folder, never over existing files.</span></li>
-          </ul>
-        </section>
-        <section id="cleanup">
-          <h2>Clean up</h2>
-          <ul class="say">
-            <li><q>clean up Downloads older than 90 days</q><span>Moves old files to the Trash. Clean-up always needs a filter.</span></li>
-            <li><q>delete screenshots older than 30 days</q><span>“Delete” means the Trash too. Nothing is erased.</span></li>
-            <li><q>move installers from Downloads to Trash</q><span>Installers are .dmg and .pkg files.</span></li>
-          </ul>
-        </section>
-        <section id="find">
-          <h2>Find, without changing anything</h2>
-          <ul class="say">
-            <li><q>list files in Downloads larger than 500 MB</q><span>Shows matches, biggest first.</span></li>
-            <li><q>count PDFs in Documents</q><span>Counts, including subfolders.</span></li>
-            <li><q>show size of Downloads</q><span>Total size and the largest items.</span></li>
-            <li><q>list duplicate files in Downloads</q><span>Same name and size, like report.pdf and report (1).pdf.</span></li>
-            <li><q>open Downloads in Finder</q><span>Opens a folder, or shows a file in Finder.</span></li>
-          </ul>
-        </section>
-        <section id="followup">
-          <h2>Follow up on a list</h2>
-          <ul class="say">
-            <li><q>delete 4</q><span>After a list, acts on row 4. Spoken numbers like “four” work too.</span></li>
-            <li><q>move 5 to Desktop</q><span>Moves the file shown in row 5.</span></li>
-            <li><q>delete the last file</q><span>Uses the bottom row of the list on screen.</span></li>
-            <li><q>move PDFs to Documents</q><span>Uses only the PDFs from that list. Naming another folder starts a fresh search.</span></li>
-          </ul>
-        </section>
-        <section id="schedule">
-          <h2>Later and repeating</h2>
-          <ul class="say">
-            <li><q>move PDFs from Downloads to Documents at 9:40 pm</q><span>Runs once, with exactly the files in the preview. A time that has passed means tomorrow.</span></li>
-            <li><q>clean up Downloads older than 90 days in 30 minutes</q><span>Runs once after a delay in minutes or hours.</span></li>
-            <li><q>delete dmg files from Downloads every 3 days</q><span>Repeats, matching whatever is there at each run. Every run can be undone.</span></li>
-            <li><q>sort Downloads by type every Monday at 8 am</q><span>Weekly. Also “daily at 9 pm”, “every other week”, or “hourly”; repeats are at least 15 minutes apart.</span></li>
-          </ul>
-        </section>
-        <section id="undo">
-          <h2>Undo and history</h2>
-          <ul class="say">
-            <li><q>undo last</q><span>Reverses the newest change, after its own preview.</span></li>
-            <li><q>show recent actions</q><span>Lists what Voxi has done, newest first.</span></li>
-          </ul>
-        </section>
-        <section id="filters">
-          <h2>Filters</h2>
-          <ul class="say">
-            <li><q>screenshots, images, PDFs, videos, documents, archives, installers, audio</q><span>File types. Any extension works too, like “HEIC” or “mov files”.</span></li>
-            <li><q>from today, from yesterday, from the last 7 days</q><span>Recent files.</span></li>
-            <li><q>older than 90 days, older than 1 year</q><span>Old files; weeks and months work too.</span></li>
-            <li><q>in August, from March 2025</q><span>A calendar month. Without a year, the most recent one.</span></li>
-            <li><q>before July 2026, since March 15, after 2025, in 2025</q><span>Taken before, after, or on a date, month, or year. “After July” starts in August.</span></li>
-            <li><q>between March and May 2026, from 2024 to 2025</q><span>A range of dates or years.</span></li>
-            <li><q>this week, this month, since last Monday</q><span>Calendar periods, counted from today.</span></li>
-            <li><q>larger than 100 MB, smaller than 2 GB, bigger than 2 gigs</q><span>By size. Ranges work too: “between 10 and 50 MB”.</span></li>
-            <li><q>named invoice, containing quarterly report, starting with draft</q><span>By name.</span></li>
-          </ul>
-        </section>
-        <section id="shortcuts">
-          <h2>Shortcuts</h2>
-          <ul class="say">
-            <li><q>run my usuals</q><span>Save a phrase and a list of commands in Settings. Saying it runs them all, as one preview with one undo.</span></li>
-          </ul>
-        </section>
+      <div class="wrap reference">
+        <aside class="reference-nav">
+          <nav aria-label="Command categories">
+            <ul class="toc">
+              <li><a href="#move">Move and copy</a></li>
+              <li><a href="#rename">Rename</a></li>
+              <li><a href="#folders">Folders and sorting</a></li>
+              <li><a href="#images">Images</a></li>
+              <li><a href="#pdf">PDFs</a></li>
+              <li><a href="#archives">Zip and unzip</a></li>
+              <li><a href="#cleanup">Clean up</a></li>
+              <li><a href="#find">Find, without changing anything</a></li>
+              <li><a href="#followup">Follow up on a list</a></li>
+              <li><a href="#schedule">Later and repeating</a></li>
+              <li><a href="#undo">Undo and history</a></li>
+              <li><a href="#filters">Filters</a></li>
+              <li><a href="#shortcuts">Shortcuts</a></li>
+            </ul>
+          </nav>
+        </aside>
+        <div>
+          <div class="command-search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
+            <label class="visually-hidden" for="command-search">Find a command</label>
+            <input id="command-search" data-command-search type="search" placeholder="Search commands" autocomplete="off" aria-describedby="search-status" />
+          </div>
+          <p id="search-status" class="fine" data-search-status role="status" aria-live="polite"></p>
+          <div class="catalog">
+            <section id="move">
+              <h2>Move and copy</h2>
+              <ul class="say">
+                <li>
+                  <q>move report.pdf to Documents</q
+                  ><span
+                    >Moves one file. If Documents already has a report.pdf, the
+                    new one becomes report 2.pdf.</span
+                  >
+                </li>
+                <li>
+                  <q>move all PDFs from Downloads to Documents</q
+                  ><span>Moves every matching file.</span>
+                </li>
+                <li>
+                  <q>move files larger than 100 MB from Downloads to External</q
+                  ><span>Size filters work with any set of files.</span>
+                </li>
+                <li>
+                  <q>copy all images from Pictures to Backup</q
+                  ><span>Copies, leaving the originals in place.</span>
+                </li>
+              </ul>
+            </section>
+            <section id="rename">
+              <h2>Rename</h2>
+              <ul class="say">
+                <li>
+                  <q>rename report.pdf to Q3-report.pdf</q
+                  ><span
+                    >Renames one file, keeping its extension if you leave it
+                    off.</span
+                  >
+                </li>
+                <li>
+                  <q>add prefix Invoice- to files named bill in Downloads</q
+                  ><span>Adds text to the start of each name.</span>
+                </li>
+                <li>
+                  <q>add date prefix to files in Screenshots</q
+                  ><span
+                    >Puts the file's date first, like 2026-10-28 shot.png.</span
+                  >
+                </li>
+                <li>
+                  <q>replace spaces with dashes in files in Downloads</q
+                  ><span
+                    >Swaps text in names; also “remove spaces from names
+                    in…”.</span
+                  >
+                </li>
+                <li>
+                  <q>number images in Trip as trip-001</q
+                  ><span>Renames in order: trip-001, trip-002, and so on.</span>
+                </li>
+                <li>
+                  <q>lowercase file names in Downloads</q
+                  ><span>Makes every name lowercase.</span>
+                </li>
+              </ul>
+            </section>
+            <section id="folders">
+              <h2>Folders and sorting</h2>
+              <ul class="say">
+                <li>
+                  <q>create folders 2026, 2027 in Documents</q
+                  ><span>Makes one or several folders.</span>
+                </li>
+                <li>
+                  <q>sort Downloads by type</q
+                  ><span
+                    >Moves files into Images, PDFs, Videos, Documents, Archives,
+                    Installers, and Audio.</span
+                  >
+                </li>
+                <li>
+                  <q>sort Screenshots by month</q
+                  ><span>Moves files into folders like 2026-10.</span>
+                </li>
+              </ul>
+            </section>
+            <section id="images">
+              <h2>Images</h2>
+              <ul class="say">
+                <li>
+                  <q>convert photo.heic to png</q
+                  ><span>Writes a PNG copy; also jpg and heic.</span>
+                </li>
+                <li>
+                  <q>resize all images in Trip to 1600 pixels wide</q
+                  ><span
+                    >Shrinks anything wider. Undo restores the originals.</span
+                  >
+                </li>
+              </ul>
+            </section>
+            <section id="pdf">
+              <h2>PDFs</h2>
+              <ul class="say">
+                <li>
+                  <q>merge all PDFs in Downloads into combined.pdf</q
+                  ><span>Combines PDFs in name order.</span>
+                </li>
+                <li>
+                  <q>split report.pdf into pages</q
+                  ><span>One PDF per page, in a new folder.</span>
+                </li>
+                <li>
+                  <q>extract pages 2 to 5 from report.pdf into excerpt.pdf</q
+                  ><span>Copies a page range into a new PDF.</span>
+                </li>
+                <li>
+                  <q>make a PDF from images in Scans named receipts</q
+                  ><span>Turns images into a single PDF.</span>
+                </li>
+              </ul>
+            </section>
+            <section id="archives">
+              <h2>Zip and unzip</h2>
+              <ul class="say">
+                <li>
+                  <q>zip Project into Project.zip</q
+                  ><span>Compresses a file or folder.</span>
+                </li>
+                <li>
+                  <q>unzip archive.zip into Downloads/archive</q
+                  ><span
+                    >Extracts into a new folder, never over existing
+                    files.</span
+                  >
+                </li>
+              </ul>
+            </section>
+            <section id="cleanup">
+              <h2>Clean up</h2>
+              <ul class="say">
+                <li>
+                  <q>clean up Downloads older than 90 days</q
+                  ><span
+                    >Moves old files to the Trash. Clean-up always needs a
+                    filter.</span
+                  >
+                </li>
+                <li>
+                  <q>delete screenshots older than 30 days</q
+                  ><span>“Delete” means the Trash too. Nothing is erased.</span>
+                </li>
+                <li>
+                  <q>move installers from Downloads to Trash</q
+                  ><span>Installers are .dmg and .pkg files.</span>
+                </li>
+              </ul>
+            </section>
+            <section id="find">
+              <h2>Find, without changing anything</h2>
+              <ul class="say">
+                <li>
+                  <q>list files in Downloads larger than 500 MB</q
+                  ><span>Shows matches, biggest first.</span>
+                </li>
+                <li>
+                  <q>count PDFs in Documents</q
+                  ><span>Counts, including subfolders.</span>
+                </li>
+                <li>
+                  <q>show size of Downloads</q
+                  ><span>Total size and the largest items.</span>
+                </li>
+                <li>
+                  <q>list duplicate files in Downloads</q
+                  ><span
+                    >Same name and size, like report.pdf and report
+                    (1).pdf.</span
+                  >
+                </li>
+                <li>
+                  <q>open Downloads in Finder</q
+                  ><span>Opens a folder, or shows a file in Finder.</span>
+                </li>
+              </ul>
+            </section>
+            <section id="followup">
+              <h2>Follow up on a list</h2>
+              <ul class="say">
+                <li>
+                  <q>delete 4</q
+                  ><span
+                    >After a list, acts on row 4. Spoken numbers like “four”
+                    work too.</span
+                  >
+                </li>
+                <li>
+                  <q>move 5 to Desktop</q
+                  ><span>Moves the file shown in row 5.</span>
+                </li>
+                <li>
+                  <q>delete the last file</q
+                  ><span>Uses the bottom row of the list on screen.</span>
+                </li>
+                <li>
+                  <q>move PDFs to Documents</q
+                  ><span
+                    >Uses only the PDFs from that list. Naming another folder
+                    starts a fresh search.</span
+                  >
+                </li>
+              </ul>
+            </section>
+            <section id="schedule">
+              <h2>Later and repeating</h2>
+              <ul class="say">
+                <li>
+                  <q>move PDFs from Downloads to Documents at 9:40 pm</q
+                  ><span
+                    >Runs once, with exactly the files in the preview. A time
+                    that has passed means tomorrow.</span
+                  >
+                </li>
+                <li>
+                  <q>clean up Downloads older than 90 days in 30 minutes</q
+                  ><span>Runs once after a delay in minutes or hours.</span>
+                </li>
+                <li>
+                  <q>delete dmg files from Downloads every 3 days</q
+                  ><span
+                    >Repeats, matching whatever is there at each run. Every run
+                    can be undone.</span
+                  >
+                </li>
+                <li>
+                  <q>sort Downloads by type every Monday at 8 am</q
+                  ><span
+                    >Weekly. Also “daily at 9 pm”, “every other week”, or
+                    “hourly”; repeats are at least 15 minutes apart.</span
+                  >
+                </li>
+              </ul>
+            </section>
+            <section id="undo">
+              <h2>Undo and history</h2>
+              <ul class="say">
+                <li>
+                  <q>undo last</q
+                  ><span
+                    >Reverses the newest change, after its own preview.</span
+                  >
+                </li>
+                <li>
+                  <q>show recent actions</q
+                  ><span>Lists what Voxi has done, newest first.</span>
+                </li>
+              </ul>
+            </section>
+            <section id="filters">
+              <h2>Filters</h2>
+              <ul class="say">
+                <li>
+                  <q
+                    >screenshots, images, PDFs, videos, documents, archives,
+                    installers, audio</q
+                  ><span
+                    >File types. Any extension works too, like “HEIC” or “mov
+                    files”.</span
+                  >
+                </li>
+                <li>
+                  <q>from today, from yesterday, from the last 7 days</q
+                  ><span>Recent files.</span>
+                </li>
+                <li>
+                  <q>older than 90 days, older than 1 year</q
+                  ><span>Old files; weeks and months work too.</span>
+                </li>
+                <li>
+                  <q>in August, from March 2025</q
+                  ><span
+                    >A calendar month. Without a year, the most recent
+                    one.</span
+                  >
+                </li>
+                <li>
+                  <q>before July 2026, since March 15, after 2025, in 2025</q
+                  ><span
+                    >Taken before, after, or on a date, month, or year. “After
+                    July” starts in August.</span
+                  >
+                </li>
+                <li>
+                  <q>between March and May 2026, from 2024 to 2025</q
+                  ><span>A range of dates or years.</span>
+                </li>
+                <li>
+                  <q>this week, this month, since last Monday</q
+                  ><span>Calendar periods, counted from today.</span>
+                </li>
+                <li>
+                  <q
+                    >larger than 100 MB, smaller than 2 GB, bigger than 2
+                    gigs</q
+                  ><span
+                    >By size. Ranges work too: “between 10 and 50 MB”.</span
+                  >
+                </li>
+                <li>
+                  <q
+                    >named invoice, containing quarterly report, starting with
+                    draft</q
+                  ><span>By name.</span>
+                </li>
+              </ul>
+            </section>
+            <section id="shortcuts">
+              <h2>Shortcuts</h2>
+              <ul class="say">
+                <li>
+                  <q>run my usuals</q
+                  ><span
+                    >Save a phrase and a list of commands in Settings. Saying it
+                    runs them all, as one preview with one undo.</span
+                  >
+                </li>
+              </ul>
+            </section>
+          </div>
+
+          <p class="search-empty" data-search-empty hidden>No commands found. Try a file type or an action.</p>
+        </div>
       </div>
     </main>
-    <footer>
+    <footer class="footer">
       <div class="wrap">
-        <p>
-          Voxi is open source on <a href="https://github.com/ruck-syu/Voxi">GitHub</a>.
-        </p>
+        <p>Voxi is free and open source on <a href="https://github.com/ruck-syu/Voxi">GitHub</a>.</p>
         <nav aria-label="Footer">
+          <a href="/">Home</a>
           <a href="/commands">Commands</a>
           <a href="/install">Install</a>
           <a href="https://github.com/ruck-syu/Voxi/releases/latest">Releases</a>

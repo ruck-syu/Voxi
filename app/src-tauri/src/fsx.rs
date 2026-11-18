@@ -77,7 +77,12 @@ impl Roots {
         }
         let key = key.trim().to_lowercase();
         let find = |k: &str| self.named.iter().find(|(n, _)| n == k).map(|(_, p)| p);
-        find(&key).or_else(|| find(&format!("{key}s"))).or_else(|| key.strip_suffix('s').and_then(find))
+        find(&key)
+            .or_else(|| find(&format!("{key}s")))
+            .or_else(|| key.strip_suffix('s').and_then(find))
+            // Dictation typos in the four standard folders only, never in a
+            // user's own folder name.
+            .or_else(|| crate::parse::phrase::known_folder(&key).and_then(find))
     }
 
     pub fn desktop(&self) -> PathBuf {
@@ -101,7 +106,7 @@ impl Roots {
     /// True when `p` is one of the allowed roots itself.
     pub fn is_root(&self, p: &Path) -> bool {
         let c = canonical(p);
-        self.allowed.iter().any(|root| *root == c) || self.screenshots.as_ref().is_some_and(|s| canonical(s) == c)
+        self.allowed.contains(&c) || self.screenshots.as_ref().is_some_and(|s| canonical(s) == c)
     }
 
     /// The `_to_delete/` folder for the root that holds `p`.
@@ -241,9 +246,169 @@ pub fn tree_size(p: &Path) -> (u64, usize) {
     total
 }
 
+/// Rechecks the canonical parent immediately before path-based mutation.
+/// This narrows but does not close the TOCTOU window: an ancestor can still
+/// be swapped after this check. Full confinement requires openat-relative IO.
+pub fn revalidate_parent(path: &Path, expected: &Path) -> Result<(), String> {
+    let parent = path.parent().ok_or("Missing parent")?;
+    if fs::canonicalize(parent).map_err(|e| e.to_string())? != expected {
+        return Err(format!("Stopped: parent of {} changed", path.display()));
+    }
+    Ok(())
+}
+
+/// No-replace publication using the same claims as executor move/copy.
+/// Directories are claimed before rename; files are linked before unlink.
+pub fn rename_exclusive(from: &Path, to: &Path) -> Result<(), String> {
+    let parent = fs::canonicalize(to.parent().ok_or("Missing parent")?).map_err(|e| e.to_string())?;
+    revalidate_parent(to, &parent)?;
+    if fs::symlink_metadata(from).map_err(|e| e.to_string())?.is_dir() {
+        fs::create_dir(to).map_err(|e| format!("Cannot claim {}: {e}", to.display()))?;
+        if let Err(e) = fs::rename(from, to) {
+            let _ = fs::remove_dir(to);
+            return Err(format!("Cannot publish {}: {e}", to.display()));
+        }
+    } else {
+        if let Err(e) = fs::hard_link(from, to) {
+            return rename_after_link_failure(from, to, e);
+        }
+        fs::remove_file(from).map_err(|e| format!("Published {}; source remains at {}: {e}", to.display(), from.display()))?;
+    }
+    Ok(())
+}
+
+// Preserve the original hard-link error if the platform fallback cannot publish.
+fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    if matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK)) {
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
+        if let (Ok(from), Ok(to)) = (CString::new(from.as_os_str().as_bytes()), CString::new(to.as_os_str().as_bytes())) {
+            // SAFETY: both C strings are live, NUL-terminated paths. EXCL forbids replacement.
+            if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) } == 0 { return Ok(()); }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = from;
+    Err(format!("Cannot claim {}: {error}", to.display()))
+}
+
+/// An exclusive mode-0700 directory in the output's parent. Writers may
+/// replace files inside it without exposing partially generated output.
+pub struct Staging {
+    pub dir: PathBuf,
+    pub path: PathBuf,
+    parent: PathBuf,
+    parent_handle: fs::File,
+    dir_handle: fs::File,
+}
+impl Staging {
+    pub fn new(output: &Path) -> Result<Self, String> {
+        use std::os::unix::fs::DirBuilderExt;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let parent = fs::canonicalize(output.parent().ok_or("Missing parent")?).map_err(|e| e.to_string())?;
+        for _ in 0..100 {
+            let dir = parent.join(format!(".voxi-stage-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+            match fs::DirBuilder::new().mode(0o700).create(&dir) {
+                Ok(()) => {
+                    let parent_handle = fs::File::open(&parent).map_err(|e| e.to_string())?;
+                    let dir_handle = fs::File::open(&dir).map_err(|e| e.to_string())?;
+                    return Ok(Self { path: dir.join("payload"), dir, parent, parent_handle, dir_handle });
+                },
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        Err("Cannot claim staging directory".into())
+    }
+    /// Remove only our private tree, reporting any evidence that could not be cleaned.
+    pub fn finish(&self, result: Result<(), String>) -> Result<(), String> {
+        let cleanup = (|| {
+            let before = self.dir_handle.metadata().map_err(|e| e.to_string())?;
+            let now = fs::symlink_metadata(&self.dir).map_err(|e| e.to_string())?;
+            if before.dev()!=now.dev() || before.ino()!=now.ino() { return Err("staging directory moved or replaced".into()); }
+            fs::remove_dir_all(&self.dir).map_err(|e| e.to_string())
+        })();
+        match (result, cleanup) {
+            (result, Ok(())) => result,
+            (result, Err(e)) => Err(format!("{}; staging cleanup failed at {}: {e}", result.err().unwrap_or_else(|| "Output published successfully".into()), self.dir.display())),
+        }
+    }
+    pub fn publish(&self, output: &Path) -> Result<(), String> {
+        revalidate_parent(output, &self.parent)?;
+        let before = self.parent_handle.metadata().map_err(|e| e.to_string())?;
+        let now = fs::metadata(&self.parent).map_err(|e| e.to_string())?;
+        if before.dev() != now.dev() || before.ino() != now.ino() {
+            return Err("Stopped: output parent was replaced".into());
+        }
+        rename_exclusive(&self.path, output)
+    }
+}
+impl Drop for Staging {
+    fn drop(&mut self) {
+        // Never recursively remove a path that now names someone else's tree.
+        if let (Ok(before), Ok(now)) = (self.dir_handle.metadata(), fs::symlink_metadata(&self.dir))
+            && before.dev() == now.dev() && before.ino() == now.ino()
+        {
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+}
+
+/// Generate privately, then publish with a no-replace claim.
+pub fn staged_output(output: &Path, write: impl FnOnce(&Path) -> Result<(), String>) -> Result<(), String> {
+    let stage = Staging::new(output)?;
+    let result = write(&stage.path).and_then(|()| stage.publish(output));
+    stage.finish(result)
+}
+
+/// Available bytes for a non-root caller, using the platform's statvfs ABI.
+pub fn available_space(path: &Path) -> Result<u64, String> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let name = CString::new(path.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
+    let mut buf = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    if unsafe { libc::statvfs(name.as_ptr(), buf.as_mut_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    // statvfs initialized the platform struct on success.
+    let buf = unsafe { buf.assume_init() };
+    Ok((buf.f_bavail as u64).saturating_mul(buf.f_frsize))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unsupported_hard_links_fall_back_without_clobbering() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("source");
+        let to = dir.path().join("target");
+        for code in [libc::ENOTSUP, libc::EPERM, libc::EMLINK] {
+            fs::write(&from, b"source").unwrap();
+            rename_after_link_failure(&from, &to, std::io::Error::from_raw_os_error(code)).unwrap();
+            assert!(!from.exists()); assert_eq!(fs::read(&to).unwrap(), b"source");
+            fs::write(&from, b"new source").unwrap();
+            assert!(rename_after_link_failure(&from, &to, std::io::Error::from_raw_os_error(code)).is_err());
+            assert_eq!(fs::read(&to).unwrap(), b"source");
+            assert_eq!(fs::read(&from).unwrap(), b"new source");
+            fs::remove_file(&to).unwrap(); fs::remove_file(&from).unwrap();
+        }
+        fs::write(&from, b"source").unwrap();
+        for code in [libc::EEXIST, libc::EXDEV, libc::EIO] {
+            assert!(rename_after_link_failure(&from, &to, std::io::Error::from_raw_os_error(code)).is_err());
+            assert!(from.exists() && !to.exists());
+        }
+    }
+
+    #[test]
+    fn available_space_uses_platform_layout_and_reports_errors() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(available_space(d.path()).unwrap() > 0);
+        assert!(available_space(&d.path().join("missing")).is_err());
+    }
 
     #[test]
     fn unique_path_adds_suffix() {

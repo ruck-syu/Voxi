@@ -7,7 +7,7 @@
 //! `extract` return `None`, so the command is refused rather than read without
 //! its date.
 
-use super::phrase::{set_once, take};
+use super::phrase::{set_once, take, type_word};
 use crate::model::Filter;
 use chrono::{Datelike, Duration, Local, NaiveDate, Weekday};
 use regex::Regex;
@@ -71,6 +71,40 @@ fn any_date_pattern() -> String {
     )
 }
 
+// "dated July 4" explicitly introduces a date, including invalid calendar
+// days which must reach span() rather than become part of a filename.
+static DATED_DAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
+    r"(?i)\bdated\s+({})", any_date_pattern()
+)).unwrap());
+
+pub(super) fn normalize_dated(text: &str) -> String {
+    DATED_DAY.replace_all(text, "on $1").to_string()
+}
+
+/// A day after a filename's location preposition is a filter, not a folder
+/// name. Bare years and month-only folder names are deliberately excluded.
+pub(super) fn starts_calendar_date(text: &str) -> bool {
+    static PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
+        r"(?i)^(?:{ISO}|{}|{}|\d{{1,2}}/\d{{1,2}}/\d{{4}})", day_first_pattern(), month_day_pattern()
+    )).unwrap());
+    PREFIX.is_match(text)
+}
+
+static BARE_DAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
+    r"(?i)\b({}|{})", day_first_pattern(), month_day_pattern()
+)).unwrap());
+
+/// A bare calendar word ("3 Jan", "12 May") is a date filter only when a
+/// plural file-type noun is in the subject ("3 Jan screenshots"). After a
+/// bare name ("delete Notes 3 Jan") it stays part of the item's name.
+fn has_plural_type_noun(s: &str) -> bool {
+    let syntax = super::phrase::unquoted_text(s).unwrap_or_else(|| s.to_string());
+    syntax.split_whitespace().any(|word| {
+        let word = word.trim_matches(|c: char| !c.is_alphanumeric());
+        word.ends_with('s') && type_word(word).is_some()
+    })
+}
+
 static RANGE: LazyLock<Regex> = LazyLock::new(|| {
     let date = any_date_pattern();
     Regex::new(&format!(r"(?i)\b(?:between|from)\s+({date})\s+(?:and|to|through|thru|till|until)\s+({date})")).unwrap()
@@ -89,8 +123,14 @@ static ON: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"(?i)\b(?:on|
 /// "from 2024 onward": from that day on, with no end.
 static ONWARD: LazyLock<Regex> = LazyLock::new(|| {
     let date = day_or_year_pattern();
-    Regex::new(&format!(r"(?i)\bfrom\s+({date})\s+(?:onward|onwards|and\s+(?:later|after|up)|or\s+(?:later|after))\b")).unwrap()
+    Regex::new(&format!(r"(?i)\b(?:from|on)\s+({date})\s+(?:onward|onwards|and\s+(?:later|after|up)|or\s+(?:later|after))\b")).unwrap()
 });
+
+// A trailing "on" means onward only at a boundary or before a predicate.
+// In "from July 4 on Desktop", "on" still introduces the folder.
+static CONTINUING_ON: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
+    r"(?i)\bfrom\s+({})\s+on(?:\s+(?:that(?:'s)?|which|are|is)\b|\s*,|\s*$)", day_or_year_pattern()
+)).unwrap());
 
 /// "before this year", "after this month": the bounds of the current period.
 static PERIOD_BOUND: LazyLock<Regex> = LazyLock::new(|| {
@@ -251,6 +291,10 @@ pub fn extract(s: &mut String, f: &mut Filter) -> Option<()> {
         set_once(&mut f.since, span(parse_when(&c[1])?, today)?.0)?;
         Some(())
     })?;
+    take(s, &CONTINUING_ON, |c| {
+        set_once(&mut f.since, span(parse_when(&c[1])?, today)?.0)?;
+        Some(())
+    })?;
     take(s, &PERIOD_BOUND, |c| {
         let (start, end) = this_period(&c[2].to_lowercase(), today)?;
         match c[1].to_lowercase().as_str() {
@@ -277,6 +321,18 @@ pub fn extract(s: &mut String, f: &mut Filter) -> Option<()> {
         set_once(&mut f.before, end)?;
         Some(())
     })?;
+    // Calendar dates without a preposition: "April 31 screenshots" must
+    // reject the impossible day, not resolve an item with that entire name.
+    // Only do this beside a plural file-type noun; after a plain name
+    // ("delete Notes 3 Jan") the words belong to the item's name.
+    if has_plural_type_noun(s) {
+        take(s, &BARE_DAY, |c| {
+            let (start, end) = span(parse_when(&c[1])?, today)?;
+            set_once(&mut f.since, start)?;
+            set_once(&mut f.before, end)?;
+            Some(())
+        })?;
+    }
     take(s, &LAST_WEEKDAY, |c| {
         let wd = weekday_of(&c[1].to_lowercase())?;
         let (start, end) = span(When::Weekday { wd, last: true }, today)?;

@@ -1,12 +1,16 @@
 //! Persisted schedules. A one-shot task runs only the exact confirmed actions.
 //! A repeating task saves the command and plans it again at each run.
 use crate::model::Action;
+#[path = "scheduler/natural.rs"]
+mod natural;
+#[cfg(test)]
+#[path = "scheduler/natural_tests.rs"]
+mod natural_tests;
 use chrono::{DateTime, Datelike, Timelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Weekday};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::Write,
     path::{Path, PathBuf},
     collections::HashMap,
     sync::LazyLock,
@@ -89,6 +93,8 @@ pub fn extract(
     text: &str,
     now: DateTime<Local>,
 ) -> Result<(String, Option<DateTime<Local>>), String> {
+    crate::parse::check_length(text).map_err(|_| "That command is too long.".to_string())?;
+    if let Some(result) = natural::one_time(text, now)? { return Ok(result); }
     let masked =
         crate::parse::phrase::unquoted_text(text).ok_or("Close the quotation marks first.")?;
     // Try clause boundaries from the end. Earlier “at” words can belong to names.
@@ -108,7 +114,20 @@ pub fn extract(
     let Some((start, c)) = matched else {
         return Ok((text.into(), None));
     };
-    let command = text[..start].trim().to_string();
+    let mut command = text[..start].trim().to_string();
+    // "move X tomorrow at 9am": the day comes before "at", outside the clause.
+    let mut lead_day = None;
+    if c.get(4).is_some()
+        && let Some((rest, day)) = command.rsplit_once(char::is_whitespace) {
+            // "from today at 9 pm": "today" is a filter on the files, not the run day.
+            let filter_word = rest.rsplit(char::is_whitespace).next().is_some_and(|w| {
+                ["from", "since", "until", "before", "after", "of", "on"].iter().any(|f| w.eq_ignore_ascii_case(f))
+            });
+            if !filter_word && (day.eq_ignore_ascii_case("today") || day.eq_ignore_ascii_case("tomorrow")) {
+                lead_day = Some(day.to_ascii_lowercase());
+                command = rest.trim_end().to_string();
+            }
+        }
     if command.is_empty() {
         return Err("Say what to do before the time.".into());
     }
@@ -132,7 +151,7 @@ pub fn extract(
         let clock = CLOCK
             .captures(value)
             .ok_or("Use a time such as “at 9:40 pm” or “at 21:40”.")?;
-        if clock.get(1).is_some() && clock.get(5).is_some() {
+        if [clock.get(1).is_some(), clock.get(5).is_some(), lead_day.is_some()].into_iter().filter(|b| *b).count() > 1 {
             return Err("Mention today or tomorrow once.".into());
         }
         let mut hour: u32 = clock[2].parse().unwrap();
@@ -155,7 +174,8 @@ pub fn extract(
         let day = clock
             .get(1)
             .or(clock.get(5))
-            .map(|m| m.as_str().to_ascii_lowercase());
+            .map(|m| m.as_str().to_ascii_lowercase())
+            .or(lead_day);
         let mut date = now.date_naive();
         if day.as_deref() == Some("tomorrow") {
             date = date.succ_opt().ok_or("Invalid date.")?;
@@ -178,7 +198,7 @@ pub fn extract(
 
 static RECUR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)\s+(?:at\s+(?P<t1>[^\s]+(?:\s*[ap]\.?m\.?)?)\s+)?(?:every\s+(?:(?P<n>[a-z0-9]+(?:[ -][a-z]+)?)\s+)?(?P<unit>minutes?|mins?|hours?|hrs?|days?|weeks?)|every\s+(?P<wd>monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?|(?P<adv>hourly|daily|weekly))(?:\s+at\s+(?P<t2>.+?))?\s*[.!]?\s*$",
+        r"(?i)\s+(?:at\s+(?P<t1>[^\s]+(?:\s*[ap]\.?m\.?)?)\s+)?(?:every\s+(?:(?P<n>[a-z0-9]+(?:[ -][a-z]+)?)\s+)?(?P<unit>minutes?|mins?|hours?|hrs?|days?|weeks?)|every\s+(?P<wd>monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?|(?P<adv>hourly|daily|everyday|weekly))(?:\s+at\s+(?P<t2>.+?))?\s*[.!]?\s*$",
     )
     .unwrap()
 });
@@ -205,6 +225,9 @@ pub struct Rule {
     /// Folder and file choices made when the task was scheduled.
     #[serde(default)]
     pub choices: HashMap<String, PathBuf>,
+    /// Approved structured model interpretation. Reuse it without inference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_intent: Option<crate::model::Intent>,
 }
 
 /// The shortest gap allowed between runs of a repeating task.
@@ -256,6 +279,13 @@ impl Rule {
     }
 }
 
+/// Only a repeat without a clock suffix executes its approved preview now.
+pub fn runs_on_confirm(text: &str) -> bool {
+    natural::normalize(text).ok().and_then(|text| crate::parse::phrase::unquoted_text(&text))
+        .and_then(|masked| RECUR.captures(&masked).map(|c| c.name("t1").is_none() && c.name("t2").is_none()))
+        .unwrap_or(false)
+}
+
 /// A clock time such as “9:40 pm”, “9 pm” or “21:40”.
 fn clock_time(value: &str) -> Result<NaiveTime, String> {
     let value = value.trim().trim_end_matches(['.', '!']).trim();
@@ -289,13 +319,22 @@ pub struct When {
     pub rule: Option<Rule>,
 }
 
-/// Finds “every 3 days”, “daily at 9 pm”, “every Monday at 8:30 am”, or a
+pub(crate) fn check_unscheduled(text: &str) -> Result<(), String> {
+    natural::check_residual(text)
+}
+
+/// Finds “every 3 days”, “everyday”, “daily at 9 pm”, “every Monday at 8:30 am”, or a
 /// one-time “at 9:40 pm” / “after 3 hours” at the end of a command.
 pub fn extract_schedule(text: &str, now: DateTime<Local>) -> Result<(String, Option<When>), String> {
+    crate::parse::check_length(text).map_err(|_| "That command is too long.".to_string())?;
+    let normalized = natural::normalize(text)?;
+    let text = normalized.as_str();
     if let Some((command, when)) = extract_repeat(text, now)? {
+        natural::check_residual(&command)?;
         return Ok((command, Some(when)));
     }
     let (command, due) = extract(text, now)?;
+    natural::check_residual(&command)?;
     Ok((command, due.map(|due| When { due, rule: None })))
 }
 
@@ -308,7 +347,7 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
     if command.is_empty() { return Err("Say what to do before how often.".into()); }
 
     let (every, unit, day) = if let Some(adv) = c.name("adv") {
-        let unit = match adv.as_str().to_ascii_lowercase().as_str() { "hourly" => Unit::Hours, "daily" => Unit::Days, _ => Unit::Weeks };
+        let unit = match adv.as_str().to_ascii_lowercase().as_str() { "hourly" => Unit::Hours, "daily" | "everyday" => Unit::Days, _ => Unit::Weeks };
         (1, unit, None)
     } else if let Some(wd) = c.name("wd") {
         (1, Unit::Weeks, weekday(wd.as_str()))
@@ -339,7 +378,7 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
 
     let (time, due) = match (unit, time, day) {
         (Unit::Minutes | Unit::Hours, _, _) => {
-            let rule = Rule { every, unit, time: None, command: String::new(), choices: HashMap::new() };
+            let rule = Rule { every, unit, time: None, command: String::new(), choices: HashMap::new(), model_intent: None };
             (None, rule.step(now).ok_or("That time is too far away.")?)
         }
         // A weekday without a time runs at 9 am.
@@ -359,11 +398,11 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
         }
         (_, None, None) => {
             let time = now.time().with_nanosecond(0).unwrap_or(now.time());
-            let rule = Rule { every, unit, time: Some(time), command: String::new(), choices: HashMap::new() };
+            let rule = Rule { every, unit, time: Some(time), command: String::new(), choices: HashMap::new(), model_intent: None };
             (Some(time), rule.step(now).ok_or("That time is too far away.")?)
         }
     };
-    let rule = Rule { every, unit, time, command: command.clone(), choices: HashMap::new() };
+    let rule = Rule { every, unit, time, command: command.clone(), choices: HashMap::new(), model_intent: None };
     Ok(Some((command, When { due, rule: Some(rule) })))
 }
 
@@ -555,48 +594,11 @@ pub struct Store {
 }
 impl Store {
     pub fn load(path: PathBuf) -> Self {
-        let mut notice = None;
-        let jobs = match fs::read(&path) {
-            Ok(json) => match serde_json::from_slice::<Vec<Job>>(&json) {
-                Ok(jobs) => jobs,
-                Err(error) => {
-                    let backup = path.with_extension(format!(
-                        "unreadable-{}.json",
-                        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
-                    ));
-                    let preserved = fs::OpenOptions::new()
-                        .write(true)
-                        .create_new(true)
-                        .open(&backup)
-                        .and_then(|mut file| {
-                            file.write_all(&json)?;
-                            file.sync_all()
-                        });
-                    if let Err(e) = preserved {
-                        return Self::unavailable(
-                            path,
-                            format!(
-                                "Couldn't read schedules ({error}) or preserve them ({e}). Scheduling is unavailable; the original file has been kept."
-                            ),
-                        );
-                    }
-                    notice = Some(format!(
-                        "Saved unreadable schedules to {}. No saved tasks were restored. You can schedule new tasks.",
-                        backup.display()
-                    ));
-                    Vec::new()
-                }
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => {
-                return Self::unavailable(
-                    path,
-                    format!(
-                        "Couldn't read schedules: {e}. Scheduling is unavailable; existing data has been kept."
-                    ),
-                );
-            }
-        };
+        let (jobs, warning) = crate::settings::load_store::<Vec<Job>>(&path, crate::settings::diagnostics::Store::Schedules);
+        if let Some(warning) = warning {
+            return Self::unavailable(path, format!("{} Scheduling is unavailable; original data has been kept.", warning.message));
+        }
+        let notice = None;
         let mut store = Self {
             path,
             jobs,
@@ -607,6 +609,7 @@ impl Store {
         // A repeating task skips to its next run instead.
         let now = Local::now();
         for job in &mut store.jobs {
+            if job.status == "running" { crate::settings::diagnostics::emit(crate::settings::diagnostics::Event::new(crate::settings::diagnostics::Code::SchedulerSkip, crate::settings::diagnostics::Stage::Interrupted).operation(job.id)); }
             if job.status == "running" && let Some(next) = job.repeat.as_ref().and_then(|rule| rule.next_after(job.due, now)) {
                 job.status = "pending".into();
                 job.due = next;
@@ -635,17 +638,12 @@ impl Store {
     }
     fn save(&self) -> Result<(), String> {
         if let Some(error) = &self.unavailable {
+            crate::settings::diagnostics::emit(crate::settings::diagnostics::Event::new(crate::settings::diagnostics::Code::StoreSave, crate::settings::diagnostics::Stage::Failed).store(crate::settings::diagnostics::Store::Schedules));
             return Err(error.clone());
         }
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let json = serde_json::to_vec_pretty(&self.jobs).map_err(|e| e.to_string())?;
-        let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, json)
-            .and_then(|_| fs::rename(tmp, &self.path))
-            .map_err(|e| format!("Couldn't save schedules: {e}"))
+        crate::settings::save_store(&self.path, &self.jobs, crate::settings::diagnostics::Store::Schedules)
     }
+
     pub fn add(&mut self, mut job: Job) -> Result<(), String> {
         job.id = self.jobs.iter().map(|j| j.id).max().unwrap_or(0) + 1;
         self.jobs.push(job);
@@ -669,6 +667,12 @@ impl Store {
             return Err(e);
         }
         Ok(())
+    }
+    /// Records a run's summary without changing status, so a stop or pause
+    /// made while the run was in progress stays in effect.
+    pub fn record_summary(&mut self, id: u64, summary: String) -> Result<(), String> {
+        let status = self.jobs.iter().find(|j| j.id == id).ok_or("That task no longer exists.")?.status.clone();
+        self.update(id, &status, summary)
     }
     pub fn cancel(&mut self, id: u64) -> Result<(), String> {
         let job = self.jobs.iter().find(|j| j.id == id && matches!(j.status.as_str(), "pending" | "paused"))
@@ -729,8 +733,68 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_schedule_migration_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("schedules.json");
+        let job = Job::new("legacy task".into(), now(), vec![]).unwrap();
+        fs::write(&path, serde_json::to_vec(&vec![job]).unwrap()).unwrap();
+        let store = Store::load(path.clone());
+        assert!(store.notice().is_none());
+        let json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(json["version"], 1);
+        assert_eq!(serde_json::to_value(&Store::load(path).jobs).unwrap(), serde_json::to_value(&store.jobs).unwrap());
+    }
+
+    #[test]
+    fn future_schedules_preserved_and_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("schedules.json");
+        let bytes = br#"{"version":99,"data":[]}"#;
+        fs::write(&path, bytes).unwrap();
+        let mut store = Store::load(path.clone());
+        assert!(store.notice().unwrap().contains("Unsupported store version"));
+        assert!(store.add(Job::new("x".into(), now(), vec![]).unwrap()).is_err());
+        assert!(store.claim(now()).unwrap().is_none());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        let backup = fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().path()).find(|p| p != &path).unwrap();
+        assert_eq!(fs::read(backup).unwrap(), bytes);
+    }
+
+    #[test]
+    fn missing_schedule_and_failed_writes_are_safe() {
+        use crate::settings::WRITE_FAILURE;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("schedules.json");
+        let mut store = Store::load(path.clone());
+        assert!(store.notice().is_none());
+        assert!(store.jobs.is_empty());
+        let original = fs::read(&path).unwrap();
+        for stage in 1..=3 {
+            WRITE_FAILURE.with(|f| f.set(stage));
+            let result = store.add(Job::new("x".into(), now(), vec![]).unwrap());
+            WRITE_FAILURE.with(|f| f.set(0));
+            assert!(result.is_err());
+            assert!(store.jobs.is_empty());
+            assert_eq!(fs::read(&path).unwrap(), original);
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        }
+    }
+
     fn now() -> DateTime<Local> {
         Local.with_ymd_and_hms(2026, 11, 12, 20, 0, 0).unwrap()
+    }
+    #[test]
+    fn day_before_at_belongs_to_the_time() {
+        let (cmd, due) = extract("move pdfs to Archive tomorrow at 9am", now()).unwrap();
+        assert_eq!(cmd, "move pdfs to Archive");
+        assert_eq!(due.unwrap(), Local.with_ymd_and_hms(2026, 11, 13, 9, 0, 0).unwrap());
+        let (cmd, due) = extract("move pdfs to Archive today at 9 pm", now()).unwrap();
+        assert_eq!(cmd, "move pdfs to Archive");
+        assert_eq!(due.unwrap(), Local.with_ymd_and_hms(2026, 11, 12, 21, 0, 0).unwrap());
+        assert!(extract("move pdfs to Archive tomorrow at 9am tomorrow", now()).is_err());
+        let (cmd, _) = extract("delete files from today at 9 pm", now()).unwrap();
+        assert_eq!(cmd, "delete files from today");
     }
     #[test]
     fn parses_clock_and_delays() {
@@ -848,6 +912,8 @@ mod tests {
             ("every day at 9 pm", 1, Unit::Days, Some(at(21, 0))),
             ("at 7:30 am every day", 1, Unit::Days, Some(at(7, 30))),
             ("daily at 21:40", 1, Unit::Days, Some(at(21, 40))),
+            ("everyday", 1, Unit::Days, Some(at(20, 0))),
+            ("everyday at 9 pm", 1, Unit::Days, Some(at(21, 0))),
             ("every other week", 2, Unit::Weeks, Some(at(20, 0))),
             ("every two hours", 2, Unit::Hours, None),
             ("hourly", 1, Unit::Hours, None),
@@ -877,11 +943,12 @@ mod tests {
         }
         // Quoted names and one-time schedules are untouched.
         assert!(extract_schedule("rename a.pdf to \"every day\"", now()).unwrap().1.is_none());
+        assert!(extract_schedule("rename a.pdf to \"everyday\"", now()).unwrap().1.is_none());
         assert!(extract_schedule("move a.pdf to Documents at 9:40 pm", now()).unwrap().1.unwrap().rule.is_none());
     }
     #[test]
     fn repeats_follow_the_schedule_and_collapse_missed_runs() {
-        let rule = Rule { every: 3, unit: Unit::Days, time: Some(NaiveTime::from_hms_opt(21, 0, 0).unwrap()), command: "x".into(), choices: HashMap::new() };
+        let rule = Rule { every: 3, unit: Unit::Days, time: Some(NaiveTime::from_hms_opt(21, 0, 0).unwrap()), command: "x".into(), choices: HashMap::new(), model_intent: None };
         let first = Local.with_ymd_and_hms(2026, 11, 1, 21, 0, 0).unwrap();
         // Voxi was closed for ten days: one run now, then back on the 3-day grid.
         let next = rule.next_after(first, now()).unwrap();
@@ -895,7 +962,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("jobs.json");
         let mut store = Store::load(path.clone());
-        let rule = Rule { every: 1, unit: Unit::Hours, time: None, command: "move a.pdf to Documents".into(), choices: HashMap::new() };
+        let rule = Rule { every: 1, unit: Unit::Hours, time: None, command: "move a.pdf to Documents".into(), choices: HashMap::new(), model_intent: None };
         store.add(Job::recurring("move a.pdf to Documents hourly".into(), Local::now() - Duration::minutes(1), rule.clone())).unwrap();
         assert_eq!(store.claim(Local::now()).unwrap().unwrap().id, 1);
         // Voxi quit mid-run: the task skips ahead instead of failing or rerunning.
@@ -909,6 +976,7 @@ mod tests {
     fn unreadable_schedule_data_is_preserved_without_blocking_startup() {
         for bytes in [
             b"{".as_slice(),
+            b"not JSON".as_slice(),
             b"[{\"oldSchema\":true}]".as_slice(),
             &[0xff],
         ] {
@@ -924,10 +992,9 @@ mod tests {
                 .find(|p| p != &path)
                 .unwrap();
             assert_eq!(fs::read(backup).unwrap(), bytes);
-            store
-                .add(Job::new("new task".into(), now(), vec![]).unwrap())
-                .unwrap();
-            assert_eq!(Store::load(path).jobs.len(), 1);
+            assert!(store.add(Job::new("new task".into(), now(), vec![]).unwrap()).is_err());
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+            assert!(Store::load(path).jobs.is_empty());
         }
     }
     #[test]
@@ -976,6 +1043,15 @@ mod tests {
             .unwrap();
         store.cancel(2).unwrap();
         assert!(store.claim(now()).unwrap().is_none());
+    }
+    #[test]
+    fn run_summary_keeps_a_stop_made_during_the_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::load(dir.path().join("jobs.json"));
+        store.add(Job::new("create folder".into(), now(), vec![]).unwrap()).unwrap();
+        store.cancel(1).unwrap();
+        store.record_summary(1, "Done. 1 change.".into()).unwrap();
+        assert_eq!((store.jobs[0].status.as_str(), store.jobs[0].summary.as_str()), ("cancelled", "Done. 1 change."));
     }
     #[test]
     fn names_with_at_are_preserved() {

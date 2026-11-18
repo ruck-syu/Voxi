@@ -14,9 +14,9 @@ macro_rules! re {
 }
 
 static LEAD_FILLER: LazyLock<Regex> = re!(
-    r"(?i)^(?:(?:hey|ok|okay|so|well|alright|um|uh|erm|ah)[,]?\s+)*(?:voxi[,]?\s+)?(?:help\s+me\s+)?(?:(?:can|could|would|will)\s+you\s+|please[,]?\s+|kindly\s+|go\s+ahead\s+and\s+|i\s+want\s+(?:you\s+)?to\s+|i'?d\s+like\s+(?:you\s+)?to\s+|i\s+need\s+(?:you\s+)?to\s+|let's\s+|(?:um|uh|erm|ah)[,]?\s+)*"
+    r"(?i)^(?:(?:hey|ok|okay|so|well|alright|um|uh|erm|ah)[,]?\s+)*(?:voxi[,]?\s+)?(?:help\s+me\s+)?(?:would\s+you\s+mind\s+|(?:can|could|would|will)\s+you\s+|please[,]?\s+|kindly\s+|go\s+ahead\s+and\s+|i\s+want\s+(?:you\s+)?to\s+|i'?d\s+like\s+(?:you\s+)?to\s+|i\s+need\s+(?:you\s+)?to\s+|let's\s+|(?:um|uh|erm|ah)[,]?\s+)*"
 );
-static TRAIL_FILLER: LazyLock<Regex> = re!(r"(?i)(?:,?\s+(?:please|for\s+me|now|thanks|thank\s+you|period|full\s+stop))+$");
+static TRAIL_FILLER: LazyLock<Regex> = re!(r"(?i)(?:,?\s+(?:please|for\s+me|right\s+now|now|thanks|thank\s+you|period|full\s+stop))+$");
 /// "move X in Downloads over to Documents": "over" and "across" before a destination.
 static OVER_TO: LazyLock<Regex> = re!(r"(?i)\s+(?:over|across)\s+(to|into)\b");
 static TRAIL_PUNCT: LazyLock<Regex> = re!(r"[.!?;:,\s]+$");
@@ -29,23 +29,40 @@ static QUANTIFIED_DOT: LazyLock<Regex> = re!(r"(?i)\b(?:every|any|all|each)\s+do
 static QUANTIFIED_TYPE: LazyLock<Regex> = re!(r"(?i)\b(?:every|any|each)\s+(?:(?:the|my)\s+)?([a-z0-9]+)\s+files?\b");
 /// "any photos", "any installers": "any" adds nothing to a set.
 static ANY: LazyLock<Regex> = re!(r"(?i)\bany\s+");
-static FILLER_WORDS: LazyLock<Regex> = re!(r"(?i)\b(?:all\s+of\s+|all\s+|the\s+|my\s+|every\s+|whole\s+|please\s+)");
+static FILLER_WORDS: LazyLock<Regex> = re!(r"(?i)\b(?:all\s+of\s+|all\s+|the\s+|my\s+|every\s+|each\s+|whole\s+|please\s+)");
 static FILE_QUANTIFIER: LazyLock<Regex> = re!(r"(?i)\b(?:every|all(?:\s+of)?)\s+(?:(?:the|my)\s+)?file\b(\s+names?\b)?");
+/// "in Downloads, delete PDFs", "to Archive, move X": the comma after a
+/// leading folder goes, so it never becomes part of the folder's name.
+static LEADING_SCOPE_COMMA: LazyLock<Regex> =
+    re!(r#"(?i)^((?:in|inside|within|on|under|to|into|over\s+to)\s+(?:"[^"]+"|'[^']+'|[^\s,]+(?:\s+folder)?)),\s+"#);
+/// "videos in Desktop dated within the last week": "dated" adds nothing.
+static DATED: LazyLock<Regex> = re!(r"(?i)\s+(?:(?:that|which)\s+(?:are|is)\s+|are\s+|is\s+)?dated\b");
 static COMMA_BEFORE_KEYWORD: LazyLock<Regex> = re!(r"(?i),\s+(to|into|in|from|as|on)\s+");
+/// A dictated "bin it: budget.txt" carries no information in "it:".
+static LEADING_IT: LazyLock<Regex> = re!(r"(?i)\b(?:it|that|this)\s*:\s+");
 static SPACES: LazyLock<Regex> = re!(r"\s+");
 
 /// Cleans dictated or typed text: drops politeness and filler words, trailing
 /// punctuation that Wispr Flow adds, and turns spoken numbers into digits.
+/// This is a grammar helper, not a checked parser entry point. External
+/// ingress (scope and shortcut lookup) must call `super::check_length` first.
 pub fn normalize(text: &str) -> String {
     // Dictation often produces curly quotes; they mean the same as straight ones.
     let straight = text.replace(['“', '”'], "\"").replace(['‘', '’'], "'");
     let mut s = SPACES.replace_all(straight.trim(), " ").to_string();
+    s = map_unquoted(&s, |part| LEADING_IT.replace_all(part, "").to_string());
     s = map_unquoted(&s, |part| OVER_TO.replace_all(part, " $1").to_string());
+    static OVER_IN: LazyLock<Regex> = re!(r"(?i)\s+over\s+(in|on|inside)\s+");
+    s = map_unquoted(&s, |part| OVER_IN.replace_all(part, " $1 ").to_string());
     s = map_unquoted(&s, |part| QUANTIFIED_DOT.replace_all(part, "$1 files").to_string());
     s = map_unquoted(&s, |part| SPOKEN_DOT.replace_all(part, "$1.$2").to_string());
     s = TRAIL_PUNCT.replace(&s, "").to_string();
     s = LEAD_FILLER.replace(&s, "").to_string();
-    s = TRAIL_FILLER.replace(&s, "").to_string();
+    static JUST_NOW: LazyLock<Regex> = re!(r"(?i)\bjust\s+now$");
+    if !JUST_NOW.is_match(&s) { s = TRAIL_FILLER.replace(&s, "").to_string(); }
+    s = LEADING_SCOPE_COMMA.replace(&s, "$1 ").to_string();
+    s = map_unquoted(&s, dates::normalize_dated);
+    s = map_unquoted(&s, |part| DATED.replace_all(part, "").to_string());
     s = COMMA_BEFORE_KEYWORD.replace_all(&s, " $1 ").to_string();
     // Filler words, but not inside quoted names.
     s = map_unquoted(&s, |part| {
@@ -55,6 +72,17 @@ pub fn normalize(text: &str) -> String {
         });
         ANY.replace_all(&part, "").to_string()
     });
+    // Preserve an explicit quantifier before singular named types: stripping
+    // "each" first would turn "each scan PDF" into a literal item "scan PDF".
+    static EACH_NAMED_TYPE: LazyLock<Regex> = re!(r"(?i)\b(?:each|every)\s+(\w+)\s+(pdf|image|photo|video|document)\b");
+    s = map_unquoted(&s, |part| EACH_NAMED_TYPE.replace_all(part, |c: &regex::Captures| {
+        let name = &c[1];
+        if vague(name) || NOT_A_NAME.contains(&name.to_ascii_lowercase().as_str()) || KNOWN_FOLDERS.contains(&name.to_ascii_lowercase().as_str()) || type_word(name).is_some() {
+            c[0].to_string()
+        } else {
+            format!("{} files named \"{}\"", &c[2], name)
+        }
+    }).to_string());
     s = map_unquoted(&s, |part| FILE_QUANTIFIER.replace_all(part, |c: &regex::Captures| {
         c.get(1).map_or_else(|| "files".to_string(), |names| format!("file{}", names.as_str()))
     }).to_string());
@@ -186,11 +214,11 @@ const SIZE_NUMBER: &str = r"(\d+(?:\.\d+)?|an?|one)";
 /// A size unit, with its spoken forms: gigs, megs, kilobytes.
 const SIZE_UNIT: &str = r"(kbs?|kilobytes?|k|mbs?|megs?|megabytes?|m|gbs?|gigs?|gigabytes?|g|tbs?|terabytes?|t)";
 static SIZE_LARGER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"(?i)\b(?:(?:larger|bigger|greater|more|heavier)\s+than|over|above|at\s+least)\s+{SIZE_NUMBER}\s*{SIZE_UNIT}\b"))
+    Regex::new(&format!(r"(?i)\b(?:(?:larger|bigger|greater|more|heavier)\s+than|weigh(?:s|ing)?\s+(?:more\s+than|over|above)|exceed(?:s|ing)?|over|above|at\s+least)\s+{SIZE_NUMBER}\s*{SIZE_UNIT}\b"))
         .unwrap()
 });
 static SIZE_SMALLER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"(?i)\b(?:(?:smaller|less|lighter)\s+than|under|below|at\s+most|up\s+to)\s+{SIZE_NUMBER}\s*{SIZE_UNIT}\b"))
+    Regex::new(&format!(r"(?i)\b(?:(?:smaller|less|lighter)\s+than|weigh(?:s|ing)?\s+(?:less\s+than|under|below)|under|below|at\s+most|up\s+to)\s+{SIZE_NUMBER}\s*{SIZE_UNIT}\b"))
         .unwrap()
 });
 static BETWEEN_SIZE: LazyLock<Regex> = LazyLock::new(|| {
@@ -211,21 +239,33 @@ static NAME_VALUE_REFUSED: LazyLock<Regex> = re!(
 );
 /// Time words the parser cannot turn into dates: refused, not read as folder names.
 static TIME_WORDS: LazyLock<Regex> = re!(
-    r"(?i)\b(?:weekends?|mornings?|afternoons?|evenings?|tonight|last\s+night|last\s+(?:hour|quarter)|week\s+before|month\s+before|before\s+last|ago)\b"
+    r"(?i)\b(?:weekends?|mornings?|afternoons?|evenings?|tonight|last\s+night|last\s+(?:hour|quarter)|week\s+before|month\s+before|before\s+last|ago|lately|just\s+now|(?:other|past)\s+(?:day|week|fortnight|while)|(?:from|in|during|over)\s+(?:(?:back|the|around)\s+)*(?:winter|summer|spring|autumn|fall|holidays?|midsummer)\b|from\s+(?:around|roughly|sometime|early-ish|last-ish|way\s+back|back\s+in|day|week|time|start|end|gap|lockdown|pandemic|golden)\b|(?:from|during)\s+[^,]+?\s+(?:season|period|break|series)\b)\b"
 );
 /// Unsupported filter syntax must not fall through to a guessed item/folder.
 static UNREAD_FILTER: LazyLock<Regex> = re!(
-    r"(?i)\b(?:(?:older|newer|larger|bigger|smaller|less|more)\s+than|(?:over|under|above|below|at\s+least|at\s+most|up\s+to)\s+\d+|before|after|since|until|between|(?:month|year)\s+\d+|(?:from|in|on|during)\s+\d{4}\b|\d+(?:st|nd|rd|th)\s+(?:day|week|month|year))\b"
+    r"(?i)\b(?:(?:older|newer|larger|bigger|smaller|less|more)\s+than|(?:over|under|above|below|at\s+least|at\s+most|up\s+to)\s+\d+|before|after|since|until|between|(?:month|year)\s+\d+|(?:from|in|on|during)\s+\d{4}\b|\d{1,2}/\d{1,2}/\d{4}|\d+(?:st|nd|rd|th)\s+(?:day|week|month|year))\b"
 );
 /// "Desktop screenshots": a folder word, then a type.
-static FOLDER_PREFIX: LazyLock<Regex> = re!(r"(?i)^(desktop|downloads|documents|pictures|screenshots)\s+(.+)$");
+static FOLDER_PREFIX: LazyLock<Regex> = re!(r"(?i)^(desktop|downloads|documents|pictures|screenshots|movies|music)\s+(.+)$");
 /// "and in Documents" once a filter before it is removed: the connector goes.
 static CONNECTOR_BEFORE_PREP: LazyLock<Regex> = re!(r"(?i)\s+(?:and|or)\s+((?:in|from|on|inside|within)\b)");
 static OLDER: LazyLock<Regex> = re!(
     r"(?i)\b(?:older\s+than|more\s+than|over|before|not\s+(?:opened|modified|touched|used)\s+in)\s+(\d+|a|an)\s*(days?|weeks?|months?|years?)(?:\s+old|\s+ago)?\b"
 );
+/// A numbered span is rolling ("last 30 days"). A bare "last week/month/year"
+/// is a previous calendar period, handled by LAST_PERIOD below.
 static NEWER: LazyLock<Regex> = re!(
-    r"(?i)\b(?:(?:from|in|within|during|over)\s+)?(?:last|past)\s+(?:(\d+)\s*)?(days?|weeks?|months?|years?)\b"
+    r"(?i)\b(?:(?:from|in|within|during|over)\s+)?(?:last|past)\s+(\d+)\s*(days?|weeks?|months?|years?)\b"
+);
+/// "last week", "last month", "last year": the previous calendar period.
+static LAST_PERIOD: LazyLock<Regex> = re!(r"(?i)\b(?:(?:from|in|within|during|over)\s+)?(?:last|past)\s+(week|month|year)\b");
+/// "newer than 2 weeks", "less than 3 days old": the same as "in the last 2 weeks".
+static NEWER_THAN: LazyLock<Regex> = re!(
+    r"(?i)\b(?:(?:newer|younger)\s+than\s+(\d+|a|an)\s*(days?|weeks?|months?|years?)(?:\s+old)?|(?:less\s+than|under)\s+(\d+|a|an)\s*(days?|weeks?|months?|years?)\s+old)\b"
+);
+/// "ending in .txt", "that end with .csv": an extension filter.
+static ENDING: LazyLock<Regex> = re!(
+    r"(?i)\b(?:ending|that\s+ends?|which\s+ends?|whose\s+names?\s+ends?)\s+(?:in|with)\s+\.([a-z0-9]{1,6})\b"
 );
 /// "since 3 days ago": the same as "in the last 3 days".
 static SINCE_AGO: LazyLock<Regex> = re!(r"(?i)\bsince\s+(\d+|an?)\s*(days?|weeks?|months?|years?)\s+ago\b");
@@ -238,26 +278,47 @@ static MONTH: LazyLock<Regex> = re!(
 /// "taken", "downloaded", "that were saved": how files came to be says
 /// nothing about which ones, once the dates are read.
 static PARTICIPLE: LazyLock<Regex> = re!(
-    r"(?i)\b(?:(?:that|which)\s+were\s+|were\s+)?(?:taken|created|made|downloaded|saved|captured|added|modified|recorded|grabbed|snapped|received)\b"
+    r"(?i)\b(?:(?:that|which)\s+were\s+|were\s+)?(?:taken|created|made|downloaded|saved|captured|added|modified|recorded|grabbed|snapped|received|arrived)\b"
 );
 /// "named", "containing", "that start with": the keyword before a name.
 static NAME_KEYWORD: LazyLock<Regex> = re!(
-    r"(?i)\b(?:named\s+like|called\s+like|named|called|containing|that\s+contains?|whose\s+names?\s+contains?|matching|with|that\s+starts?\s+with|starting\s+with|beginning\s+with|that\s+begins?\s+with|(?:whose\s+)?names?\s+(?:start|starts|begin|begins)\s+with|that\s+(?:has|have)|which\s+(?:has|have))\s+"
+    r"(?i)\b(?:named\s+like|called\s+like|named|called|labelled|labeled|containing|that\s+contains?|whose\s+names?\s+(?:contains?|includes?)|matching|with|that\s+starts?\s+with|starting\s+with|beginning\s+with|that\s+begins?\s+with|(?:whose\s+)?names?\s+(?:start|starts|begin|begins)\s+with|(?:whose\s+)?names?\s+(?:is|are)|that\s+(?:has|have)|which\s+(?:has|have)|has|have)\s+"
 );
 /// After a name: "in the name", which is filler.
-static NAME_SUFFIX: LazyLock<Regex> = re!(r"(?i)^\s+in\s+(?:the\s+|their\s+|its\s+)?names?\b");
+static NAME_SUFFIX: LazyLock<Regex> = re!(r"(?i)^\s+(?:in\s+(?:the\s+|their\s+|its\s+)?(?:names?|titles?)|as\s+(?:the\s+)?name)\b");
 static WORD: LazyLock<Regex> = re!(r"\S+");
 /// Words that end an unquoted name: "files named budget from Downloads".
 const NAME_STOP: &[&str] = &[
     "from", "in", "on", "inside", "within", "under", "to", "into", "older", "newer", "larger", "bigger", "smaller", "less", "more",
     "over", "under", "taken", "created", "made", "before", "after", "since", "until", "between", "last", "past", "today",
-    "yesterday", "that", "which",
+    "yesterday", "that", "which", "are", "is", "have", "has",
 ];
 /// "screenshots I took", "PDFs that I've downloaded", "files we saved":
 /// who made the files says nothing about which ones, so it's dropped.
+static PREDICATE_LINK: LazyLock<Regex> = re!(r"(?i)\b(?:that|which)\s+(?:(?:has|have)\s+been\s+around(?:\s+for)?|comes?\s+in)\s+((?:since|before|after|older|newer|more|less|over|under|above|below)\b)");
+static WITHIN_DAYS: LazyLock<Regex> = re!(r"(?i)\bwithin\s+(\d+)\s*(days?|weeks?|months?|years?)\b");
+
+static FILTER_CLAUSE: LazyLock<Regex> = re!(r"(?i)\bif\s+(?:they're|they\s+are|it's|it\s+is)\s+((?:(?:larger|smaller|bigger|less|more|older|newer)\s+than|over|under|above|below)\b)");
+
 static WHO_CLAUSE: LazyLock<Regex> = re!(
     r"(?i)\b(?:that\s+|which\s+)?(?:i|i've|i\s+have|i'd|we|we've)\s+(?:have\s+|just\s+|recently\s+)?(?:took|taken|take|made|make|downloaded|download|saved|save|created|got|gotten|received|captured|grabbed|added|recorded|exported|scanned|snapped)\b"
 );
+
+/// A month spelled out in full: "October", not "Oct" or "marketing".
+fn full_month(name: &str) -> Option<u32> {
+    const MONTHS: [&str; 12] = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+    let n = name.to_ascii_lowercase();
+    MONTHS.iter().position(|m| *m == n).map(|i| i as u32 + 1)
+}
+
+/// Words before a type that describe the files rather than name them.
+const NOT_A_NAME: &[&str] = &[
+    "other", "some", "both", "same", "remaining", "extra", "unused", "random", "misc", "various", "loose", "stray",
+    "your", "our", "his", "her", "their", "its", "my", "these", "those", "such", "certain", "few", "many", "more", "most",
+    "only", "just", "also", "even", "then", "now", "today", "yesterday", "tomorrow", "weekly", "daily", "monthly", "yearly",
+    "every", "each", "any", "all", "no", "unwanted", "useless", "junk", "dupe", "dupes", "copied", "downloaded", "saved",
+    "shared", "sent", "received", "deleted", "edited", "opened", "huge", "massive", "giant", "heavy", "light", "empty",
+];
 
 fn month_number(name: &str) -> Option<u32> {
     const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -289,6 +350,30 @@ fn to_days(n: &str, unit: &str) -> Option<u32> {
         _ => 1,
     };
     n.checked_mul(per)
+}
+
+/// The previous calendar week (Mon–Sun), month, or year, as the first day of
+/// that period and the first day after it. Unlike a numbered "last 30 days",
+/// these follow the calendar rather than a rolling window.
+fn previous_period(unit: &str, today: NaiveDate) -> Option<(NaiveDate, NaiveDate)> {
+    use chrono::Datelike;
+    match unit.to_ascii_lowercase().as_str() {
+        "week" => {
+            let this_monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
+            Some((this_monday - Duration::days(7), this_monday))
+        }
+        "month" => {
+            let this_first = NaiveDate::from_ymd_opt(today.year(), today.month(), 1)?;
+            let (year, month) = if today.month() == 1 { (today.year() - 1, 12) } else { (today.year(), today.month() - 1) };
+            let start = NaiveDate::from_ymd_opt(year, month, 1)?;
+            Some((start, this_first))
+        }
+        "year" => Some((
+            NaiveDate::from_ymd_opt(today.year() - 1, 1, 1)?,
+            NaiveDate::from_ymd_opt(today.year(), 1, 1)?,
+        )),
+        _ => None,
+    }
 }
 
 /// Removes every match of `re` from `s`, handing each match's captures to `f`.
@@ -328,8 +413,14 @@ fn take_name(s: &mut String, f: &mut Filter) -> Option<()> {
     let Some(m) = NAME_KEYWORD.find_iter(s).find(|m| !overlaps_quote(&ranges, m.start(), m.end())) else { return Some(()) };
     let (start, kw_end) = (m.start(), m.end());
     let keyword = m.as_str().trim().to_lowercase();
-    let (value, used, in_name) = name_value(&s[kw_end..]);
+    let rest = &s[kw_end..];
+    let label = if rest.get(..5).is_some_and(|s| s.eq_ignore_ascii_case("word ")) { 5 } else { 0 };
+    let (value, used, in_name) = name_value(&rest[label..]);
+    let used = used + label;
     if value.is_empty() {
+        return None;
+    }
+    if matches!(keyword.as_str(), "has" | "have") && !in_name {
         return None;
     }
     if keyword == "with" && !in_name {
@@ -395,8 +486,11 @@ fn name_suffix_len(rest: &str) -> usize {
 /// second "today" or "yesterday".
 fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
     let mut f = Filter::default();
-    let mut s = phrase.trim().to_string();
+    let mut s = map_unquoted(phrase.trim(), |part| FILTER_CLAUSE.replace_all(part, "$1").to_string());
+    s = map_unquoted(&s, |part| PREDICATE_LINK.replace_all(part, "$1").to_string());
     take(&mut s, &WHO_CLAUSE, |_| Some(()))?;
+    // Before names: "that end with .tmp" is an extension, not a name "with .tmp".
+    take(&mut s, &ENDING, |c| set_once(&mut f.ext, vec![c[1].to_ascii_lowercase()]))?;
     take_name(&mut s, &mut f)?;
     // Ages before sizes: "over 30 days" must not read as a size.
     take(&mut s, &OLDER, |c| {
@@ -407,8 +501,24 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         if days == 0 { return None; }
         set_once(&mut f.newer_than_days, days)
     })?;
+    take(&mut s, &NEWER_THAN, |c| {
+        let (n, unit) = match c.get(1) { Some(n) => (n.as_str(), &c[2]), None => (&c[3], &c[4]) };
+        let days = to_days(n, unit)?;
+        if days == 0 { return None; }
+        set_once(&mut f.newer_than_days, days)
+    })?;
+    take(&mut s, &WITHIN_DAYS, |c| {
+        let days = to_days(&c[1], &c[2])?;
+        if days == 0 { return None; }
+        set_once(&mut f.newer_than_days, days)
+    })?;
+    take(&mut s, &LAST_PERIOD, |c| {
+        let (start, end) = previous_period(&c[1], dates::today())?;
+        set_once(&mut f.since, start)?;
+        set_once(&mut f.before, end)
+    })?;
     take(&mut s, &NEWER, |c| {
-        let days = to_days(c.get(1).map_or("", |m| m.as_str()), &c[2])?;
+        let days = to_days(&c[1], &c[2])?;
         if days == 0 { return None; }
         set_once(&mut f.newer_than_days, days)
     })?;
@@ -428,6 +538,14 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
     })?;
     take(&mut s, &PARTICIPLE, |_| Some(()))?;
     s = BUT_SIZE.replace_all(&s, "$1").to_string();
+    // Read directional bounds first: in "over 9 MB and under 2 MB", "and
+    // under" belongs to the second bound, not the suffix form "9 MB and under".
+    take(&mut s, &SIZE_LARGER, |c| {
+        set_once(&mut f.larger_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
+    })?;
+    take(&mut s, &SIZE_SMALLER, |c| {
+        set_once(&mut f.smaller_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
+    })?;
     take(&mut s, &SIZE_OR_MORE, |c| {
         set_once(&mut f.larger_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
     })?;
@@ -441,14 +559,13 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         set_once(&mut f.smaller_than_mb, to_mb(size_number(&c[3]), Some(second_unit)))?;
         Some(())
     })?;
-    take(&mut s, &SIZE_LARGER, |c| {
-        set_once(&mut f.larger_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
-    })?;
-    take(&mut s, &SIZE_SMALLER, |c| {
-        set_once(&mut f.smaller_than_mb, to_mb(size_number(&c[1]), Some(c.get(2)?.as_str())))
-    })?;
     filters_consistent(&f).then_some((f, s))
 }
+
+/// A failed filter validation is a terminal error, rather than an opportunity
+/// for fallback to discard an impossible date, contradictory bound or value.
+/// Called only after ordinary parsing and verb correction have both failed.
+pub(super) fn invalid_filters(text: &str) -> bool { extract_filters(text).is_none() }
 
 /// Check that all requested bounds can hold at once, without discarding any.
 fn filters_consistent(f: &Filter) -> bool {
@@ -493,6 +610,10 @@ const EXT_WORDS: &[&str] = &[
 /// to a type and extension filter. None means it isn't a type word.
 pub fn type_word(head: &str) -> Option<(FileType, Option<Vec<String>>)> {
     let h = head.trim().trim_start_matches('.').to_ascii_lowercase();
+    // "music files", "photo files" and the like name the type, not a folder
+    // called "music" containing generic files. Try the bare type first.
+    let stem = h.strip_suffix(" files").or_else(|| h.strip_suffix(" file")).unwrap_or(&h);
+    if stem != h && let Some(found) = type_word(stem) { return Some(found); }
     let t = match h.as_str() {
         "" | "files" | "file" | "everything" | "anything" | "items" | "stuff" | "things" => FileType::Files,
         "screenshots" | "screenshot" | "screen shots" | "screenshot files" | "screenshots files" | "screen shot files"
@@ -504,8 +625,8 @@ pub fn type_word(head: &str) -> Option<(FileType, Option<Vec<String>>)> {
         "videos" | "video" | "video files" | "movies" | "movie" | "screen recordings"
         | "vids" | "vid" | "clips" | "clip" | "footage" => FileType::Videos,
         "documents" | "document" | "docs" | "document files" => FileType::Documents,
-        "archives" | "archive" | "zips" | "zip" | "zip files" | "compressed files" => FileType::Archives,
-        "installers" | "installer" | "installer files" | "dmgs" | "dmg files" | "disk images" => FileType::Installers,
+        "archives" | "archive" | "archive files" | "zips" | "zip" | "zip files" | "compressed files" => FileType::Archives,
+        "installers" | "installer" | "installer files" | "disk images" => FileType::Installers,
         "audio" | "audio files" | "music" | "songs" | "song" => FileType::Audio,
         _ => {
             let word = h
@@ -522,6 +643,9 @@ pub fn type_word(head: &str) -> Option<(FileType, Option<Vec<String>>)> {
             let word = word.strip_prefix('.').unwrap_or(word);
             if let Some((_, exts)) = WORD_TYPES.iter().find(|(w, _)| word == *w || word.strip_suffix('s') == Some(*w)) {
                 return Some((FileType::Files, Some(exts.iter().map(|e| e.to_string()).collect())));
+            }
+            if matches!(word, "dmg" | "dmgs" | "dmg file" | "dmg files") {
+                return Some((FileType::Files, Some(vec!["dmg".into()])));
             }
             let single = EXT_WORDS
                 .iter()
@@ -553,9 +677,39 @@ pub const KNOWN_FOLDERS: &[&str] = &[
     "desktop", "downloads", "download", "documents", "document", "pictures", "picture", "screenshots", "screenshot",
 ];
 
+/// Levenshtein distance, cut off once it passes `limit` (2 here).
+fn within_edit_distance(a: &str, b: &str, limit: usize) -> bool {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.len().abs_diff(b.len()) > limit { return false; }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut cur = vec![i + 1; b.len() + 1];
+        for (j, cb) in b.iter().enumerate() {
+            cur[j + 1] = (prev[j + 1] + 1).min(cur[j] + 1).min(prev[j] + usize::from(ca != cb));
+        }
+        if *cur.iter().min().unwrap() > limit { return false; }
+        prev = cur;
+    }
+    prev[b.len()] <= limit
+}
+
+/// The four standard folders, with a small typo tolerance for dictation
+/// ("donwloads" -> downloads). Arbitrary names are never corrected this way.
+pub fn known_folder(name: &str) -> Option<&'static str> {
+    const STANDARD: &[&str] = &["downloads", "desktop", "documents", "pictures"];
+    let key = name.trim().trim_start_matches(['~', '/']).trim_end_matches('/').to_ascii_lowercase();
+    if let Some(f) = STANDARD.iter().find(|f| **f == key) { return Some(f); }
+    // "download" and the other supported singular spellings are already
+    // folders; they are not typos to be rewritten.
+    if KNOWN_FOLDERS.iter().any(|f| *f == key) { return None; }
+    if key.chars().count() < 4 { return None; }
+    STANDARD.iter().copied().find(|f| within_edit_distance(&key, f, 2))
+}
+
 /// Parses a subject phrase into a single named item or a filtered set.
 pub fn parse_source(phrase: &str) -> Option<Source> {
-    static LOCATED: LazyLock<Regex> = re!(r"(?i)\s+located\s+(in|inside|within|under)\s+");
+    static LOCATED: LazyLock<Regex> = re!(r"(?i)\s+(?:(?:that|which)\s+)?(?:(?:are|is)\s+)?(?:located|sitting|stored|kept|lying|living|knocking\s+about)\s+(?:around\s+)?(in|inside|within|under|on)\s+");
     static NAMED_IN_FOLDER: LazyLock<Regex> = re!(r"(?i)^(file|folder)\s+(?:in|from|inside|within|under)\s+(.+)$");
     static FOLDER_BEFORE_ITEM: LazyLock<Regex> = re!(r"(?i)^(\S+)\s+(file|folder)\s+(.+)$");
     static NAMED_FILE_PATH: LazyLock<Regex> = re!(r"(?i)^(?:file\s+(?:(?:named|called)\s+)?)?(.+?\.[a-z0-9]{1,8})(?:\s+(?:in|from|on|inside|within|under)\s+(.+))?$");
@@ -569,6 +723,32 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
     if quoted(phrase) {
         let name = clean_name(phrase);
         return (!name.is_empty()).then_some(Source::item(&name));
+    }
+    // A possessive folder can qualify a filtered set ("Downloads' scan
+    // images"). A literal filename such as "King's report.pdf" stays an item.
+    if let Some((owner, rest)) = phrase.split_once(' ')
+        && let Some(folder) = owner.strip_suffix("'s").or_else(|| owner.strip_suffix("'"))
+        && !bad_destination(folder)
+        && !NOT_A_NAME.contains(&folder.to_ascii_lowercase().as_str())
+        && !vague(rest)
+    {
+        // "Downloads' scan images": the possessive owner supplies the folder,
+        // so a qualifier before a plural type is unambiguous here even though
+        // the same words alone ("unread PDFs") are refused.
+        if let Some((word, noun)) = rest.rsplit_once(' ')
+            && !word.contains(' ')
+            && let Some((kind, exts)) = type_word(noun)
+            && word.chars().all(|c| c.is_ascii_alphabetic())
+            && !vague(word)
+            && !NOT_A_NAME.contains(&word.to_ascii_lowercase().as_str())
+        {
+            return Some(Source::Set { folder: Some(folder.to_string()), filter: Filter {
+                file_type: Some(kind), ext: exts, name_contains: Some(word.to_string()), ..Default::default()
+            } });
+        }
+        if let Some(Source::Set { filter, folder: None }) = parse_source(rest) {
+            return Some(Source::Set { filter, folder: Some(folder.to_string()) });
+        }
     }
     if let Some(c) = NAMED_IN_FOLDER.captures(phrase)
         && let Some((folder, name)) = split_arguments(&c[2], &["called", "named"])
@@ -594,23 +774,30 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
     if let Some(c) = NAMED_FILE_PATH.captures(phrase) {
         let name = c[1].trim();
         let head = name.split_whitespace().next().unwrap_or("");
-        if type_word(head).is_none()
-            && !["folder", "in", "from", "on", "inside", "within", "under"].contains(&head.to_ascii_lowercase().as_str())
-            && !name.contains(['"', '\'', '*', '?']) && !vague(name) && !excludes(name)
+        if !(type_word(head).is_some()
+            || ["folder", "in", "from", "on", "inside", "within", "under"].contains(&head.to_ascii_lowercase().as_str())
+            || name.contains(['"', '\'', '*'])
+            || name.starts_with('?') || name.contains(" ?") || vague(name) || excludes(name))
         {
             let folder = c.get(2).map(|m| m.as_str());
-            if folder.is_none_or(|f| !bad_destination(f) && unquoted_text(f).is_some_and(|s| !UNREAD_FILTER.is_match(&s) && !TIME_WORDS.is_match(&s))) {
+            if folder.is_none_or(|f| !bad_destination(f) && unquoted_text(f).is_some_and(|s| !UNREAD_FILTER.is_match(&s) && !TIME_WORDS.is_match(&s) && !TIME_WORDS.is_match(&format!("from {s}")) && !dates::starts_calendar_date(s.trim()))) {
                 return Some(Source::Item { name: name.into(), folder: folder.map(clean_name) });
             }
         }
     }
     let (mut filter, rest) = extract_filters(phrase)?;
+    // Inspect connectors before tidy_subject removes dangling words. An "or"
+    // left after supported forms ("9 MB or more", "on or before") names a
+    // disjunction, which cannot be replaced with a single intersection filter.
+    if unquoted_text(&rest)?.split_whitespace().any(|w| w.eq_ignore_ascii_case("or")) {
+        return None;
+    }
     if filter.name_contains.as_deref().is_some_and(|n| n.contains(['*', '?'])) {
         return None;
     }
     let rest = tidy_subject(&rest, filter.is_narrowing());
     let syntax = unquoted_text(&rest)?;
-    if excludes(&rest) || (!has_extension(&syntax) && (TIME_WORDS.is_match(&syntax) || UNREAD_FILTER.is_match(&syntax))) {
+    if excludes(&rest) || TIME_WORDS.is_match(&syntax) || (!has_extension(&syntax) && UNREAD_FILTER.is_match(&syntax)) {
         return None;
     }
     let ranges = quoted_ranges(&rest).ok()?;
@@ -630,6 +817,18 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
         let name = clean_name(&head);
         return (!name.is_empty()).then_some(Source::Item { name, folder });
     }
+    // A quoted word followed by a type is an explicit name filter. Quoting
+    // only the word differs from quoting the entire literal item name.
+    static QUOTED_TYPE: LazyLock<Regex> = re!(r#"^("[^"]+"|'[^']+')\s+(.+)$"#);
+    if let Some(c) = QUOTED_TYPE.captures(&head)
+        && let Some((kind, extensions)) = type_word(&c[2])
+    {
+        if filter.name_contains.is_some() || filter.name_starts_with.is_some() || filter.ext.is_some() { return None; }
+        filter.file_type = Some(kind);
+        filter.ext = extensions;
+        filter.name_contains = Some(clean_name(&c[1]));
+        return Some(Source::Set { folder, filter });
+    }
     if type_word(&head).is_none() && vague(&head) { return None; }
     if head.eq_ignore_ascii_case("file") && !filter.is_narrowing() { return None; }
     // "the file called passport.pdf" is one file. A type word that contradicts
@@ -646,9 +845,11 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
         filter.file_type.get_or_insert(FileType::Files);
         return Some(Source::Set { folder: Some(stem.trim().to_string()), filter });
     }
-    // "Desktop screenshots": a folder word, then a type.
+    // "Desktop screenshots": a real folder word, then a type. "music" and
+    // "movies" are types too, so "music files" must reach `type_word` instead.
     if let Some(c) = FOLDER_PREFIX.captures(&head)
         && folder.is_none()
+        && KNOWN_FOLDERS.contains(&c[1].to_ascii_lowercase().as_str())
         && let Some((t, ext)) = type_word(&c[2])
     {
         filter.file_type = Some(t);
@@ -676,11 +877,57 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
                 && head.starts_with(|c: char| c.is_uppercase());
             if !is_folder_name {
                 filter.file_type = Some(t);
-                filter.ext = ext;
+                filter.ext = match (ext, filter.ext.take()) {
+                    // "files ending in .txt": the ending narrows the type.
+                    (None, Some(ending)) if ending.iter().all(|e| t.accepts_ext(e)) => Some(ending),
+                    (None, Some(_)) => return None,
+                    (Some(by_type), Some(ending)) => {
+                        let both: Vec<String> = by_type.into_iter().filter(|e| ending.contains(e)).collect();
+                        if both.is_empty() { return None; }
+                        Some(both)
+                    }
+                    (ext, None) => ext,
+                };
                 if head.is_empty() && folder.is_none() && !narrowed {
                     return None;
                 }
                 return Some(Source::Set { folder, filter });
+            }
+        }
+        // One word before a type: "Downloads' PDFs" names the folder, "October
+        // screenshots" the month, and "scan PDFs" a word in the name. A
+        // capitalized or singular phrase ("Holiday photos", "Claude dmg") stays a name.
+        if let Some((word, noun)) = head.rsplit_once(' ')
+            && !word.contains(' ')
+            && let Some((t, ext)) = type_word(noun)
+            && filter.ext.is_none()
+        {
+            let possessive = word.strip_suffix("'s").or_else(|| word.strip_suffix('\''));
+            let bare = possessive.unwrap_or(word);
+            let mut f = filter.clone();
+            f.file_type = Some(t);
+            f.ext = ext;
+            if let Some(m) = full_month(bare) {
+                if f.month.is_some() { return None; }
+                f.month = Some(m);
+                return Some(Source::Set { folder, filter: f });
+            }
+            if possessive.is_some() {
+                if folder.is_some() || bad_destination(bare) { return None; }
+                return Some(Source::Set { folder: Some(bare.to_string()), filter: f });
+            }
+            // A bare lowercase qualifier before a plural type ("unread PDFs",
+            // "awl PDFs", "up PDFs") is not a supported name filter: turning
+            // it into `nameContains` would silently change the target of a
+            // move/copy/trash/rename. Refuse it instead of guessing.
+            if noun.ends_with(['s', 'S'])
+                && !noun.eq_ignore_ascii_case("files")
+                && bare.starts_with(|c: char| c.is_lowercase())
+                && bare.chars().all(|c| c.is_ascii_alphabetic())
+                && f.name_contains.is_none()
+                && f.name_starts_with.is_none()
+            {
+                return None;
             }
         }
         // "Aeroguard files" names a group, like "files containing Aeroguard".
@@ -699,14 +946,21 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
             filter.name_contains = Some(name);
             return Some(Source::Set { folder, filter });
         }
-        let known = KNOWN_FOLDERS.contains(&head.to_ascii_lowercase().as_str());
+        let folder_name = known_folder(&head);
+        let known = folder_name.is_some() || KNOWN_FOLDERS.contains(&head.to_ascii_lowercase().as_str());
         if folder.is_none() && (narrowed || known) {
             // An unknown phrase with filters names a folder only when it is one word.
             if !known && head.contains(' ') {
                 return None;
             }
             filter.file_type = Some(FileType::Files);
-            return Some(Source::Set { folder: Some(clean_name(&head)), filter });
+            // Keep the user's spelling for a real folder; only rewrite an
+            // actual typo to the canonical lowercase name.
+            let name = match folder_name {
+                Some(corrected) if !KNOWN_FOLDERS.contains(&head.to_ascii_lowercase().as_str()) => corrected.to_string(),
+                _ => clean_name(&head),
+            };
+            return Some(Source::Set { folder: Some(name), filter });
         }
     }
     // Filters with no known type or folder have nothing to apply to. Refuse
@@ -740,14 +994,24 @@ fn vague(name: &str) -> bool {
     }
     const VAGUE: &[&str] = &[
         "it", "them", "they", "those", "these", "that", "this", "one", "ones", "stuff", "things", "something",
+        // "delete the original" / "move the copy" point at an earlier step's
+        // item; without a clean binding they must be refused, never searched.
+        "original", "copy",
         "anything", "last", "previous", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
         "newest", "latest", "oldest", "biggest", "largest", "smallest", "recent", "recently", "duplicates",
         "duplicate", "thing", "you", "we", "mess",
+        // These require a judgment about the contents, not a filename match.
+        "junk", "rubbish", "useless", "unimportant", "unneeded", "unwanted", "unnecessary", "rest", "whatever",
     ];
-    const SIZES: &[&str] = &["big", "bigger", "biggest", "large", "huge", "small", "tiny", "old", "older", "new", "recent"];
+    const SIZES: &[&str] = &[
+        "big", "bigger", "biggest", "large", "huge", "small", "tiny", "old", "older", "new", "recent",
+        "heavy", "little", "chunky", "enormous", "bulky", "heavyweight", "teeny", "random", "important",
+        "unused", "temporary", "temp", "big-ish", "large-ish", "old-ish", "important-ish",
+        "not-so-big", "not-so-important", "not-important", "huge-looking",
+    ];
     const NOUNS: &[&str] = &[
         "files", "file", "photos", "pictures", "screenshots", "documents", "docs", "pdfs", "images", "videos", "downloads",
-        "screenies", "vids", "clips",
+        "screenies", "vids", "clips", "zips", "archives", "folders", "items", "bits", "pics", "docs",
     ];
     let words: Vec<String> = name.to_lowercase().split_whitespace().map(str::to_string).collect();
     // A name made only of size words, or of "1" (which is "one" once normalized,
@@ -758,6 +1022,8 @@ fn vague(name: &str) -> bool {
     words.iter().any(|w| VAGUE.contains(&w.as_str()))
         || ordinal
         || only_sizes
+        || (words.first().is_some_and(|w| matches!(w.as_str(), "everything" | "anything"))
+            && words.iter().skip(1).any(|w| SIZES.contains(&w.as_str())))
         || (words.iter().any(|w| SIZES.contains(&w.as_str())) && words.last().is_some_and(|w| NOUNS.contains(&w.as_str())))
 }
 
@@ -774,7 +1040,7 @@ fn tidy_subject(s: &str, narrowed: bool) -> String {
     const AUX: &[&str] = &["did", "does", "do", "are", "were", "is"];
     const DANGLING: &[&str] = &[
         "from", "of", "on", "in", "to", "into", "onward", "onwards", "and", "or", "that", "which", "that's", "before",
-        "after", "since", "until", "by", "with", "the", "a", "an", "up",
+        "after", "since", "until", "by", "with", "the", "a", "an", "up", "only",
     ];
     const DANGLING_PAIRS: &[&str] = &[
         "that are", "that is", "that were", "which are", "which is", "that has", "that have", "start of",
@@ -792,7 +1058,7 @@ fn tidy_subject(s: &str, narrowed: bool) -> String {
             break;
         }
     }
-    words.join(" ")
+    words.join(" ").trim_end_matches(',').trim().to_string()
 }
 
 /// Whether a file name's extension fits the type word beside it: "the video
@@ -816,6 +1082,37 @@ pub fn bad_destination(to: &str) -> bool {
     to.trim().is_empty() || vague(to)
         || ["the", "a", "an", "in", "on", "from", "to", "into", "file", "folder", "before", "after", "since", "until", "size"].contains(&lower.trim())
         || excludes(to) || [" by ", " called ", " inside ", " within "].iter().any(|word| lower.contains(word))
+        || destination_has_filter_tail(to)
+}
+
+/// A filter left after a move/copy destination must never become part of a
+/// folder name. Quoted destinations remain literal by construction.
+pub(super) fn destination_has_filter_tail(to: &str) -> bool {
+    static FILTER_TAIL: LazyLock<Regex> = LazyLock::new(|| Regex::new(
+        r"(?i)\b(?:after|before|since|until|within|from|older\s+than|newer\s+than|larger\s+than|smaller\s+than|bigger\s+than|less\s+than|more\s+than|over|under|above|below|at\s+least|at\s+most|up\s+to|between)\s+(?:\d|a\b|an\b|last\b|past\b|today\b|yesterday\b|[a-z]+\s+\d)"
+    ).unwrap());
+    let Some(unquoted) = unquoted_text(to) else { return true };
+    FILTER_TAIL.is_match(&unquoted)
+}
+
+pub(super) fn has_filter_after_destination(command: &str) -> bool {
+    let Some((verb, rest)) = command.split_once(char::is_whitespace) else { return false };
+    if !["move", "copy", "put", "send", "drop", "transfer", "shift", "relocate", "stash", "store", "file"]
+        .iter().any(|v| verb.eq_ignore_ascii_case(v))
+    { return false; }
+    split_arguments(rest, &["to", "into"])
+        .is_some_and(|(_, destination)| destination_has_filter_tail(destination))
+}
+
+pub(super) fn split_destination_filter(destination: &str) -> Option<(&str, &str)> {
+    static FILTER_START: LazyLock<Regex> = LazyLock::new(|| Regex::new(
+        r"(?i)\b(?:after|before|since|until|within|from|older\s+than|newer\s+than|larger\s+than|smaller\s+than|bigger\s+than|less\s+than|more\s+than|over|under|above|below|at\s+least|at\s+most|up\s+to|between)\s+(?:\d|a\b|an\b|last\b|past\b|today\b|yesterday\b|[a-z]+\s+\d)"
+    ).unwrap());
+    let unquoted = unquoted_text(destination)?;
+    let m = FILTER_START.find(&unquoted)?;
+    let split = m.start();
+    if split == 0 || !destination.is_char_boundary(split) { return None; }
+    Some((destination[..split].trim_end(), destination[split..].trim_start()))
 }
 
 /// Words that join two things or mean "all but": "PDFs and images",
@@ -823,13 +1120,59 @@ pub fn bad_destination(to: &str) -> bool {
 fn excludes(s: &str) -> bool {
     let Some(text) = unquoted_text(s) else { return true };
     let lower = text.to_lowercase();
-    lower.split_whitespace().any(|w| matches!(w, "and" | "or" | "but" | "except" | "not" | "without" | "then"))
+    lower.split_whitespace().any(|w| matches!(w, "and" | "or" | "but" | "except" | "excluding" | "not" | "without" | "then"))
         || lower.contains("other than")
+        || lower.contains("apart from")
+        || ["files bar ", "documents bar ", "photos bar ", "images bar ", "everything bar "].iter().any(|s| lower.contains(s))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subjective_filters_need_a_literal_name_or_measurable_bounds() {
+        for command in [
+            "delete junk in Downloads",
+            "move heavy videos to Movies",
+            "copy important docs to Backup",
+            "delete unused files in Desktop",
+            "move random photos to Pictures",
+        ] {
+            assert!(crate::parse::parse(command).is_err(), "{command}");
+        }
+        for command in [
+            "move 'heavy videos' to Movies",
+            "copy important.docx to Backup",
+            "list files named junk in Downloads",
+            "move videos larger than 100 MB to Movies",
+        ] {
+            assert!(crate::parse::parse(command).is_ok(), "{command}");
+        }
+    }
+
+    #[test]
+    fn directional_size_bounds_keep_their_meaning() {
+        for command in [
+            "list photos over 9 MB and under 2 MB",
+            "copy files over 2 GB and under 100 MB to Backup",
+            "list files at least 500 MB and below 20 MB",
+            "list files over 9 MB and under 9 MB",
+        ] {
+            assert!(crate::parse::parse(command).is_err(), "{command}");
+        }
+        for phrase in [
+            "files over 2 MB and under 9 MB",
+            "files between 2 MB and 9 MB",
+        ] {
+            let Source::Set { filter, .. } = parse_source(phrase).unwrap() else { panic!("{phrase}") };
+            assert_eq!(filter.larger_than_mb, Some(2.0));
+            assert_eq!(filter.smaller_than_mb, Some(9.0));
+        }
+        let Source::Set { filter, .. } = parse_source("files 9 MB and under").unwrap() else { panic!() };
+        assert_eq!(filter.smaller_than_mb, Some(9.0));
+        assert_eq!(filter.larger_than_mb, None);
+    }
 
     #[test]
     fn normalize_strips_dictation_noise() {

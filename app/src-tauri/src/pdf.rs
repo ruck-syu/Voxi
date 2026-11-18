@@ -48,11 +48,10 @@ mod imp {
     }
 
     pub fn write(doc: &PDFDocument, out: &Path) -> Result<(), String> {
-        if unsafe { doc.writeToURL(&url(out)) } {
-            Ok(())
-        } else {
-            Err(format!("Couldn't write {}", out.display()))
-        }
+        crate::fsx::staged_output(out, |stage| {
+            if unsafe { doc.writeToURL(&url(stage)) } { Ok(()) }
+            else { Err(format!("Couldn't write {}", out.display())) }
+        })
     }
 }
 

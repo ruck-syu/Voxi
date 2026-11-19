@@ -1189,6 +1189,12 @@ fieldset.tab-panel {
 .row.compact + .row.compact::before { left: 48px; }
 .row.compact .row-label { font-weight: 600; }
 .row.add-row + .row::before { left: 12px; }
+/* The allowed-folders tree: nested rows step in, excluded ones fade. */
+.row.folder-rule { padding-left: calc(12px + var(--depth, 0) * 22px); }
+.row.folder-rule.excluded .row-icon { opacity: 0.55; }
+.row.folder-rule.excluded .pref-folder { color: var(--muted); }
+.secondary.small.step { justify-content: center; flex-shrink: 0; width: 30px; padding: 0; }
+.secondary.small.step .icon { display: block; }
 
 .recovery-notice pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .recovery-notice p:empty { display: none; }

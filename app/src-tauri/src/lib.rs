@@ -157,7 +157,9 @@ fn screenshot_location() -> Option<PathBuf> {
 
 fn build_roots(settings: &Settings) -> Roots {
     let h = home();
-    Roots::new(&h, screenshot_location(), &settings.extra_paths(&h)).with_nicknames(settings.nickname_paths(&h))
+    Roots::new(&h, screenshot_location(), &settings.extra_paths(&h))
+        .with_exclusions(&settings.excluded_paths(&h))
+        .with_nicknames(settings.nickname_paths(&h))
 }
 
 // ---- Window ------------------------------------------------------------------

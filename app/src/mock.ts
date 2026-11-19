@@ -3,7 +3,7 @@
 import type { Outcome, RunResult, Settings, ScheduledTask } from "./api";
 
 let settings: Settings = {
-  hotkey: "Control+Alt+Space", extraFolders: [], startAtLogin: false,
+  hotkey: "Control+Alt+Space", extraFolders: [], excludedFolders: [], startAtLogin: false,
   // ?welcome previews the first-run page.
   onboarded: !new URLSearchParams(location.search).has("welcome"),
   shortcuts: [{ phrase: "run my usuals", commands: ["move screenshots from today to Screenshots", "delete installers from Downloads"] }],
@@ -222,8 +222,13 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "open_privacy_settings":
       if (mockScenario === "settings-fail") throw new Error("Mock: System Settings could not be opened.");
       return;
-    case "allowed_folders":
-      return ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"];
+    case "allowed_folders": {
+      const shown = (p: string) => p.replace(/^\/Users\/you/, "~");
+      const excluded = settings.excludedFolders.map(shown);
+      const hidden = (p: string) => excluded.some((x) => p === x || p.startsWith(`${x}/`));
+      const builtIn = ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"].filter((p) => !hidden(p));
+      return [...builtIn, ...settings.extraFolders.map(shown)];
+    }
     default:
       return null;
   }

@@ -111,6 +111,9 @@ pub struct Search {
     pub depth: usize,
     pub limit: usize,
     pub timeout: Duration,
+    /// Excluded folders are left out of results, and skipped entirely when
+    /// nothing inside them is allowed.
+    pub exclusions: fsx::Exclusions,
 }
 
 impl Default for Search {
@@ -131,7 +134,13 @@ impl Search {
             depth: MAX_DEPTH,
             limit: MAX_ENTRIES,
             timeout: Duration::from_secs(10),
+            exclusions: fsx::Exclusions::default(),
         }
+    }
+
+    pub fn with_exclusions(mut self, exclusions: fsx::Exclusions) -> Self {
+        self.exclusions = exclusions;
+        self
     }
 
     pub fn issue(&self, message: String) {
@@ -183,7 +192,7 @@ impl Search {
         } else {
             let mut out = Vec::new();
             let mut remaining = self.limit;
-            self.walk(dir, self.depth, &mut remaining, &mut out);
+            self.walk(dir, &key, self.depth, &mut remaining, &mut out);
             out
         };
         let entries = Arc::new(entries);
@@ -191,7 +200,9 @@ impl Search {
         entries
     }
 
-    fn walk(&self, dir: &Path, depth: usize, remaining: &mut usize, out: &mut Vec<Entry>) {
+    /// `canon` is `dir` canonicalized; children extend it without another
+    /// filesystem call per entry.
+    fn walk(&self, dir: &Path, canon: &Path, depth: usize, remaining: &mut usize, out: &mut Vec<Entry>) {
         if self.stopped() {
             return;
         }
@@ -238,17 +249,26 @@ impl Search {
                 }
             };
             let is_dir = ft.is_dir();
+            let canon_path = canon.join(e.file_name());
+            let hidden = !self.exclusions.is_empty() && self.exclusions.hides(&canon_path);
             if !is_dir {
-                out.push(Entry { path, is_dir });
+                if !hidden {
+                    out.push(Entry { path, is_dir });
+                }
                 continue;
             }
-            out.push(Entry { path: path.clone(), is_dir });
+            if hidden && self.exclusions.prunes(&canon_path) {
+                continue;
+            }
+            if !hidden {
+                out.push(Entry { path: path.clone(), is_dir });
+            }
             let bundle = path.extension().is_some_and(|e| matches!(e.to_str(), Some("app" | "photoslibrary" | "bundle" | "framework")));
             if is_dir && !bundle {
                 if depth == 0 {
                     self.too_deep.set(self.too_deep.get() + 1);
                 } else {
-                    self.walk(&path, depth - 1, remaining, out);
+                    self.walk(&path, &canon_path, depth - 1, remaining, out);
                 }
             }
         }

@@ -118,13 +118,13 @@ impl<'a> Planner<'a> {
             planned_dirs: HashSet::new(),
             chain_input: None,
             now: Local::now(),
-            search: search::Search::default(),
+            search: search::Search::default().with_exclusions(roots.exclusions.clone()),
             scope: None,
         }
     }
 
     pub fn with_control(mut self, control: search::Control) -> Self {
-        self.search = search::Search::new(control);
+        self.search = search::Search::new(control).with_exclusions(self.roots.exclusions.clone());
         self
     }
 

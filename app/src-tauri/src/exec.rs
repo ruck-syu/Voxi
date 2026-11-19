@@ -834,6 +834,20 @@ mod tests {
     }
 
     #[test]
+    fn steps_never_touch_an_excluded_folder() {
+        let d = tempfile::tempdir().unwrap();
+        let h = fsx::canonical(d.path());
+        fs::create_dir_all(h.join("Documents/Archive")).unwrap();
+        fs::write(h.join("Documents/Archive/a.pdf"), b"a").unwrap();
+        let roots = Roots::new(&h, None, &[]).with_exclusions(&[h.join("Documents/Archive")]);
+        let trash = Action::Trash { path: h.join("Documents/Archive/a.pdf") };
+        assert!(matches!(step(&trash, &roots, &never_cancel), Err(StepError::Failed(m)) if m.starts_with("Stopped:")));
+        let into = Action::CreateFolder { path: h.join("Documents/Archive/new") };
+        assert!(matches!(step(&into, &roots, &never_cancel), Err(StepError::Failed(_))));
+        assert!(h.join("Documents/Archive/a.pdf").exists() && !h.join("Documents/Archive/new").exists());
+    }
+
+    #[test]
     fn step_reports_cancellation_as_a_variant_and_failures_with_their_message() {
         let d = tempfile::tempdir().unwrap();
         let roots = Roots::new(d.path(), None, &[]);

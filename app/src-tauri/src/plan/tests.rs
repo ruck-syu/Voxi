@@ -1310,3 +1310,20 @@ fn extension_audit_planner_suffix_matrix_jsonl() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, report).unwrap();
 }
+
+#[test]
+fn excluded_folders_are_refused_and_never_found_by_name() {
+    let h = home();
+    let archive = h.roots.home.join("Documents/Archive");
+    fs::create_dir_all(&archive).unwrap();
+    fs::write(archive.join("old.pdf"), b"a").unwrap();
+    let roots = Roots::new(&h.roots.home, None, &[]).with_exclusions(std::slice::from_ref(&archive));
+    let h = Home { _dir: h._dir, roots };
+    assert!(matches!(plan(&h, "move ~/Documents/Archive/old.pdf to Desktop"), Err(Stop::Problem(m)) if m.contains("outside the folders")));
+    assert!(matches!(plan(&h, "move old.pdf to Desktop"), Err(Stop::Problem(_))));
+    fs::write(h.roots.home.join("Documents/new.pdf"), b"a").unwrap();
+    // The excluded folder is invisible: the name is treated as a new folder,
+    // and nothing planned reaches inside the excluded one.
+    let actions = steps(&h, "move new.pdf to Archive");
+    assert!(actions.iter().all(|a| !format!("{a:?}").contains("Documents/Archive")), "{actions:?}");
+}

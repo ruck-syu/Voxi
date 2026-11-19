@@ -38,7 +38,8 @@ export type Shortcut = { phrase: string; commands: string[] };
 /** The user's own name for a folder ("dev" for ~/Documents/Dev). */
 export type Nickname = { name: string; path: string };
 
-export type Settings = { hotkey: string; extraFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
+/** `excludedFolders` sit inside allowed ones; the deepest matching folder wins. */
+export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
 /** "This was wrong" reports, saved only on this Mac. */
 export type Reports = { count: number; path: string };
 export type ResultScope = { count: number; visible: number; label: string };
@@ -75,10 +76,16 @@ export const api = {
   requestFolderAccess: () => invoke<FolderAccess[]>("request_folder_access"),
   openPrivacySettings: () => invoke<void>("open_privacy_settings"),
   /** The Finder folder picker. Resolves to null if the user cancels. */
-  pickFolder: async (): Promise<string | null> => {
-    if (!inTauri) return "/Volumes/External";
+  pickFolder: async (options: { title?: string; defaultPath?: string } = {}): Promise<string | null> => {
+    if (!inTauri) return options.defaultPath ? `${options.defaultPath}/Archive` : "/Volumes/External";
     const { open } = await import("@tauri-apps/plugin-dialog");
-    return open({ directory: true, title: "Add a folder" });
+    return open({ directory: true, title: options.title ?? "Add a folder", defaultPath: options.defaultPath });
+  },
+  /** The user's home folder, to turn "~/Documents" into a real path. */
+  homeDir: async (): Promise<string> => {
+    if (!inTauri) return "/Users/you";
+    const { homeDir } = await import("@tauri-apps/api/path");
+    return (await homeDir()).replace(/\/$/, "");
   },
 };
 

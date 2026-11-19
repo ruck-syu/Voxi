@@ -24,6 +24,8 @@ type TabContext = {
 
 /** 16px line icons, drawn in the current text color. */
 const ICONS = {
+  plus: <path d="M8 3.5v9M3.5 8h9" />,
+  minus: <path d="M3.5 8h9" />,
   general: <><circle cx="8" cy="8" r="2.2" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></>,
   scheduled: <><circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.5 1.5" /></>,
   shortcuts: <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />,
@@ -81,11 +83,11 @@ function Group({ title, action, foot, children }: { title: string; action?: Reac
 }
 
 /** One setting: an optional icon, a label with a short description, and its control. */
-function Row({ icon, label, htmlFor, description, children, className }: {
+function Row({ icon, label, htmlFor, description, children, className, style }: {
   icon?: keyof typeof ICONS; label?: React.ReactNode; htmlFor?: string; description?: React.ReactNode;
-  children?: React.ReactNode; className?: string;
+  children?: React.ReactNode; className?: string; style?: React.CSSProperties;
 }) {
-  return <li className={className ? `row ${className}` : "row"}>
+  return <li className={className ? `row ${className}` : "row"} style={style}>
     {icon && <span className="row-icon"><Icon name={icon} /></span>}
     {label !== undefined && <div className="row-copy">
       {htmlFor ? <label className="row-label" htmlFor={htmlFor}>{label}</label> : <span className="row-label">{label}</span>}
@@ -634,15 +636,36 @@ const shownFolder = (path: string) => path.replace(/^\/Users\/[^/]+/, "~").repla
 
 /** The four standard folders are always allowed; more can be added. Below
  *  them, the nicknames Voxi knows folders by. */
+/** One line of the folder tree: an allowed folder, or one excluded inside it. */
+type FolderRule = { path: string; kind: "builtin" | "added" | "excluded" };
+
+const isInside = (child: string, parent: string) => child.startsWith(`${parent}/`);
+
 function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
   const [folders, setFolders] = useState<string[]>([]);
+  const [home, setHome] = useState("");
   const [adding, setAdding] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const extra = settings.extraFolders.filter((f) => f.trim());
+  const excluded = settings.excludedFolders.filter((f) => f.trim());
 
   useEffect(() => {
     api.allowedFolders().then(setFolders);
   }, [settings]);
+  useEffect(() => {
+    api.homeDir().then(setHome).catch(() => {});
+  }, []);
+
+  const absolute = (p: string) => (home && (p === "~" || p.startsWith("~/")) ? home + p.slice(1) : p).replace(/\/$/, "");
+  const builtIn = folders.filter((f) => !extra.some((x) => shownFolder(x) === f));
+  const rules: FolderRule[] = [
+    ...builtIn.map((f) => ({ path: absolute(f), kind: "builtin" as const })),
+    ...extra.map((f) => ({ path: absolute(f), kind: "added" as const })),
+    ...excluded.map((f) => ({ path: absolute(f), kind: "excluded" as const })),
+  ];
+  // The nearest listed folder that contains `rule`, so the list reads as a tree.
+  const parentOf = (rule: FolderRule) =>
+    rules.filter((o) => o !== rule && isInside(rule.path, o.path)).sort((a, b) => b.path.length - a.path.length)[0];
 
   const add = async (path: string) => {
     if (!path) return;
@@ -661,22 +684,97 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
   };
 
   // The picker takes focus, which would otherwise close the window.
-  const choose = async () => {
+  const pick = async (options: { title?: string; defaultPath?: string }) => {
     setBusy(true);
     try {
-      const path = await api.pickFolder();
-      if (path) await add(path);
+      return await api.pickFolder(options);
     } catch (e) {
       setNote(`Couldn't open the folder picker: ${errorMessage(e)}`);
+      return null;
     } finally {
       setBusy(false);
     }
   };
 
-  const builtIn = folders.filter((f) => !extra.some((x) => shownFolder(x) === f));
+  const choose = async () => {
+    const path = await pick({});
+    if (path) await add(path);
+  };
+
+  /** − keeps Voxi out of a folder inside `rule`; + lets it back into one. */
+  const pickInside = async (rule: FolderRule, mode: "exclude" | "include") => {
+    const shown = shownFolder(rule.path);
+    const picked = await pick({
+      title: mode === "exclude" ? `Choose a folder in ${shown} for Voxi to leave alone` : `Choose a folder in ${shown} for Voxi to use again`,
+      defaultPath: rule.path,
+    });
+    if (!picked) return;
+    const path = picked.replace(/\/$/, "");
+    if (!isInside(path, rule.path)) {
+      setNote(`Choose a folder inside “${shown}”.`);
+      return;
+    }
+    if (rules.some((o) => o.path === path)) {
+      setNote(`“${shownFolder(path)}” is already listed.`);
+      return;
+    }
+    const next = mode === "exclude" ? { ...settings, excludedFolders: [...excluded, path] } : { ...settings, extraFolders: [...extra, path] };
+    if (await persist(next)) setNote(null);
+  };
+
+  /** Removing an added folder also drops exclusions that only it contained. */
+  const remove = (rule: FolderRule) => {
+    if (rule.kind === "excluded") {
+      void persist({ ...settings, excludedFolders: excluded.filter((x) => absolute(x) !== rule.path) });
+      return;
+    }
+    const stillIncluded = rules.filter((o) => o.kind !== "excluded" && o !== rule);
+    const orphaned = (x: string) => isInside(absolute(x), rule.path) && !stillIncluded.some((o) => isInside(absolute(x), o.path));
+    void persist({
+      ...settings,
+      extraFolders: extra.filter((x) => absolute(x) !== rule.path),
+      excludedFolders: excluded.filter((x) => !orphaned(x)),
+    });
+  };
+
+  const renderRule = (rule: FolderRule, depth: number): React.ReactNode[] => {
+    const shown = shownFolder(rule.path);
+    const label = depth > 0 && parentOf(rule) ? shownFolder(rule.path).slice(shownFolder(parentOf(rule)!.path).length + 1) : shown;
+    const isExcluded = rule.kind === "excluded";
+    const row = (
+      <Row
+        key={`${rule.kind}:${rule.path}`}
+        className={`compact folder-rule${isExcluded ? " excluded" : ""}`}
+        style={{ "--depth": depth } as React.CSSProperties}
+        icon="folders"
+        label={<span className="pref-folder" title={shown}>{label}</span>}
+      >
+        {rule.kind === "builtin" && <span className="pill">Built-in</span>}
+        {rule.kind === "added" && <span className="pill ok">{depth > 0 ? "Included" : "Added"}</span>}
+        {isExcluded && <span className="pill warn">Excluded</span>}
+        {isExcluded
+          ? <button className="secondary small step" aria-label={`Let Voxi use a folder inside ${shown} again`} title="Include a folder inside this one" onClick={() => pickInside(rule, "include")}><Icon name="plus" /></button>
+          : <button className="secondary small step" aria-label={`Keep Voxi out of a folder inside ${shown}`} title="Exclude a folder inside this one" onClick={() => pickInside(rule, "exclude")}><Icon name="minus" /></button>}
+        {rule.kind !== "builtin" && (
+          <button className="link remove" aria-label={`Remove ${shown}`} onClick={() => remove(rule)}>
+            Remove
+          </button>
+        )}
+      </Row>
+    );
+    const children = rules.filter((o) => parentOf(o) === rule).sort((a, b) => a.path.localeCompare(b.path));
+    return [row, ...children.flatMap((child) => renderRule(child, depth + 1))];
+  };
+
+  const topLevel = rules.filter((r) => !parentOf(r));
 
   return <>
-    <Group title="Allowed folders" foot={note ? <span className="warn" role="status">{note}</span> : "Voxi only changes files inside these folders."}>
+    <Group
+      title="Allowed folders"
+      foot={note
+        ? <span className="warn" role="status">{note}</span>
+        : "Voxi only changes files inside these folders. Use − to keep it out of a folder inside one, and + to let it back into part of an excluded folder."}
+    >
       <Row className="add-row">
         <input
           className="path"
@@ -695,19 +793,7 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
           ? <button className="secondary small" onClick={() => add(adding.trim())}>Add</button>
           : <button className="secondary small" onClick={choose}>Choose…</button>}
       </Row>
-      {builtIn.map((f) => (
-        <Row key={f} className="compact" icon="folders" label={<span className="pref-folder">{f}</span>}>
-          <span className="pill">Built-in</span>
-        </Row>
-      ))}
-      {extra.map((f) => (
-        <Row key={f} className="compact" icon="folders" label={<span className="pref-folder">{tildify(f)}</span>}>
-          <span className="pill ok">Added</span>
-          <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
-            Remove
-          </button>
-        </Row>
-      ))}
+      {topLevel.flatMap((rule) => renderRule(rule, 0))}
     </Group>
     <NicknamesGroup settings={settings} persist={persist} setBusy={setBusy} />
   </>;

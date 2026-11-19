@@ -251,6 +251,9 @@ pub struct Settings {
     pub hotkey: String,
     /// Folders allowed beyond Desktop, Downloads, Documents, and Pictures.
     pub extra_folders: Vec<String>,
+    /// Folders inside the allowed ones that Voxi must not touch. An added
+    /// folder inside an excluded one is allowed again (deepest wins).
+    pub excluded_folders: Vec<String>,
     pub start_at_login: bool,
     pub onboarded: bool,
     /// Saved phrases that run several commands at once ("run my usuals").
@@ -384,6 +387,7 @@ impl Default for Settings {
         Settings {
             hotkey: DEFAULT_HOTKEY.into(),
             extra_folders: Vec::new(),
+            excluded_folders: Vec::new(),
             start_at_login: false,
             onboarded: false,
             shortcuts: Vec::new(),
@@ -519,6 +523,16 @@ impl Settings {
             .iter()
             .map(|n| (nickname_key(&n.name), crate::fsx::expand_tilde(n.path.trim(), home)))
             .filter(|(name, p)| !name.is_empty() && p.is_absolute() && p.is_dir() && !crate::fsx::has_parent_ref(p))
+            .collect()
+    }
+
+    /// Excluded folders, kept even while missing: an exclusion only narrows
+    /// what Voxi may touch, and still applies if the folder comes back.
+    pub fn excluded_paths(&self, home: &Path) -> Vec<PathBuf> {
+        self.excluded_folders
+            .iter()
+            .map(|f| crate::fsx::expand_tilde(f.trim(), home))
+            .filter(|p| p.is_absolute() && !crate::fsx::has_parent_ref(p) && p.parent().is_some())
             .collect()
     }
 

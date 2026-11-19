@@ -7,6 +7,34 @@ use std::path::{Component, Path, PathBuf};
 
 pub const TRASH_DIR: &str = "_to_delete";
 
+/// Folders the user excluded, checked against the allowed roots. The deepest
+/// matching folder wins, so an allowed folder inside an excluded one is
+/// included again. All paths are canonical.
+#[derive(Clone, Debug, Default)]
+pub struct Exclusions {
+    excluded: Vec<PathBuf>,
+    included: Vec<PathBuf>,
+}
+
+impl Exclusions {
+    pub fn is_empty(&self) -> bool {
+        self.excluded.is_empty()
+    }
+
+    /// True when an exclusion covers canonical path `c` and no deeper allowed
+    /// folder includes it again. A folder both added and excluded is excluded.
+    pub fn hides(&self, c: &Path) -> bool {
+        let deepest = |rules: &[PathBuf]| rules.iter().filter(|r| c.starts_with(r)).map(|r| r.components().count()).max();
+        deepest(&self.excluded).is_some_and(|excluded| deepest(&self.included).is_none_or(|included| included <= excluded))
+    }
+
+    /// True when nothing at or below canonical `c` is allowed, so a folder
+    /// walk can skip the whole tree.
+    pub fn prunes(&self, c: &Path) -> bool {
+        self.hides(c) && !self.included.iter().any(|r| r != c && r.starts_with(c))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Roots {
     pub home: PathBuf,
@@ -19,6 +47,8 @@ pub struct Roots {
     /// The user's own folder names, looked up before the standard ones but
     /// never searched as extra roots (they already sit inside one).
     pub nicknames: Vec<(String, PathBuf)>,
+    /// Folders inside the allowed roots that Voxi must not touch.
+    pub exclusions: Exclusions,
 }
 
 impl Roots {
@@ -39,7 +69,8 @@ impl Roots {
             }
             allowed.push(canonical(p));
         }
-        let mut roots = Roots { home: home.to_path_buf(), named, allowed, screenshots: None, nicknames: Vec::new() };
+        let mut roots =
+            Roots { home: home.to_path_buf(), named, allowed, screenshots: None, nicknames: Vec::new(), exclusions: Exclusions::default() };
         // Where screenshots land: the system setting if there is one, else
         // the usual Screenshots folders. A custom location inside the home
         // folder is allowed even outside the four standard folders.
@@ -54,6 +85,13 @@ impl Roots {
         }
         roots.screenshots = screenshots;
         roots
+    }
+
+    /// Adds the folders the user excluded. Call before `with_nicknames`, so a
+    /// nickname for an excluded folder is dropped.
+    pub fn with_exclusions(mut self, excluded: &[PathBuf]) -> Self {
+        self.exclusions = Exclusions { excluded: excluded.iter().map(|p| canonical(p)).collect(), included: self.allowed.clone() };
+        self
     }
 
     /// Adds the user's folder nicknames. Only folders inside the allowed
@@ -95,7 +133,7 @@ impl Roots {
             return false;
         }
         let c = canonical(p);
-        self.allowed.iter().any(|root| c.starts_with(root))
+        self.allowed.iter().any(|root| c.starts_with(root)) && !self.exclusions.hides(&c)
     }
 
     /// True when `p` is one of the allowed roots itself.
@@ -123,7 +161,10 @@ impl Roots {
     pub fn search_roots(&self) -> Vec<PathBuf> {
         let mut v: Vec<PathBuf> = self.named.iter().map(|(_, p)| p.clone()).collect();
         let mut seen = HashSet::new();
-        v.retain(|p| p.is_dir() && seen.insert(canonical(p)));
+        v.retain(|p| {
+            let c = canonical(p);
+            p.is_dir() && !self.exclusions.hides(&c) && seen.insert(c)
+        });
         v
     }
 }
@@ -389,6 +430,64 @@ pub fn available_space(path: &Path) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ~/Documents/Archive excluded, ~/Documents/Archive/Keep added back,
+    /// ~/Downloads excluded outright.
+    fn excluded_home() -> (tempfile::TempDir, PathBuf, Roots) {
+        let dir = tempfile::tempdir().unwrap();
+        let h = canonical(dir.path());
+        for d in ["Desktop", "Downloads", "Documents/Archive/Keep", "Documents/Archive/Old", "Pictures"] {
+            fs::create_dir_all(h.join(d)).unwrap();
+        }
+        let keep = h.join("Documents/Archive/Keep");
+        let roots = Roots::new(&h, None, std::slice::from_ref(&keep)).with_exclusions(&[
+            h.join("Documents/Archive"),
+            h.join("Downloads"),
+            h.join("Pictures/Missing"),
+        ]);
+        (dir, h, roots)
+    }
+
+    #[test]
+    fn the_deepest_include_or_exclude_rule_wins() {
+        let (_dir, h, roots) = excluded_home();
+        assert!(roots.is_allowed(&h.join("Documents/report.pdf")));
+        assert!(!roots.is_allowed(&h.join("Documents/Archive")));
+        assert!(!roots.is_allowed(&h.join("Documents/Archive/Old/a.pdf")));
+        assert!(roots.is_allowed(&h.join("Documents/Archive/Keep/b.pdf")));
+        assert!(!roots.is_allowed(&h.join("Downloads/c.dmg")));
+        // A missing excluded folder still applies if it is created later.
+        assert!(!roots.is_allowed(&h.join("Pictures/Missing/d.png")));
+        assert!(roots.is_allowed(&h.join("Pictures/e.png")));
+        let searched = roots.search_roots();
+        assert!(!searched.contains(&h.join("Downloads")), "{searched:?}");
+        assert!(searched.contains(&h.join("Documents/Archive/Keep")), "{searched:?}");
+        assert!(!roots.exclusions.prunes(&h.join("Documents/Archive")), "Keep inside it is allowed");
+        assert!(roots.exclusions.prunes(&h.join("Documents/Archive/Old")));
+    }
+
+    #[test]
+    fn a_folder_both_added_and_excluded_is_excluded() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = canonical(dir.path());
+        let extra = h.join("Projects");
+        fs::create_dir_all(&extra).unwrap();
+        let roots = Roots::new(&h, None, std::slice::from_ref(&extra)).with_exclusions(std::slice::from_ref(&extra));
+        assert!(!roots.is_allowed(&extra.join("a.txt")));
+    }
+
+    #[test]
+    fn folder_walks_leave_out_excluded_folders() {
+        let (_dir, h, roots) = excluded_home();
+        for f in ["Documents/a.pdf", "Documents/Archive/Old/b.pdf", "Documents/Archive/c.pdf", "Documents/Archive/Keep/d.pdf"] {
+            fs::write(h.join(f), b"x").unwrap();
+        }
+        let search = crate::search::Search::default().with_exclusions(roots.exclusions.clone());
+        let mut found: Vec<String> =
+            search.entries(&h.join("Documents")).iter().map(|e| e.path.strip_prefix(&h).unwrap().display().to_string()).collect();
+        found.sort();
+        assert_eq!(found, ["Documents/Archive/Keep", "Documents/Archive/Keep/d.pdf", "Documents/a.pdf"]);
+    }
 
     #[cfg(target_os = "macos")]
     #[test]

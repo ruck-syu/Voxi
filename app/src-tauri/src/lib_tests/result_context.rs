@@ -1520,3 +1520,15 @@ fn a_closing_view_only_clears_the_list_it_knew_and_notices_follow_their_list() {
     assert_eq!(opening(&f.state).notice.as_deref(), Some("finish setup"));
     assert!(opening(&f.state).notice.is_none());
 }
+#[test]
+fn an_unticked_file_edited_after_the_preview_doesnt_stop_the_rest() {
+    let f = Fixture::new();
+    let a = f.write("Downloads/a.pdf");
+    let b = f.write("Downloads/b.pdf");
+    let Outcome::Plan { id, .. } = f.command("move PDFs from Downloads to Documents") else { panic!("expected a plan") };
+    let at = f.actions().iter().position(|s| matches!(s, Action::Move { from, .. } if *from == b)).unwrap();
+    fs::write(&b, b"edited").unwrap();
+    assert!(confirm_input(&f.state, id).unwrap_err().contains("“b.pdf” changed"));
+    assert!(confirm_trimmed(&f.state, id, &[at]).unwrap().error.is_none());
+    assert!(!a.exists() && b.exists());
+}

@@ -13,6 +13,8 @@ let reports = 0;
 let scheduled: ScheduledTask[] = [];
 /** The plan a preview page may be read from, as in the app; null once it is run, cancelled or replaced. */
 let activePlan: number | null = null;
+/** Each preview gets a fresh id, as in the app, so unticked steps never carry over. */
+let planSeq = 100;
 let pendingSchedule: (ScheduledTask & { runNow?: boolean; total?: number; intervalMs?: number }) | null = null;
 
 // Browser-only permission scenarios, selected with ?mock=<name>:
@@ -123,8 +125,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       pendingSchedule = null;
       const repeat = text.match(/\s+(?:every\s+(?:(\d+)\s+)?(days?|hours?)|daily|everyday|hourly)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i);
       if (repeat) {
-        const outcome = plan(text.slice(0, repeat.index), args.choices as Record<string, string>);
-        if (outcome.status !== "plan") return { outcome, scope: null };
+        const planned = plan(text.slice(0, repeat.index), args.choices as Record<string, string>);
+        if (planned.status !== "plan") return { outcome: planned, scope: null };
+        const outcome = { ...planned, id: ++planSeq };
         const n = Number(repeat[1] || 1);
         const unit = repeat[2] || (/hourly/i.test(repeat[0]) ? "hour" : "day");
         const intervalMs = n * (unit.startsWith("day") ? 86400000 : 3600000);
@@ -157,7 +160,10 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
           pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "" };
         }
       }
-      if (outcome.status === "plan") activePlan = outcome.id;
+      if (outcome.status === "plan") {
+        outcome = { ...outcome, id: ++planSeq };
+        activePlan = outcome.id;
+      }
       return { outcome, scope: null };
     }
     case "preview_page": {
@@ -167,7 +173,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       const steps = Array.from({ length: 26 }, (_, step) => step >= 5 ? {
         step, kind: "move", primary: `scan-${String(step + 1).padStart(2, "0")}.pdf`, detail: "→ ~/Documents", skippable: true,
         ...(step === 17 ? { note: "“scan-18.pdf” already exists, so this becomes “scan-18 2.pdf”" } : {}),
-      } : step === 2 ? { step, kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”" } : null);
+      } : step === 2 ? { step, kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”", skippable: true } : null);
       return steps.filter((r): r is NonNullable<typeof r> => !!r && r.step >= offset && (!args.onlyNotes || "note" in r));
     }
     case "confirm_plan":

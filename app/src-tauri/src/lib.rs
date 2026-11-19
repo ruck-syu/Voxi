@@ -96,9 +96,15 @@ struct Pending {
     stop_requested: bool,
 }
 impl Pending {
-    /// Fails when a previewed source file changed since the preview.
-    fn validate_inputs(&self) -> Result<(), String> {
-        match self.inputs.iter().find(|(p, at)| std::fs::metadata(p).and_then(|m| m.modified()).ok() != Some(*at)) {
+    /// Fails when a source file of a step in `kept` changed since the preview.
+    fn validate_inputs(&self, kept: &[Action]) -> Result<(), String> {
+        let read: std::collections::HashSet<&PathBuf> = kept.iter().flat_map(sources).collect();
+        match self
+            .inputs
+            .iter()
+            .filter(|(p, _)| read.contains(p))
+            .find(|(p, at)| std::fs::metadata(p).and_then(|m| m.modified()).ok() != Some(*at))
+        {
             Some((p, _)) => Err(format!("“{}” changed after the preview. Press Enter to preview it again.", fsx::file_name(p))),
             None => Ok(()),
         }
@@ -365,24 +371,28 @@ fn describe(a: &Action, roots: &Roots) -> (String, String, String) {
     }
 }
 
+/// The files a step reads.
+fn sources(a: &Action) -> Vec<&PathBuf> {
+    match a {
+        Action::Move { from, .. } | Action::Copy { from, .. } => vec![from],
+        Action::Trash { path }
+        | Action::Rename { path, .. }
+        | Action::ConvertImage { path, .. }
+        | Action::ResizeImage { path, .. }
+        | Action::SplitPdf { path, .. }
+        | Action::ExtractPages { path, .. }
+        | Action::Zip { path, .. }
+        | Action::Unzip { path, .. } => vec![path],
+        Action::ImagesToPdf { paths, .. } | Action::MergePdf { paths, .. } => paths.iter().collect(),
+        _ => vec![],
+    }
+}
+
 /// The source files a plan reads, with when each was last modified.
 fn input_times(actions: &[Action]) -> Vec<(PathBuf, std::time::SystemTime)> {
-    let sources = actions.iter().flat_map(|a| -> Vec<&PathBuf> {
-        match a {
-            Action::Move { from, .. } | Action::Copy { from, .. } => vec![from],
-            Action::Trash { path }
-            | Action::Rename { path, .. }
-            | Action::ConvertImage { path, .. }
-            | Action::ResizeImage { path, .. }
-            | Action::SplitPdf { path, .. }
-            | Action::ExtractPages { path, .. }
-            | Action::Zip { path, .. }
-            | Action::Unzip { path, .. } => vec![path],
-            Action::ImagesToPdf { paths, .. } | Action::MergePdf { paths, .. } => paths.iter().collect(),
-            _ => vec![],
-        }
-    });
-    sources
+    actions
+        .iter()
+        .flat_map(sources)
         .filter_map(|p| {
             let m = std::fs::symlink_metadata(p).ok().filter(|m| m.is_file())?;
             Some((p.clone(), m.modified().ok()?))
@@ -886,20 +896,23 @@ fn confirm_input(state: &AppState, id: u64) -> Result<RunResult, String> {
 fn confirm_trimmed(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResult, String> {
     let (p, run) = {
         let mut pending = checked_state!(state.pending.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
-        // Check the trim before taking the preview, so a refused one leaves it to fix.
-        if !skip.is_empty() {
+        // Trim and check before taking the preview, so a refused one stays
+        // to fix. Only the steps that will run are checked for changed files.
+        let trimmed = {
             let p = pending.as_ref().filter(|p| p.id == id).ok_or("That preview expired. Press Enter to plan it again.")?;
-            if p.undo_of.is_some() || p.scheduled.is_some() {
+            let trimmed = if skip.is_empty() {
+                None
+            } else if p.undo_of.is_some() || p.scheduled.is_some() {
                 return Err("Steps can't be left out of an undo or a scheduled task.".into());
-            }
-            skip::without(&p.actions, skip)?;
-        }
-        if let Some(p) = pending.as_ref().filter(|p| p.id == id) {
-            p.validate_inputs()?;
-        }
+            } else {
+                Some(skip::without(&p.actions, skip)?)
+            };
+            p.validate_inputs(trimmed.as_deref().unwrap_or(&p.actions))?;
+            trimmed
+        };
         let mut p = pending.take_if(|p| p.id == id).ok_or("That preview expired. Press Enter to plan it again.")?;
-        if !skip.is_empty() {
-            p.actions = skip::without(&p.actions, skip)?;
+        if let Some(actions) = trimmed {
+            p.actions = actions;
         }
         // Publish the flag before releasing the preview lock, including when
         // confirmation has to wait for an earlier filesystem operation.

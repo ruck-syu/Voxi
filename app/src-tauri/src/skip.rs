@@ -31,12 +31,46 @@ fn related(a: &Path, b: &Path) -> bool {
     a.starts_with(b) || b.starts_with(a)
 }
 
+/// A path as the file system sees it, for comparing steps: the deepest
+/// existing folder resolved through any symbolic links, then the rest, all
+/// lowercased because macOS volumes usually ignore case. Folding case on a
+/// case-sensitive volume only ties more steps together, never fewer.
+fn key(p: &Path) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut base = p;
+    let resolved = loop {
+        if let Ok(real) = std::fs::canonicalize(base) {
+            break real;
+        }
+        match (base.parent(), base.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_os_string());
+                base = parent;
+            }
+            _ => break base.to_path_buf(),
+        }
+    };
+    let full = rest.iter().rev().fold(resolved, |acc, name| acc.join(name));
+    PathBuf::from(full.to_string_lossy().to_lowercase())
+}
+
+/// True when a step reads a symbolic link. A moved or renamed link can
+/// point at another step's output, which paths alone can't show.
+fn reads_link(a: &Action) -> bool {
+    paths(a).iter().any(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink()))
+}
+
 /// Which steps the user may leave out. A step qualifies when it is a move,
 /// copy, trash or rename and no other step touches the same path, a folder
 /// above it, or anything inside it. Folders the plan creates don't count:
 /// they are dropped later if only left-out steps needed them.
 pub fn skippable(actions: &[Action]) -> Vec<bool> {
-    let all: Vec<Vec<PathBuf>> = actions.iter().map(paths).collect();
+    // A plan that touches a link keeps every step: what depends on what
+    // can't be read from the paths.
+    if actions.iter().any(reads_link) {
+        return vec![false; actions.len()];
+    }
+    let all: Vec<Vec<PathBuf>> = actions.iter().map(|a| paths(a).iter().map(|p| key(p)).collect()).collect();
     // How many path mentions sit at each path, and strictly below each folder,
     // across the steps that aren't folder creations.
     let mut at: HashMap<&Path, usize> = HashMap::new();
@@ -69,9 +103,10 @@ pub fn skippable(actions: &[Action]) -> Vec<bool> {
         .collect()
 }
 
-/// The plan without the steps at `skip`, which must all be skippable. Folder
-/// creations that only left-out steps needed are dropped too, so leaving out
-/// every file bound for a new folder doesn't leave an empty folder behind.
+/// The plan without the steps at `skip`, which must all be skippable. Every
+/// other step stays, folder creations included: Voxi can't tell a folder
+/// the user asked for from one planned only to hold the left-out files, and
+/// a kept folder's own parent may be one of them.
 pub fn without(actions: &[Action], skip: &[usize]) -> Result<Vec<Action>, String> {
     let ok = skippable(actions);
     let skip: HashSet<usize> = skip.iter().copied().collect();
@@ -82,31 +117,11 @@ pub fn without(actions: &[Action], skip: &[usize]) -> Result<Vec<Action>, String
             format!("Step {} can't be left out, because other steps depend on it.", bad + 1)
         });
     }
-    let left_out: Vec<&PathBuf> = skip.iter().flat_map(|&i| paths_of_target(&actions[i])).collect();
-    let kept: Vec<(usize, &Action)> = actions.iter().enumerate().filter(|(i, _)| !skip.contains(i)).collect();
-    let needed = |folder: &Path| {
-        kept.iter().any(|(_, a)| !matches!(a, Action::CreateFolder { .. }) && paths(a).iter().any(|p| p.starts_with(folder) && p != folder))
-    };
-    let out: Vec<Action> = kept
-        .iter()
-        .filter(|(_, a)| match a {
-            Action::CreateFolder { path } => needed(path) || !left_out.iter().any(|p| p.starts_with(path)),
-            _ => true,
-        })
-        .map(|(_, a)| (*a).clone())
-        .collect();
+    let out: Vec<Action> = actions.iter().enumerate().filter(|(i, _)| !skip.contains(i)).map(|(_, a)| a.clone()).collect();
     if out.is_empty() {
         return Err("Every step was left out, so there is nothing to run.".into());
     }
     Ok(out)
-}
-
-/// Where a skippable step would have put something.
-fn paths_of_target(a: &Action) -> Vec<&PathBuf> {
-    match a {
-        Action::Move { to, .. } | Action::Copy { to, .. } => vec![to],
-        _ => vec![],
-    }
 }
 
 #[cfg(test)]
@@ -149,17 +164,48 @@ mod tests {
     }
 
     #[test]
-    fn leaving_out_every_file_for_a_new_folder_drops_the_folder() {
+    fn leaving_out_steps_keeps_every_folder_creation() {
         let actions = vec![
-            Action::CreateFolder { path: "/h/Documents/PDFs".into() },
-            mv("/h/Downloads/a.pdf", "/h/Documents/PDFs/a.pdf"),
-            mv("/h/Downloads/b.pdf", "/h/Documents/PDFs/b.pdf"),
+            Action::CreateFolder { path: "/h/Documents/Parent".into() },
+            Action::CreateFolder { path: "/h/Documents/Parent/Empty".into() },
+            Action::CreateFolder { path: "/h/Documents/Parent/Incoming".into() },
+            mv("/h/Downloads/a.pdf", "/h/Documents/Parent/Incoming/a.pdf"),
             Action::Trash { path: "/h/Downloads/old.dmg".into() },
         ];
-        assert_eq!(without(&actions, &[1]).unwrap(), [actions[0].clone(), actions[2].clone(), actions[3].clone()]);
-        assert_eq!(without(&actions, &[1, 2]).unwrap(), [actions[3].clone()]);
-        assert!(without(&actions, &[1, 2, 3]).unwrap_err().contains("nothing to run"));
+        assert_eq!(without(&actions, &[3]).unwrap(), [&actions[..3], &actions[4..]].concat());
+        assert_eq!(without(&actions, &[3, 4]).unwrap(), actions[..3]);
         assert!(without(&actions, &[0]).unwrap_err().contains("Step 1 can't be left out"));
         assert!(without(&actions, &[9]).is_err());
+        let one = vec![mv("/h/Downloads/a.pdf", "/h/Documents/a.pdf")];
+        assert!(without(&one, &[0]).unwrap_err().contains("nothing to run"));
+    }
+
+    #[test]
+    fn paths_differing_only_in_case_are_the_same_file() {
+        let actions = vec![mv("/h/Downloads/Photo.png", "/h/Pictures/photo.png"), Action::Trash { path: "/h/pictures/PHOTO.PNG".into() }];
+        assert_eq!(skippable(&actions), [false, false]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_and_linked_folders_tie_steps_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(h.join("Real")).unwrap();
+        std::os::unix::fs::symlink(h.join("Real"), h.join("Alias")).unwrap();
+        // The same file reached through a linked folder.
+        let actions = vec![
+            mv(h.join("a.png").to_str().unwrap(), h.join("Alias/a.png").to_str().unwrap()),
+            Action::Trash { path: h.join("Real/a.png") },
+        ];
+        assert_eq!(skippable(&actions), [false, false]);
+        // A plan that moves a link keeps every step.
+        std::fs::write(h.join("b.png"), b"b").unwrap();
+        std::os::unix::fs::symlink(h.join("b.png"), h.join("link.png")).unwrap();
+        let actions = vec![
+            mv(h.join("link.png").to_str().unwrap(), h.join("Real/link.png").to_str().unwrap()),
+            Action::Trash { path: h.join("c.png") },
+        ];
+        assert_eq!(skippable(&actions), [false, false]);
     }
 }

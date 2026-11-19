@@ -12,10 +12,14 @@ pub const LABEL: &str = "your Finder selection";
 /// allowed folders (or inside an excluded one) are left out and named in the
 /// returned notice; with nothing left, the notice is the error.
 pub fn accept(roots: &Roots, selected: Vec<PathBuf>) -> Result<(Vec<PathBuf>, Option<String>), String> {
-    let (mut files, mut folders, mut outside) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut files, mut folders, mut outside, mut links) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for p in selected {
         let name = fsx::file_name(&p);
-        if !roots.is_allowed(&p) {
+        // A link would be swapped for the file it points to, which the user
+        // didn't select: leave it out and say so.
+        if std::fs::symlink_metadata(&p).is_ok_and(|m| m.file_type().is_symlink()) {
+            links.push(name);
+        } else if !roots.is_allowed(&p) {
             outside.push(name);
         } else if p.is_dir() {
             folders.push(name);
@@ -34,6 +38,10 @@ pub fn accept(roots: &Roots, selected: Vec<PathBuf>) -> Result<(Vec<PathBuf>, Op
     }
     if !folders.is_empty() {
         notes.push(format!("{} left out, since only files can be selected: {}.", folder_count(folders.len()), names(&folders)));
+    }
+    if !links.is_empty() {
+        let what = if links.len() == 1 { "1 symbolic link".to_string() } else { format!("{} symbolic links", links.len()) };
+        notes.push(format!("{what} left out; select the original instead: {}.", names(&links)));
     }
     let notice = (!notes.is_empty()).then(|| notes.join(" "));
     if files.is_empty() {
@@ -156,6 +164,13 @@ mod tests {
         let notice = notice.unwrap();
         assert!(notice.contains("2 items outside the folders") && notice.contains("“old.pdf”") && notice.contains("“x.txt”"), "{notice}");
         assert!(notice.contains("1 folder left out") && notice.contains("“Desktop”"), "{notice}");
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(h.join("Documents/Archive/old.pdf"), h.join("Downloads/link.pdf")).unwrap();
+            let err = accept(&roots, vec![h.join("Downloads/link.pdf")]).unwrap_err();
+            assert!(err.contains("1 symbolic link left out") && err.contains("“link.pdf”"), "{err}");
+        }
 
         let err = accept(&roots, vec![h.join("Elsewhere/x.txt")]).unwrap_err();
         assert!(err.contains("outside the folders"), "{err}");

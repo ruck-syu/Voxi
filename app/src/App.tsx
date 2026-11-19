@@ -312,10 +312,17 @@ function CommandView({
   const planShownAt = useRef(0);
   // Files sent from Finder ("Organize with Voxi") arrive as the results list.
   const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
+  // The results list this view knows, so closing it clears only that list
+  // and never one that arrived after (a new Finder selection).
+  const scopeGeneration = useRef<number | null>(null);
   useEffect(() => {
     let live = true;
-    void api.resultScope().then((scope) => { if (live && scope) setResultScope(scope); }).catch(() => {});
-    void api.selectionNotice().then((notice) => { if (live) setSelectionNotice(notice); }).catch(() => {});
+    void api.openingContext().then((o) => {
+      if (!live) return;
+      scopeGeneration.current = o.generation;
+      setResultScope(o.scope);
+      setSelectionNotice(o.notice);
+    }).catch(() => {});
     return () => { live = false; };
   }, []);
   const fromFinder = resultScope?.label === FINDER_LABEL;
@@ -342,7 +349,7 @@ function CommandView({
   useEffect(() => () => {
     ++requestId.current;
     api.cancel();
-    void api.clearResultScope();
+    if (scopeGeneration.current !== null) void api.clearResultScope(scopeGeneration.current);
   }, []);
 
   useEffect(() => {
@@ -409,8 +416,9 @@ function CommandView({
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const { outcome, scope } = await api.plan(command, picked, request);
+        const { outcome, scope, generation } = await api.plan(command, picked, request);
         if (request !== requestId.current) return;
+        scopeGeneration.current = generation;
         setResultScope(scope);
         setPhase({ k: "outcome", outcome });
         if (outcome.status === "plan") planShownAt.current = performance.now();
@@ -458,7 +466,9 @@ function CommandView({
     setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
       const result = await api.confirm(plan.id, skipped);
-      setResultScope(await api.resultScope().catch(() => null));
+      const after = await api.openingContext().catch(() => null);
+      if (after) scopeGeneration.current = after.generation;
+      setResultScope(after?.scope ?? null);
       setPhase({ k: "done", result, wasUndo: plan.isUndo });
       // A phrase Voxi missed, followed soon by a command that worked, can
       // be taught: next time the phrase runs this command.
@@ -491,7 +501,8 @@ function CommandView({
 
   const reset = useCallback(() => {
     const request = ++requestId.current;
-    void Promise.all([api.cancel(), api.clearResultScope()]).catch((e) => {
+    setSelectionNotice(null);
+    void Promise.all([api.cancel(), api.clearResultScope(scopeGeneration.current)]).catch((e) => {
       if (request === requestId.current) setPhase({ k: "error", message: errorMessage(e) });
     });
     stopAsking();
@@ -646,10 +657,10 @@ function CommandView({
         </p>
       )}
       {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
-        <span>{resultScope.count} {fromFinder ? (resultScope.count === 1 ? "file" : "files") : "results"} from {resultScope.label}{resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
+        <span>{resultScope.count} {fromFinder ? (resultScope.count === 1 ? "file" : "files") : "results"} from {resultScope.label}{!fromFinder && resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
         <button className="link" disabled={phase.k === "running"} onClick={() => {
           reset();
-          void api.clearResultScope().then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: errorMessage(e) }));
+          void api.clearResultScope(scopeGeneration.current).then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: errorMessage(e) }));
         }}>Clear scope</button>
       </div>}
       {phase.k === "ready" && (fromFinder || selectionNotice) && (

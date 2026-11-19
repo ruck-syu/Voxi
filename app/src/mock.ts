@@ -95,7 +95,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "cancel_execution": return;
     case "search_progress": return 0;
     case "result_scope": return null;
-    case "selection_notice": return null;
+    case "opening_context": return { scope: null, generation: 0, notice: null };
     case "clear_result_scope": return;
     case "recovery_status": return !recoveryReviewed && mockScenario?.startsWith("recovery") ? {
       command: "move PDFs to Documents", acknowledged: 2,

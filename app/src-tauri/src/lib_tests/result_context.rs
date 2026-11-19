@@ -1431,7 +1431,7 @@ fn a_finder_selection_becomes_the_list_that_these_refers_to() {
     let outside = tempfile::tempdir().unwrap();
     let stray = outside.path().join("x.pdf");
     fs::write(&stray, b"x").unwrap();
-    let notice = take_selection(&f.state, vec![a.clone(), c.clone(), stray.clone()]).unwrap();
+    let notice = take_selection(&f.state, vec![a.clone(), c.clone(), stray.clone()]).1.unwrap();
     assert!(notice.contains("1 item outside the folders") && notice.contains("“x.pdf”"), "{notice}");
     let summary = f.state.result_scope.lock().unwrap().summary().unwrap();
     assert_eq!((summary.count, summary.label.as_str()), (2, "your Finder selection"));
@@ -1441,7 +1441,7 @@ fn a_finder_selection_becomes_the_list_that_these_refers_to() {
     assert!(f.home.join("Documents/a.pdf").exists() && f.home.join("Documents/c.pdf").exists());
     assert!(b.exists() && stray.exists());
     // Nothing usable clears the list rather than leaving an older one in place.
-    assert!(take_selection(&f.state, vec![stray]).unwrap().contains("outside the folders"));
+    assert!(take_selection(&f.state, vec![stray]).1.unwrap().contains("outside the folders"));
     assert!(f.state.result_scope.lock().unwrap().current.is_none());
 }
 #[test]
@@ -1495,4 +1495,28 @@ fn a_file_edited_after_the_preview_stops_the_run() {
     // The preview stays, so confirming it again keeps refusing until it's planned again.
     assert!(confirm_input(&f.state, id).is_err());
     assert!(matches!(f.command("trash files in Downloads not modified in 90 days"), Outcome::Problem { .. }));
+}
+#[test]
+fn a_closing_view_only_clears_the_list_it_knew_and_notices_follow_their_list() {
+    let f = Fixture::new();
+    let a = f.write("Downloads/a.pdf");
+    let outside = tempfile::tempdir().unwrap();
+    let stray = outside.path().join("x.pdf");
+    fs::write(&stray, b"x").unwrap();
+    let old_view = opening(&f.state).generation;
+    let (generation, _) = take_selection(&f.state, vec![a.clone(), stray]);
+    *f.state.selection_notice.lock().unwrap() = Some((Some(generation), "left out".into()));
+    // The old view closing after the selection arrived leaves it alone.
+    clear_scope(&f.state, Some(old_view));
+    let first = opening(&f.state);
+    let again = opening(&f.state);
+    assert_eq!((first.scope.unwrap().count, first.notice.as_deref()), (1, Some("left out")));
+    assert_eq!(again.notice.as_deref(), Some("left out"), "reading twice gives the same notice");
+    // Once the list is cleared, its notice no longer shows.
+    f.state.result_scope.lock().unwrap().clear();
+    assert!(opening(&f.state).notice.is_none());
+    // A notice sent before setup shows once, whatever the list.
+    *f.state.selection_notice.lock().unwrap() = Some((None, "finish setup".into()));
+    assert_eq!(opening(&f.state).notice.as_deref(), Some("finish setup"));
+    assert!(opening(&f.state).notice.is_none());
 }

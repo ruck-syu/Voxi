@@ -46,7 +46,10 @@ export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders
 /** "This was wrong" reports, saved only on this Mac. */
 export type Reports = { count: number; path: string };
 export type ResultScope = { count: number; visible: number; label: string };
-export type CommandReply = { outcome: Outcome; scope: ResultScope | null };
+/** `generation` names the results list after the command, for clearing only that one. */
+export type CommandReply = { outcome: Outcome; scope: ResultScope | null; generation: number };
+/** What a newly opened command view starts from; reading it twice gives the same answer. */
+export type Opening = { scope: ResultScope | null; generation: number; notice: string | null };
 
 export const api = {
   /** The command box changed: the menu bar face talks along. Fire and forget. */
@@ -59,10 +62,10 @@ export const api = {
   pauseScheduledTask: (id: number) => invoke<void>("pause_scheduled_task", { id }),
   resumeScheduledTask: (id: number) => invoke<void>("resume_scheduled_task", { id }),
   plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<CommandReply>("plan_command", { text, choices, requestId }),
-  clearResultScope: () => invoke<void>("clear_result_scope"),
+  /** Clears the results list, only if it is still the one at `generation` when given. */
+  clearResultScope: (generation?: number | null) => invoke<void>("clear_result_scope", { generation: generation ?? null }),
   resultScope: () => invoke<ResultScope | null>("result_scope"),
-  /** What Voxi left out of the last Finder selection, once. */
-  selectionNotice: () => invoke<string | null>("selection_notice"),
+  openingContext: () => invoke<Opening>("opening_context"),
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   /** Runs the pending plan, leaving out the 0-based steps in `skip`. */

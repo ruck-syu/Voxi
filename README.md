@@ -97,11 +97,13 @@ its operation type isn't supported.
 ## From Finder
 
 Select files in Finder, right-click, and choose **Organize with Voxi** (under
-Quick Actions or Services). Voxi opens with those files as its list, so you can
-say “move these to Receipts”. Folders and
-anything outside the folders Voxi may use are left out, and Voxi says which.
-The files are checked again before anything runs. If the item is missing, turn
-it on in System Settings → Keyboard → Keyboard Shortcuts → Services.
+Quick Actions or Services). Voxi opens with those files as the ones “these”
+and “them” refer to, so you can say “move these to Receipts”. Folders,
+symbolic links, and anything outside the folders Voxi may use are left out,
+and Voxi says which. The files are checked again before anything runs. If the
+item is missing, turn it on in System Settings → Keyboard → Keyboard
+Shortcuts → Services (on macOS 12, System Preferences → Keyboard → Shortcuts →
+Services).
 
 ## Dictation
 

@@ -161,9 +161,10 @@ struct AppState {
     next_plan: AtomicU64,
     active_search: Mutex<Option<(u64, search::Control)>>,
     presentation: Mutex<presentation::Presentation>,
-    /// What the window should say about a Finder selection it couldn't take
-    /// in full, read once when the window opens.
-    selection_notice: Mutex<Option<String>>,
+    /// What the window should say about the last Finder selection, with the
+    /// results-list generation it belongs to. It shows only while that list
+    /// is current; one with no generation (sent before setup) shows once.
+    selection_notice: Mutex<Option<(Option<u64>, String)>>,
 }
 
 fn home() -> PathBuf {
@@ -245,17 +246,26 @@ fn request_hide(app: &AppHandle) {
 /// list, then the window opens so the user can say what to do with them.
 pub(crate) fn use_finder_selection(app: &AppHandle, selected: Vec<PathBuf>) {
     let state = app.state::<AppState>();
-    let notice = take_selection(&state, selected);
+    let onboarded = checked_state!(state.settings.lock(), ()).onboarded;
+    let notice = if onboarded {
+        let (generation, notice) = take_selection(&state, selected);
+        notice.map(|n| (Some(generation), n))
+    } else {
+        // Finishing setup rebuilds the allowed folders and clears the list.
+        Some((None, "Finish setting up Voxi, then choose Organize with Voxi in Finder again.".into()))
+    };
     *checked_state!(state.selection_notice.lock(), ()) = notice;
     show_window(app, "command");
 }
 
-/// Publishes the selection as the results list. Returns the notice to show:
-/// what was left out, or why nothing could be used.
-fn take_selection(state: &AppState, selected: Vec<PathBuf>) -> Option<String> {
-    let roots = checked_state!(state.roots.read(), Some("Voxi state is unavailable. Restart the app.".into())).clone();
-    let mut context = checked_state!(state.result_scope.lock(), Some("Voxi state is unavailable. Restart the app.".into()));
-    match finder_selection::accept(&roots, selected) {
+/// Publishes the selection as the results list. Returns the list's new
+/// generation and the notice to show: what was left out, or why nothing
+/// could be used.
+fn take_selection(state: &AppState, selected: Vec<PathBuf>) -> (u64, Option<String>) {
+    let unavailable = || (0, Some("Voxi state is unavailable. Restart the app.".into()));
+    let Ok(roots) = state.roots.read().map(|r| r.clone()) else { return unavailable() };
+    let Ok(mut context) = state.result_scope.lock() else { return unavailable() };
+    let notice = match finder_selection::accept(&roots, selected) {
         Err(message) => {
             context.clear();
             Some(message)
@@ -270,13 +280,34 @@ fn take_selection(state: &AppState, selected: Vec<PathBuf>) -> Option<String> {
                 Some("The selected files changed in Finder. Select them again.".into())
             }
         },
-    }
+    };
+    (context.generation, notice)
 }
 
-/// The notice about the last Finder selection, once.
+/// What a newly opened command view starts from: the current results list,
+/// its generation, and any notice about the Finder selection that made it.
+/// Reading it twice gives the same answer, except a notice sent before setup.
+#[derive(serde::Serialize)]
+struct Opening {
+    scope: Option<scope::Summary>,
+    generation: u64,
+    notice: Option<String>,
+}
+
 #[tauri::command]
-fn selection_notice(state: State<AppState>) -> Option<String> {
-    checked_state!(state.selection_notice.lock(), None).take()
+fn opening_context(state: State<AppState>) -> Opening {
+    opening(&state)
+}
+
+fn opening(state: &AppState) -> Opening {
+    let context = checked_state!(state.result_scope.lock(), Opening { scope: None, generation: 0, notice: None });
+    let mut notice = checked_state!(state.selection_notice.lock(), Opening { scope: None, generation: 0, notice: None });
+    let text = match notice.as_ref() {
+        Some((Some(g), text)) if *g == context.generation => Some(text.clone()),
+        Some((None, _)) => notice.take().map(|(_, text)| text),
+        _ => None,
+    };
+    Opening { scope: context.summary(), generation: context.generation, notice: text }
 }
 
 fn toggle_window(app: &AppHandle) {
@@ -393,23 +424,38 @@ impl PreviewSource {
 #[tauri::command(async)]
 fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, String>, request_id: u64) -> CommandReply {
     let outcome = plan_input(&state, text, choices, request_id);
-    let scope = checked_state!(
+    let context = checked_state!(
         state.result_scope.lock(),
-        CommandReply { outcome: Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }, scope: None }
-    )
-    .summary();
-    CommandReply { outcome, scope }
+        CommandReply {
+            outcome: Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() },
+            scope: None,
+            generation: 0
+        }
+    );
+    CommandReply { outcome, scope: context.summary(), generation: context.generation }
 }
 
 #[derive(serde::Serialize)]
 struct CommandReply {
     outcome: Outcome,
     scope: Option<scope::Summary>,
+    /// The results-list generation after this command.
+    generation: u64,
 }
 
+/// Clears the results list, but only the one at `generation` when given, so
+/// a closing view can't clear a list that arrived after it (a new Finder
+/// selection, say).
 #[tauri::command]
-fn clear_result_scope(state: State<AppState>) {
-    checked_state!(state.result_scope.lock(), ()).clear();
+fn clear_result_scope(state: State<AppState>, generation: Option<u64>) {
+    clear_scope(&state, generation);
+}
+
+fn clear_scope(state: &AppState, generation: Option<u64>) {
+    let mut context = checked_state!(state.result_scope.lock(), ());
+    if generation.is_none_or(|g| g == context.generation) {
+        context.clear();
+    }
 }
 #[tauri::command]
 fn result_scope(state: State<AppState>) -> Option<scope::Summary> {
@@ -1807,7 +1853,7 @@ pub fn run() {
             result_scope,
             confirm_plan,
             preview_page,
-            selection_notice,
+            opening_context,
             cancel_execution,
             cancel_plan,
             search_progress,

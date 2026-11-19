@@ -1062,10 +1062,18 @@ impl<'a> Planner<'a> {
     }
 
     fn trash(&mut self, src: &Source) -> Result<String, Stop> {
-        if let Source::Set { filter, .. } = src
+        if let Source::Set { folder, filter } = src
             && !filter.is_narrowing() && self.scope.is_none()
         {
-            return problem("To be safe, clean-up needs a filter, like “older than 90 days”, “installers”, or “larger than 500 MB”.");
+            // A folder the user named inside Downloads, Desktop and the rest
+            // may be emptied; those top-level folders themselves may not.
+            let named_subfolder = match folder.as_deref() {
+                Some(f) => !self.roots.is_root(&self.resolve_folder(f, None)?),
+                None => false,
+            };
+            if !named_subfolder {
+                return problem("To be safe, clean-up needs a filter, like “older than 90 days”, “installers”, or “larger than 500 MB”.");
+            }
         }
         let (mut paths, label) = self.expand(src)?;
         let nested = self.keep_direct_children(src, &mut paths)?;
@@ -2360,6 +2368,22 @@ mod tests {
         let h = home();
         fs::write(h.roots.home.join("Downloads/a.txt"), b"a").unwrap();
         assert!(matches!(plan(&h, "delete files in Downloads"), Err(Stop::Problem(_))));
+    }
+
+    #[test]
+    fn named_subfolder_can_be_emptied_but_top_level_folders_cannot() {
+        let h = home();
+        let dir = h.roots.home.join("Downloads/installers");
+        fs::create_dir_all(dir.join("old")).unwrap();
+        for name in ["a.dmg", "notes.txt", "old/b.pkg"] { fs::write(dir.join(name), b"a").unwrap(); }
+        for cmd in ["delete items in installers folder", "delete everything in the installers folder", "delete files in installers"] {
+            let mut a = steps(&h, cmd);
+            a.sort_by_key(|a| format!("{a:?}"));
+            assert_eq!(a, vec![Action::Trash { path: dir.join("a.dmg") }, Action::Trash { path: dir.join("notes.txt") }], "{cmd}");
+        }
+        for cmd in ["delete everything in Downloads", "delete items in Desktop", "delete files in Documents"] {
+            assert!(matches!(plan(&h, cmd), Err(Stop::Problem(m)) if m.contains("To be safe")), "{cmd}");
+        }
     }
 
     #[test]

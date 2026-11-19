@@ -1394,6 +1394,17 @@ mod result_context_tests {
         }
     }
     #[test]
+    fn weekly_emptying_of_a_named_subfolder_is_scheduled() {
+        let f = Fixture::new();
+        f.write("Downloads/installers/a.dmg");
+        let outcome = f.command("delete items in installers folder every week");
+        let Outcome::Plan { id, scheduled_for: Some(_), repeats: Some(_), .. } = outcome else { panic!("{outcome:?}") };
+        assert!(confirm_input(&f.state, id).unwrap().error.is_none());
+        let job = f.state.schedules.lock().unwrap().jobs[0].clone();
+        assert_eq!(job.repeat.as_ref().unwrap().command, "delete items in installers folder");
+        assert!(matches!(f.command("delete everything in Downloads every week"), Outcome::Problem { .. }));
+    }
+    #[test]
     fn recovery_and_notice_do_not_wait_for_history_lock() {
         let f = Fixture::new();
         let _history = f.state.history.lock().unwrap();

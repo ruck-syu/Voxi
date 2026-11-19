@@ -90,8 +90,9 @@ struct Pending {
     /// date filter) stops the run instead of being acted on unseen.
     inputs: Vec<(PathBuf, std::time::SystemTime)>,
     undo_of: Option<u64>,
-    context_generation: Option<u64>,
-    context_snapshot: Option<scope::Snapshot>,
+    /// The results list this plan was made from, as its generation and the
+    /// snapshot it read (if any), held together so neither can stand alone.
+    context: Option<(u64, Option<scope::Snapshot>)>,
     scheduled: Option<scheduler::Job>,
     stop_requested: bool,
 }
@@ -105,16 +106,19 @@ impl Pending {
             .filter(|(p, _)| read.contains(p))
             .find(|(p, at)| std::fs::metadata(p).and_then(|m| m.modified()).ok() != Some(*at))
         {
-            Some((p, _)) => Err(format!("“{}” changed after the preview. Press Enter to preview it again.", fsx::file_name(p))),
+            Some((p, _)) => {
+                Err(format!("“{}” changed after the preview. Run the command again to see it as it is now.", fsx::file_name(p)))
+            }
             None => Ok(()),
         }
     }
 
     fn validate_context(&self, context: &scope::State) -> Result<(), String> {
-        if self.context_generation.is_some_and(|generation| generation != context.generation) {
+        let Some((generation, snapshot)) = &self.context else { return Ok(()) };
+        if *generation != context.generation {
             return Err("The previous list expired. Run the list command again.".into());
         }
-        self.context_snapshot.as_ref().map_or(Ok(()), scope::Snapshot::validate)
+        snapshot.as_ref().map_or(Ok(()), scope::Snapshot::validate)
     }
 }
 
@@ -229,7 +233,7 @@ fn show_window(app: &AppHandle, mode: &str) {
 
 fn hide(app: &AppHandle) {
     checked_state!(app.state::<AppState>().result_scope.lock(), ()).clear();
-    checked_state!(app.state::<AppState>().presentation.lock(), ()).cancel();
+    checked_state!(app.state::<AppState>().presentation.lock(), ()).hidden();
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.hide();
     }
@@ -252,6 +256,11 @@ fn request_hide(app: &AppHandle) {
 /// list, then the window opens so the user can say what to do with them.
 pub(crate) fn use_finder_selection(app: &AppHandle, selected: Vec<PathBuf>) {
     let state = app.state::<AppState>();
+    // The selection replaces whatever was being planned: cancel it, so its
+    // late reply can't arrive carrying this new list as its own.
+    if let Some((_, control)) = checked_state!(state.active_search.lock(), ()).take() {
+        control.cancel();
+    }
     let onboarded = checked_state!(state.settings.lock(), ()).onboarded;
     let notice = if onboarded {
         let (generation, notice) = take_selection(&state, selected);
@@ -262,6 +271,8 @@ pub(crate) fn use_finder_selection(app: &AppHandle, selected: Vec<PathBuf>) {
     };
     *checked_state!(state.selection_notice.lock(), ()) = notice;
     show_window(app, "command");
+    // An open command view (one kept through a run, say) reads the new list.
+    let _ = app.emit("voxi://selection", ());
 }
 
 /// Publishes the selection as the results list. Returns the list's new
@@ -321,7 +332,7 @@ fn toggle_window(app: &AppHandle) {
     let (pending, closing) = {
         let state = app.state::<AppState>();
         let presentation = checked_state!(state.presentation.lock(), ());
-        (presentation.pending.is_some(), presentation.closing)
+        (presentation.pending().is_some(), presentation.closing())
     };
     if !closing && (pending || (w.is_visible().unwrap_or(false) && w.is_focused().unwrap_or(false))) {
         request_hide(app);
@@ -856,8 +867,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
                     preview: source,
                     undo_of,
                     scheduled,
-                    context_generation: use_scope.then_some(scope_generation),
-                    context_snapshot: scoped_snapshot,
+                    context: use_scope.then_some((scope_generation, scoped_snapshot)),
                     stop_requested: false,
                 });
             Outcome::Plan {
@@ -882,8 +892,25 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
 }
 
 #[tauri::command(async)]
-fn confirm_plan(state: State<AppState>, id: u64, skip: Option<Vec<usize>>) -> Result<RunResult, String> {
-    confirm_trimmed(&state, id, &skip.unwrap_or_default())
+fn confirm_plan(state: State<AppState>, id: u64, skip: Option<Vec<usize>>) -> Result<RunResult, ConfirmError> {
+    confirm_reporting(&state, id, &skip.unwrap_or_default())
+}
+
+fn confirm_reporting(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResult, ConfirmError> {
+    confirm_trimmed(state, id, skip).map_err(|message| ConfirmError {
+        // A refusal before the preview was taken (a trim or a changed file)
+        // leaves it confirmable once fixed; anything later used it up.
+        preview_kept: state.pending.lock().is_ok_and(|p| p.as_ref().is_some_and(|p| p.id == id)),
+        message,
+    })
+}
+
+/// Why a confirmation failed, and whether its preview is still pending.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfirmError {
+    message: String,
+    preview_kept: bool,
 }
 
 #[cfg(test)]
@@ -922,6 +949,9 @@ fn confirm_trimmed(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResul
     let is_cancelled = || run.is_stopped();
     let _execution = checked_state!(state.execution.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
     p.validate_context(&*checked_state!(state.result_scope.lock(), Err("Voxi state is unavailable. Restart the app.".into())))?;
+    // Check again now that no other run can change files: a scheduled task
+    // may have run while this one waited for the execution lock.
+    p.validate_inputs(&p.actions)?;
     if let Some(mut job) = p.scheduled.clone() {
         if job.repeat.is_some() && scheduler::runs_on_confirm(&job.command) {
             let now = chrono::Local::now();
@@ -997,23 +1027,28 @@ fn page_steps(notes: &[Option<String>], total: usize, offset: usize, only_notes:
 }
 
 #[tauri::command]
-fn cancel_execution(state: State<AppState>, id: u64, scheduled_for: Option<chrono::DateTime<chrono::Local>>) -> Result<(), String> {
+fn cancel_execution(state: State<AppState>, id: u64, scheduled_for: Option<chrono::DateTime<chrono::Local>>) -> Result<bool, String> {
     let key = scheduled_for.map_or(RunKey::Plan(id), |due| RunKey::Scheduled(id, due));
     request_stop(&state, key)
 }
 
-fn request_stop(state: &AppState, key: RunKey) -> Result<(), String> {
+/// Asks a confirmed or running plan to stop at its next step. Returns false
+/// when there was nothing left to stop: the run already finished.
+fn request_stop(state: &AppState, key: RunKey) -> Result<bool, String> {
     if let RunKey::Plan(id) = key {
         let mut pending = state.pending.lock().map_err(|_| "Preview state unavailable. Restart Voxi.")?;
         if let Some(p) = pending.as_mut().filter(|p| p.id == id) {
             p.stop_requested = true;
-            return Ok(());
+            return Ok(true);
         }
     }
-    if let Some(stopped) = state.active_runs.lock().map_err(|_| "Execution state unavailable. Restart Voxi.")?.get(&key) {
-        stopped.store(true, Ordering::Relaxed);
+    match state.active_runs.lock().map_err(|_| "Execution state unavailable. Restart Voxi.")?.get(&key) {
+        Some(stopped) => {
+            stopped.store(true, Ordering::Relaxed);
+            Ok(true)
+        }
+        None => Ok(false),
     }
-    Ok(())
 }
 
 fn execute_pending(state: &AppState, p: Pending, is_cancelled: &dyn Fn() -> bool) -> RunResult {
@@ -1045,7 +1080,7 @@ fn execute_durable(state: &AppState, p: &Pending, is_cancelled: &dyn Fn() -> boo
     };
     let out = operation_journal::run(&path, &p.actions, &roots, entry, &mut history, is_cancelled)?;
     let mut context = state.result_scope.lock().map_err(|_| "Result state is unavailable. Restart Voxi.")?;
-    if p.context_generation == Some(context.generation)
+    if p.context.as_ref().is_some_and(|(generation, _)| *generation == context.generation)
         && let Some(snapshot) = &mut context.current
     {
         snapshot.apply(&out.done);
@@ -1259,8 +1294,7 @@ fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule,
                     preview: PreviewSource::default(),
                     inputs: Vec::new(),
                     undo_of: None,
-                    context_generation: None,
-                    context_snapshot: None,
+                    context: None,
                     scheduled: None,
                     stop_requested: false,
                 },
@@ -1332,8 +1366,7 @@ fn run_due_tasks_inner(state: &AppState) -> Result<(), String> {
                     preview: PreviewSource::default(),
                     inputs: Vec::new(),
                     undo_of: None,
-                    context_generation: None,
-                    context_snapshot: None,
+                    context: None,
                     scheduled: None,
                     stop_requested: false,
                 },
@@ -1399,7 +1432,7 @@ fn fit_window(app: AppHandle, height: f64, animate: bool) {
     #[cfg(target_os = "macos")]
     {
         let _ = app.run_on_main_thread(move || {
-            if checked_state!(handle.state::<AppState>().presentation.lock(), ()).pending.is_some() {
+            if checked_state!(handle.state::<AppState>().presentation.lock(), ()).pending().is_some() {
                 return;
             }
             let Ok(ptr) = w.ns_window() else { return };
@@ -1425,7 +1458,7 @@ fn fit_window(app: AppHandle, height: f64, animate: bool) {
 fn frontend_ready(app: AppHandle, state: State<AppState>) {
     let mut presentation = checked_state!(state.presentation.lock(), ());
     presentation.ready = true;
-    if let Some(request) = &presentation.pending {
+    if let Some(request) = presentation.pending() {
         let _ = app.emit("voxi://shown", request.clone());
     }
 }
@@ -1827,9 +1860,11 @@ pub fn run() {
                     if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                         let app = tray.app_handle();
                         // Clicking the menu bar takes focus from the window,
-                        // so go by visibility alone here.
+                        // so go by visibility alone here. A click while it
+                        // fades out reopens it, as the hotkey does.
+                        let closing = checked_state!(app.state::<AppState>().presentation.lock(), ()).closing();
                         match app.get_webview_window("main") {
-                            Some(w) if w.is_visible().unwrap_or(false) => request_hide(app),
+                            Some(w) if w.is_visible().unwrap_or(false) && !closing => request_hide(app),
                             _ => show_window(app, "command"),
                         }
                     }

@@ -121,8 +121,7 @@ fn stopping_between_moves_persists_only_completed_changes_and_resolves_journal()
             preview: PreviewSource::default(),
             inputs: Vec::new(),
             undo_of: None,
-            context_generation: None,
-            context_snapshot: None,
+            context: None,
             scheduled: None,
             stop_requested: false,
         },
@@ -310,8 +309,7 @@ fn rule_only_probe() {
                 preview: PreviewSource::default(),
                 inputs: Vec::new(),
                 undo_of: None,
-                context_generation: None,
-                context_snapshot: None,
+                context: None,
                 scheduled: None,
                 stop_requested: false,
             },
@@ -357,8 +355,7 @@ fn partial_failure_keeps_durable_undo_and_allows_next_command() {
             preview: PreviewSource::default(),
             inputs: Vec::new(),
             undo_of: None,
-            context_generation: None,
-            context_snapshot: None,
+            context: None,
             scheduled: None,
             stop_requested: false,
         },
@@ -1578,4 +1575,24 @@ fn subfolder_opt_in_guards_old_rules_skipped_trees_and_followups() {
     f.list();
     let Outcome::Plan { total, .. } = f.command("delete them including subfolders") else { panic!("expected a plan") };
     assert_eq!(total, f.paths().len());
+}
+#[test]
+fn a_refused_confirm_says_whether_its_preview_is_kept_and_late_stops_say_so() {
+    let f = Fixture::new();
+    let a = f.write("Downloads/a.pdf");
+    f.write("Downloads/b.pdf");
+    let Outcome::Plan { id, .. } = f.command("move PDFs from Downloads to Documents") else { panic!("expected a plan") };
+    // A step that can't be left out is refused before the preview is taken.
+    let err = confirm_reporting(&f.state, id, &[99]).unwrap_err();
+    assert!(err.preview_kept, "{err:?}");
+    // A changed file too; the preview stays to cancel or plan again.
+    fs::write(&a, b"edited").unwrap();
+    let err = confirm_reporting(&f.state, id, &[]).unwrap_err();
+    assert!(err.preview_kept && err.message.contains("changed after the preview"), "{err:?}");
+    // Once planned again and run, a Stop that comes too late says there was nothing to stop.
+    let Outcome::Plan { id, .. } = f.command("move PDFs from Downloads to Documents") else { panic!("expected a plan") };
+    assert!(confirm_reporting(&f.state, id, &[]).unwrap().error.is_none());
+    assert!(!request_stop(&f.state, RunKey::Plan(id)).unwrap());
+    let err = confirm_reporting(&f.state, id, &[]).unwrap_err();
+    assert!(!err.preview_kept, "{err:?}");
 }

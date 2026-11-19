@@ -94,7 +94,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   switch (cmd) {
     case "updater_failed": return;
     case "cancel_plan": pendingSchedule = null; activePlan = null; return;
-    case "cancel_execution": return;
+    case "cancel_execution": return false;
     case "search_progress": return 0;
     case "result_scope": return null;
     case "opening_context": return { scope: null, generation: 0, notice: null };
@@ -177,6 +177,8 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return steps.filter((r): r is NonNullable<typeof r> => !!r && r.step >= offset && (!args.onlyNotes || "note" in r));
     }
     case "confirm_plan":
+      // As in the app, only the pending preview can be confirmed, once.
+      if (args.id !== activePlan) throw { message: "That preview expired. Press Enter to plan it again.", previewKept: false };
       activePlan = null;
       if (!recoveryReviewed && mockScenario?.startsWith("recovery")) throw new Error("Open Settings → Scheduled, check the files, then choose Mark as reviewed.");
       if (pendingSchedule) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorMessage, inTauri, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type Settings } from "./api";
+import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type Settings } from "./api";
 import { readChoice } from "./choice";
 import examples from "./examples.json";
 import { AccessView } from "./access";
@@ -9,10 +9,14 @@ import { SettingsView } from "./settings";
 import { MAX_COMMAND_BYTES, TOO_LONG, row, utf8Bytes } from "./ui";
 
 type View = "command" | "settings" | "welcome";
+
+/** Request ids for planning, unique across command sessions: a remounted
+ *  view must never reuse an id an older, cancelled request still holds. */
+let lastRequest = 0;
 type Phase =
   | { k: "ready" }
   | { k: "parsing" }
-  | { k: "outcome"; outcome: Outcome }
+  | { k: "outcome"; outcome: Outcome; refused?: string }
   | { k: "running"; title: string; canStop: boolean; stopping: boolean; stopError?: string }
   | { k: "done"; result: RunResult; wasUndo: boolean }
   | { k: "error"; message: string };
@@ -317,13 +321,19 @@ function CommandView({
   const scopeGeneration = useRef<number | null>(null);
   useEffect(() => {
     let live = true;
-    void api.openingContext().then((o) => {
+    const read = () => void api.openingContext().then((o) => {
       if (!live) return;
       scopeGeneration.current = o.generation;
       setResultScope(o.scope);
       setSelectionNotice(o.notice);
     }).catch(() => {});
-    return () => { live = false; };
+    read();
+    // A Finder selection can arrive while this view stays open.
+    const unlisten = inTauri ? listen("voxi://selection", read) : null;
+    return () => {
+      live = false;
+      void unlisten?.then((stop) => stop());
+    };
   }, []);
   const fromFinder = resultScope?.label === FINDER_LABEL;
   const activeRun = useRef<{ id: number; canStop: boolean; stopping: boolean } | null>(null);
@@ -347,7 +357,7 @@ function CommandView({
   const tooLong = utf8Bytes(text) > MAX_COMMAND_BYTES;
 
   useEffect(() => () => {
-    ++requestId.current;
+    (requestId.current = ++lastRequest);
     api.cancel();
     if (scopeGeneration.current !== null) void api.clearResultScope(scopeGeneration.current);
   }, []);
@@ -411,7 +421,7 @@ function CommandView({
       setOffer(null);
       const folderPick = pickedFolder.current;
       pickedFolder.current = null;
-      const request = ++requestId.current;
+      const request = (requestId.current = ++lastRequest);
       setSearched(0);
       setPhase({ k: "parsing" });
       setHeard(null);
@@ -435,7 +445,10 @@ function CommandView({
         // the next thing dictated always lands there. Enter runs a preview.
         focusInput();
       } catch (e) {
-        if (request === requestId.current) setPhase({ k: "error", message: errorMessage(e) });
+        if (request !== requestId.current) return;
+        // The choice list is gone, so Enter and spoken numbers must stop picking from it.
+        setAsking(null);
+        setPhase({ k: "error", message: errorMessage(e) });
       }
     },
     [focusInput],
@@ -469,17 +482,22 @@ function CommandView({
       const after = await api.openingContext().catch(() => null);
       if (after) scopeGeneration.current = after.generation;
       setResultScope(after?.scope ?? null);
+      setSelectionNotice(after?.notice ?? null);
       setPhase({ k: "done", result, wasUndo: plan.isUndo });
       // A phrase Voxi missed, followed soon by a command that worked, can
       // be taught: next time the phrase runs this command.
       const miss = missed.current;
       missed.current = null;
-      if (!result.error && !result.cancelled && !plan.isUndo && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
+      // Only a run that changed files teaches: scheduling one changes nothing yet.
+      if (!result.error && !result.cancelled && !plan.isUndo && result.done > 0 && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
         setOffer({ k: "phrase", phrase: miss.text, command: lastCommand.current });
       }
       focusInput();
     } catch (e) {
-      setPhase({ k: "error", message: errorMessage(e) });
+      // A refusal before anything ran (a file changed, a step can't be
+      // left out) keeps the preview, so it can be fixed or cancelled.
+      if (isConfirmError(e) && e.previewKept) setPhase({ k: "outcome", outcome: plan, refused: e.message });
+      else setPhase({ k: "error", message: errorMessage(e) });
     } finally {
       activeRun.current = null;
     }
@@ -491,7 +509,11 @@ function CommandView({
     run.stopping = true;
     setPhase((current) => current.k === "running" ? { ...current, stopping: true, stopError: undefined } : current);
     try {
-      await api.stopExecution(run.id);
+      // False: the run already finished; its result arrives on its own.
+      if (!(await api.stopExecution(run.id)) && activeRun.current === run) {
+        run.stopping = false;
+        setPhase((current) => current.k === "running" ? { ...current, stopping: false } : current);
+      }
     } catch (e) {
       if (activeRun.current !== run) return;
       run.stopping = false;
@@ -500,9 +522,10 @@ function CommandView({
   }, []);
 
   const reset = useCallback(() => {
-    const request = ++requestId.current;
+    const request = (requestId.current = ++lastRequest);
     setSelectionNotice(null);
-    void Promise.all([api.cancel(), api.clearResultScope(scopeGeneration.current)]).catch((e) => {
+    const known = scopeGeneration.current;
+    void Promise.all([api.cancel(), known === null ? undefined : api.clearResultScope(known)]).catch((e) => {
       if (request === requestId.current) setPhase({ k: "error", message: errorMessage(e) });
     });
     stopAsking();
@@ -712,9 +735,11 @@ function reportOutcome(p: Phase): unknown {
 /** "Wrong result?": saves the command and what Voxi did with it on this Mac,
  *  with an optional note on what it should have done. Nothing is sent. */
 function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; onDone: () => void }) {
-  const [state, setState] = useState<{ k: "idle" } | { k: "writing"; note: string } | { k: "saved"; count: number } | { k: "error"; message: string }>({ k: "idle" });
+  const [state, setState] = useState<{ k: "idle" } | { k: "writing"; note: string } | { k: "saving" } | { k: "saved"; count: number } | { k: "error"; message: string }>({ k: "idle" });
   if (!command) return null;
   const save = async (note: string) => {
+    if (state.k !== "writing") return;
+    setState({ k: "saving" });
     try {
       const r = await api.reportWrong(command, reportOutcome(phase), note);
       setState({ k: "saved", count: r.count });
@@ -730,6 +755,7 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
   );
   if (state.k === "saved") return <div className="learn" role="status"><span>Saved on this Mac. Nothing is sent. {state.count} {state.count === 1 ? "report" : "reports"} so far.</span></div>;
   if (state.k === "error") return <div className="learn" role="alert"><span className="warn">{state.message}</span></div>;
+  if (state.k === "saving") return <div className="learn" role="status"><span>Saving…</span></div>;
   return (
     <div className="learn writing">
       <input
@@ -843,10 +869,13 @@ function PlanSteps({ plan, skipped, onToggle }: { plan: PlanOutcome; skipped: nu
     setBack((b) => b.slice(0, -1));
     show({ notes: page.notes, ...prev });
   };
+  // Switching views starts a new page history, but only once the new page
+  // arrives: a failed load keeps the current page and its Previous.
   const toggleNotes = () => {
-    setBack([]);
-    if (page.notes) show(first);
-    else load(true, 0, 0);
+    if (page.notes) {
+      setBack([]);
+      show(first);
+    } else load(true, 0, 0, () => setBack([]));
   };
   const total = page.notes ? plan.noted : plan.total;
   const paged = plan.total > plan.items.length || plan.noted > 0;
@@ -1032,6 +1061,7 @@ function Body(props: {
       return (
         <section className="body">
           <p className="title">{o.title}</p>
+          {phase.refused && <p className="note warn" role="alert">{phase.refused}</p>}
           <PlanSteps plan={o} skipped={props.skipped} onToggle={(step) => props.onToggleSkip(o.id, step)} />
           {props.skipped.length > 0 && (
             <p className="quiet" role="status">

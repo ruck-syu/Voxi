@@ -168,7 +168,10 @@ impl<'a> Planner<'a> {
         let mut notes_by_command = Vec::new();
         let mut deps = Dependencies::default();
         for (index, (text, intent)) in commands.iter().enumerate() {
-            let (actions, notes, warnings, dirs) = (self.actions.len(), self.notes.len(), self.warnings.len(), self.planned_dirs.clone());
+            // A checkpoint of the whole draft, so a dropped command leaves
+            // nothing behind, its reserved output names included.
+            let (actions, notes, warnings, dirs, reserved) =
+                (self.actions.len(), self.notes.len(), self.warnings.len(), self.planned_dirs.clone(), self.reserved.clone());
             let result = self.step(intent, history);
             if let Some(message) = self.search.status() {
                 return problem(message);
@@ -192,6 +195,7 @@ impl<'a> Planner<'a> {
                     self.notes.truncate(notes);
                     self.warnings.truncate(warnings);
                     self.planned_dirs = dirs;
+                    self.reserved = reserved;
                     notes_by_command.push(format!("“{text}”: {why}"));
                 }
                 Err(ambiguous) => return Err(ambiguous),

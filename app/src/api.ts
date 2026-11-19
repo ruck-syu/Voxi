@@ -8,9 +8,16 @@ export { inTauri };
 
 /** Turn a Tauri command rejection (or browser-mock throw) into text that is
  *  safe to show in the UI. Backends sometimes reject with a bare string. */
+/** A refused confirmation; `previewKept` means the preview is still confirmable. */
+export type ConfirmError = { message: string; previewKept: boolean };
+export function isConfirmError(e: unknown): e is ConfirmError {
+  return typeof e === "object" && e !== null && typeof (e as ConfirmError).message === "string" && typeof (e as ConfirmError).previewKept === "boolean";
+}
+
 export function errorMessage(e: unknown): string {
   if (e instanceof Error && e.message.trim()) return e.message;
   if (typeof e === "string" && e.trim()) return e;
+  if (isConfirmError(e) && e.message.trim()) return e.message;
   return "Something went wrong. Please try again.";
 }
 
@@ -72,7 +79,8 @@ export const api = {
   confirm: (id: number, skip: number[] = []) => invoke<RunResult>("confirm_plan", { id, skip }),
   /** More of the pending preview from `offset`, or only the steps with notes. */
   previewPage: (id: number, offset: number, onlyNotes: boolean) => invoke<PreviewRow[]>("preview_page", { id, offset, onlyNotes }),
-  stopExecution: (id: number, scheduledFor?: string) => invoke<void>("cancel_execution", { id, scheduledFor }),
+  /** False when the run had already finished, so there was nothing to stop. */
+  stopExecution: (id: number, scheduledFor?: string) => invoke<boolean>("cancel_execution", { id, scheduledFor }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: (requestId: number) => invoke<void>("hide_window", { requestId }),
   reportWrong: (command: string, outcome: unknown, note: string) => invoke<Reports>("report_wrong", { command, outcome, note }),

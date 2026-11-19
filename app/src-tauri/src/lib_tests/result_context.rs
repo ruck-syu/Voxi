@@ -1032,6 +1032,7 @@ fn stored_recurring_model_intent_is_never_replayed_unattended() {
         choices: HashMap::new(),
         model_intent: Some(model_intent()),
         modified_dates: true,
+        subfolder_opt_in: true,
     };
     // The rule text is still readable: it wins over the stored model plan.
     f.state
@@ -1456,6 +1457,7 @@ fn repeats_saved_before_modified_meant_last_edit_are_skipped_not_reread() {
         choices: HashMap::new(),
         model_intent: None,
         modified_dates,
+        subfolder_opt_in: true,
     };
     let job = |modified_dates| {
         scheduler::Job::recurring(
@@ -1531,4 +1533,49 @@ fn an_unticked_file_edited_after_the_preview_doesnt_stop_the_rest() {
     assert!(confirm_input(&f.state, id).unwrap_err().contains("“b.pdf” changed"));
     assert!(confirm_trimmed(&f.state, id, &[at]).unwrap().error.is_none());
     assert!(!a.exists() && b.exists());
+}
+#[test]
+fn subfolder_opt_in_guards_old_rules_skipped_trees_and_followups() {
+    let f = Fixture::new();
+    let nested = f.write("Downloads/Project/spec.pdf");
+    // A rule saved before the opt-in read "Subfolders" as a name: skipped, not widened.
+    let rule = scheduler::Rule {
+        every: 1,
+        unit: scheduler::Unit::Days,
+        time: None,
+        command: "delete PDFs in Downloads including subfolders".into(),
+        choices: HashMap::new(),
+        model_intent: None,
+        modified_dates: true,
+        subfolder_opt_in: false,
+    };
+    let job = scheduler::Job::recurring(
+        "delete PDFs in Downloads including subfolders daily".into(),
+        chrono::Local::now() - chrono::Duration::minutes(5),
+        rule,
+    );
+    f.state.schedules.lock().unwrap().add(job).unwrap();
+    run_due_tasks(&f.state).unwrap();
+    assert!(nested.exists());
+    assert!(f.state.schedules.lock().unwrap().jobs[0].summary.contains("reads “subfolders” differently"));
+
+    // Starting inside Voxi's own trash or a hidden folder is refused.
+    f.write("Downloads/_to_delete/keep/a.pdf");
+    f.write("Downloads/.private/inner/b.pdf");
+    for text in [
+        "move PDFs from Downloads/_to_delete to Documents including subfolders",
+        "move PDFs from Downloads/.private to Documents including subfolders",
+    ] {
+        assert!(matches!(f.command(text), Outcome::Problem { ref message } if message.contains("can't reach inside")), "{text}");
+    }
+
+    // A move with direct and nested matches says what it left alone.
+    f.write("Downloads/top.pdf");
+    let Outcome::Plan { warnings, .. } = f.command("move PDFs from Downloads to Documents") else { panic!("expected a plan") };
+    assert!(warnings.iter().any(|w| w.contains("left alone in subfolders")), "{warnings:?}");
+
+    // After a list, "delete them including subfolders" uses the whole list.
+    f.list();
+    let Outcome::Plan { total, .. } = f.command("delete them including subfolders") else { panic!("expected a plan") };
+    assert_eq!(total, f.paths().len());
 }

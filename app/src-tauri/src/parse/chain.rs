@@ -96,7 +96,10 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
         }
         let source_it = Regex::new(r"(?i)^(move|copy|rename|zip|unzip|resize|convert)\s+it(\s|$)").unwrap();
         for clause in &expanded {
-            let clause = clause.as_str();
+            // A trailing "including subfolders" belongs to the whole clause;
+            // set it aside so "into it including subfolders" still binds.
+            let (core, opt_in) = super::split_subfolders(clause);
+            let clause = core.as_str();
             // Scheduling applies to one command at a time. Do not let a time
             // clause on one step silently become a literal destination/name.
             let (_, when) = crate::scheduler::extract_schedule(clause, chrono::Local::now()).map_err(|_| refused())?;
@@ -125,6 +128,7 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
             } else {
                 rewritten
             };
+            let rewritten = if opt_in { format!("{rewritten} including subfolders") } else { rewritten };
             let mut intent = parse_single_classified(&rewritten).map_err(|failure| match failure {
                 ParseFailure::HardRefusal(reason) => ParseFailure::HardRefusal(reason),
                 // An unresolved "it"/"the original"/"the copy" in a clause is

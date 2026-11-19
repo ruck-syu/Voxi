@@ -394,7 +394,7 @@ fn transfers_leave_files_in_subfolders_alone() {
 
         fs::remove_file(dl.join("bill.pdf")).unwrap();
         let Err(err) = plan(&h, &format!("{verb} PDFs from Downloads to Archive")) else { panic!("{verb}: expected a refusal") };
-        assert!(format!("{err:?}").contains("1 matching file is in its subfolders. Add “including subfolders”"), "{err:?}");
+        assert!(format!("{err:?}").contains("Found 1 matching file in subfolders: add “including subfolders”"), "{err:?}");
     }
 }
 
@@ -412,7 +412,7 @@ fn delete_leave_files_in_subfolders_alone_with_a_warning() {
     // When only subfolder files match, refuse just like move/copy do.
     fs::remove_file(dl.join("bill.pdf")).unwrap();
     let Err(err) = plan(&h, "delete PDFs in Downloads") else { panic!("expected a refusal") };
-    assert!(format!("{err:?}").contains("1 matching file is in its subfolders. Add “including subfolders”"), "{err:?}");
+    assert!(format!("{err:?}").contains("Found 1 matching file in subfolders: add “including subfolders”"), "{err:?}");
 }
 
 #[test]

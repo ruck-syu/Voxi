@@ -585,6 +585,19 @@ impl<'a> Planner<'a> {
     fn keep_direct_children(&self, src: &Source, paths: &mut Vec<PathBuf>) -> Result<usize, Stop> {
         if let Source::Set { folder, filter } = src {
             let anywhere = folder.is_none() && filter.file_type == Some(FileType::Screenshots);
+            if self.scope.is_none() && filter.include_subfolders {
+                // Folder scans skip hidden folders, app bundles and Voxi's
+                // own trash below where they start, but a folder named as
+                // the start is scanned: don't reach into those trees.
+                let (dirs, _) = self.set_folders(folder.as_deref(), filter)?;
+                if let Some(d) = dirs.iter().find(|d| self.in_skipped_tree(d)) {
+                    return problem(format!(
+                        "“Including subfolders” can't reach inside {}: it's hidden, an app, or Voxi's {} folder.",
+                        file_name(d),
+                        fsx::TRASH_DIR
+                    ));
+                }
+            }
             if self.scope.is_none() && !anywhere && !filter.include_subfolders {
                 let (dirs, _) = self.set_folders(folder.as_deref(), filter)?;
                 let before = paths.len();
@@ -595,13 +608,42 @@ impl<'a> Planner<'a> {
         Ok(0)
     }
 
+    /// True when `dir`, below the allowed folder holding it, is or sits in
+    /// a folder scans skip: hidden, an app or other bundle, or `_to_delete`.
+    fn in_skipped_tree(&self, dir: &Path) -> bool {
+        let dir = fsx::canonical(dir);
+        let Some(root) = self.roots.allowed.iter().filter(|r| dir.starts_with(r)).max_by_key(|r| r.components().count()) else {
+            return false;
+        };
+        dir.strip_prefix(root).is_ok_and(|rest| {
+            rest.components().any(|c| {
+                let name = c.as_os_str().to_string_lossy();
+                name.starts_with('.')
+                    || name == fsx::TRASH_DIR
+                    || [".app", ".photoslibrary", ".bundle", ".framework"].iter().any(|ext| name.to_ascii_lowercase().ends_with(ext))
+            })
+        })
+    }
+
+    /// The shared warning for matching files a move, copy or delete left in subfolders.
+    fn note_nested(&mut self, nested: usize) {
+        if nested > 0 {
+            self.warnings.push(format!(
+                "{nested} more matching {} left alone in subfolders. Add “including subfolders” at the end to include {}.",
+                plural(nested, "file was", "files were"),
+                plural(nested, "it", "them")
+            ));
+        }
+    }
+
     /// The shared "nothing directly in the folder" refusal for transfers and
     /// deletes that had to drop subfolder matches.
     fn no_direct_files(&self, label: &str, nested: usize) -> Stop {
         if nested > 0 {
-            let files = if nested == 1 { "1 matching file is".to_string() } else { format!("{nested} matching files are") };
             Stop::Problem(format!(
-                "Nothing directly in {label}; {files} in its subfolders. Add “including subfolders” to include them, or list them first and say what to do with them."
+                "Nothing directly in {label}. Found {nested} matching {} in subfolders: add “including subfolders” at the end to include {}, or list them first and say what to do with them.",
+                plural(nested, "file", "files"),
+                plural(nested, "it", "them")
             ))
         } else {
             Stop::Problem(format!("No files match in {label}."))
@@ -616,6 +658,7 @@ impl<'a> Planner<'a> {
         if paths.is_empty() {
             return Err(self.no_direct_files(&label, nested));
         }
+        self.note_nested(nested);
         let src_dir = match src {
             Source::Set { folder: Some(folder), .. } => Some(self.resolve_folder(folder, None)?),
             _ => None,
@@ -1185,13 +1228,7 @@ impl<'a> Planner<'a> {
         if paths.is_empty() {
             return Err(self.no_direct_files(&label, nested));
         }
-        if nested > 0 {
-            self.warnings.push(format!(
-                "{nested} more matching {} left alone in subfolders. Add “including subfolders” to include {}.",
-                plural(nested, "file was", "files were"),
-                plural(nested, "it", "them")
-            ));
-        }
+        self.note_nested(nested);
         for p in &paths {
             self.check(p)?;
             if self.roots.is_root(p) {

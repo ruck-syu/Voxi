@@ -131,7 +131,9 @@ static REFERENCES: LazyLock<Regex> = LazyLock::new(|| {
 /// Only source arguments are substituted. Quoted names and destinations remain literal.
 pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>, String> {
     crate::parse::check_length(text).map_err(|_| "That command is too long.".to_string())?;
-    let cleaned = parse::phrase::normalize(text);
+    // "Delete them including subfolders": the list already holds every
+    // match, subfolders included, so the opt-in adds nothing.
+    let (cleaned, _) = parse::split_subfolders(&parse::phrase::normalize(text));
     let Some(unquoted) = parse::phrase::unquoted_text(&cleaned) else { return Ok(None) };
     for matched in REFERENCES.find_iter(&unquoted) {
         let replacement = format!("{}\"{MARKER}\"{}", &cleaned[..matched.start()], &cleaned[matched.end()..]);

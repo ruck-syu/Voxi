@@ -4,11 +4,21 @@ delete pdfs in downloads including subfolders => {"intent":"trash","src":{"kind"
 delete pdfs in downloads and its subfolders => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
 delete all pdfs in downloads including subfolders => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
 move pdfs from downloads to documents including subfolders => {"intent":"move","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}},"to":"documents"}
-move pdfs in downloads including subfolders to documents => {"intent":"move","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}},"to":"documents"}
-copy screenshots from desktop including subfolders to documents => {"intent":"copy","src":{"kind":"set","folder":"desktop","filter":{"type":"screenshots","includeSubfolders":true}},"to":"documents"}
+move pdfs in downloads including subfolders to documents => !hard
+copy screenshots from desktop including subfolders to documents => !hard
 delete pdfs in downloads recursively => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
 delete pdfs in downloads and all subfolders => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
 list pdfs in downloads including subfolders => {"intent":"list","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs"}}}
 delete report.pdf including subfolders => !hard
 rename report.pdf to old.pdf including subfolders => !hard
 move "notes including subfolders.txt" to documents => {"intent":"move","src":{"kind":"item","name":"notes including subfolders.txt"},"to":"documents"}
+# The opt-in is read only as the last words; elsewhere it is refused, never
+# folded into a name, a path or another clause.
+delete files named Work with Subfolders in Downloads => !hard
+delete PDFs in Downloads and subfolders named draft => !hard
+copy PDFs from Downloads to Archive/Recursively => !hard
+move PDFs from Downloads to “Archive Including Subfolders” => {"intent":"move","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs"}},"to":"Archive Including Subfolders"}
+mvoe PDFs in Downloads to Archive including uh subfolders => !hard
+ferry PDFs from Downloads to Archive including subfolders => !hard
+delete PDFs in Subfolders => !hard
+create a folder named Backup and copy PDFs from Downloads into it including subfolders => {"intent":"chain","commands":[{"intent":"create_folders","names":["Backup"]},{"intent":"copy","src":{"kind":"set","folder":"Downloads","filter":{"type":"pdfs","includeSubfolders":true}},"to":"Desktop/Backup"}]}

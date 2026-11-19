@@ -1198,17 +1198,21 @@ fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule,
         sched_skip(job);
         return e;
     }
+    let texts: Vec<&String> = shortcut.as_ref().map_or_else(|| vec![&rule.command], |s| s.commands.iter().collect());
+    // A rule saved before "including subfolders" opted in read those words
+    // as part of a name; it may now reach other files. Don't run it unattended.
+    if !rule.subfolder_opt_in && texts.iter().any(|t| parse::names_subfolders(t)) {
+        sched_skip(job);
+        return format!("Skipped: Voxi now reads “subfolders” differently. Schedule “{}” again to keep this task.", job.command);
+    }
     // A rule saved before "modified" meant the last edit was approved with
     // the creation date. Don't run it unattended with the new meaning.
-    if !rule.modified_dates {
-        let texts: Vec<&String> = shortcut.as_ref().map_or_else(|| vec![&rule.command], |s| s.commands.iter().collect());
-        if texts.iter().any(|t| parse::parse(t).is_ok_and(|intent| reads_modified_date(&intent))) {
-            sched_skip(job);
-            return format!(
-                "Skipped: “modified” now means the date a file was last edited. Schedule “{}” again to keep this task.",
-                job.command
-            );
-        }
+    if !rule.modified_dates && texts.iter().any(|t| parse::parse(t).is_ok_and(|intent| reads_modified_date(&intent))) {
+        sched_skip(job);
+        return format!(
+            "Skipped: “modified” now means the date a file was last edited. Schedule “{}” again to keep this task.",
+            job.command
+        );
     }
     let planned = {
         let history = checked_state!(state.history.lock(), "Voxi state is unavailable. Restart the app.".into());

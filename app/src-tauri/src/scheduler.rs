@@ -207,6 +207,10 @@ pub struct Rule {
     /// unattended with the new meaning (see `reads_modified_date`).
     #[serde(default)]
     pub modified_dates: bool,
+    /// True for rules saved once "including subfolders" opted into
+    /// subfolders. Older rules read those words as part of a name.
+    #[serde(default)]
+    pub subfolder_opt_in: bool,
 }
 
 /// The shortest gap allowed between runs of a repeating task.
@@ -399,8 +403,16 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
 
     let (time, due) = match (unit, time, day) {
         (Unit::Minutes | Unit::Hours, _, _) => {
-            let rule =
-                Rule { every, unit, time: None, command: String::new(), choices: HashMap::new(), model_intent: None, modified_dates: true };
+            let rule = Rule {
+                every,
+                unit,
+                time: None,
+                command: String::new(),
+                choices: HashMap::new(),
+                model_intent: None,
+                modified_dates: true,
+                subfolder_opt_in: true,
+            };
             (None, rule.step(now).ok_or("That time is too far away.")?)
         }
         // A weekday without a time runs at 9 am.
@@ -433,11 +445,21 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
                 choices: HashMap::new(),
                 model_intent: None,
                 modified_dates: true,
+                subfolder_opt_in: true,
             };
             (Some(time), rule.step(now).ok_or("That time is too far away.")?)
         }
     };
-    let rule = Rule { every, unit, time, command: command.clone(), choices: HashMap::new(), model_intent: None, modified_dates: true };
+    let rule = Rule {
+        every,
+        unit,
+        time,
+        command: command.clone(),
+        choices: HashMap::new(),
+        model_intent: None,
+        modified_dates: true,
+        subfolder_opt_in: true,
+    };
     Ok(Some((command, When { due, rule: Some(rule) })))
 }
 
@@ -964,6 +986,7 @@ mod tests {
             choices: HashMap::new(),
             model_intent: None,
             modified_dates: true,
+            subfolder_opt_in: true,
         };
         let first = Local.with_ymd_and_hms(2026, 11, 1, 21, 0, 0).unwrap();
         // Voxi was closed for ten days: one run now, then back on the 3-day grid.
@@ -986,6 +1009,7 @@ mod tests {
             choices: HashMap::new(),
             model_intent: None,
             modified_dates: true,
+            subfolder_opt_in: true,
         };
         store.add(Job::recurring("move a.pdf to Documents hourly".into(), Local::now() - Duration::minutes(1), rule.clone())).unwrap();
         assert_eq!(store.claim(Local::now()).unwrap().unwrap().id, 1);

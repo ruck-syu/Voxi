@@ -137,47 +137,73 @@ pub fn parse_classified(text: &str) -> Result<Intent, ParseFailure> {
 }
 
 /// "Including subfolders", "and its subfolders", "recursively": opts a move,
-/// copy or delete into the named folder's subfolders.
-static SUBFOLDERS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-    regex::Regex::new(
-        r"(?i)\s*,?\s*\b(?:(?:including|incl\.?|and|with|plus)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:its\s+|their\s+|the\s+)?sub-?folders|in\s+(?:all\s+)?(?:its\s+|the\s+)?sub-?folders(?:\s+too)?|recursively)\b",
+/// copy or delete into the named folder's subfolders. Read only as the last
+/// words of a command; anywhere else the words are refused (`mentions_subfolders`).
+static SUBFOLDERS_TAIL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(?:\s*,)?\s+(?:(?:including|incl\.?|and|with|plus)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:its\s+|their\s+|the\s+)?sub-?folders(?:\s+too)?|in\s+(?:all\s+(?:of\s+)?(?:its\s+|their\s+|the\s+)?|its\s+|their\s+|the\s+)sub-?folders(?:\s+too)?|recursively)\s*$",
     )
     .unwrap()
 });
+static SUBFOLDER_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bsub-?folders?\b|\brecursive(?:ly)?\b").unwrap());
+
+/// Splits a trailing subfolder opt-in off normalized text: the rest, and
+/// whether it was there.
+pub(crate) fn split_subfolders(normalized: &str) -> (String, bool) {
+    match SUBFOLDERS_TAIL.find(normalized) {
+        Some(m) => (normalized[..m.start()].to_string(), true),
+        None => (normalized.to_string(), false),
+    }
+}
+
+/// True when a command's unquoted words name subfolders or recursion, which
+/// rules saved before the subfolder opt-in read differently.
+pub(crate) fn names_subfolders(text: &str) -> bool {
+    mentions_subfolders(&phrase::normalize(text))
+}
+
+/// True when unquoted text still names subfolders or recursion.
+fn mentions_subfolders(normalized: &str) -> bool {
+    phrase::unquoted_text(normalized).is_none_or(|u| SUBFOLDER_WORD.is_match(&u))
+}
 
 fn parse_single_classified(text: &str) -> Result<Intent, ParseFailure> {
     // Also bound synthesized chain clauses before their normalization.
     check_length(text)?;
-    // Read "including subfolders" apart from the rest, so it never becomes
-    // part of a folder name ("downloads including subfolders") or a new
-    // destination. Sorting reads it itself.
-    let found = std::cell::Cell::new(false);
-    let stripped = phrase::map_unquoted(text, |part| {
-        let out = SUBFOLDERS.replace_all(part, "");
-        if out != part {
-            found.set(true);
-        }
-        out.into_owned()
-    });
-    if found.get() {
-        let original = parse_plain(text);
-        if matches!(original, Ok(Intent::SortByType { .. } | Intent::SortByMonth { .. })) {
-            return original;
-        }
-        let mut intent = parse_plain(&stripped)?;
-        return match &mut intent {
-            Intent::Move { src: Source::Set { filter, .. }, .. }
-            | Intent::Copy { src: Source::Set { filter, .. }, .. }
-            | Intent::Trash { src: Source::Set { filter, .. } } => {
-                filter.include_subfolders = true;
-                Ok(intent)
-            }
-            // Lists and counts already look in subfolders.
-            Intent::List { src: Source::Set { .. } } | Intent::Count { src: Source::Set { .. } } => Ok(intent),
-            _ => Err(ParseFailure::HardRefusal(RefusalReason::UnsupportedFilter)),
-        };
+    let cleaned = phrase::normalize(text);
+    let (core, opt_in) = split_subfolders(&cleaned);
+    if !opt_in && !mentions_subfolders(&core) {
+        return parse_plain(text);
     }
-    parse_plain(text)
+    // Sorting reads "including subfolders" itself.
+    let original = parse_plain(text);
+    if matches!(original, Ok(Intent::SortByType { .. } | Intent::SortByMonth { .. })) {
+        return original;
+    }
+    // Anywhere but the end, the words could be part of a name ("Work with
+    // Subfolders") or qualify something else ("and subfolders named draft"):
+    // refuse rather than guess. Quoting a name keeps it literal.
+    if mentions_subfolders(&core) {
+        return Err(ParseFailure::HardRefusal(RefusalReason::UnsupportedFilter));
+    }
+    let mut intent = match parse_plain(&core) {
+        Ok(intent) => intent,
+        // A recognized modifier on an unreadable command is terminal: the
+        // structured fallback can't carry it.
+        Err(ParseFailure::GrammarMiss) => return Err(ParseFailure::HardRefusal(RefusalReason::UnsupportedFilter)),
+        Err(e) => return Err(e),
+    };
+    match &mut intent {
+        Intent::Move { src: Source::Set { filter, .. }, .. }
+        | Intent::Copy { src: Source::Set { filter, .. }, .. }
+        | Intent::Trash { src: Source::Set { filter, .. } } => {
+            filter.include_subfolders = true;
+            Ok(intent)
+        }
+        // Lists and counts already look in subfolders.
+        Intent::List { src: Source::Set { .. } } | Intent::Count { src: Source::Set { .. } } => Ok(intent),
+        _ => Err(ParseFailure::HardRefusal(RefusalReason::UnsupportedFilter)),
+    }
 }
 
 fn parse_plain(text: &str) -> Result<Intent, ParseFailure> {

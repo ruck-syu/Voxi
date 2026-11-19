@@ -56,9 +56,11 @@ deep. This applies to groups of files and to individual file or folder names;
 multiple matching names prompt you to choose. Hidden folders, app bundles,
 symlinked folders, and `_to_delete` are skipped. Moves, copies, and deletes are
 the exception: they take only the files directly in the folder you name, so
-files kept in its subfolders stay put. Add “including subfolders” to reach them
-too, as in “delete PDFs in Downloads including subfolders”, or list the files
-first and then say “delete them”. Renames and image edits keep files in their
+files kept in its subfolders stay put. End the command with “including
+subfolders” to reach them too, as in “delete PDFs in Downloads including
+subfolders”, or list the files first and then say “delete them”. Elsewhere in a
+command those words are refused rather than read as part of a name; quote a
+name that contains them. Renames and image edits keep files in their
 folders.
 
 Searches reuse one folder scan per command. The window shows progress, and you

@@ -18,7 +18,7 @@
 ---
 
 Press <kbd>⌃⌥Space</kbd> anywhere. A small window opens with the cursor ready.
-Type a command or dictate with an app such as [Hex by Anomaly](https://anoma.ly/hex/) or [Wispr Flow](https://wisprflow.ai):
+Type a command or dictate with an app such as [Wispr Flow](https://wisprflow.ai) or [Hex by Anomaly](https://anoma.ly/hex/):
 
 > move all PDFs from Downloads to Documents
 
@@ -96,11 +96,11 @@ its operation type isn't supported.
 
 ## Dictation
 
-Use an external dictation app such as [Hex by Anomaly](https://anoma.ly/hex/) or [Wispr Flow](https://wisprflow.ai).
+Use an external dictation app such as [Wispr Flow](https://wisprflow.ai) or [Hex by Anomaly](https://anoma.ly/hex/).
 Hex downloads a speech model once, then transcribes locally and pastes into the
 focused app. Its Mac download requires Apple silicon and macOS 15 or later.
 
-Open Voxi, focus the command bar, dictate with Hex, then press Enter to review
+Open Voxi, focus the command bar, dictate with Wispr Flow or Hex, then press Enter to review
 the command. Other dictation apps work too. Voxi has no built-in recording or
 speech recognition and doesn't request microphone or speech permissions.
 

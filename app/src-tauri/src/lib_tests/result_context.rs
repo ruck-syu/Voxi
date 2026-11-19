@@ -119,6 +119,7 @@ fn stopping_between_moves_persists_only_completed_changes_and_resolves_journal()
             command: "move PDFs".into(),
             actions: actions.clone(),
             preview: Vec::new(),
+            inputs: Vec::new(),
             undo_of: None,
             context_generation: None,
             context_snapshot: None,
@@ -307,6 +308,7 @@ fn rule_only_probe() {
                 command: "partial failure".into(),
                 actions,
                 preview: Vec::new(),
+                inputs: Vec::new(),
                 undo_of: None,
                 context_generation: None,
                 context_snapshot: None,
@@ -353,6 +355,7 @@ fn partial_failure_keeps_durable_undo_and_allows_next_command() {
                 Action::Move { from: f.home.join("Downloads/missing"), to: f.home.join("Documents/missing") },
             ],
             preview: Vec::new(),
+            inputs: Vec::new(),
             undo_of: None,
             context_generation: None,
             context_snapshot: None,
@@ -1028,6 +1031,7 @@ fn stored_recurring_model_intent_is_never_replayed_unattended() {
         command: command.into(),
         choices: HashMap::new(),
         model_intent: Some(model_intent()),
+        modified_dates: true,
     };
     // The rule text is still readable: it wins over the stored model plan.
     f.state
@@ -1439,4 +1443,56 @@ fn a_finder_selection_becomes_the_list_that_these_refers_to() {
     // Nothing usable clears the list rather than leaving an older one in place.
     assert!(take_selection(&f.state, vec![stray]).unwrap().contains("outside the folders"));
     assert!(f.state.result_scope.lock().unwrap().current.is_none());
+}
+#[test]
+fn repeats_saved_before_modified_meant_last_edit_are_skipped_not_reread() {
+    let f = Fixture::new();
+    let a = f.write("Downloads/a.pdf");
+    let rule = |modified_dates: bool| scheduler::Rule {
+        every: 1,
+        unit: scheduler::Unit::Days,
+        time: None,
+        command: "trash files in Downloads modified today".into(),
+        choices: HashMap::new(),
+        model_intent: None,
+        modified_dates,
+    };
+    let job = |modified_dates| {
+        scheduler::Job::recurring(
+            "trash files in Downloads modified today daily".into(),
+            chrono::Local::now() - chrono::Duration::minutes(5),
+            rule(modified_dates),
+        )
+    };
+    // A saved rule's JSON from before the field existed reads as an old rule.
+    let legacy: scheduler::Rule =
+        serde_json::from_value(serde_json::json!({"every": 1, "unit": "days", "time": null, "command": "x"})).unwrap();
+    assert!(!legacy.modified_dates);
+
+    f.state.schedules.lock().unwrap().add(job(false)).unwrap();
+    run_due_tasks(&f.state).unwrap();
+    assert!(a.exists(), "an old rule must not run with the new meaning");
+    let summary = f.state.schedules.lock().unwrap().jobs[0].summary.clone();
+    assert!(summary.contains("Schedule “trash files in Downloads modified today daily” again"), "{summary}");
+
+    f.state.schedules.lock().unwrap().add(job(true)).unwrap();
+    run_due_tasks(&f.state).unwrap();
+    assert!(!a.exists(), "a rule saved now reads the last-edited date and runs");
+}
+#[test]
+fn a_file_edited_after_the_preview_stops_the_run() {
+    let f = Fixture::new();
+    let old = f.write("Downloads/old.pdf");
+    let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(400 * 86_400);
+    fs::File::options().write(true).open(&old).unwrap().set_modified(long_ago).unwrap();
+    let Outcome::Plan { id, total: 1, .. } = f.command("trash files in Downloads not modified in 90 days") else {
+        panic!("expected a plan")
+    };
+    fs::write(&old, b"edited").unwrap();
+    let err = confirm_input(&f.state, id).unwrap_err();
+    assert!(err.contains("“old.pdf” changed after the preview"), "{err}");
+    assert!(old.exists());
+    // The preview stays, so confirming it again keeps refusing until it's planned again.
+    assert!(confirm_input(&f.state, id).is_err());
+    assert!(matches!(f.command("trash files in Downloads not modified in 90 days"), Outcome::Problem { .. }));
 }

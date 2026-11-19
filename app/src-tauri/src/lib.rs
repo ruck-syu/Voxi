@@ -85,6 +85,10 @@ struct Pending {
     /// Every step as the preview shows it, built once with the plan so each
     /// page the user loads describes the same frozen plan.
     preview: Vec<PreviewItem>,
+    /// Each existing source file and when it was last modified at preview,
+    /// so a file edited before confirming (and perhaps no longer matching a
+    /// date filter) stops the run instead of being acted on unseen.
+    inputs: Vec<(PathBuf, std::time::SystemTime)>,
     undo_of: Option<u64>,
     context_generation: Option<u64>,
     context_snapshot: Option<scope::Snapshot>,
@@ -92,6 +96,14 @@ struct Pending {
     stop_requested: bool,
 }
 impl Pending {
+    /// Fails when a previewed source file changed since the preview.
+    fn validate_inputs(&self) -> Result<(), String> {
+        match self.inputs.iter().find(|(p, at)| std::fs::metadata(p).and_then(|m| m.modified()).ok() != Some(*at)) {
+            Some((p, _)) => Err(format!("“{}” changed after the preview. Press Enter to preview it again.", fsx::file_name(p))),
+            None => Ok(()),
+        }
+    }
+
     fn validate_context(&self, context: &scope::State) -> Result<(), String> {
         if self.context_generation.is_some_and(|generation| generation != context.generation) {
             return Err("The previous list expired. Run the list command again.".into());
@@ -320,6 +332,31 @@ fn describe(a: &Action, roots: &Roots) -> (String, String, String) {
         Action::RemoveEmptyFolder { path } => ("remove_folder".into(), name(path), "remove this folder if it's empty".into()),
         Action::Restore { from: _, to } => ("restore".into(), name(to), "restore the original".into()),
     }
+}
+
+/// The source files a plan reads, with when each was last modified.
+fn input_times(actions: &[Action]) -> Vec<(PathBuf, std::time::SystemTime)> {
+    let sources = actions.iter().flat_map(|a| -> Vec<&PathBuf> {
+        match a {
+            Action::Move { from, .. } | Action::Copy { from, .. } => vec![from],
+            Action::Trash { path }
+            | Action::Rename { path, .. }
+            | Action::ConvertImage { path, .. }
+            | Action::ResizeImage { path, .. }
+            | Action::SplitPdf { path, .. }
+            | Action::ExtractPages { path, .. }
+            | Action::Zip { path, .. }
+            | Action::Unzip { path, .. } => vec![path],
+            Action::ImagesToPdf { paths, .. } | Action::MergePdf { paths, .. } => paths.iter().collect(),
+            _ => vec![],
+        }
+    });
+    sources
+        .filter_map(|p| {
+            let m = std::fs::symlink_metadata(p).ok().filter(|m| m.is_file())?;
+            Some((p.clone(), m.modified().ok()?))
+        })
+        .collect()
 }
 
 /// `skippable` is true for a plan the user may trim before confirming: one
@@ -744,6 +781,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
                 Some(Pending {
                     id,
                     command: original_text.trim().to_string(),
+                    inputs: if undo_of.is_none() && scheduled.is_none() { input_times(&actions) } else { Vec::new() },
                     actions,
                     preview: all,
                     undo_of,
@@ -795,6 +833,9 @@ fn confirm_trimmed(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResul
                 return Err("Steps can't be left out of an undo or a scheduled task.".into());
             }
             skip::without(&p.actions, skip)?;
+        }
+        if let Some(p) = pending.as_ref().filter(|p| p.id == id) {
+            p.validate_inputs()?;
         }
         let mut p = pending.take_if(|p| p.id == id).ok_or("That preview expired. Press Enter to plan it again.")?;
         if !skip.is_empty() {
@@ -1062,6 +1103,18 @@ fn sched_skip(job: &scheduler::Job) {
     diagnostics::emit(Event::new(Code::SchedulerSkip, Stage::Skipped).operation(job.id));
 }
 
+/// True when any filter in `intent` reads the last-modified date.
+fn reads_modified_date(intent: &model::Intent) -> bool {
+    fn walk(v: &serde_json::Value) -> bool {
+        match v {
+            serde_json::Value::Object(m) => m.get("dateField").is_some_and(|f| f == "modified") || m.values().any(walk),
+            serde_json::Value::Array(a) => a.iter().any(walk),
+            _ => false,
+        }
+    }
+    serde_json::to_value(intent).is_ok_and(|v| walk(&v))
+}
+
 fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule, is_cancelled: &dyn Fn() -> bool) -> String {
     let roots = checked_state!(state.roots.read(), "Voxi state is unavailable. Restart the app.".into()).clone();
     let shortcut =
@@ -1072,6 +1125,18 @@ fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule,
     {
         sched_skip(job);
         return e;
+    }
+    // A rule saved before "modified" meant the last edit was approved with
+    // the creation date. Don't run it unattended with the new meaning.
+    if !rule.modified_dates {
+        let texts: Vec<&String> = shortcut.as_ref().map_or_else(|| vec![&rule.command], |s| s.commands.iter().collect());
+        if texts.iter().any(|t| parse::parse(t).is_ok_and(|intent| reads_modified_date(&intent))) {
+            sched_skip(job);
+            return format!(
+                "Skipped: “modified” now means the date a file was last edited. Schedule “{}” again to keep this task.",
+                job.command
+            );
+        }
     }
     let planned = {
         let history = checked_state!(state.history.lock(), "Voxi state is unavailable. Restart the app.".into());
@@ -1116,6 +1181,7 @@ fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule,
                     command: job.command.clone(),
                     actions,
                     preview: Vec::new(),
+                    inputs: Vec::new(),
                     undo_of: None,
                     context_generation: None,
                     context_snapshot: None,
@@ -1188,6 +1254,7 @@ fn run_due_tasks_inner(state: &AppState) -> Result<(), String> {
                     command: job.command.clone(),
                     actions: job.actions,
                     preview: Vec::new(),
+                    inputs: Vec::new(),
                     undo_of: None,
                     context_generation: None,
                     context_snapshot: None,

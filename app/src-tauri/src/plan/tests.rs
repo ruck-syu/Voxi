@@ -1345,7 +1345,7 @@ fn modified_filters_read_the_last_change_not_the_creation_date() {
         panic!("expected steps")
     };
     assert!(matches!(&actions[..], [Action::Trash { path }] if path == &draft), "{actions:?}");
-    assert!(warnings.iter().any(|w| w == "Dates are when each file was created."), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w == "Dates are when each file was created (or last modified, where that's unknown)."), "{warnings:?}");
 
     for cmd in ["remove files in Downloads not modified in a year", "remove files in Downloads not edited in a year"] {
         match plan(&h, cmd) {
@@ -1354,8 +1354,12 @@ fn modified_filters_read_the_last_change_not_the_creation_date() {
             Ok(_) => panic!("{cmd}: a file edited today must not match"),
         }
     }
-    let Ok(Planned::Info { total, .. }) = plan(&h, "list files in Downloads modified today") else { panic!("expected a list") };
+    let Ok(Planned::Info { total, summary, rows, .. }) = plan(&h, "list files in Downloads modified today") else {
+        panic!("expected a list")
+    };
     assert_eq!(total, 1);
+    assert!(summary.ends_with("Dates are when each file was last modified."), "{summary}");
+    assert!(rows[0].detail.contains("· modified "), "{}", rows[0].detail);
     let Ok(Planned::Steps { warnings, .. }) = plan(&h, "remove files in Downloads modified today") else { panic!("expected steps") };
     assert!(warnings.iter().any(|w| w == "Dates are when each file was last modified."), "{warnings:?}");
 }

@@ -202,6 +202,11 @@ pub struct Rule {
     /// Approved structured model interpretation. Reuse it without inference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_intent: Option<crate::model::Intent>,
+    /// True for rules saved once "modified" meant the date a file was last
+    /// edited. Older rules read the creation date then, so they don't run
+    /// unattended with the new meaning (see `reads_modified_date`).
+    #[serde(default)]
+    pub modified_dates: bool,
 }
 
 /// The shortest gap allowed between runs of a repeating task.
@@ -394,7 +399,8 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
 
     let (time, due) = match (unit, time, day) {
         (Unit::Minutes | Unit::Hours, _, _) => {
-            let rule = Rule { every, unit, time: None, command: String::new(), choices: HashMap::new(), model_intent: None };
+            let rule =
+                Rule { every, unit, time: None, command: String::new(), choices: HashMap::new(), model_intent: None, modified_dates: true };
             (None, rule.step(now).ok_or("That time is too far away.")?)
         }
         // A weekday without a time runs at 9 am.
@@ -419,11 +425,19 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
         }
         (_, None, None) => {
             let time = now.time().with_nanosecond(0).unwrap_or(now.time());
-            let rule = Rule { every, unit, time: Some(time), command: String::new(), choices: HashMap::new(), model_intent: None };
+            let rule = Rule {
+                every,
+                unit,
+                time: Some(time),
+                command: String::new(),
+                choices: HashMap::new(),
+                model_intent: None,
+                modified_dates: true,
+            };
             (Some(time), rule.step(now).ok_or("That time is too far away.")?)
         }
     };
-    let rule = Rule { every, unit, time, command: command.clone(), choices: HashMap::new(), model_intent: None };
+    let rule = Rule { every, unit, time, command: command.clone(), choices: HashMap::new(), model_intent: None, modified_dates: true };
     Ok(Some((command, When { due, rule: Some(rule) })))
 }
 
@@ -949,6 +963,7 @@ mod tests {
             command: "x".into(),
             choices: HashMap::new(),
             model_intent: None,
+            modified_dates: true,
         };
         let first = Local.with_ymd_and_hms(2026, 11, 1, 21, 0, 0).unwrap();
         // Voxi was closed for ten days: one run now, then back on the 3-day grid.
@@ -970,6 +985,7 @@ mod tests {
             command: "move a.pdf to Documents".into(),
             choices: HashMap::new(),
             model_intent: None,
+            modified_dates: true,
         };
         store.add(Job::recurring("move a.pdf to Documents hourly".into(), Local::now() - Duration::minutes(1), rule.clone())).unwrap();
         assert_eq!(store.claim(Local::now()).unwrap().unwrap().id, 1);

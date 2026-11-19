@@ -1201,10 +1201,12 @@ impl<'a> Planner<'a> {
 
     // ---- Read-only ---------------------------------------------------------
 
-    fn file_row(&self, p: &Path) -> InfoRow {
+    /// `modified` shows the last-modified date, for a list filtered by it.
+    fn file_row(&self, p: &Path, modified: bool) -> InfoRow {
         let meta = fs::metadata(p).map_err(|e| self.search.issue(format!("couldn't inspect {} ({e})", p.display()))).ok();
         let size = if p.is_dir() { fsx::tree_size(p).0 } else { meta.as_ref().map_or(0, |m| m.len()) };
-        let date = created(p).map(|d| d.format("%b %-d, %Y").to_string()).unwrap_or_default();
+        let date = row_date(p, modified).map(|d| d.format("%b %-d, %Y").to_string()).unwrap_or_default();
+        let date = if modified && !date.is_empty() { format!("modified {date}") } else { date };
         let dir = p.parent().map(|d| self.roots.display(d)).unwrap_or_default();
         InfoRow { name: file_name(p), detail: format!("{} · {date} · {dir}", human_size(size)) }
     }
@@ -1212,13 +1214,14 @@ impl<'a> Planner<'a> {
     fn list(&mut self, src: &Source) -> Result<Planned, Stop> {
         let (mut paths, label) = self.expand(src)?;
         let by_size = matches!(src, Source::Set { filter, .. } if filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some());
+        let modified = reads_modified(src);
         if by_size {
             paths.sort_by_key(|p| std::cmp::Reverse(fs::metadata(p).map_or(0, |m| m.len())));
         } else {
-            paths.sort_by_key(|p| std::cmp::Reverse(created(p)));
+            paths.sort_by_key(|p| std::cmp::Reverse(row_date(p, modified)));
         }
         let total_bytes: u64 = paths.iter().map(|p| fs::metadata(p).map_or(0, |m| m.len())).sum();
-        let rows = paths.iter().take(200).map(|p| self.file_row(p)).collect();
+        let rows = paths.iter().take(200).map(|p| self.file_row(p, modified)).collect();
         Ok(Planned::Info {
             listed: Some((paths.clone(), label.clone())),
             // A single named file's label is its own name; title it by its folder instead.
@@ -1234,7 +1237,7 @@ impl<'a> Planner<'a> {
                 } else {
                     format!("{} in total, including subfolders.", human_size(total_bytes))
                 }
-            ),
+            ) + &summary_date_note(src),
             rows,
             total: paths.len(),
         })
@@ -1249,8 +1252,8 @@ impl<'a> Planner<'a> {
         Ok(Planned::Info {
             listed: None,
             title: format!("{} {what} in {label}", paths.len()),
-            summary: format!("{}Including subfolders.", Self::search_scope_hint(src)),
-            rows: paths.iter().take(20).map(|p| self.file_row(p)).collect(),
+            summary: format!("{}Including subfolders.{}", Self::search_scope_hint(src), summary_date_note(src)),
+            rows: paths.iter().take(20).map(|p| self.file_row(p, reads_modified(src))).collect(),
             total: paths.len(),
         })
     }
@@ -1456,11 +1459,30 @@ fn filter_date(p: &Path, f: &Filter) -> Option<DateTime<Local>> {
     }
 }
 
+/// True when `src` is a set filtered by its last-modified date.
+fn reads_modified(src: &Source) -> bool {
+    matches!(src, Source::Set { filter, .. } if filter.date_field == Some(DateField::Modified) && has_date_filter(filter))
+}
+
+/// A list row's date: the last change for a list filtered by it, otherwise
+/// the creation date.
+fn row_date(p: &Path, modified: bool) -> Option<DateTime<Local>> {
+    if modified { Some(fs::metadata(p).ok()?.modified().ok()?.into()) } else { created(p) }
+}
+
+/// The date note for a list or count summary, with a leading space.
+fn summary_date_note(src: &Source) -> String {
+    match src {
+        Source::Set { filter, .. } => date_note(filter).map(|n| format!(" {n}")).unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
 /// Says in the preview which date a date filter read.
 fn date_note(f: &Filter) -> Option<&'static str> {
     has_date_filter(f).then_some(match f.date_field {
         Some(DateField::Modified) => "Dates are when each file was last modified.",
-        Some(DateField::Created) | None => "Dates are when each file was created.",
+        Some(DateField::Created) | None => "Dates are when each file was created (or last modified, where that's unknown).",
     })
 }
 

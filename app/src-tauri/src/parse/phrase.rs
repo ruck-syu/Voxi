@@ -306,7 +306,8 @@ static DAY: LazyLock<Regex> =
     re!(r"(?i)\b(?:(?P<verb>from|taken|created|made|modified|added|downloaded)\s+)?(?P<day>today|yesterday)(?:'s)?\b");
 /// "last modified", "last opened": the date a file was last changed. Read
 /// before the dates so "last" isn't left behind as a stray word.
-static LAST_VERB: LazyLock<Regex> = re!(r"(?i)\blast\s+(?:modified|edited|changed|updated|touched|opened|used)\b");
+static LAST_VERB: LazyLock<Regex> =
+    re!(r"(?i)(?P<prep>\b(?:in|from|to|into|inside|within|on|at)\s+)?\blast\s+(?:modified|edited|changed|updated|touched|opened|used)\b");
 static MONTH: LazyLock<Regex> = re!(
     r"(?i)\b(?:(?P<verb>taken|created|made|modified|added|downloaded|saved|captured|recorded)\s+)?(?:(?:from|in|during|of|on)\s+(?:month\s+of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b(?:\s*,?\s*(?:of\s+)?((?:19|20)\d{2}))?|(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b\s*,?\s*(?:of\s+)?((?:19|20)\d{2}))"
 );
@@ -619,12 +620,26 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
     let mut f = Filter::default();
     let mut s = map_unquoted(phrase.trim(), |part| FILTER_CLAUSE.replace_all(part, "$1").to_string());
     s = map_unquoted(&s, |part| PREDICATE_LINK.replace_all(part, "$1").to_string());
-    take(&mut s, &WHO_CLAUSE, |_| Some(()))?;
+    // A verb naming another date than "modified" ("that I created",
+    // "downloaded"): such a command can't also read the modified date.
+    let mut other_verb = false;
+    let mut last_verb = false;
+    take(&mut s, &WHO_CLAUSE, |_| {
+        other_verb = true;
+        Some(())
+    })?;
     // Before names: "that end with .tmp" is an extension, not a name "with .tmp".
     take(&mut s, &ENDING, |c| set_once(&mut f.ext, vec![c[1].to_ascii_lowercase()]))?;
     take_name(&mut s, &mut f)?;
     // Ages before sizes: "over 30 days" must not read as a size.
-    take(&mut s, &LAST_VERB, |_| note_date_field(&mut f.date_field, Some(DateField::Modified)))?;
+    take(&mut s, &LAST_VERB, |c| {
+        // "in Last Modified" names a folder, not a date: refuse rather than drop it.
+        if c.name("prep").is_some() {
+            return None;
+        }
+        last_verb = true;
+        note_date_field(&mut f.date_field, Some(DateField::Modified))
+    })?;
     take(&mut s, &OLDER, |c| {
         note_date_field(&mut f.date_field, c.name("verb").map(|_| DateField::Modified))?;
         set_once(&mut f.older_than_days, to_days(&c["n"], &c["unit"])?)
@@ -672,17 +687,26 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         if f.day.is_some() {
             return None;
         }
-        note_date_field(&mut f.date_field, c.name("verb").and_then(|v| verb_field(v.as_str())))?;
+        if let Some(v) = c.name("verb") {
+            other_verb |= other_date_verb(v.as_str());
+            note_date_field(&mut f.date_field, verb_field(v.as_str()))?;
+        }
         f.day = Some(if c["day"].eq_ignore_ascii_case("today") { DayRef::Today } else { DayRef::Yesterday });
         Some(())
     })?;
     take(&mut s, &MONTH, |c| {
-        note_date_field(&mut f.date_field, c.name("verb").and_then(|v| verb_field(v.as_str())))?;
+        if let Some(v) = c.name("verb") {
+            other_verb |= other_date_verb(v.as_str());
+            note_date_field(&mut f.date_field, verb_field(v.as_str()))?;
+        }
         set_once(&mut f.month, month_number(c.get(2).or(c.get(4)).map_or("", |m| m.as_str()))?)?;
         f.year = c.get(3).or(c.get(5)).and_then(|y| y.as_str().parse().ok());
         Some(())
     })?;
-    take(&mut s, &PARTICIPLE, |c| note_date_field(&mut f.date_field, verb_field(&c["verb"])))?;
+    take(&mut s, &PARTICIPLE, |c| {
+        other_verb |= other_date_verb(&c["verb"]);
+        note_date_field(&mut f.date_field, verb_field(&c["verb"]))
+    })?;
     s = BUT_SIZE.replace_all(&s, "$1").to_string();
     // Read directional bounds first: in "over 9 MB and under 2 MB", "and
     // under" belongs to the second bound, not the suffix form "9 MB and under".
@@ -697,19 +721,37 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         set_once(&mut f.smaller_than_mb, to_mb(size_number(&c[3]), Some(second_unit)))?;
         Some(())
     })?;
-    // Only "modified" changes which date is read. "Created" is the default
-    // and is kept only long enough to refuse a command naming both, and
-    // "files modified by me" names no date, so the field means nothing.
-    let dated = f.since.is_some()
-        || f.before.is_some()
-        || f.older_than_days.is_some()
-        || f.newer_than_days.is_some()
-        || f.day.is_some()
-        || f.month.is_some();
-    if !dated || f.date_field == Some(DateField::Created) {
+    // Only "modified" changes which date is read; "created" is the default
+    // and is kept only long enough to refuse a command naming both.
+    if f.date_field == Some(DateField::Created) {
         f.date_field = None;
     }
+    if f.date_field == Some(DateField::Modified) {
+        let clauses = date_clauses(&f);
+        // One filter reads one date, so "created this year and modified
+        // today" or "downloaded in March and modified last week" is refused
+        // rather than read entirely by the modified date. "Last modified"
+        // must come with a date: "files last modified in Downloads" has none.
+        if other_verb || clauses > 1 || (last_verb && clauses == 0) {
+            return None;
+        }
+    }
     filters_consistent(&f).then_some((f, s))
+}
+
+/// How many separate date clauses a filter holds. A range ("since March",
+/// "between June 1 and June 9") counts once.
+fn date_clauses(f: &Filter) -> usize {
+    [f.older_than_days.is_some(), f.newer_than_days.is_some(), f.day.is_some(), f.month.is_some(), f.since.is_some() || f.before.is_some()]
+        .into_iter()
+        .filter(|&b| b)
+        .count()
+}
+
+/// A verb that names a date other than the last change. "From" only
+/// introduces a date, so it names none.
+fn other_date_verb(verb: &str) -> bool {
+    !matches!(verb.to_ascii_lowercase().as_str(), "modified" | "from")
 }
 
 /// The date a verb names: "modified" is the last change, "created" the
@@ -1143,7 +1185,8 @@ pub fn parse_source(phrase: &str) -> Option<Source> {
             f.file_type = Some(t);
             f.ext = ext;
             if let Some(m) = full_month(bare) {
-                if f.month.is_some() {
+                // "November PDFs modified last week" names two dates for one field.
+                if f.month.is_some() || (f.date_field == Some(DateField::Modified) && date_clauses(&f) > 0) {
                     return None;
                 }
                 f.month = Some(m);

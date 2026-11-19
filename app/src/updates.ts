@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { inTauri } from "./api";
+import { errorMessage, inTauri } from "./api";
 
 export type UpdateState =
   | { k: "idle" }
@@ -55,7 +55,7 @@ export async function checkAndInstall(onState: (s: UpdateState) => void): Promis
   } catch (e) {
     // Diagnostics accepts only this fixed signal, never the rejection or payload.
     void invoke<void>("updater_failed").catch(() => {});
-    onState({ k: "error", message: `Couldn't update: ${e}` });
+    onState({ k: "error", message: `Couldn't update: ${errorMessage(e)}` });
   }
 }
 

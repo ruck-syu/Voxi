@@ -216,10 +216,12 @@ pub(crate) fn run(
                 // Executor publication is staged/no-clobber; retained backups
                 // and cleanup errors are described by the returned error.
                 record.in_flight = None;
-                cancelled = e == exec::CANCELLED;
-                if !cancelled {
-                    record.error = Some(e.clone());
-                    error = Some(e);
+                match e {
+                    exec::StepError::Cancelled => cancelled = true,
+                    exec::StepError::Failed(e) => {
+                        record.error = Some(e.clone());
+                        error = Some(e);
+                    }
                 }
                 sync(path, &record)?;
                 break;

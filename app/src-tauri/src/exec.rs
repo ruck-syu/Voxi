@@ -9,13 +9,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-thread_local! {
-    static CANCEL: std::cell::RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>> = const { std::cell::RefCell::new(None) };
-}
-fn cancelled() -> bool {
-    CANCEL.with(|c| c.borrow().as_ref().is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)))
-}
-
 pub struct Outcome {
     pub done: Vec<Action>,
     /// Reverses `done`, newest step first.
@@ -24,7 +17,18 @@ pub struct Outcome {
     pub cancelled: bool,
 }
 
-pub(crate) const CANCELLED: &str = "Execution cancelled.";
+/// Internal sentinel. It never leaves this module: `step` turns it into
+/// `StepError::Cancelled`, so callers match a variant, not message text.
+const CANCELLED: &str = "Execution cancelled.";
+
+/// Why a step did not complete.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum StepError {
+    /// Stopped before the step changed anything.
+    Cancelled,
+    /// Failed; the message is shown to the user.
+    Failed(String),
+}
 
 fn check_cancel(is_cancelled: &dyn Fn() -> bool) -> Result<(), String> {
     if is_cancelled() { Err(CANCELLED.into()) } else { Ok(()) }
@@ -50,8 +54,8 @@ pub(crate) fn run_with_cancel(actions: &[Action], roots: &Roots, is_cancelled: &
                 inv.reverse();
                 inverse.splice(0..0, inv);
             }
-            Err(e) if e == CANCELLED => return Outcome { done, inverse, error: None, cancelled: true },
-            Err(e) => return Outcome { done, inverse, error: Some(e), cancelled: false },
+            Err(StepError::Cancelled) => return Outcome { done, inverse, error: None, cancelled: true },
+            Err(StepError::Failed(e)) => return Outcome { done, inverse, error: Some(e), cancelled: false },
         }
     }
     Outcome { done, inverse, error: None, cancelled: false }
@@ -104,9 +108,7 @@ fn bounded_tool(
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
-    if cancelled() {
-        return Err("Tool cancelled".into());
-    }
+    check()?;
     let mut child = Command::new(cmd)
         .args(args)
         .stdin(Stdio::null())
@@ -146,9 +148,6 @@ fn bounded_tool(
     let result = loop {
         if let Err(e) = drain(&mut stdout, &mut out).and_then(|()| drain(&mut stderr, &mut err)) {
             break Err(e.to_string());
-        }
-        if cancelled() {
-            break Err(format!("{cmd} cancelled"));
         }
         if start.elapsed() >= deadline {
             break Err(format!("{cmd} timed out after {} seconds", deadline.as_secs_f64()));
@@ -441,7 +440,8 @@ fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits, is_ca
         let extraction_started = std::time::Instant::now();
         let extraction_budget = std::time::Duration::from_secs(60);
         check_cancel(is_cancelled)?;
-        bounded_tool("/usr/bin/unzip", &["-tqq".as_ref(), snapshot.as_os_str()], extraction_budget, || Ok(()))?;
+        // Both tools write only to private staging, so stopping them is safe.
+        bounded_tool("/usr/bin/unzip", &["-tqq".as_ref(), snapshot.as_os_str()], extraction_budget, || check_cancel(is_cancelled))?;
         check_cancel(is_cancelled)?;
         fs::create_dir(&stage.path).map_err(|e| e.to_string())?;
         let observed = ArchiveLimits { total: total.min(limits.total), ..limits };
@@ -450,6 +450,7 @@ fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits, is_ca
             &["-x".as_ref(), "-k".as_ref(), snapshot.as_os_str(), stage.path.as_os_str()],
             extraction_budget.saturating_sub(extraction_started.elapsed()),
             || {
+                check_cancel(is_cancelled)?;
                 verify_extracted(&stage.path, observed, true, &never_cancel)?;
                 if fsx::available_space(&stage.dir)? < limits.margin {
                     return Err("Extraction disk-space reserve exhausted".into());
@@ -563,7 +564,11 @@ fn trash_inverse(p: &Path) -> Action {
 }
 
 /// Runs one step and returns the steps that undo it.
-pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Vec<Action>, String> {
+pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Vec<Action>, StepError> {
+    run_step(a, roots, is_cancelled).map_err(|e| if e == CANCELLED { StepError::Cancelled } else { StepError::Failed(e) })
+}
+
+fn run_step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Vec<Action>, String> {
     // External mutation tools run to completion. Only private staging and
     // read-only loops can abandon a step after it has started.
     check_cancel(is_cancelled)?;
@@ -829,6 +834,19 @@ mod tests {
     }
 
     #[test]
+    fn step_reports_cancellation_as_a_variant_and_failures_with_their_message() {
+        let d = tempfile::tempdir().unwrap();
+        let roots = Roots::new(d.path(), None, &[]);
+        let path = d.path().join("Documents/new");
+        fs::create_dir(d.path().join("Documents")).unwrap();
+        let create = Action::CreateFolder { path: path.clone() };
+        assert_eq!(step(&create, &roots, &|| true), Err(StepError::Cancelled));
+        assert!(!path.exists());
+        let outside = Action::CreateFolder { path: PathBuf::from("/private/var/voxi-outside") };
+        assert!(matches!(step(&outside, &roots, &never_cancel), Err(StepError::Failed(m)) if m.starts_with("Stopped:")));
+    }
+
+    #[test]
     fn tools_have_deadlines_cancellation_and_bounded_errors() {
         use std::time::{Duration, Instant};
         let start = Instant::now();
@@ -843,22 +861,19 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.len() <= 65536 + 100, "{}", err.len());
-        let token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-        CANCEL.with(|c| *c.borrow_mut() = Some(token));
-        assert!(bounded_tool("/bin/sleep", &["2".as_ref()], Duration::from_secs(5), || Ok(())).unwrap_err().contains("cancelled"));
-        let token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        CANCEL.with(|c| *c.borrow_mut() = Some(token.clone()));
+        let check = || check_cancel(&|| true);
+        assert_eq!(bounded_tool("/bin/sleep", &["2".as_ref()], Duration::from_secs(5), check).unwrap_err(), CANCELLED);
+        let stop = std::sync::atomic::AtomicBool::new(false);
         let started = Instant::now();
-        assert!(
+        assert_eq!(
             bounded_tool("/bin/sleep", &["2".as_ref()], Duration::from_secs(5), || {
-                token.store(true, std::sync::atomic::Ordering::Relaxed);
-                Ok(())
+                let cancelled = stop.swap(true, std::sync::atomic::Ordering::Relaxed);
+                check_cancel(&|| cancelled)
             })
-            .unwrap_err()
-            .contains("cancelled")
+            .unwrap_err(),
+            CANCELLED
         );
         assert!(started.elapsed() < Duration::from_secs(1));
-        CANCEL.with(|c| *c.borrow_mut() = None);
     }
 
     #[test]

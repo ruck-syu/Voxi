@@ -1,6 +1,6 @@
 [package]
 name = "voxi"
-version = "0.1.0"
+version = "0.0.0"
 description = "Organize files from a typed or dictated command"
 authors = ["Voxi"]
 edition = "2024"
@@ -18,7 +18,7 @@ tiny-model = ["dep:voxi-tiny-native"]
 
 [dependencies]
 libc = "=0.2.191"
-voxi-tiny-native = { path = "../../docs/testing/tiny-model-readiness-2026-11-16/native", optional = true }
+voxi-tiny-native = { path = "../../crates/voxi-tiny-native", optional = true }
 tauri = { version = "2", features = ["tray-icon", "macos-private-api", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"

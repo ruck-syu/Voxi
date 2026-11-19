@@ -184,20 +184,42 @@ pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>,
     Ok(None)
 }
 
-pub fn prepare(text: &str, snapshot: Option<&Snapshot>) -> Result<(Intent, bool), String> {
-    crate::parse::check_length(text).map_err(|_| "That command is too long.".to_string())?;
+/// Why `prepare` produced no intent.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PrepareError {
+    /// The parser didn't recognize the command; holds the trimmed text.
+    NotUnderstood(String),
+    /// A specific problem to show the user.
+    Problem(String),
+}
+
+impl std::fmt::Display for PrepareError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotUnderstood(text) => write!(f, "Voxi doesn't understand “{text}”."),
+            Self::Problem(message) => f.write_str(message),
+        }
+    }
+}
+
+pub fn prepare(text: &str, snapshot: Option<&Snapshot>) -> Result<(Intent, bool), PrepareError> {
+    crate::parse::check_length(text).map_err(|_| PrepareError::Problem("That command is too long.".to_string()))?;
     if let Ok(intent @ Intent::Chain { .. }) = parse::parse(text) {
         if snapshot.is_some() {
-            return Err("Clear the previous result list before chaining commands.".into());
+            return Err(PrepareError::Problem("Clear the previous result list before chaining commands.".into()));
         }
         return Ok((intent, false));
     }
     if let Some(snapshot) = snapshot
-        && let Some(intent) = parse_followup(text, snapshot)?
+        && let Some(intent) = parse_followup(text, snapshot).map_err(PrepareError::Problem)?
     {
         return Ok((intent, true));
     }
-    let intent = parse::parse(text)?;
+    // Same split as `parse::parse`, kept as a type instead of an echoed string.
+    let intent = parse::parse_classified(text).map_err(|failure| match failure {
+        parse::ParseFailure::HardRefusal(parse::RefusalReason::TooLong) => PrepareError::Problem("That command is too long.".to_string()),
+        _ => PrepareError::NotUnderstood(text.trim().to_string()),
+    })?;
     let scoped = snapshot.is_some_and(|snapshot| match intent.source() {
         Some(Source::Set { folder: None, .. }) => true,
         Some(Source::Item { name, folder: None }) if !name.contains('/') && !name.starts_with('~') => {
@@ -206,4 +228,17 @@ pub fn prepare(text: &str, snapshot: Option<&Snapshot>) -> Result<(Intent, bool)
         _ => false,
     });
     Ok((intent, scoped))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prepare_separates_unknown_commands_from_problems() {
+        assert_eq!(prepare("  wibble the frobnicator  ", None).unwrap_err(), PrepareError::NotUnderstood("wibble the frobnicator".into()));
+        let long = "a".repeat(20_000);
+        assert_eq!(prepare(&long, None).unwrap_err(), PrepareError::Problem("That command is too long.".into()));
+        assert!(prepare("list files in Downloads", None).is_ok());
+    }
 }

@@ -17,7 +17,7 @@ Report-only audit of the English command grammar. It asks whether the compiled p
 
 - Per-case results: `haiku-paraphrase-audit-2026-11-09.jsonl` (428 rows, every line valid JSON)
 - Inputs: `paraphrase-audit-2026-11-09/` (`seeds.jsonl`, `variants.txt`, `contextual.txt`)
-- Harness: `app/src-tauri/src/paraphrase_audit.rs` (test-only, all tests `#[ignore]`)
+- Harness: `app/src-tauri/src/audits/paraphrase.rs` (test-only, all tests `#[ignore]`)
 
 ## Counts
 
@@ -151,7 +151,7 @@ Last observed: report test ok (428 rows, 1 passed); full suite **171 passed, 0 f
 
 - New: `docs/testing/haiku-paraphrase-audit-2026-11-09.md`, `docs/testing/haiku-paraphrase-audit-2026-11-09.jsonl`
 - New: `docs/testing/paraphrase-audit-2026-11-09/{seeds.jsonl,variants.txt,contextual.txt}`
-- New: `app/src-tauri/src/paraphrase_audit.rs`
+- New: `app/src-tauri/src/audits/paraphrase.rs`
 - Modified: `app/src-tauri/src/lib.rs` (two lines: `#[cfg(test)] mod paraphrase_audit;`), on top of existing uncommitted changes
 - Unchanged: `docs/testing/haiku-300-*`, `docs/testing/extension-audit-*`, parser and planner production code
 

@@ -1,5 +1,6 @@
 //! Native structured-plan interpretation for the explicitly enabled dev model.
 //! This validates the model's protocol and literal integrity, not its semantics.
+use crate::model_slot::{get_or_load, load_from_env};
 use crate::{
     model::{FileType, Filter, Intent, Source},
     parse, scheduler,
@@ -205,15 +206,6 @@ pub fn eligible(text: &str, classified: &Result<Intent, parse::ParseFailure>) ->
     }
 }
 
-/// Reuse a loaded value, but retry the loader after a failure instead of
-/// caching the error. Once loaded, the value is kept for later calls.
-fn get_or_load<T>(slot: &mut Option<T>, mut load: impl FnMut() -> Result<T, String>) -> Result<&mut T, String> {
-    if slot.is_none() {
-        *slot = Some(load()?);
-    }
-    Ok(slot.as_mut().unwrap())
-}
-
 /// Called on Tauri's existing blocking planning worker. Errors never authorize
 /// a partial model plan. The caller checks its request generation before publish.
 #[cfg(test)]
@@ -233,15 +225,8 @@ pub fn interpret_at(text: &str, cancelled: impl Fn() -> bool, now: DateTime<Loca
         if cancelled() {
             return Err("Search cancelled.".into());
         }
-        let model = get_or_load(&mut *slot, || {
-            let loaded = std::env::var_os("VOXI_PLAN_MODEL_DIR")
-                .ok_or("VOXI_PLAN_MODEL_DIR is not set".to_string())
-                .and_then(|dir| NativeRewriter::load_plan(dir).map_err(|e| e.to_string()));
-            match &loaded {
-                Ok(_) => eprintln!("Voxi: loaded {}", voxi_tiny_native::PLAN_PACKAGE_ID),
-                Err(error) => eprintln!("Voxi: plan model unavailable: {error}"),
-            }
-            loaded
+        let model = get_or_load(&mut slot, || {
+            load_from_env("VOXI_PLAN_MODEL_DIR", "plan model", voxi_tiny_native::PLAN_PACKAGE_ID, NativeRewriter::load_plan)
         })?;
         if cancelled() {
             return Err("Search cancelled.".into());
@@ -632,24 +617,6 @@ mod tests {
         assert_eq!(p.bindings, vec![("~0~".into(), "say \"hi\".pdf".into())]);
         // An unmatched quote is still refused.
         assert!(Prepared::new(r#"move "unclosed to Archive"#).is_err());
-    }
-    #[test]
-    fn a_failed_load_is_retried_and_a_success_is_cached() {
-        let mut slot: Option<u32> = None;
-        let attempts = std::cell::Cell::new(0);
-        let mut load = || {
-            let n = attempts.get() + 1;
-            attempts.set(n);
-            if n < 3 { Err("unavailable".to_string()) } else { Ok(7) }
-        };
-        assert_eq!(get_or_load(&mut slot, &mut load).err(), Some("unavailable".to_string()));
-        assert!(slot.is_none());
-        assert_eq!(get_or_load(&mut slot, &mut load).err(), Some("unavailable".to_string()));
-        assert!(slot.is_none());
-        assert_eq!(*get_or_load(&mut slot, &mut load).unwrap(), 7);
-        assert_eq!(attempts.get(), 3);
-        assert_eq!(*get_or_load(&mut slot, &mut load).unwrap(), 7);
-        assert_eq!(attempts.get(), 3); // cached Ok is reused
     }
     #[test]
     #[ignore = "requires VOXI_PLAN_MODEL_DIR pointing to the native v4c package"]

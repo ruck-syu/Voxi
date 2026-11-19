@@ -371,7 +371,9 @@ entitlements and both CPU slices, and only then publishes:
 
 Versions are `0.2.N`: each release is one past the newest published
 `v0.2.N` tag, so pull request runs and failed runs never use up a number.
-Change `SERIES` in the workflow to start a new line.
+Change `SERIES` in the workflow to start a new line. The manifests in the
+repository stay at `0.0.0`, so a local build is never mistaken for a release;
+only the release job writes the real version.
 
 Signing has two modes, chosen by which secrets exist:
 

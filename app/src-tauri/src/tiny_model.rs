@@ -1,5 +1,6 @@
 //! Opt-in local development fallback. Model output only reaches the planner
 //! after the existing semantic certificate; no actions run here.
+use crate::model_slot::{get_or_load, load_from_env};
 use crate::{fallback_guard, fallback_slots, model::Intent, parse};
 use std::sync::{LazyLock, Mutex};
 use voxi_tiny_native::NativeRewriter;
@@ -7,15 +8,6 @@ use voxi_tiny_native::NativeRewriter;
 // recover runs inside plan_command, a `#[tauri::command(async)]` on Tauri's
 // async runtime, never on the UI thread.
 static MODEL: LazyLock<Mutex<Option<NativeRewriter>>> = LazyLock::new(|| Mutex::new(None));
-
-/// Reuse a loaded model, but retry the loader after a failure instead of
-/// caching the error. Once loaded, the model is kept for later calls.
-fn get_or_load<T>(slot: &mut Option<T>, load: impl FnOnce() -> Result<T, String>) -> Result<&mut T, String> {
-    if slot.is_none() {
-        *slot = Some(load()?);
-    }
-    Ok(slot.as_mut().unwrap())
-}
 
 pub fn recover(text: &str, cancelled: impl Fn() -> bool) -> Option<Intent> {
     recover_with(text, &cancelled, |input| {
@@ -27,14 +19,7 @@ pub fn recover(text: &str, cancelled: impl Fn() -> bool) -> Option<Intent> {
             return Err("cancelled".into());
         }
         let model = get_or_load(&mut slot, || {
-            let loaded = std::env::var_os("VOXI_TINY_MODEL_DIR")
-                .ok_or_else(|| "VOXI_TINY_MODEL_DIR is not set".to_string())
-                .and_then(|dir| NativeRewriter::load(dir).map_err(|e| e.to_string()));
-            match &loaded {
-                Ok(_) => eprintln!("Voxi: loaded {}", voxi_tiny_native::MODEL_PACKAGE_ID),
-                Err(error) => eprintln!("Voxi: tiny model unavailable: {error}"),
-            }
-            loaded
+            load_from_env("VOXI_TINY_MODEL_DIR", "tiny model", voxi_tiny_native::MODEL_PACKAGE_ID, NativeRewriter::load)
         })?;
         model.rewrite(input).map_err(|e| e.to_string())
     })
@@ -124,24 +109,6 @@ mod tests {
         assert_eq!(names, ["Xylophone", "Quasar"]);
         assert_eq!(parent.as_deref(), Some("Documents"));
         assert!(recover_with(text, || false, |_| Ok("delete all files in Documents".into())).is_none());
-    }
-
-    #[test]
-    fn failed_load_is_retried_and_a_success_is_cached() {
-        let mut slot: Option<u32> = None;
-        let attempts = std::cell::Cell::new(0);
-        let load = || {
-            attempts.set(attempts.get() + 1);
-            if attempts.get() < 3 { Err("unavailable".to_string()) } else { Ok(7) }
-        };
-        assert_eq!(get_or_load(&mut slot, load).err(), Some("unavailable".to_string()));
-        assert!(slot.is_none());
-        assert_eq!(get_or_load(&mut slot, load).err(), Some("unavailable".to_string()));
-        assert!(slot.is_none());
-        assert_eq!(*get_or_load(&mut slot, load).unwrap(), 7);
-        assert_eq!(attempts.get(), 3);
-        assert_eq!(*get_or_load(&mut slot, load).unwrap(), 7);
-        assert_eq!(attempts.get(), 3);
     }
 
     #[test]

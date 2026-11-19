@@ -66,6 +66,8 @@ const CLOSE_MS = 140;
 export default function App() {
   const [view, setView] = useState<View>("command");
   const [settings, setSettings] = useState<Settings | null>(null);
+  // Settings that failed to load must not hold the window back forever.
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [open, setOpen] = useState(!inTauri);
   const [pendingShow, setPendingShow] = useState<number | null>(null);
   const [commandSession, setCommandSession] = useState(0);
@@ -145,7 +147,7 @@ export default function App() {
     api.getSettings().then((s) => {
       setSettings(s);
       if (!s.onboarded) setView("welcome");
-    });
+    }).catch((e) => setSettingsError(errorMessage(e)));
     if (!inTauri) return;
     let disposed = false;
     const unShown = listen<{ requestId: number; mode: View }>("voxi://shown", (e) => {
@@ -196,11 +198,11 @@ export default function App() {
   // Layout is measured after settings and fonts settle, while the native window
   // is still hidden. The acknowledgement resizes and reveals it in one operation.
   useLayoutEffect(() => {
-    if (!inTauri || pendingShow === null || !settings || !fontsReady || !innerRef.current) return;
+    if (!inTauri || pendingShow === null || (!settings && !settingsError) || !fontsReady || !innerRef.current) return;
     const requestId = pendingShow;
     const height = Math.ceil(innerRef.current.offsetHeight);
     void invoke("present_window", { requestId, height, animate: !reducedMotion() });
-  }, [pendingShow, settings, fontsReady, view]);
+  }, [pendingShow, settings, settingsError, fontsReady, view]);
 
   // The window is the frosted card, so it is sized to the content and macOS
   // animates the resize. In a browser preview the card glides instead.
@@ -228,6 +230,11 @@ export default function App() {
             onBusy={setBusy}
             onSettings={() => setView("settings")}
           />}
+        {view !== "command" && !settings && settingsError && (
+          <section className="body">
+            <p className="title warn" role="alert">Voxi couldn't load its settings. {settingsError}</p>
+          </section>
+        )}
         {view === "settings" && settings && (
           <SettingsView
             settings={settings}

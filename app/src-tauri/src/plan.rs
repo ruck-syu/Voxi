@@ -5,8 +5,8 @@
 use crate::fsx::{self, Roots, file_name, human_size, split_name, unique_path};
 use crate::history::History;
 use crate::model::{
-    ARCHIVE_EXTS, AUDIO_EXTS, Action, DOC_EXTS, DayRef, FileType, Filter, IMAGE_EXTS, INSTALLER_EXTS, ImageFormat, InfoRow, Intent, Source,
-    VIDEO_EXTS,
+    ARCHIVE_EXTS, AUDIO_EXTS, Action, DOC_EXTS, DateField, DayRef, FileType, Filter, IMAGE_EXTS, INSTALLER_EXTS, ImageFormat, InfoRow,
+    Intent, Source, VIDEO_EXTS,
 };
 use crate::{pdf, search};
 use chrono::{DateTime, Datelike, Local, NaiveDate};
@@ -274,6 +274,14 @@ impl<'a> Planner<'a> {
         Ok(Step::Changes(title))
     }
 
+    fn note_dates(&mut self, filter: &Filter) {
+        if let Some(note) = date_note(filter)
+            && !self.warnings.iter().any(|w| w == note)
+        {
+            self.warnings.push(note.into());
+        }
+    }
+
     fn push(&mut self, a: Action, note: Option<String>) {
         self.actions.push(a);
         self.notes.push(note);
@@ -512,7 +520,7 @@ impl<'a> Planner<'a> {
     }
 
     /// Expands a source into paths, including subfolders for every file set.
-    fn expand(&self, src: &Source) -> Result<(Vec<PathBuf>, String), Stop> {
+    fn expand(&mut self, src: &Source) -> Result<(Vec<PathBuf>, String), Stop> {
         match src {
             Source::Item { name, folder } => {
                 let p = self.resolve_item(name, folder.as_deref())?;
@@ -531,6 +539,7 @@ impl<'a> Planner<'a> {
                             paths.push(path);
                         }
                     }
+                    self.note_dates(filter);
                     return Ok((paths, "the previous results".into()));
                 }
                 let (dirs, label) = self.set_folders(folder.as_deref(), filter)?;
@@ -554,12 +563,13 @@ impl<'a> Planner<'a> {
                     }
                 }
                 out.sort_by_key(|p| file_name(p).to_lowercase());
+                self.note_dates(filter);
                 Ok((out, label))
             }
         }
     }
 
-    fn expand_nonempty(&self, src: &Source) -> Result<(Vec<PathBuf>, String), Stop> {
+    fn expand_nonempty(&mut self, src: &Source) -> Result<(Vec<PathBuf>, String), Stop> {
         let (paths, label) = self.expand(src)?;
         if paths.is_empty() {
             return problem(format!("No files match in {label}."));
@@ -1068,7 +1078,7 @@ impl<'a> Planner<'a> {
         Ok(format!("Merge {n} PDFs into {}", file_name(&out)))
     }
 
-    fn single(&self, src: &Source, ext: &str, what: &str) -> Result<PathBuf, Stop> {
+    fn single(&mut self, src: &Source, ext: &str, what: &str) -> Result<PathBuf, Stop> {
         let (paths, _) = self.expand_nonempty(src)?;
         let [p] = paths.as_slice() else { return problem(format!("Name one {what}.")) };
         if ext_of(p) != ext {
@@ -1199,7 +1209,7 @@ impl<'a> Planner<'a> {
         InfoRow { name: file_name(p), detail: format!("{} · {date} · {dir}", human_size(size)) }
     }
 
-    fn list(&self, src: &Source) -> Result<Planned, Stop> {
+    fn list(&mut self, src: &Source) -> Result<Planned, Stop> {
         let (mut paths, label) = self.expand(src)?;
         let by_size = matches!(src, Source::Set { filter, .. } if filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some());
         if by_size {
@@ -1230,7 +1240,7 @@ impl<'a> Planner<'a> {
         })
     }
 
-    fn count(&self, src: &Source) -> Result<Planned, Stop> {
+    fn count(&mut self, src: &Source) -> Result<Planned, Stop> {
         let (paths, label) = self.expand(src)?;
         let what = match src {
             Source::Set { filter, .. } => type_label(filter),
@@ -1437,6 +1447,23 @@ pub fn created(p: &Path) -> Option<DateTime<Local>> {
     Some(t.into())
 }
 
+/// The date `f`'s date filters read for `p`: the last change when the
+/// command said "modified", otherwise the creation date.
+fn filter_date(p: &Path, f: &Filter) -> Option<DateTime<Local>> {
+    match f.date_field {
+        Some(DateField::Modified) => Some(fs::metadata(p).ok()?.modified().ok()?.into()),
+        Some(DateField::Created) | None => created(p),
+    }
+}
+
+/// Says in the preview which date a date filter read.
+fn date_note(f: &Filter) -> Option<&'static str> {
+    has_date_filter(f).then_some(match f.date_field {
+        Some(DateField::Modified) => "Dates are when each file was last modified.",
+        Some(DateField::Created) | None => "Dates are when each file was created.",
+    })
+}
+
 pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
     let contains = f.name_contains.as_deref().map(normalized_name);
     let starts = f.name_starts_with.as_deref().map(normalized_name);
@@ -1469,7 +1496,7 @@ fn matches_prepared(p: &Path, f: &Filter, today: NaiveDate, contains: Option<&st
         }
     }
     if has_date_filter(f) {
-        let Some(t) = created(p) else { return false };
+        let Some(t) = filter_date(p, f) else { return false };
         return taken_matches(f, t, today);
     }
     true

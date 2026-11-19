@@ -54,6 +54,16 @@ pub enum DayRef {
     Yesterday,
 }
 
+/// Which date a date filter reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DateField {
+    /// When the file was created, or modified if the creation date is unknown.
+    Created,
+    /// When the file was last modified: "not modified in a year".
+    Modified,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Filter {
@@ -82,6 +92,10 @@ pub struct Filter {
     /// stops the day after March 15).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<NaiveDate>,
+    /// The date the date filters read. None reads the creation date, like
+    /// `Created`, but records that the command didn't say which.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_field: Option<DateField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub larger_than_mb: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]

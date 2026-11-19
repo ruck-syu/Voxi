@@ -2,7 +2,7 @@
 //! that names what to act on, e.g. "PDFs larger than 5 MB from Downloads".
 
 use super::dates;
-use crate::model::{DayRef, FileType, Filter, Source};
+use crate::model::{DateField, DayRef, FileType, Filter, Source};
 use chrono::{Duration, NaiveDate};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -286,7 +286,7 @@ static FOLDER_PREFIX: LazyLock<Regex> = re!(r"(?i)^(desktop|downloads|documents|
 /// "and in Documents" once a filter before it is removed: the connector goes.
 static CONNECTOR_BEFORE_PREP: LazyLock<Regex> = re!(r"(?i)\s+(?:and|or)\s+((?:in|from|on|inside|within)\b)");
 static OLDER: LazyLock<Regex> = re!(
-    r"(?i)\b(?:older\s+than|more\s+than|over|before|not\s+(?:opened|modified|touched|used)\s+in)\s+(\d+|a|an)\s*(days?|weeks?|months?|years?)(?:\s+old|\s+ago)?\b"
+    r"(?i)\b(?:older\s+than|more\s+than|over|before|not\s+(?P<verb>opened|modified|touched|used|edited|changed|updated)\s+in)\s+(?P<n>\d+|a|an)\s*(?P<unit>days?|weeks?|months?|years?)(?:\s+old|\s+ago)?\b"
 );
 /// A numbered span is rolling ("last 30 days"). A bare "last week/month/year"
 /// is a previous calendar period, handled by LAST_PERIOD below.
@@ -302,14 +302,18 @@ static ENDING: LazyLock<Regex> =
     re!(r"(?i)\b(?:ending|that\s+ends?|which\s+ends?|whose\s+names?\s+ends?)\s+(?:in|with)\s+\.([a-z0-9]{1,6})\b");
 /// "since 3 days ago": the same as "in the last 3 days".
 static SINCE_AGO: LazyLock<Regex> = re!(r"(?i)\bsince\s+(\d+|an?)\s*(days?|weeks?|months?|years?)\s+ago\b");
-static DAY: LazyLock<Regex> = re!(r"(?i)\b(?:(?:from|taken|created|made|modified|added|downloaded)\s+)?(today|yesterday)(?:'s)?\b");
+static DAY: LazyLock<Regex> =
+    re!(r"(?i)\b(?:(?P<verb>from|taken|created|made|modified|added|downloaded)\s+)?(?P<day>today|yesterday)(?:'s)?\b");
+/// "last modified", "last opened": the date a file was last changed. Read
+/// before the dates so "last" isn't left behind as a stray word.
+static LAST_VERB: LazyLock<Regex> = re!(r"(?i)\blast\s+(?:modified|edited|changed|updated|touched|opened|used)\b");
 static MONTH: LazyLock<Regex> = re!(
-    r"(?i)\b(?:(?:taken|created|made|modified|added|downloaded|saved|captured|recorded)\s+)?(?:(?:from|in|during|of|on)\s+(?:month\s+of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b(?:\s*,?\s*(?:of\s+)?((?:19|20)\d{2}))?|(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b\s*,?\s*(?:of\s+)?((?:19|20)\d{2}))"
+    r"(?i)\b(?:(?P<verb>taken|created|made|modified|added|downloaded|saved|captured|recorded)\s+)?(?:(?:from|in|during|of|on)\s+(?:month\s+of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b(?:\s*,?\s*(?:of\s+)?((?:19|20)\d{2}))?|(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b\s*,?\s*(?:of\s+)?((?:19|20)\d{2}))"
 );
 /// "taken", "downloaded", "that were saved": how files came to be says
 /// nothing about which ones, once the dates are read.
 static PARTICIPLE: LazyLock<Regex> = re!(
-    r"(?i)\b(?:(?:that|which)\s+were\s+|were\s+)?(?:taken|created|made|downloaded|saved|captured|added|modified|recorded|grabbed|snapped|received|arrived)\b"
+    r"(?i)\b(?:(?:that|which)\s+were\s+|were\s+)?(?P<verb>taken|created|made|downloaded|saved|captured|added|modified|recorded|grabbed|snapped|received|arrived)\b"
 );
 /// "named", "containing", "that start with": the keyword before a name.
 static NAME_KEYWORD: LazyLock<Regex> = re!(
@@ -620,7 +624,11 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
     take(&mut s, &ENDING, |c| set_once(&mut f.ext, vec![c[1].to_ascii_lowercase()]))?;
     take_name(&mut s, &mut f)?;
     // Ages before sizes: "over 30 days" must not read as a size.
-    take(&mut s, &OLDER, |c| set_once(&mut f.older_than_days, to_days(&c[1], &c[2])?))?;
+    take(&mut s, &LAST_VERB, |_| note_date_field(&mut f.date_field, Some(DateField::Modified)))?;
+    take(&mut s, &OLDER, |c| {
+        note_date_field(&mut f.date_field, c.name("verb").map(|_| DateField::Modified))?;
+        set_once(&mut f.older_than_days, to_days(&c["n"], &c["unit"])?)
+    })?;
     take(&mut s, &SINCE_AGO, |c| {
         let days = to_days(&c[1], &c[2])?;
         if days == 0 {
@@ -664,15 +672,17 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         if f.day.is_some() {
             return None;
         }
-        f.day = Some(if c[1].eq_ignore_ascii_case("today") { DayRef::Today } else { DayRef::Yesterday });
+        note_date_field(&mut f.date_field, c.name("verb").and_then(|v| verb_field(v.as_str())))?;
+        f.day = Some(if c["day"].eq_ignore_ascii_case("today") { DayRef::Today } else { DayRef::Yesterday });
         Some(())
     })?;
     take(&mut s, &MONTH, |c| {
-        set_once(&mut f.month, month_number(c.get(1).or(c.get(3)).map_or("", |m| m.as_str()))?)?;
-        f.year = c.get(2).or(c.get(4)).and_then(|y| y.as_str().parse().ok());
+        note_date_field(&mut f.date_field, c.name("verb").and_then(|v| verb_field(v.as_str())))?;
+        set_once(&mut f.month, month_number(c.get(2).or(c.get(4)).map_or("", |m| m.as_str()))?)?;
+        f.year = c.get(3).or(c.get(5)).and_then(|y| y.as_str().parse().ok());
         Some(())
     })?;
-    take(&mut s, &PARTICIPLE, |_| Some(()))?;
+    take(&mut s, &PARTICIPLE, |c| note_date_field(&mut f.date_field, verb_field(&c["verb"])))?;
     s = BUT_SIZE.replace_all(&s, "$1").to_string();
     // Read directional bounds first: in "over 9 MB and under 2 MB", "and
     // under" belongs to the second bound, not the suffix form "9 MB and under".
@@ -687,7 +697,43 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         set_once(&mut f.smaller_than_mb, to_mb(size_number(&c[3]), Some(second_unit)))?;
         Some(())
     })?;
+    // Only "modified" changes which date is read. "Created" is the default
+    // and is kept only long enough to refuse a command naming both, and
+    // "files modified by me" names no date, so the field means nothing.
+    let dated = f.since.is_some()
+        || f.before.is_some()
+        || f.older_than_days.is_some()
+        || f.newer_than_days.is_some()
+        || f.day.is_some()
+        || f.month.is_some();
+    if !dated || f.date_field == Some(DateField::Created) {
+        f.date_field = None;
+    }
     filters_consistent(&f).then_some((f, s))
+}
+
+/// The date a verb names: "modified" is the last change, "created" the
+/// creation date. Other verbs ("taken", "downloaded") leave the default.
+fn verb_field(verb: &str) -> Option<DateField> {
+    match verb.to_ascii_lowercase().as_str() {
+        "modified" => Some(DateField::Modified),
+        "created" => Some(DateField::Created),
+        _ => None,
+    }
+}
+
+/// Records which date the command reads. One command naming both dates
+/// ("created in March and modified last week") is refused rather than
+/// guessed, since one filter reads only one date.
+fn note_date_field(slot: &mut Option<DateField>, field: Option<DateField>) -> Option<()> {
+    match (*slot, field) {
+        (_, None) => Some(()),
+        (Some(a), Some(b)) if a != b => None,
+        (_, Some(b)) => {
+            *slot = Some(b);
+            Some(())
+        }
+    }
 }
 
 /// A failed filter validation is a terminal error, rather than an opportunity

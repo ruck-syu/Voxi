@@ -1327,3 +1327,35 @@ fn excluded_folders_are_refused_and_never_found_by_name() {
     let actions = steps(&h, "move new.pdf to Archive");
     assert!(actions.iter().all(|a| !format!("{a:?}").contains("Documents/Archive")), "{actions:?}");
 }
+
+/// An old file edited today: "older than a year" reads its creation date,
+/// "not modified in a year" its last change, and the preview says which.
+#[cfg(target_os = "macos")]
+#[test]
+fn modified_filters_read_the_last_change_not_the_creation_date() {
+    let h = home();
+    let draft = h.roots.home.join("Downloads/draft.pdf");
+    fs::write(&draft, b"a").unwrap();
+    // An earlier modified time also moves the creation date back on macOS.
+    set_taken(&draft, (2024, 1, 10));
+    fs::File::options().write(true).open(&draft).unwrap().set_modified(SystemTime::now()).unwrap();
+    assert!(created(&draft).unwrap().year() <= 2024, "the creation date stays old");
+
+    let Ok(Planned::Steps { actions, warnings, .. }) = plan(&h, "remove files in Downloads older than a year") else {
+        panic!("expected steps")
+    };
+    assert!(matches!(&actions[..], [Action::Trash { path }] if path == &draft), "{actions:?}");
+    assert!(warnings.iter().any(|w| w == "Dates are when each file was created."), "{warnings:?}");
+
+    for cmd in ["remove files in Downloads not modified in a year", "remove files in Downloads not edited in a year"] {
+        match plan(&h, cmd) {
+            Err(Stop::Problem(m)) => assert!(m.starts_with("No files match"), "{cmd}: {m}"),
+            Err(e) => panic!("{cmd}: {e:?}"),
+            Ok(_) => panic!("{cmd}: a file edited today must not match"),
+        }
+    }
+    let Ok(Planned::Info { total, .. }) = plan(&h, "list files in Downloads modified today") else { panic!("expected a list") };
+    assert_eq!(total, 1);
+    let Ok(Planned::Steps { warnings, .. }) = plan(&h, "remove files in Downloads modified today") else { panic!("expected steps") };
+    assert!(warnings.iter().any(|w| w == "Dates are when each file was last modified."), "{warnings:?}");
+}

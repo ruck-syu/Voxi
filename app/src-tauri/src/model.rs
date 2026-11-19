@@ -92,6 +92,10 @@ pub struct Filter {
     /// stops the day after March 15).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<NaiveDate>,
+    /// "Including subfolders": moves, copies and deletes also reach files in
+    /// the named folder's subfolders, instead of only those directly in it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub include_subfolders: bool,
     /// The date the date filters read. None reads the creation date, like
     /// `Created`, but records that the command didn't say which.
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -394,7 +394,7 @@ fn transfers_leave_files_in_subfolders_alone() {
 
         fs::remove_file(dl.join("bill.pdf")).unwrap();
         let Err(err) = plan(&h, &format!("{verb} PDFs from Downloads to Archive")) else { panic!("{verb}: expected a refusal") };
-        assert!(format!("{err:?}").contains("1 in its subfolders were left alone"), "{err:?}");
+        assert!(format!("{err:?}").contains("1 matching file is in its subfolders. Add “including subfolders”"), "{err:?}");
     }
 }
 
@@ -407,12 +407,12 @@ fn delete_leave_files_in_subfolders_alone_with_a_warning() {
     fs::write(dl.join("Project/docs/spec.pdf"), b"b").unwrap();
     let Ok(Planned::Steps { actions, warnings, .. }) = plan(&h, "delete PDFs in Downloads") else { panic!("expected a plan") };
     assert_eq!(actions, vec![Action::Trash { path: dl.join("bill.pdf") }]);
-    assert!(warnings.iter().any(|w| w == "1 more matching file was left alone in subfolders."), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.starts_with("1 more matching file was left alone in subfolders.")), "{warnings:?}");
     assert!(dl.join("Project/docs/spec.pdf").exists());
     // When only subfolder files match, refuse just like move/copy do.
     fs::remove_file(dl.join("bill.pdf")).unwrap();
     let Err(err) = plan(&h, "delete PDFs in Downloads") else { panic!("expected a refusal") };
-    assert!(format!("{err:?}").contains("1 in its subfolders were left alone"), "{err:?}");
+    assert!(format!("{err:?}").contains("1 matching file is in its subfolders. Add “including subfolders”"), "{err:?}");
 }
 
 #[test]
@@ -581,7 +581,7 @@ fn delete_named_files_leaves_matches_in_subfolders_alone() {
             })
             .collect();
         assert_eq!(actual, expected, "{command}");
-        assert!(warnings.iter().any(|w| w == "2 more matching files were left alone in subfolders."), "{command}: {warnings:?}");
+        assert!(warnings.iter().any(|w| w.starts_with("2 more matching files were left alone in subfolders.")), "{command}: {warnings:?}");
         assert!(names.iter().all(|name| dl.join(name).exists()));
     }
 }
@@ -1362,4 +1362,25 @@ fn modified_filters_read_the_last_change_not_the_creation_date() {
     assert!(rows[0].detail.contains("· modified "), "{}", rows[0].detail);
     let Ok(Planned::Steps { warnings, .. }) = plan(&h, "remove files in Downloads modified today") else { panic!("expected steps") };
     assert!(warnings.iter().any(|w| w == "Dates are when each file was last modified."), "{warnings:?}");
+}
+
+#[test]
+fn including_subfolders_reaches_files_in_them() {
+    let h = home();
+    let dl = h.roots.downloads();
+    fs::create_dir_all(dl.join("Project/docs")).unwrap();
+    fs::write(dl.join("bill.pdf"), b"a").unwrap();
+    fs::write(dl.join("Project/docs/spec.pdf"), b"b").unwrap();
+    fs::write(dl.join("Project/notes.txt"), b"c").unwrap();
+    let mut trashed: Vec<PathBuf> = steps(&h, "delete PDFs in Downloads including subfolders")
+        .into_iter()
+        .map(|a| match a {
+            Action::Trash { path } => path,
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    trashed.sort();
+    assert_eq!(trashed, [dl.join("Project/docs/spec.pdf"), dl.join("bill.pdf")]);
+    let moved = steps(&h, "move PDFs from Downloads to Documents including subfolders");
+    assert_eq!(moved.iter().filter(|a| matches!(a, Action::Move { .. })).count(), 2, "{moved:?}");
 }

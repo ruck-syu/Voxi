@@ -585,7 +585,7 @@ impl<'a> Planner<'a> {
     fn keep_direct_children(&self, src: &Source, paths: &mut Vec<PathBuf>) -> Result<usize, Stop> {
         if let Source::Set { folder, filter } = src {
             let anywhere = folder.is_none() && filter.file_type == Some(FileType::Screenshots);
-            if self.scope.is_none() && !anywhere {
+            if self.scope.is_none() && !anywhere && !filter.include_subfolders {
                 let (dirs, _) = self.set_folders(folder.as_deref(), filter)?;
                 let before = paths.len();
                 paths.retain(|p| p.parent().is_some_and(|d| dirs.iter().any(|dir| fsx::same_file(d, dir))));
@@ -599,7 +599,10 @@ impl<'a> Planner<'a> {
     /// deletes that had to drop subfolder matches.
     fn no_direct_files(&self, label: &str, nested: usize) -> Stop {
         if nested > 0 {
-            Stop::Problem(format!("No matching files directly in {label}; {nested} in its subfolders were left alone."))
+            let files = if nested == 1 { "1 matching file is".to_string() } else { format!("{nested} matching files are") };
+            Stop::Problem(format!(
+                "Nothing directly in {label}; {files} in its subfolders. Add “including subfolders” to include them, or list them first and say what to do with them."
+            ))
         } else {
             Stop::Problem(format!("No files match in {label}."))
         }
@@ -1183,7 +1186,11 @@ impl<'a> Planner<'a> {
             return Err(self.no_direct_files(&label, nested));
         }
         if nested > 0 {
-            self.warnings.push(format!("{nested} more matching {} left alone in subfolders.", plural(nested, "file was", "files were")));
+            self.warnings.push(format!(
+                "{nested} more matching {} left alone in subfolders. Add “including subfolders” to include {}.",
+                plural(nested, "file was", "files were"),
+                plural(nested, "it", "them")
+            ));
         }
         for p in &paths {
             self.check(p)?;

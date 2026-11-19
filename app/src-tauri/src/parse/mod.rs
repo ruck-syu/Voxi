@@ -136,9 +136,51 @@ pub fn parse_classified(text: &str) -> Result<Intent, ParseFailure> {
     parse_single_classified(text)
 }
 
+/// "Including subfolders", "and its subfolders", "recursively": opts a move,
+/// copy or delete into the named folder's subfolders.
+static SUBFOLDERS: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(
+        r"(?i)\s*,?\s*\b(?:(?:including|incl\.?|and|with|plus)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:its\s+|their\s+|the\s+)?sub-?folders|in\s+(?:all\s+)?(?:its\s+|the\s+)?sub-?folders(?:\s+too)?|recursively)\b",
+    )
+    .unwrap()
+});
+
 fn parse_single_classified(text: &str) -> Result<Intent, ParseFailure> {
     // Also bound synthesized chain clauses before their normalization.
     check_length(text)?;
+    // Read "including subfolders" apart from the rest, so it never becomes
+    // part of a folder name ("downloads including subfolders") or a new
+    // destination. Sorting reads it itself.
+    let found = std::cell::Cell::new(false);
+    let stripped = phrase::map_unquoted(text, |part| {
+        let out = SUBFOLDERS.replace_all(part, "");
+        if out != part {
+            found.set(true);
+        }
+        out.into_owned()
+    });
+    if found.get() {
+        let original = parse_plain(text);
+        if matches!(original, Ok(Intent::SortByType { .. } | Intent::SortByMonth { .. })) {
+            return original;
+        }
+        let mut intent = parse_plain(&stripped)?;
+        return match &mut intent {
+            Intent::Move { src: Source::Set { filter, .. }, .. }
+            | Intent::Copy { src: Source::Set { filter, .. }, .. }
+            | Intent::Trash { src: Source::Set { filter, .. } } => {
+                filter.include_subfolders = true;
+                Ok(intent)
+            }
+            // Lists and counts already look in subfolders.
+            Intent::List { src: Source::Set { .. } } | Intent::Count { src: Source::Set { .. } } => Ok(intent),
+            _ => Err(ParseFailure::HardRefusal(RefusalReason::UnsupportedFilter)),
+        };
+    }
+    parse_plain(text)
+}
+
+fn parse_plain(text: &str) -> Result<Intent, ParseFailure> {
     let cleaned = phrase::normalize(text);
     if let Some(reason) = refusal::reason(&cleaned) {
         return Err(ParseFailure::HardRefusal(reason));

@@ -1,0 +1,14 @@
+# Moves, copies and deletes read only files directly in a folder unless the
+# command opts into its subfolders; the phrase never becomes part of a name.
+delete pdfs in downloads including subfolders => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
+delete pdfs in downloads and its subfolders => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
+delete all pdfs in downloads including subfolders => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
+move pdfs from downloads to documents including subfolders => {"intent":"move","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}},"to":"documents"}
+move pdfs in downloads including subfolders to documents => {"intent":"move","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}},"to":"documents"}
+copy screenshots from desktop including subfolders to documents => {"intent":"copy","src":{"kind":"set","folder":"desktop","filter":{"type":"screenshots","includeSubfolders":true}},"to":"documents"}
+delete pdfs in downloads recursively => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
+delete pdfs in downloads and all subfolders => {"intent":"trash","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs","includeSubfolders":true}}}
+list pdfs in downloads including subfolders => {"intent":"list","src":{"kind":"set","folder":"downloads","filter":{"type":"pdfs"}}}
+delete report.pdf including subfolders => !hard
+rename report.pdf to old.pdf including subfolders => !hard
+move "notes including subfolders.txt" to documents => {"intent":"move","src":{"kind":"item","name":"notes including subfolders.txt"},"to":"documents"}

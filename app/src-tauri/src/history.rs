@@ -1,9 +1,9 @@
 //! Action log: every executed plan with its inverse, so `undo` can reverse it.
 
 use crate::model::Action;
+use crate::settings::{StorageWarning, load_store, save_store};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use crate::settings::{load_store, save_store, StorageWarning};
 use std::path::PathBuf;
 
 const MAX_ENTRIES: usize = 200;
@@ -34,7 +34,9 @@ impl History {
     #[allow(dead_code)] // Compatibility helper for benchmarks and tests.
     pub fn load(path: PathBuf) -> Self {
         let (store, warning) = Self::load_with_warning(path);
-        if let Some(warning) = warning { eprintln!("{}", warning.message); }
+        if let Some(warning) = warning {
+            eprintln!("{}", warning.message);
+        }
         store
     }
 
@@ -43,7 +45,9 @@ impl History {
         (History { path, entries, notices: vec![], warning: warning.clone() }, warning)
     }
 
-    pub(crate) fn journal_path(&self) -> PathBuf { self.path.with_file_name("operation-journal.json") }
+    pub(crate) fn journal_path(&self) -> PathBuf {
+        self.path.with_file_name("operation-journal.json")
+    }
 
     pub fn next_id(&self) -> u64 {
         self.entries.iter().map(|e| e.id).max().unwrap_or(0) + 1
@@ -51,18 +55,21 @@ impl History {
 
     #[cfg(test)]
     pub fn push(&mut self, entry: Entry) {
-        if let Err(error) = self.try_push(entry) { eprintln!("{error}"); }
+        if let Err(error) = self.try_push(entry) {
+            eprintln!("{error}");
+        }
     }
 
     /// Keeps the in-memory action evidence even if persistence fails. Callers
     /// must report the error instead of promising durable undo (T5).
     pub fn try_push(&mut self, entry: Entry) -> Result<(), String> {
         if let Some(target) = entry.undo_of
-            && let Some(e) = self.entries.iter_mut().find(|e| e.id == target) {
-                let completed = entry.done.len().min(e.inverse.len());
-                e.inverse.drain(..completed);
-                e.undone = e.inverse.is_empty();
-            }
+            && let Some(e) = self.entries.iter_mut().find(|e| e.id == target)
+        {
+            let completed = entry.done.len().min(e.inverse.len());
+            e.inverse.drain(..completed);
+            e.undone = e.inverse.is_empty();
+        }
         self.entries.push(entry);
         let excess = self.entries.len().saturating_sub(MAX_ENTRIES);
         self.entries.drain(..excess);
@@ -75,13 +82,23 @@ impl History {
     }
 
     pub(crate) fn ensure_writable(&self) -> Result<(), String> {
-        if let Some(warning) = &self.warning && warning.write_blocked { return Err(warning.message.clone()); }
+        if let Some(warning) = &self.warning
+            && warning.write_blocked
+        {
+            return Err(warning.message.clone());
+        }
         Ok(())
     }
 
     pub fn save(&self) -> Result<(), String> {
         if let Err(error) = self.ensure_writable() {
-            crate::settings::diagnostics::emit(crate::settings::diagnostics::Event::new(crate::settings::diagnostics::Code::StoreSave, crate::settings::diagnostics::Stage::Failed).store(crate::settings::diagnostics::Store::History));
+            crate::settings::diagnostics::emit(
+                crate::settings::diagnostics::Event::new(
+                    crate::settings::diagnostics::Code::StoreSave,
+                    crate::settings::diagnostics::Stage::Failed,
+                )
+                .store(crate::settings::diagnostics::Store::History),
+            );
             return Err(error);
         }
         save_store(&self.path, &self.entries, crate::settings::diagnostics::Store::History)
@@ -91,8 +108,8 @@ impl History {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use crate::settings::WRITE_FAILURE;
+    use std::fs;
 
     fn entry() -> Entry {
         Entry { id: 7, time: Local::now(), command: "original command".into(), done: vec![], inverse: vec![], undone: false, undo_of: None }

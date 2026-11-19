@@ -34,8 +34,8 @@ mod images;
 mod meta;
 mod pdf;
 pub mod phrase;
-mod rename;
 mod refusal;
+mod rename;
 mod rewrite;
 
 use crate::model::{FileType, Intent, Source};
@@ -72,9 +72,11 @@ static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
     v
 });
 
-static LEADING_SCOPE: LazyLock<Regex> = LazyLock::new(|| Regex::new(
+static LEADING_SCOPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
     r#"(?i)^(?:in|inside|within|under)\s+("[^"]+"|'[^']+'|\S+)\s+((?:list|show|find|display|move|copy|rename|trash|delete|remove)\s+.+)$"#
-).unwrap());
+).unwrap()
+});
 
 /// Deliberate refusals are terminal. Only a grammar miss may reach a model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -100,18 +102,16 @@ pub enum ParseFailure {
 
 impl ParseFailure {
     #[cfg(test)]
-    pub fn allows_fallback(self) -> bool { matches!(self, Self::GrammarMiss) }
+    pub fn allows_fallback(self) -> bool {
+        matches!(self, Self::GrammarMiss)
+    }
 }
 
 /// Reject oversized input in constant time, without slicing UTF-8, allocating,
 /// normalizing, or initializing regexes. Ingress callers must use this before
 /// shortcut lookup, scope rewriting, or schedule extraction as well (T5).
 pub fn check_length(text: &str) -> Result<(), ParseFailure> {
-    if text.len() > MAX_COMMAND_BYTES {
-        Err(ParseFailure::HardRefusal(RefusalReason::TooLong))
-    } else {
-        Ok(())
-    }
+    if text.len() > MAX_COMMAND_BYTES { Err(ParseFailure::HardRefusal(RefusalReason::TooLong)) } else { Ok(()) }
 }
 
 /// Parses a command. `Err` carries the raw text for "Didn't understand",
@@ -130,7 +130,9 @@ pub fn parse(text: &str) -> Result<Intent, String> {
 pub fn parse_classified(text: &str) -> Result<Intent, ParseFailure> {
     check_length(text)?;
     let cleaned = phrase::normalize(text);
-    if let Some(chain) = chain::parse(&cleaned) { return chain; }
+    if let Some(chain) = chain::parse(&cleaned) {
+        return chain;
+    }
     parse_single_classified(text)
 }
 
@@ -153,7 +155,9 @@ fn parse_single_classified(text: &str) -> Result<Intent, ParseFailure> {
         if let Some(reason) = refusal::reason(&corrected) {
             return Err(ParseFailure::HardRefusal(reason));
         }
-        if let Some(intent) = parse_canonical(&corrected)? { return Ok(intent); }
+        if let Some(intent) = parse_canonical(&corrected)? {
+            return Ok(intent);
+        }
     }
     if phrase::has_filter_after_destination(&as_typed) || phrase::has_filter_after_destination(&corrected) {
         return Err(ParseFailure::HardRefusal(RefusalReason::InvalidConstraints));
@@ -186,7 +190,10 @@ fn parse_canonical(cleaned: &str) -> Result<Option<Intent>, ParseFailure> {
             Some(Source::Set { filter, folder: None }) => Some(Source::Set { filter: filter.clone(), folder }),
             _ => None,
         };
-        if let Some(source) = source { intent.replace_source(source); return Ok(Some(intent)); }
+        if let Some(source) = source {
+            intent.replace_source(source);
+            return Ok(Some(intent));
+        }
     }
     Ok(None)
 }
@@ -252,10 +259,7 @@ mod catalog_tests {
     }
     #[test]
     fn r03_move_pdfs() {
-        assert_eq!(
-            p("move all PDFs from Downloads to Documents"),
-            Move { src: set(Some("Downloads"), of(Pdfs)), to: "Documents".into() }
-        );
+        assert_eq!(p("move all PDFs from Downloads to Documents"), Move { src: set(Some("Downloads"), of(Pdfs)), to: "Documents".into() });
     }
     #[test]
     fn r04_move_large_files() {
@@ -287,7 +291,10 @@ mod catalog_tests {
     fn r09_add_prefix() {
         assert_eq!(
             p("add prefix Invoice- to files named bill in Downloads"),
-            AddPrefix { src: set(Some("Downloads"), Filter { name_contains: Some("bill".into()), ..of(Files) }), prefix: "Invoice-".into() }
+            AddPrefix {
+                src: set(Some("Downloads"), Filter { name_contains: Some("bill".into()), ..of(Files) }),
+                prefix: "Invoice-".into()
+            }
         );
     }
     #[test]
@@ -321,7 +328,10 @@ mod catalog_tests {
     }
     #[test]
     fn r15_create_folder() {
-        assert_eq!(p("create folder Invoices on Desktop"), CreateFolders { names: vec!["Invoices".into()], parent: Some("Desktop".into()) });
+        assert_eq!(
+            p("create folder Invoices on Desktop"),
+            CreateFolders { names: vec!["Invoices".into()], parent: Some("Desktop".into()) }
+        );
     }
     #[test]
     fn create_folder_accepts_location_before_name() {
@@ -336,13 +346,25 @@ mod catalog_tests {
             assert_eq!(names, vec!["PDFS"], "{command}");
             assert_eq!(parent.to_lowercase(), "downloads", "{command}");
         }
-        assert_eq!(p("create folders in Documents named Invoices and Receipts"),
-            CreateFolders { names: vec!["Invoices".into(), "Receipts".into()], parent: Some("Documents".into()) });
-        assert_eq!(p("create a folder in \"Project named Alpha\" called \"Notes in Progress\""),
-            CreateFolders { names: vec!["Notes in Progress".into()], parent: Some("Project named Alpha".into()) });
-        assert_eq!(p("create a folder in Downloads named \"Research and Development\""),
-            CreateFolders { names: vec!["Research and Development".into()], parent: Some("Downloads".into()) });
-        for command in ["create a folder in Downloads", "create a folder inside Downloads", "create a folder under Downloads named", "create a folder in Downloads named \"\"", "create a folder in the named PDFS"] {
+        assert_eq!(
+            p("create folders in Documents named Invoices and Receipts"),
+            CreateFolders { names: vec!["Invoices".into(), "Receipts".into()], parent: Some("Documents".into()) }
+        );
+        assert_eq!(
+            p("create a folder in \"Project named Alpha\" called \"Notes in Progress\""),
+            CreateFolders { names: vec!["Notes in Progress".into()], parent: Some("Project named Alpha".into()) }
+        );
+        assert_eq!(
+            p("create a folder in Downloads named \"Research and Development\""),
+            CreateFolders { names: vec!["Research and Development".into()], parent: Some("Downloads".into()) }
+        );
+        for command in [
+            "create a folder in Downloads",
+            "create a folder inside Downloads",
+            "create a folder under Downloads named",
+            "create a folder in Downloads named \"\"",
+            "create a folder in the named PDFS",
+        ] {
             assert!(parse(command).is_err(), "{command}");
         }
     }
@@ -387,12 +409,18 @@ mod catalog_tests {
     fn r23_merge_named() {
         assert_eq!(
             p("merge PDFs in Documents named scan into scan-all.pdf"),
-            MergePdf { src: set(Some("Documents"), Filter { name_contains: Some("scan".into()), ..of(Pdfs) }), output: "scan-all.pdf".into() }
+            MergePdf {
+                src: set(Some("Documents"), Filter { name_contains: Some("scan".into()), ..of(Pdfs) }),
+                output: "scan-all.pdf".into()
+            }
         );
     }
     #[test]
     fn r24_merge_all() {
-        assert_eq!(p("merge all PDFs in Downloads into combined.pdf"), MergePdf { src: set(Some("Downloads"), of(Pdfs)), output: "combined.pdf".into() });
+        assert_eq!(
+            p("merge all PDFs in Downloads into combined.pdf"),
+            MergePdf { src: set(Some("Downloads"), of(Pdfs)), output: "combined.pdf".into() }
+        );
     }
     #[test]
     fn r25_split() {
@@ -418,7 +446,10 @@ mod catalog_tests {
     }
     #[test]
     fn r29_unzip() {
-        assert_eq!(p("unzip archive.zip into Downloads/archive"), Unzip { src: item("archive.zip"), destination: Some("Downloads/archive".into()) });
+        assert_eq!(
+            p("unzip archive.zip into Downloads/archive"),
+            Unzip { src: item("archive.zip"), destination: Some("Downloads/archive".into()) }
+        );
     }
     #[test]
     fn r30_clean_up() {
@@ -455,15 +486,16 @@ mod catalog_tests {
 
     #[test]
     fn stl_file_types_are_extension_filters_not_name_filters() {
-        let want = List { src: set(Some("Downloads"), Filter {
-            ext: Some(vec!["stl".into()]), ..of(Files)
-        }) };
-        for command in [" list the STL files in Downloads. ", "list stl files in Downloads", "list .STL files in Downloads", "list STLs in Downloads"] {
+        let want = List { src: set(Some("Downloads"), Filter { ext: Some(vec!["stl".into()]), ..of(Files) }) };
+        for command in
+            [" list the STL files in Downloads. ", "list stl files in Downloads", "list .STL files in Downloads", "list STLs in Downloads"]
+        {
             assert_eq!(p(command), want, "{command}");
         }
-        assert_eq!(p("list files named STL in Downloads"), List {
-            src: set(Some("Downloads"), Filter { name_contains: Some("STL".into()), ..of(Files) }),
-        });
+        assert_eq!(
+            p("list files named STL in Downloads"),
+            List { src: set(Some("Downloads"), Filter { name_contains: Some("STL".into()), ..of(Files) }) }
+        );
     }
     #[test]
     fn r35_size() {
@@ -514,20 +546,22 @@ mod catalog_tests {
         super::dates::TEST_TODAY.with(|t| t.set(chrono::NaiveDate::from_ymd_opt(2026, 10, 28)));
         assert_eq!(
             p("List all the screenshots I took in the last week"),
-            List { src: set(None, Filter {
-                since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
-                before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
-                ..of(Screenshots)
-            }) }
+            List {
+                src: set(
+                    None,
+                    Filter {
+                        since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
+                        before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
+                        ..of(Screenshots)
+                    }
+                )
+            }
         );
         assert_eq!(
             p("Show me the PDFs I downloaded yesterday."),
             List { src: set(None, Filter { day: Some(DayRef::Yesterday), ..of(Pdfs) }) }
         );
-        assert_eq!(
-            p("delete the installers that I've downloaded from Downloads"),
-            Trash { src: set(Some("Downloads"), of(Installers)) }
-        );
+        assert_eq!(p("delete the installers that I've downloaded from Downloads"), Trash { src: set(Some("Downloads"), of(Installers)) });
     }
 
     #[test]
@@ -543,11 +577,16 @@ mod catalog_tests {
         );
         assert_eq!(
             p("list screenshots taken last week"),
-            List { src: set(None, Filter {
-                since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
-                before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
-                ..of(Screenshots)
-            }) }
+            List {
+                src: set(
+                    None,
+                    Filter {
+                        since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
+                        before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
+                        ..of(Screenshots)
+                    }
+                )
+            }
         );
         assert_eq!(
             p("delete installers downloaded in Sept from Downloads"),
@@ -579,34 +618,46 @@ mod catalog_tests {
             assert!(parse(command).is_err(), "unresolved reference must not search: {command}");
         }
         super::dates::TEST_TODAY.with(|t| t.set(chrono::NaiveDate::from_ymd_opt(2026, 10, 28)));
-        assert_eq!(p("delete files from the last week"), Trash {
-            src: set(None, Filter {
-                since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
-                before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
-                ..of(Files)
-            }),
-        });
+        assert_eq!(
+            p("delete files from the last week"),
+            Trash {
+                src: set(
+                    None,
+                    Filter {
+                        since: chrono::NaiveDate::from_ymd_opt(2026, 10, 19),
+                        before: chrono::NaiveDate::from_ymd_opt(2026, 10, 26),
+                        ..of(Files)
+                    }
+                ),
+            }
+        );
         assert_eq!(p("undo last"), Undo);
         assert_eq!(p("delete last.pdf"), Trash { src: item("last.pdf") });
         assert_eq!(p("delete \"last\""), Trash { src: item("last") });
-        assert_eq!(p("delete files named \"last\" in Downloads"), Trash {
-            src: set(Some("Downloads"), Filter { name_contains: Some("last".into()), ..of(Files) }),
-        });
+        assert_eq!(
+            p("delete files named \"last\" in Downloads"),
+            Trash { src: set(Some("Downloads"), Filter { name_contains: Some("last".into()), ..of(Files) }) }
+        );
     }
 
     #[test]
     fn quoted_arguments_preserve_literal_names_and_command_words() {
         for name in ["Notes to Self.txt", "Chapter one.pdf", "first", "Month 13", "called notes", "My folder", "the report.pdf"] {
-            assert_eq!(p(&format!("delete \"{name}\" in Downloads")), Trash {
-                src: Source::Item { name: name.into(), folder: Some("Downloads".into()) },
-            }, "{name}");
+            assert_eq!(
+                p(&format!("delete \"{name}\" in Downloads")),
+                Trash { src: Source::Item { name: name.into(), folder: Some("Downloads".into()) } },
+                "{name}"
+            );
         }
         assert_eq!(p("move \"Notes to Self.txt\" to Documents"), Move { src: item("Notes to Self.txt"), to: "Documents".into() });
-        assert_eq!(p("rename 'Notes to Self.txt' to 'Journal as of today.txt'"), Rename {
-            src: item("Notes to Self.txt"), new_name: "Journal as of today.txt".into(),
-        });
+        assert_eq!(
+            p("rename 'Notes to Self.txt' to 'Journal as of today.txt'"),
+            Rename { src: item("Notes to Self.txt"), new_name: "Journal as of today.txt".into() }
+        );
         assert_eq!(p("copy report.pdf to \"Terms and Conditions\""), Copy { src: item("report.pdf"), to: "Terms and Conditions".into() });
-        for command in ["move Notes to Self.txt to Documents", "rename Notes to Self.txt to Journal.txt", "move \"unterminated to Documents"] {
+        for command in
+            ["move Notes to Self.txt to Documents", "rename Notes to Self.txt to Journal.txt", "move \"unterminated to Documents"]
+        {
             assert!(parse(command).is_err(), "{command}");
         }
     }
@@ -638,15 +689,20 @@ mod catalog_tests {
             "delete files at least 5 in Downloads",
             "delete files at most 5 in Downloads",
             "delete files under 0 MB in Downloads",
-        ] { assert!(parse(command).is_err(), "{command}"); }
-        assert_eq!(p("list files between 5 and 10 MB in Downloads"), List {
-            src: set(Some("Downloads"), Filter { larger_than_mb: Some(5.0), smaller_than_mb: Some(10.0), ..of(Files) }),
-        });
+        ] {
+            assert!(parse(command).is_err(), "{command}");
+        }
+        assert_eq!(
+            p("list files between 5 and 10 MB in Downloads"),
+            List { src: set(Some("Downloads"), Filter { larger_than_mb: Some(5.0), smaller_than_mb: Some(10.0), ..of(Files) }) }
+        );
     }
 
     #[test]
     fn unsupported_references_are_refused_in_read_only_commands_too() {
-        for command in ["reveal the first file", "open the last file", "show me the second file in Finder", "what's the size of the largest PDF"] {
+        for command in
+            ["reveal the first file", "open the last file", "show me the second file in Finder", "what's the size of the largest PDF"]
+        {
             assert!(parse(command).is_err(), "{command}");
         }
         assert_eq!(p("open \"first\""), Reveal { target: "first".into() });
@@ -682,20 +738,25 @@ mod catalog_tests {
 
     #[test]
     fn grammar_fillers_stay_literal_inside_quoted_names() {
-        assert_eq!(p("replace \"word draft\" with final in names in Documents"), ReplaceInNames {
-            src: set(Some("Documents"), of(Files)), find: "word draft".into(), replace: "final".into(),
-        });
-        assert_eq!(p("replace \"space characters\" with \"spaces\" in filenames in downloads"), ReplaceInNames {
-            src: set(Some("downloads"), of(Files)), find: "space characters".into(), replace: "spaces".into(),
-        });
-        assert_eq!(p("merge PDFs in Downloads into \"a file called combined.pdf\""), MergePdf {
-            src: set(Some("Downloads"), of(Pdfs)), output: "a file called combined.pdf".into(),
-        });
+        assert_eq!(
+            p("replace \"word draft\" with final in names in Documents"),
+            ReplaceInNames { src: set(Some("Documents"), of(Files)), find: "word draft".into(), replace: "final".into() }
+        );
+        assert_eq!(
+            p("replace \"space characters\" with \"spaces\" in filenames in downloads"),
+            ReplaceInNames { src: set(Some("downloads"), of(Files)), find: "space characters".into(), replace: "spaces".into() }
+        );
+        assert_eq!(
+            p("merge PDFs in Downloads into \"a file called combined.pdf\""),
+            MergePdf { src: set(Some("Downloads"), of(Pdfs)), output: "a file called combined.pdf".into() }
+        );
     }
 
     #[test]
     fn email_delivery_never_becomes_a_local_folder_implicitly() {
-        for command in ["send report.pdf to my email", "copy report.pdf to email", "move report.pdf to bob@example.com", "send report.pdf to my inbox"] {
+        for command in
+            ["send report.pdf to my email", "copy report.pdf to email", "move report.pdf to bob@example.com", "send report.pdf to my inbox"]
+        {
             assert!(parse(command).is_err(), "{command}");
         }
         assert_eq!(p("move report.pdf to \"email\""), Move { src: item("report.pdf"), to: "email".into() });
@@ -704,10 +765,9 @@ mod catalog_tests {
 
     #[test]
     fn luna_literal_folder_names_are_preserved() {
-        for command in [
-            "create folders named \"Alpha and Beta\" in Documents/Dev",
-            "create folders in Documents/Dev called \"Alpha and Beta\"",
-        ] {
+        for command in
+            ["create folders named \"Alpha and Beta\" in Documents/Dev", "create folders in Documents/Dev called \"Alpha and Beta\""]
+        {
             assert_eq!(p(command), CreateFolders { names: vec!["Alpha and Beta".into()], parent: Some("Documents/Dev".into()) });
         }
         for name in ["Project/Child Folder", "Other Folder", "Research and Development"] {
@@ -730,20 +790,24 @@ mod catalog_tests {
             assert_eq!(p(command), Move { src: source.clone(), to: "Backup".into() }, "{command}");
         }
         assert!(parse("in Documents move report.pdf in Downloads to Backup").is_err());
-        assert_eq!(p("put PDFs in Documents/Dev together as combined.pdf"), MergePdf {
-            src: set(Some("Documents/Dev"), of(Pdfs)), output: "combined.pdf".into(),
-        });
+        assert_eq!(
+            p("put PDFs in Documents/Dev together as combined.pdf"),
+            MergePdf { src: set(Some("Documents/Dev"), of(Pdfs)), output: "combined.pdf".into() }
+        );
         assert!(parse("put report.pdf in Downloads together as something").is_err());
         assert!(parse("change photo.heic to pdf").is_err());
-        assert_eq!(p("move Notes from Monday.pdf from Documents/Dev to Backup"), Move {
-            src: Source::Item { name: "Notes from Monday.pdf".into(), folder: Some("Documents/Dev".into()) }, to: "Backup".into(),
-        });
-        assert_eq!(p("give Project Plan.pdf inside Documents/Dev the name Final Plan.pdf"), Rename {
-            src: source, new_name: "Final Plan.pdf".into(),
-        });
-        assert_eq!(p("list files named \"located in\" in Downloads"), List {
-            src: set(Some("Downloads"), Filter { name_contains: Some("located in".into()), ..of(Files) }),
-        });
+        assert_eq!(
+            p("move Notes from Monday.pdf from Documents/Dev to Backup"),
+            Move { src: Source::Item { name: "Notes from Monday.pdf".into(), folder: Some("Documents/Dev".into()) }, to: "Backup".into() }
+        );
+        assert_eq!(
+            p("give Project Plan.pdf inside Documents/Dev the name Final Plan.pdf"),
+            Rename { src: source, new_name: "Final Plan.pdf".into() }
+        );
+        assert_eq!(
+            p("list files named \"located in\" in Downloads"),
+            List { src: set(Some("Downloads"), Filter { name_contains: Some("located in".into()), ..of(Files) }) }
+        );
     }
 }
 
@@ -808,7 +872,10 @@ mod followup_tests {
             ("show what installers are knocking about in Downloads, would you", "list installers in Downloads"),
             ("put Tax 2025 in month order, would you", "sort Tax 2025 by month"),
             ("organise Tax 2025 month by month, grand", "sort Tax 2025 by month"),
-            ("bin off today's screenshots in Downloads which come in above 10 MB, would you", "delete screenshots from today larger than 10 MB in Downloads"),
+            (
+                "bin off today's screenshots in Downloads which come in above 10 MB, would you",
+                "delete screenshots from today larger than 10 MB in Downloads",
+            ),
             ("show us screenshots under 5 MB in Downloads, would you", "list screenshots smaller than 5 MB in Downloads"),
             ("chuck out files from last week larger than 5 MB, would you", "delete files from last week larger than 5 MB"),
             ("list screenshots in Downloads that have been around since July 4 2025", "list screenshots since July 4 2025 in Downloads"),

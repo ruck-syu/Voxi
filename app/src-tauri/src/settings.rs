@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 // use the same sink without requiring another crate-root module.
 #[path = "diagnostics.rs"]
 pub(crate) mod diagnostics;
-use diagnostics::{Event, Code, Stage, Store};
+use diagnostics::{Code, Event, Stage, Store};
 use std::fs;
 use std::path::{Path, PathBuf};
 /// Version shared by the three independent JSON stores.
@@ -34,7 +34,12 @@ fn unique_file(path: &Path, tag: &str) -> std::io::Result<(PathBuf, fs::File)> {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     loop {
         let mut name = path.file_name().ok_or_else(|| std::io::Error::other("Missing store filename"))?.to_os_string();
-        name.push(format!(".{tag}-{}-{}-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default(), std::process::id(), SEQUENCE.fetch_add(1, Ordering::Relaxed)));
+        name.push(format!(
+            ".{tag}-{}-{}-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default(),
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
         let candidate = parent_dir(path).join(name);
         match exclusive_file(&candidate) {
             Ok(file) => return Ok((candidate, file)),
@@ -47,7 +52,9 @@ fn unique_file(path: &Path, tag: &str) -> std::io::Result<(PathBuf, fs::File)> {
 pub(crate) fn preserve_store(path: &Path, bytes: &[u8]) -> Result<PathBuf, String> {
     use std::io::Write;
     let (backup, mut file) = unique_file(path, "corrupt").map_err(|e| e.to_string())?;
-    let result = write_checkpoint(5).and_then(|_| file.write_all(bytes)).and_then(|_| file.sync_all())
+    let result = write_checkpoint(5)
+        .and_then(|_| file.write_all(bytes))
+        .and_then(|_| file.sync_all())
         .and_then(|_| fs::File::open(parent_dir(path))?.sync_all());
     if let Err(error) = result {
         // A partial backup must never be mistaken for a successful preservation.
@@ -73,16 +80,26 @@ pub(crate) fn load_store<T: serde::de::DeserializeOwned + Default>(path: &Path, 
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (T::default(), None),
-        Err(e) => { diagnostics::emit(Event::new(Code::StoreLoad, Stage::Failed).store(store).io(&e)); return (T::default(), Some(StorageWarning { message: format!("Couldn't read store: {e}. Original kept."), backup: None, write_blocked: true })); },
+        Err(e) => {
+            diagnostics::emit(Event::new(Code::StoreLoad, Stage::Failed).store(store).io(&e));
+            return (
+                T::default(),
+                Some(StorageWarning { message: format!("Couldn't read store: {e}. Original kept."), backup: None, write_blocked: true }),
+            );
+        }
     };
     match decode_store(&bytes) {
         Ok(data) => (data, None),
         Err(error) => {
             diagnostics::emit(Event::new(Code::StoreLoad, Stage::Failed).store(store));
             let backup = preserve_store(path, &bytes);
-            diagnostics::emit(Event::new(Code::StoreBackup, if backup.is_ok() { Stage::Preserved } else { Stage::BackupFailed }).store(store));
-            let blocked = backup.is_err() || serde_json::from_slice::<serde_json::Value>(&bytes).ok()
-                .is_some_and(|v| v.get("version").is_some() && v.get("version").and_then(|n| n.as_u64()) != Some(STORE_VERSION));
+            diagnostics::emit(
+                Event::new(Code::StoreBackup, if backup.is_ok() { Stage::Preserved } else { Stage::BackupFailed }).store(store),
+            );
+            let blocked = backup.is_err()
+                || serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .ok()
+                    .is_some_and(|v| v.get("version").is_some() && v.get("version").and_then(|n| n.as_u64()) != Some(STORE_VERSION));
             let message = match &backup {
                 Ok(p) => format!("Store is unreadable ({error}); preserved at {}.", p.display()),
                 Err(e) => format!("Store is unreadable ({error}); couldn't preserve it ({e}). Original kept."),
@@ -97,7 +114,9 @@ thread_local! { pub(crate) static WRITE_FAILURE: std::cell::Cell<u8> = const { s
 
 fn write_checkpoint(stage: u8) -> std::io::Result<()> {
     #[cfg(test)]
-    if WRITE_FAILURE.with(|f| f.get() == stage) { return Err(std::io::Error::other("Injected storage failure")); }
+    if WRITE_FAILURE.with(|f| f.get() == stage) {
+        return Err(std::io::Error::other("Injected storage failure"));
+    }
     let _ = stage;
     Ok(())
 }
@@ -137,7 +156,9 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         write_checkpoint(4)?;
         fs::File::open(dir)?.sync_all()
     })();
-    if result.is_err() { let _ = fs::remove_file(tmp); }
+    if result.is_err() {
+        let _ = fs::remove_file(tmp);
+    }
     result.map_err(|e| format!("Couldn't durably save store: {e}"))
 }
 
@@ -164,7 +185,9 @@ fn save_blocked_by_version(path: &Path, store: Store) -> Option<String> {
 
 pub(crate) fn save_store<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<(), String> {
     let result = save_store_inner(path, data, store);
-    if result.is_err() { diagnostics::emit(Event::new(Code::StoreSave, Stage::Failed).store(store)); }
+    if result.is_err() {
+        diagnostics::emit(Event::new(Code::StoreSave, Stage::Failed).store(store));
+    }
     result
 }
 
@@ -172,26 +195,36 @@ fn save_store_inner<T: Serialize>(path: &Path, data: &T, store: Store) -> Result
     // Recheck the on-disk schema even when the caller loaded defaults or is
     // saving an object received from the frontend rather than a loaded object.
     // A cheap peek replaces the full load here: history saves on every command.
-    if let Some(reason) = save_blocked_by_version(path, store) { return Err(reason); }
+    if let Some(reason) = save_blocked_by_version(path, store) {
+        return Err(reason);
+    }
     #[derive(Serialize)]
-    struct Envelope<'a, T> { version: u64, data: &'a T }
+    struct Envelope<'a, T> {
+        version: u64,
+        data: &'a T,
+    }
     let bytes = serde_json::to_vec_pretty(&Envelope { version: STORE_VERSION, data }).map_err(|e| e.to_string())?;
     atomic_write(path, &bytes)
 }
 
 /// Roll back both sides on save failure, including failures after atomic rename.
-pub(crate) fn login_transaction(settings: &Settings, path: &Path, os_before: bool,
-    mut set_os: impl FnMut(bool) -> Result<(), String>) -> Result<(), String> {
+pub(crate) fn login_transaction(
+    settings: &Settings,
+    path: &Path,
+    os_before: bool,
+    mut set_os: impl FnMut(bool) -> Result<(), String>,
+) -> Result<(), String> {
     let original = match fs::read(path) {
         Ok(bytes) => Some(bytes),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(format!("Cannot read settings before changing login registration: {e}")),
     };
     if settings.start_at_login != os_before
-        && let Err(e) = set_os(settings.start_at_login) {
-            let rollback = set_os(os_before);
-            return Err(format!("{e}; login rollback: {rollback:?}"));
-        }
+        && let Err(e) = set_os(settings.start_at_login)
+    {
+        let rollback = set_os(os_before);
+        return Err(format!("{e}; login rollback: {rollback:?}"));
+    }
     if let Err(e) = settings.save(path) {
         let os_rollback = set_os(os_before);
         let disk_rollback = match original {
@@ -202,7 +235,9 @@ pub(crate) fn login_transaction(settings: &Settings, path: &Path, os_before: boo
                 Err(e) => Err(e.to_string()),
             },
         };
-        return Err(format!("{e}; login rollback: {os_rollback:?}; preference rollback: {disk_rollback:?}. Review Login Items in System Settings."));
+        return Err(format!(
+            "{e}; login rollback: {os_rollback:?}; preference rollback: {disk_rollback:?}. Review Login Items in System Settings."
+        ));
     }
     Ok(())
 }
@@ -233,7 +268,23 @@ pub struct Nickname {
 }
 
 /// Names Voxi already gives the standard folders; a nickname can't take them.
-const RESERVED_NAMES: &[&str] = &["desktop", "downloads", "download", "documents", "document", "docs", "doc", "pictures", "picture", "photos", "photo", "screenshots", "screenshot", "home", "trash"];
+const RESERVED_NAMES: &[&str] = &[
+    "desktop",
+    "downloads",
+    "download",
+    "documents",
+    "document",
+    "docs",
+    "doc",
+    "pictures",
+    "picture",
+    "photos",
+    "photo",
+    "screenshots",
+    "screenshot",
+    "home",
+    "trash",
+];
 
 /// The part of a spoken folder name that identifies it: "the Dev folder" and
 /// "my dev directory" both become "dev".
@@ -258,11 +309,14 @@ pub struct Shortcut {
 
 /// Bound raw expansion before allocating normalized commands or building a preview.
 pub(crate) fn check_shortcut_commands(commands: &[String]) -> Result<(), String> {
-    if commands.len() > 8 || commands.iter().try_fold(0usize, |n, c| n.checked_add(c.len()))
-        .is_none_or(|n| n > crate::parse::MAX_COMMAND_BYTES) {
+    if commands.len() > 8
+        || commands.iter().try_fold(0usize, |n, c| n.checked_add(c.len())).is_none_or(|n| n > crate::parse::MAX_COMMAND_BYTES)
+    {
         return Err("That command is too long.".into());
     }
-    for command in commands { crate::parse::check_length(command).map_err(|_| "That command is too long.".to_string())?; }
+    for command in commands {
+        crate::parse::check_length(command).map_err(|_| "That command is too long.".to_string())?;
+    }
     Ok(())
 }
 
@@ -279,7 +333,9 @@ pub fn shortcut_read_only(intent: &crate::model::Intent) -> bool {
 }
 
 pub fn shortcut_key(text: &str) -> String {
-    if crate::parse::check_length(text).is_err() { return String::new(); }
+    if crate::parse::check_length(text).is_err() {
+        return String::new();
+    }
     let normalized = crate::parse::phrase::normalize(text).to_lowercase();
     let mut words: Vec<&str> = normalized.split_whitespace().collect();
     while words.first().is_some_and(|w| SHORTCUT_VERBS.contains(w)) {
@@ -325,7 +381,14 @@ fn edit_distance(a: &str, b: &str) -> usize {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { hotkey: DEFAULT_HOTKEY.into(), extra_folders: Vec::new(), start_at_login: false, onboarded: false, shortcuts: Vec::new(), nicknames: Vec::new() }
+        Settings {
+            hotkey: DEFAULT_HOTKEY.into(),
+            extra_folders: Vec::new(),
+            start_at_login: false,
+            onboarded: false,
+            shortcuts: Vec::new(),
+            nicknames: Vec::new(),
+        }
     }
 }
 
@@ -333,7 +396,9 @@ impl Settings {
     #[cfg(test)]
     pub fn load(path: &Path) -> Self {
         let (data, warning) = Self::load_with_warning(path);
-        if let Some(warning) = warning { eprintln!("{}", warning.message); }
+        if let Some(warning) = warning {
+            eprintln!("{}", warning.message);
+        }
         data
     }
 
@@ -346,7 +411,9 @@ impl Settings {
     }
 
     pub fn find_shortcut(&self, text: &str) -> Option<&Shortcut> {
-        if crate::parse::check_length(text).is_err() { return None; }
+        if crate::parse::check_length(text).is_err() {
+            return None;
+        }
         let key = shortcut_key(text);
         (!key.is_empty()).then(|| self.shortcuts.iter().find(|s| shortcut_key(&s.phrase) == key)).flatten()
     }
@@ -355,15 +422,13 @@ impl Settings {
     /// for "run my usuals"): a couple of letters off at most, and only one
     /// shortcut that close. Used only when the text isn't a command.
     pub fn find_close_shortcut(&self, text: &str) -> Option<&Shortcut> {
-        if crate::parse::check_length(text).is_err() { return None; }
+        if crate::parse::check_length(text).is_err() {
+            return None;
+        }
         let key = shortcut_key(text);
         let allowed = (key.chars().count() / 3).clamp(1, 3);
-        let mut close: Vec<(usize, &Shortcut)> = self
-            .shortcuts
-            .iter()
-            .map(|s| (edit_distance(&key, &shortcut_key(&s.phrase)), s))
-            .filter(|(d, _)| *d <= allowed)
-            .collect();
+        let mut close: Vec<(usize, &Shortcut)> =
+            self.shortcuts.iter().map(|s| (edit_distance(&key, &shortcut_key(&s.phrase)), s)).filter(|(d, _)| *d <= allowed).collect();
         close.sort_by_key(|(d, _)| *d);
         match close.as_slice() {
             [(_, only)] => Some(*only),
@@ -401,8 +466,11 @@ impl Settings {
                     Ok(Intent::RecentActions | Intent::Undo) => return Err(format!("In “{phrase}”, “{c}” can't be part of a shortcut.")),
                     // A lone read-only command runs as if typed. Mixed with
                     // others it can't join the single preview a shortcut makes.
-                    Ok(ref intent) if shortcut_read_only(intent) && commands.len() > 1 => return Err(format!(
-                        "In “{phrase}”, “{c}” only shows information. A shortcut can show information with one command on its own, or hold commands that change files.")),
+                    Ok(ref intent) if shortcut_read_only(intent) && commands.len() > 1 => {
+                        return Err(format!(
+                            "In “{phrase}”, “{c}” only shows information. A shortcut can show information with one command on its own, or hold commands that change files."
+                        ));
+                    }
                     Ok(_) => {}
                 }
             }
@@ -531,8 +599,8 @@ mod tests {
         Settings::default().save(&path).unwrap();
         let json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(json["version"], STORE_VERSION);
-        let backup = fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().path())
-            .find(|p| p.to_string_lossy().contains(".corrupt-")).unwrap();
+        let backup =
+            fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().path()).find(|p| p.to_string_lossy().contains(".corrupt-")).unwrap();
         assert_eq!(fs::read(backup).unwrap(), b"invalid JSON");
     }
 
@@ -680,7 +748,10 @@ mod login_tests {
             let original = fs::read(&path).unwrap();
             let mut os_enabled = false;
             WRITE_FAILURE.with(|f| f.set(stage));
-            let result = login_transaction(&Settings { start_at_login: true, ..Settings::default() }, &path, false, |enabled| { os_enabled = enabled; Ok(()) });
+            let result = login_transaction(&Settings { start_at_login: true, ..Settings::default() }, &path, false, |enabled| {
+                os_enabled = enabled;
+                Ok(())
+            });
             WRITE_FAILURE.with(|f| f.set(0));
             assert!(result.is_err());
             assert!(!os_enabled);

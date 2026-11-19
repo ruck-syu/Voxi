@@ -16,8 +16,7 @@ mod imp {
     }
 
     pub fn open(p: &Path) -> Result<Retained<PDFDocument>, String> {
-        unsafe { PDFDocument::initWithURL(PDFDocument::alloc(), &url(p)) }
-            .ok_or_else(|| format!("Couldn't read {} as a PDF", p.display()))
+        unsafe { PDFDocument::initWithURL(PDFDocument::alloc(), &url(p)) }.ok_or_else(|| format!("Couldn't read {} as a PDF", p.display()))
     }
 
     pub fn new_doc() -> Retained<PDFDocument> {
@@ -49,8 +48,7 @@ mod imp {
 
     pub fn write(doc: &PDFDocument, out: &Path) -> Result<(), String> {
         crate::fsx::staged_output(out, |stage| {
-            if unsafe { doc.writeToURL(&url(stage)) } { Ok(()) }
-            else { Err(format!("Couldn't write {}", out.display())) }
+            if unsafe { doc.writeToURL(&url(stage)) } { Ok(()) } else { Err(format!("Couldn't write {}", out.display())) }
         })
     }
 }

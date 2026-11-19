@@ -1,7 +1,10 @@
 //! A hidden window is revealed only after the page acknowledges its final layout.
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ShowRequest { pub request_id: u64, pub mode: String }
+pub struct ShowRequest {
+    pub request_id: u64,
+    pub mode: String,
+}
 
 #[derive(Default)]
 pub struct Presentation {
@@ -19,12 +22,19 @@ impl Presentation {
         request
     }
     pub fn acknowledge(&mut self, id: u64) -> bool {
-        if !self.ready || self.pending.as_ref().is_none_or(|p| p.request_id != id) { return false; }
+        if !self.ready || self.pending.as_ref().is_none_or(|p| p.request_id != id) {
+            return false;
+        }
         self.pending = None;
         true
     }
-    pub fn cancel(&mut self) { self.pending = None; self.closing = true; }
-    pub fn is_current(&self, id: u64) -> bool { self.next == id }
+    pub fn cancel(&mut self) {
+        self.pending = None;
+        self.closing = true;
+    }
+    pub fn is_current(&self, id: u64) -> bool {
+        self.next == id
+    }
     /// A click in another app is meaningful even if this window never gained
     /// focus. Pending layouts, hidden windows and an existing close are ignored.
     pub fn outside_click_request(&self, visible: bool) -> Option<u64> {

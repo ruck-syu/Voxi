@@ -21,13 +21,11 @@ pub enum FileType {
 
 /// Extensions that make up each file type, lowercase and without the dot. The
 /// parser and the planner both read these, so they agree on what a type is.
-pub const IMAGE_EXTS: &[&str] = &[
-    "png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "tif", "bmp", "svg", "raw", "cr2", "nef", "arw", "dng",
-];
+pub const IMAGE_EXTS: &[&str] =
+    &["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "tif", "bmp", "svg", "raw", "cr2", "nef", "arw", "dng"];
 pub const VIDEO_EXTS: &[&str] = &["mp4", "mov", "m4v", "avi", "mkv", "webm", "wmv", "flv"];
-pub const DOC_EXTS: &[&str] = &[
-    "doc", "docx", "txt", "rtf", "md", "pages", "odt", "xls", "xlsx", "csv", "numbers", "ppt", "pptx", "key", "odp", "epub",
-];
+pub const DOC_EXTS: &[&str] =
+    &["doc", "docx", "txt", "rtf", "md", "pages", "odt", "xls", "xlsx", "csv", "numbers", "ppt", "pptx", "key", "odp", "epub"];
 pub const ARCHIVE_EXTS: &[&str] = &["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz"];
 pub const INSTALLER_EXTS: &[&str] = &["dmg", "pkg", "mpkg"];
 pub const AUDIO_EXTS: &[&str] = &["mp3", "wav", "m4a", "aac", "flac", "aiff", "ogg"];
@@ -163,16 +161,45 @@ impl ImageFormat {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "intent", rename_all = "snake_case")]
 pub enum Intent {
-    Chain { commands: Vec<Intent> },
-    Move { src: Source, to: String },
-    Copy { src: Source, to: String },
-    Rename { src: Source, new_name: String },
-    AddPrefix { src: Source, prefix: String },
-    AddDatePrefix { src: Source },
-    ReplaceInNames { src: Source, find: String, replace: String },
-    Number { src: Source, base: String, width: usize },
-    Lowercase { src: Source },
-    CreateFolders { names: Vec<String>, parent: Option<String> },
+    Chain {
+        commands: Vec<Intent>,
+    },
+    Move {
+        src: Source,
+        to: String,
+    },
+    Copy {
+        src: Source,
+        to: String,
+    },
+    Rename {
+        src: Source,
+        new_name: String,
+    },
+    AddPrefix {
+        src: Source,
+        prefix: String,
+    },
+    AddDatePrefix {
+        src: Source,
+    },
+    ReplaceInNames {
+        src: Source,
+        find: String,
+        replace: String,
+    },
+    Number {
+        src: Source,
+        base: String,
+        width: usize,
+    },
+    Lowercase {
+        src: Source,
+    },
+    CreateFolders {
+        names: Vec<String>,
+        parent: Option<String>,
+    },
     SortByType {
         folder: String,
         /// Only "including subfolders" reaches into nested folders; by default
@@ -185,20 +212,57 @@ pub enum Intent {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         include_subfolders: bool,
     },
-    ConvertImage { src: Source, format: ImageFormat },
-    ResizeImage { src: Source, width: u32 },
-    MergePdf { src: Source, output: String },
-    SplitPdf { src: Source },
-    ExtractPages { src: Source, from: u32, to: u32, output: Option<String> },
-    ImagesToPdf { src: Source, output: Option<String> },
-    Zip { src: Source, output: Option<String> },
-    Unzip { src: Source, destination: Option<String> },
-    Trash { src: Source },
-    List { src: Source },
-    Size { folder: String },
-    Count { src: Source },
-    Duplicates { folder: String },
-    Reveal { target: String },
+    ConvertImage {
+        src: Source,
+        format: ImageFormat,
+    },
+    ResizeImage {
+        src: Source,
+        width: u32,
+    },
+    MergePdf {
+        src: Source,
+        output: String,
+    },
+    SplitPdf {
+        src: Source,
+    },
+    ExtractPages {
+        src: Source,
+        from: u32,
+        to: u32,
+        output: Option<String>,
+    },
+    ImagesToPdf {
+        src: Source,
+        output: Option<String>,
+    },
+    Zip {
+        src: Source,
+        output: Option<String>,
+    },
+    Unzip {
+        src: Source,
+        destination: Option<String>,
+    },
+    Trash {
+        src: Source,
+    },
+    List {
+        src: Source,
+    },
+    Size {
+        folder: String,
+    },
+    Count {
+        src: Source,
+    },
+    Duplicates {
+        folder: String,
+    },
+    Reveal {
+        target: String,
+    },
     Undo,
     RecentActions,
 }
@@ -206,24 +270,50 @@ pub enum Intent {
 impl Intent {
     pub fn source(&self) -> Option<&Source> {
         match self {
-            Self::Move { src, .. } | Self::Copy { src, .. } | Self::Rename { src, .. }
-            | Self::AddPrefix { src, .. } | Self::AddDatePrefix { src } | Self::ReplaceInNames { src, .. }
-            | Self::Number { src, .. } | Self::Lowercase { src } | Self::ConvertImage { src, .. }
-            | Self::ResizeImage { src, .. } | Self::MergePdf { src, .. } | Self::SplitPdf { src }
-            | Self::ExtractPages { src, .. } | Self::ImagesToPdf { src, .. } | Self::Zip { src, .. }
-            | Self::Unzip { src, .. } | Self::Trash { src } | Self::List { src } | Self::Count { src } => Some(src),
+            Self::Move { src, .. }
+            | Self::Copy { src, .. }
+            | Self::Rename { src, .. }
+            | Self::AddPrefix { src, .. }
+            | Self::AddDatePrefix { src }
+            | Self::ReplaceInNames { src, .. }
+            | Self::Number { src, .. }
+            | Self::Lowercase { src }
+            | Self::ConvertImage { src, .. }
+            | Self::ResizeImage { src, .. }
+            | Self::MergePdf { src, .. }
+            | Self::SplitPdf { src }
+            | Self::ExtractPages { src, .. }
+            | Self::ImagesToPdf { src, .. }
+            | Self::Zip { src, .. }
+            | Self::Unzip { src, .. }
+            | Self::Trash { src }
+            | Self::List { src }
+            | Self::Count { src } => Some(src),
             _ => None,
         }
     }
     pub fn replace_source(&mut self, source: Source) {
         match self {
-            Self::Move { src, .. } | Self::Copy { src, .. } | Self::Rename { src, .. }
-            | Self::AddPrefix { src, .. } | Self::AddDatePrefix { src } | Self::ReplaceInNames { src, .. }
-            | Self::Number { src, .. } | Self::Lowercase { src } | Self::ConvertImage { src, .. }
-            | Self::ResizeImage { src, .. } | Self::MergePdf { src, .. } | Self::SplitPdf { src }
-            | Self::ExtractPages { src, .. } | Self::ImagesToPdf { src, .. } | Self::Zip { src, .. }
-            | Self::Unzip { src, .. } | Self::Trash { src } | Self::List { src } | Self::Count { src } => *src = source,
-            _ => {},
+            Self::Move { src, .. }
+            | Self::Copy { src, .. }
+            | Self::Rename { src, .. }
+            | Self::AddPrefix { src, .. }
+            | Self::AddDatePrefix { src }
+            | Self::ReplaceInNames { src, .. }
+            | Self::Number { src, .. }
+            | Self::Lowercase { src }
+            | Self::ConvertImage { src, .. }
+            | Self::ResizeImage { src, .. }
+            | Self::MergePdf { src, .. }
+            | Self::SplitPdf { src }
+            | Self::ExtractPages { src, .. }
+            | Self::ImagesToPdf { src, .. }
+            | Self::Zip { src, .. }
+            | Self::Unzip { src, .. }
+            | Self::Trash { src }
+            | Self::List { src }
+            | Self::Count { src } => *src = source,
+            _ => {}
         }
     }
 }
@@ -233,29 +323,81 @@ impl Intent {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum Action {
-    Move { from: PathBuf, to: PathBuf },
-    Copy { from: PathBuf, to: PathBuf },
-    Rename { path: PathBuf, new_name: String },
+    Move {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    Copy {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    Rename {
+        path: PathBuf,
+        new_name: String,
+    },
     /// Never a hard delete: moves `path` to the macOS Trash.
-    Trash { path: PathBuf },
-    CreateFolder { path: PathBuf },
-    ConvertImage { path: PathBuf, format: ImageFormat, output: PathBuf },
+    Trash {
+        path: PathBuf,
+    },
+    CreateFolder {
+        path: PathBuf,
+    },
+    ConvertImage {
+        path: PathBuf,
+        format: ImageFormat,
+        output: PathBuf,
+    },
     /// Resizes in place; the original is first copied to `backup`.
-    ResizeImage { path: PathBuf, max_width_px: u32, backup: PathBuf },
-    ImagesToPdf { paths: Vec<PathBuf>, output: PathBuf },
-    MergePdf { paths: Vec<PathBuf>, output: PathBuf },
+    ResizeImage {
+        path: PathBuf,
+        max_width_px: u32,
+        backup: PathBuf,
+    },
+    ImagesToPdf {
+        paths: Vec<PathBuf>,
+        output: PathBuf,
+    },
+    MergePdf {
+        paths: Vec<PathBuf>,
+        output: PathBuf,
+    },
     /// Writes one PDF per page into `output_dir`.
-    SplitPdf { path: PathBuf, output_dir: PathBuf },
-    ExtractPages { path: PathBuf, from: u32, to: u32, output: PathBuf },
-    Zip { path: PathBuf, output: PathBuf },
-    Unzip { path: PathBuf, destination: PathBuf },
-    OpenInFinder { path: PathBuf, reveal: bool },
+    SplitPdf {
+        path: PathBuf,
+        output_dir: PathBuf,
+    },
+    ExtractPages {
+        path: PathBuf,
+        from: u32,
+        to: u32,
+        output: PathBuf,
+    },
+    Zip {
+        path: PathBuf,
+        output: PathBuf,
+    },
+    Unzip {
+        path: PathBuf,
+        destination: PathBuf,
+    },
+    OpenInFinder {
+        path: PathBuf,
+        reveal: bool,
+    },
     /// Undo-only: removes a folder Voxi created, and only if it is empty.
-    RemoveEmptyFolder { path: PathBuf },
+    RemoveEmptyFolder {
+        path: PathBuf,
+    },
     /// Undo-only: takes a trashed item at `from` back out to `to`.
-    RestoreFromTrash { from: PathBuf, to: PathBuf },
+    RestoreFromTrash {
+        from: PathBuf,
+        to: PathBuf,
+    },
     /// Undo-only: puts a backed-up original back over a modified file.
-    Restore { from: PathBuf, to: PathBuf },
+    Restore {
+        from: PathBuf,
+        to: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -296,12 +438,26 @@ pub enum Outcome {
     /// command is planned again with that choice.
     /// `folders` is true when every candidate is a folder, so the pick can be
     /// remembered as the user's name for it.
-    Ambiguous { name: String, candidates: Vec<String>, folders: bool },
+    Ambiguous {
+        name: String,
+        candidates: Vec<String>,
+        folders: bool,
+    },
     /// Read-only result; nothing changed.
-    Info { title: String, summary: String, rows: Vec<InfoRow>, total: usize, numbered: bool },
+    Info {
+        title: String,
+        summary: String,
+        rows: Vec<InfoRow>,
+        total: usize,
+        numbered: bool,
+    },
     /// The command was understood, but there is nothing to do or it can't be done.
-    Problem { message: String },
-    NotUnderstood { text: String },
+    Problem {
+        message: String,
+    },
+    NotUnderstood {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,6 +1,10 @@
 //! Read-only queries: list, size, count, duplicates.
 
-use super::{Pattern, cap, pat, phrase::{bad_destination, clean_name}, src};
+use super::{
+    Pattern, cap, pat,
+    phrase::{bad_destination, clean_name},
+    src,
+};
 use crate::model::Intent;
 
 pub fn specific() -> Vec<Pattern> {
@@ -8,23 +12,21 @@ pub fn specific() -> Vec<Pattern> {
         pat("what_named_file", r"^what\s+files?\s+(?:are\s+)?(?:named|called)\s+(.+)$", |c| {
             Some(Intent::List { src: super::phrase::parse_source(&format!("file named {}", cap(c, 1)?))? })
         }),
-        pat("count_reworded", r"^(?:tell\s+me\s+(?:number|count)\s+of\s+(?:files|items)\s+in|give\s+me\s+(?:a\s+)?file\s+count\s+for|number\s+of\s+files\s+under|what\s+is\s+file\s+count\s+in)\s+(.+)$", |c| {
-            Some(Intent::Count { src: super::phrase::parse_source(&format!("files in {}", cap(c, 1)?))? })
-        }),
+        pat(
+            "count_reworded",
+            r"^(?:tell\s+me\s+(?:number|count)\s+of\s+(?:files|items)\s+in|give\s+me\s+(?:a\s+)?file\s+count\s+for|number\s+of\s+files\s+under|what\s+is\s+file\s+count\s+in)\s+(.+)$",
+            |c| Some(Intent::Count { src: super::phrase::parse_source(&format!("files in {}", cap(c, 1)?))? }),
+        ),
         pat("how_many_contained", r"^how\s+many\s+(?:files|items)\s+does\s+(.+?)\s+(?:contain|have)$", |c| {
             Some(Intent::Count { src: super::phrase::parse_source(&format!("files in {}", cap(c, 1)?))? })
         }),
-        pat(
-            "size_of",
-            r"^(?:(?:show|what\s+is|what's|get|check|calculate|tell\s+me)\s+(?:me\s+)?)?(?:total\s+)?size\s+of\s+(.+)$",
-            |c| Some(Intent::Size { folder: folder(c, 1)? }),
-        ),
+        pat("size_of", r"^(?:(?:show|what\s+is|what's|get|check|calculate|tell\s+me)\s+(?:me\s+)?)?(?:total\s+)?size\s+of\s+(.+)$", |c| {
+            Some(Intent::Size { folder: folder(c, 1)? })
+        }),
         pat("how_big", r"^how\s+big\s+is\s+(.+)$", |c| Some(Intent::Size { folder: folder(c, 1)? })),
-        pat(
-            "duplicates",
-            r"^(?:list|find|show|search\s+for)\s+(?:me\s+)?duplicates?(?:\s+files)?\s+(?:in|from|on)\s+(.+)$",
-            |c| Some(Intent::Duplicates { folder: folder(c, 1)? }),
-        ),
+        pat("duplicates", r"^(?:list|find|show|search\s+for)\s+(?:me\s+)?duplicates?(?:\s+files)?\s+(?:in|from|on)\s+(.+)$", |c| {
+            Some(Intent::Duplicates { folder: folder(c, 1)? })
+        }),
         pat("count", r"^count\s+(.+)$", |c| Some(Intent::Count { src: src(c, 1)? })),
         pat("how_many", r"^how\s+many\s+(.+?)\s+(?:there\s+are\s+|are\s+there\s+|are\s+|do\s+i\s+have\s+)?(in|on|from)\s+(.+)$", |c| {
             let phrase = format!("{} in {}", cap(c, 1)?, cap(c, 3)?);
@@ -33,7 +35,10 @@ pub fn specific() -> Vec<Pattern> {
         // "how many PDFs are there?": a count of a set with no folder named.
         pat("how_many_there", r"^how\s+many\s+(.+?)\s+(?:are\s+there|there\s+are)(?:\s+(?:in|on|from)\s+(.+))?$", |c| {
             let subject = cap(c, 1)?;
-            let phrase = match c.get(2) { Some(loc) => format!("{subject} in {}", loc.as_str()), None => subject };
+            let phrase = match c.get(2) {
+                Some(loc) => format!("{subject} in {}", loc.as_str()),
+                None => subject,
+            };
             Some(Intent::Count { src: super::phrase::set_source(&phrase)? })
         }),
         // "how many screenshots did I take today": a count of a set with a type or filter.
@@ -47,17 +52,21 @@ pub fn specific() -> Vec<Pattern> {
         pat("file_info", r"^(?:info|information|details)\s+(?:about|of|for|on)\s+(.+)$", |c| {
             Some(Intent::List { src: super::phrase::parse_source(&cap(c, 1)?)? })
         }),
-        pat("file_modified_when", r"^(?:when\s+was|when\s+did|what'?s\s+the\s+(?:modified|creation|created)\s+(?:date|time)\s+of)\s+(.+?)(?:\s+(?:modified|created|changed|last\s+modified))?$", |c| {
-            Some(Intent::List { src: super::phrase::parse_source(&cap(c, 1)?)? })
-        }),
+        pat(
+            "file_modified_when",
+            r"^(?:when\s+was|when\s+did|what'?s\s+the\s+(?:modified|creation|created)\s+(?:date|time)\s+of)\s+(.+?)(?:\s+(?:modified|created|changed|last\s+modified))?$",
+            |c| Some(Intent::List { src: super::phrase::parse_source(&cap(c, 1)?)? }),
+        ),
     ]
 }
 
 pub fn general() -> Vec<Pattern> {
     vec![
-        pat("list", r"^(?:list|find|show|display|search\s+for|search|look\s+for)\s+(?:me\s+)?(?:what\s+)?(?:contents?\s+of\s+|what'?s\s+(?:on|in)\s+)?(.+)$", |c| {
-            Some(Intent::List { src: src(c, 1)? })
-        }),
+        pat(
+            "list",
+            r"^(?:list|find|show|display|search\s+for|search|look\s+for)\s+(?:me\s+)?(?:what\s+)?(?:contents?\s+of\s+|what'?s\s+(?:on|in)\s+)?(.+)$",
+            |c| Some(Intent::List { src: src(c, 1)? }),
+        ),
         pat("whats_in", r"^(?:what'?s|what\s+is)\s+(?:on|in)\s+(.+)$", |c| Some(Intent::List { src: src(c, 1)? })),
         // "what files did I download yesterday": a question lists only a set of files.
         pat("what_list", r"^what\s+(?:are\s+|is\s+)?(.+)$", |c| Some(Intent::List { src: super::phrase::set_source(&cap(c, 1)?)? })),

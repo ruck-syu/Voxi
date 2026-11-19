@@ -43,14 +43,9 @@ impl Roots {
         // Where screenshots land: the system setting if there is one, else
         // the usual Screenshots folders. A custom location inside the home
         // folder is allowed even outside the four standard folders.
-        let screenshots = screenshots
-            .filter(|p| p.is_dir() && p.starts_with(home) && p != home)
-            .or_else(|| {
-                ["Desktop/Screenshots", "Pictures/Screenshots", "Documents/Screenshots"]
-                    .iter()
-                    .map(|d| home.join(d))
-                    .find(|p| p.is_dir())
-            });
+        let screenshots = screenshots.filter(|p| p.is_dir() && p.starts_with(home) && p != home).or_else(|| {
+            ["Desktop/Screenshots", "Pictures/Screenshots", "Documents/Screenshots"].iter().map(|d| home.join(d)).find(|p| p.is_dir())
+        });
         if let Some(s) = &screenshots {
             if !roots.is_allowed(s) {
                 roots.allowed.push(canonical(s));
@@ -226,7 +221,13 @@ pub fn human_size(bytes: u64) -> String {
         v /= 1000.0;
         i += 1;
     }
-    if i == 0 { format!("{bytes} B") } else if v < 10.0 { format!("{v:.1} {}", UNITS[i]) } else { format!("{v:.0} {}", UNITS[i]) }
+    if i == 0 {
+        format!("{bytes} B")
+    } else if v < 10.0 {
+        format!("{v:.1} {}", UNITS[i])
+    } else {
+        format!("{v:.0} {}", UNITS[i])
+    }
 }
 
 /// Total size of a file or folder, following no symlinks.
@@ -284,7 +285,9 @@ fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> R
         use std::{ffi::CString, os::unix::ffi::OsStrExt};
         if let (Ok(from), Ok(to)) = (CString::new(from.as_os_str().as_bytes()), CString::new(to.as_os_str().as_bytes())) {
             // SAFETY: both C strings are live, NUL-terminated paths. EXCL forbids replacement.
-            if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) } == 0 { return Ok(()); }
+            if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) } == 0 {
+                return Ok(());
+            }
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -314,7 +317,7 @@ impl Staging {
                     let parent_handle = fs::File::open(&parent).map_err(|e| e.to_string())?;
                     let dir_handle = fs::File::open(&dir).map_err(|e| e.to_string())?;
                     return Ok(Self { path: dir.join("payload"), dir, parent, parent_handle, dir_handle });
-                },
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(e.to_string()),
             }
@@ -326,12 +329,18 @@ impl Staging {
         let cleanup = (|| {
             let before = self.dir_handle.metadata().map_err(|e| e.to_string())?;
             let now = fs::symlink_metadata(&self.dir).map_err(|e| e.to_string())?;
-            if before.dev()!=now.dev() || before.ino()!=now.ino() { return Err("staging directory moved or replaced".into()); }
+            if before.dev() != now.dev() || before.ino() != now.ino() {
+                return Err("staging directory moved or replaced".into());
+            }
             fs::remove_dir_all(&self.dir).map_err(|e| e.to_string())
         })();
         match (result, cleanup) {
             (result, Ok(())) => result,
-            (result, Err(e)) => Err(format!("{}; staging cleanup failed at {}: {e}", result.err().unwrap_or_else(|| "Output published successfully".into()), self.dir.display())),
+            (result, Err(e)) => Err(format!(
+                "{}; staging cleanup failed at {}: {e}",
+                result.err().unwrap_or_else(|| "Output published successfully".into()),
+                self.dir.display()
+            )),
         }
     }
     pub fn publish(&self, output: &Path) -> Result<(), String> {
@@ -348,7 +357,8 @@ impl Drop for Staging {
     fn drop(&mut self) {
         // Never recursively remove a path that now names someone else's tree.
         if let (Ok(before), Ok(now)) = (self.dir_handle.metadata(), fs::symlink_metadata(&self.dir))
-            && before.dev() == now.dev() && before.ino() == now.ino()
+            && before.dev() == now.dev()
+            && before.ino() == now.ino()
         {
             let _ = fs::remove_dir_all(&self.dir);
         }
@@ -389,12 +399,14 @@ mod tests {
         for code in [libc::ENOTSUP, libc::EPERM, libc::EMLINK] {
             fs::write(&from, b"source").unwrap();
             rename_after_link_failure(&from, &to, std::io::Error::from_raw_os_error(code)).unwrap();
-            assert!(!from.exists()); assert_eq!(fs::read(&to).unwrap(), b"source");
+            assert!(!from.exists());
+            assert_eq!(fs::read(&to).unwrap(), b"source");
             fs::write(&from, b"new source").unwrap();
             assert!(rename_after_link_failure(&from, &to, std::io::Error::from_raw_os_error(code)).is_err());
             assert_eq!(fs::read(&to).unwrap(), b"source");
             assert_eq!(fs::read(&from).unwrap(), b"new source");
-            fs::remove_file(&to).unwrap(); fs::remove_file(&from).unwrap();
+            fs::remove_file(&to).unwrap();
+            fs::remove_file(&from).unwrap();
         }
         fs::write(&from, b"source").unwrap();
         for code in [libc::EEXIST, libc::EXDEV, libc::EIO] {

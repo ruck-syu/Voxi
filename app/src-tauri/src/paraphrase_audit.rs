@@ -5,14 +5,14 @@
 //! confirmed or executed. Every test is `#[ignore]`, so the default suite and the
 //! golden corpus never see these cases, and mismatches are reported, not failed.
 
-use crate::fsx::{self, file_name, Roots};
+use crate::fsx::{self, Roots, file_name};
 use crate::history::History;
 use crate::model::{Action, Intent, Outcome};
 use crate::parse::parse;
 use crate::plan::{Planned, Planner, Stop};
 use crate::settings::Settings;
-use crate::{plan_input, AppState};
-use serde_json::{json, Value};
+use crate::{AppState, plan_input};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -80,7 +80,8 @@ fn action_key(a: &Action) -> String {
         Action::Move { from, to } => format!("move:{}:{}", file_name(from), to.parent().map(file_name).unwrap_or_default()),
         Action::Trash { path } => format!("trash:{}", file_name(path)),
         Action::Rename { path, new_name } => format!("rename:{}:{new_name}", file_name(path)),
-        other => serde_json::to_value(other).ok()
+        other => serde_json::to_value(other)
+            .ok()
             .and_then(|v| v.get("kind").and_then(Value::as_str).map(str::to_string))
             .unwrap_or_else(|| "unknown".into()),
     }
@@ -111,18 +112,39 @@ struct Home {
 fn main_home() -> Home {
     let dir = tempfile::tempdir().unwrap();
     let home = fsx::canonical(dir.path());
-    let folders = ["Desktop", "Downloads", "Documents", "Pictures", "Screenshots", "Trip", "Scans", "External", "Invoices", "Backup", "Project"];
+    let folders =
+        ["Desktop", "Downloads", "Documents", "Pictures", "Screenshots", "Trip", "Scans", "External", "Invoices", "Backup", "Project"];
     for f in folders {
         fs::create_dir_all(home.join(f)).unwrap();
     }
     let files = [
-        "Downloads/report.pdf", "Downloads/notes.txt", "Downloads/Notes from Monday.pdf", "Downloads/Notes to self.pdf",
-        "Downloads/invoice-jan.pdf", "Downloads/invoice-feb.txt", "Downloads/bill-2026.pdf", "Downloads/claude.dmg",
-        "Downloads/setup.pkg", "Downloads/archive.zip", "Downloads/a.pdf", "Downloads/b.pdf",
-        "Documents/draft-plan.txt", "Documents/scan-1.pdf", "Documents/scan-2.pdf", "Documents/tax.pdf",
-        "Pictures/photo.heic", "Pictures/photo.jpg", "Pictures/vacation.heic", "Pictures/shot.png",
-        "Screenshots/Screenshot 2026-10-01.png", "Screenshots/shot2.png", "Trip/trip-a.jpg", "Trip/trip-b.png",
-        "Scans/receipts-1.jpg", "Scans/receipts-2.jpg", "Project/readme.md",
+        "Downloads/report.pdf",
+        "Downloads/notes.txt",
+        "Downloads/Notes from Monday.pdf",
+        "Downloads/Notes to self.pdf",
+        "Downloads/invoice-jan.pdf",
+        "Downloads/invoice-feb.txt",
+        "Downloads/bill-2026.pdf",
+        "Downloads/claude.dmg",
+        "Downloads/setup.pkg",
+        "Downloads/archive.zip",
+        "Downloads/a.pdf",
+        "Downloads/b.pdf",
+        "Documents/draft-plan.txt",
+        "Documents/scan-1.pdf",
+        "Documents/scan-2.pdf",
+        "Documents/tax.pdf",
+        "Pictures/photo.heic",
+        "Pictures/photo.jpg",
+        "Pictures/vacation.heic",
+        "Pictures/shot.png",
+        "Screenshots/Screenshot 2026-10-01.png",
+        "Screenshots/shot2.png",
+        "Trip/trip-a.jpg",
+        "Trip/trip-b.png",
+        "Scans/receipts-1.jpg",
+        "Scans/receipts-2.jpg",
+        "Project/readme.md",
     ];
     for f in files {
         fs::write(home.join(f), b"data").unwrap();
@@ -133,24 +155,36 @@ fn main_home() -> Home {
 }
 
 #[derive(Clone, Debug)]
-struct Seed { intent: String, command: String, expect: Value }
+struct Seed {
+    intent: String,
+    command: String,
+    expect: Value,
+}
 
 fn load_seeds() -> BTreeMap<String, Seed> {
     let text = fs::read_to_string(audit_file("seeds.jsonl")).expect("seeds.jsonl");
-    text.lines().filter(|l| !l.trim().is_empty()).map(|line| {
-        let v: Value = serde_json::from_str(line).expect("seed JSON");
-        let id = v["id"].as_str().unwrap().to_string();
-        (id, Seed {
-            intent: v["intent"].as_str().unwrap().to_string(),
-            command: v["command"].as_str().unwrap().to_string(),
-            expect: canon(v["expect"].clone()),
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|line| {
+            let v: Value = serde_json::from_str(line).expect("seed JSON");
+            let id = v["id"].as_str().unwrap().to_string();
+            (
+                id,
+                Seed {
+                    intent: v["intent"].as_str().unwrap().to_string(),
+                    command: v["command"].as_str().unwrap().to_string(),
+                    expect: canon(v["expect"].clone()),
+                },
+            )
         })
-    }).collect()
+        .collect()
 }
 
 /// Splits `id | seed | axis | phrase | expectation` rows; `#` lines are comments.
 fn rows(file: &str) -> Vec<Vec<String>> {
-    fs::read_to_string(audit_file(file)).expect("audit file").lines()
+    fs::read_to_string(audit_file(file))
+        .expect("audit file")
+        .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| l.split(" | ").map(|c| c.trim().to_string()).collect())
@@ -164,9 +198,13 @@ fn parse_expect(text: &str) -> Value {
     }
 }
 
-struct Tally { counts: BTreeMap<String, usize> }
+struct Tally {
+    counts: BTreeMap<String, usize>,
+}
 impl Tally {
-    fn add(&mut self, key: &str) { *self.counts.entry(key.to_string()).or_default() += 1; }
+    fn add(&mut self, key: &str) {
+        *self.counts.entry(key.to_string()).or_default() += 1;
+    }
 }
 
 /// Parse-level and planner-level audit of every seed variant, negative, and ambiguous case.
@@ -220,7 +258,8 @@ fn haiku_paraphrase_audit_report() {
 
         let (category, sev, duplicate, note) = match class {
             'P' | 'K' | 'E' => {
-                let dup = if class == 'K' { Some("extension-audit explicit-dot gap (docs/testing/extension-audit-baseline.md)") } else { None };
+                let dup =
+                    if class == 'K' { Some("extension-audit explicit-dot gap (docs/testing/extension-audit-baseline.md)") } else { None };
                 if !parse_ok {
                     ("refused", "low", dup, "parser refused a supported-seed paraphrase")
                 } else if actual == expected {
@@ -237,14 +276,22 @@ fn haiku_paraphrase_audit_report() {
                     ("accepted_negative", s, None, "unsupported or unsafe phrasing was accepted")
                 }
             }
-            _ => (if parse_ok { "ambiguous_accepted" } else { "ambiguous_refused" }, "info", None, "recorded only; expectation is genuinely ambiguous"),
+            _ => (
+                if parse_ok { "ambiguous_accepted" } else { "ambiguous_refused" },
+                "info",
+                None,
+                "recorded only; expectation is genuinely ambiguous",
+            ),
         };
         tally.add(&format!("{class}:{category}"));
-        out.push_str(&json!({
-            "id": id, "class": class.to_string(), "seed": seed_label, "axis": axis, "command": phrase,
-            "expected": expected, "actual": actual, "parse_ok": parse_ok, "planner": planner,
-            "category": category, "severity": sev, "duplicate_of": duplicate, "note": note,
-        }).to_string());
+        out.push_str(
+            &json!({
+                "id": id, "class": class.to_string(), "seed": seed_label, "axis": axis, "command": phrase,
+                "expected": expected, "actual": actual, "parse_ok": parse_ok, "planner": planner,
+                "category": category, "severity": sev, "duplicate_of": duplicate, "note": note,
+            })
+            .to_string(),
+        );
         out.push('\n');
     }
 
@@ -257,11 +304,15 @@ fn haiku_paraphrase_audit_report() {
         out.push('\n');
     }
 
-    let report = std::env::var_os("VOXI_PARAPHRASE_AUDIT_REPORT").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_REPORT));
+    let report = std::env::var_os("VOXI_PARAPHRASE_AUDIT_REPORT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_REPORT));
     fs::write(&report, out).unwrap();
 
     println!("paraphrase audit: seeds {} (intent types {}); rows {:?}", seeds.len(), distinct_types.len(), class_totals);
-    for (k, v) in &tally.counts { println!("  {k}: {v}"); }
+    for (k, v) in &tally.counts {
+        println!("  {k}: {v}");
+    }
     println!("JSONL {}", report.display());
     drop(home);
 }
@@ -292,7 +343,9 @@ fn context_home() -> (tempfile::TempDir, PathBuf) {
         fs::create_dir(home.join(f)).unwrap();
     }
     for (i, name) in ["alpha.pdf", "bravo.txt", "charlie.png", "delta.pdf", "echo.zip"].iter().enumerate() {
-        if i > 0 { std::thread::sleep(Duration::from_millis(1100)); }
+        if i > 0 {
+            std::thread::sleep(Duration::from_millis(1100));
+        }
         fs::write(home.join("Downloads").join(name), b"data").unwrap();
     }
     (dir, home)

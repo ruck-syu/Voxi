@@ -10,10 +10,7 @@ static MODEL: LazyLock<Mutex<Option<NativeRewriter>>> = LazyLock::new(|| Mutex::
 
 /// Reuse a loaded model, but retry the loader after a failure instead of
 /// caching the error. Once loaded, the model is kept for later calls.
-fn get_or_load<T>(
-    slot: &mut Option<T>,
-    load: impl FnOnce() -> Result<T, String>,
-) -> Result<&mut T, String> {
+fn get_or_load<T>(slot: &mut Option<T>, load: impl FnOnce() -> Result<T, String>) -> Result<&mut T, String> {
     if slot.is_none() {
         *slot = Some(load()?);
     }
@@ -26,7 +23,9 @@ pub fn recover(text: &str, cancelled: impl Fn() -> bool) -> Option<Intent> {
             eprintln!("Voxi: fallback rejected: {:?}", "model mutex poisoned");
             "model worker unavailable".to_string()
         })?;
-        if cancelled() { return Err("cancelled".into()); }
+        if cancelled() {
+            return Err("cancelled".into());
+        }
         let model = get_or_load(&mut slot, || {
             let loaded = std::env::var_os("VOXI_TINY_MODEL_DIR")
                 .ok_or_else(|| "VOXI_TINY_MODEL_DIR is not set".to_string())
@@ -41,11 +40,7 @@ pub fn recover(text: &str, cancelled: impl Fn() -> bool) -> Option<Intent> {
     })
 }
 
-fn recover_with(
-    text: &str,
-    cancelled: impl Fn() -> bool,
-    rewrite: impl FnOnce(&str) -> Result<String, String>,
-) -> Option<Intent> {
+fn recover_with(text: &str, cancelled: impl Fn() -> bool, rewrite: impl FnOnce(&str) -> Result<String, String>) -> Option<Intent> {
     if cancelled() || !matches!(parse::parse_classified(text), Err(parse::ParseFailure::GrammarMiss)) {
         return None;
     }
@@ -57,7 +52,9 @@ fn recover_with(
         }
     };
     let result = rewrite(prepared.as_ref().map_or(text, |p| p.model_input.as_str()));
-    if cancelled() { return None; }
+    if cancelled() {
+        return None;
+    }
     match prepared {
         Some(request) => match request.finish(result) {
             Ok(intent) => Some(intent),
@@ -102,8 +99,18 @@ mod tests {
         assert!(recover_with(text, || true, |_| panic!("cancelled")).is_none());
         assert!(recover_with(text, || false, |_| Err("load failed".into())).is_none());
         let calls = std::cell::Cell::new(0);
-        assert!(recover_with(text, || { let n = calls.get(); calls.set(n + 1); n > 0 },
-            |_| Ok("create folders named Archive and Backup in Desktop".into())).is_none());
+        assert!(
+            recover_with(
+                text,
+                || {
+                    let n = calls.get();
+                    calls.set(n + 1);
+                    n > 0
+                },
+                |_| Ok("create folders named Archive and Backup in Desktop".into())
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -141,10 +148,7 @@ mod tests {
     fn prepare_and_certificate_rejections_return_none() {
         // A grammar miss that fails slot preparation still logs why and refuses.
         let text = "Create a folder in Documents";
-        assert!(
-            recover_with(text, || false, |_| Ok("create folder named X in Documents".into()))
-                .is_none()
-        );
+        assert!(recover_with(text, || false, |_| Ok("create folder named X in Documents".into())).is_none());
         // A prepared request whose rewrite fails the certificate also refuses.
         let text = "Create folders \"Xylophone\", \"Quasar\" in Documents";
         assert!(recover_with(text, || false, |_| Ok("delete everything".into())).is_none());

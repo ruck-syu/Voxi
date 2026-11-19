@@ -5,8 +5,8 @@
 use crate::fsx::{self, Roots, file_name, human_size, split_name, unique_path};
 use crate::history::History;
 use crate::model::{
-    Action, ARCHIVE_EXTS, AUDIO_EXTS, DayRef, DOC_EXTS, FileType, Filter, IMAGE_EXTS, ImageFormat, INSTALLER_EXTS, InfoRow,
-    Intent, Source, VIDEO_EXTS,
+    ARCHIVE_EXTS, AUDIO_EXTS, Action, DOC_EXTS, DayRef, FileType, Filter, IMAGE_EXTS, INSTALLER_EXTS, ImageFormat, InfoRow, Intent, Source,
+    VIDEO_EXTS,
 };
 use crate::{pdf, search};
 use chrono::{DateTime, Datelike, Local, NaiveDate};
@@ -66,10 +66,25 @@ enum Step {
 }
 
 pub enum Planned {
-    Steps { title: String, actions: Vec<Action>, notes: Vec<Option<String>>, warnings: Vec<String>, undo_of: Option<u64> },
-    Info { title: String, summary: String, rows: Vec<InfoRow>, total: usize, listed: Option<(Vec<PathBuf>, String)> },
+    Steps {
+        title: String,
+        actions: Vec<Action>,
+        notes: Vec<Option<String>>,
+        warnings: Vec<String>,
+        undo_of: Option<u64>,
+    },
+    Info {
+        title: String,
+        summary: String,
+        rows: Vec<InfoRow>,
+        total: usize,
+        listed: Option<(Vec<PathBuf>, String)>,
+    },
     /// Read-only, runs right away without a preview.
-    Direct { action: Action, title: String },
+    Direct {
+        action: Action,
+        title: String,
+    },
 }
 
 pub struct Planner<'a> {
@@ -113,13 +128,20 @@ impl<'a> Planner<'a> {
         self
     }
 
-    pub fn with_scope(mut self, scope: Option<crate::scope::Snapshot>) -> Self { self.scope = scope; self }
+    pub fn with_scope(mut self, scope: Option<crate::scope::Snapshot>) -> Self {
+        self.scope = scope;
+        self
+    }
 
     pub fn plan(mut self, intent: &Intent, history: &History) -> Result<Planned, Stop> {
-        if let Some(scope) = &self.scope { scope.validate().map_err(Stop::Problem)?; }
+        if let Some(scope) = &self.scope {
+            scope.validate().map_err(Stop::Problem)?;
+        }
         let result = self.step(intent, history);
         if let Some(message) = self.search.status() {
-            if self.search.control.is_cancelled() { return problem(message); }
+            if self.search.control.is_cancelled() {
+                return problem(message);
+            }
             if let Ok(Step::Finished(Planned::Info { title, summary, rows, total, .. })) = result {
                 return Ok(Planned::Info { title, summary: format!("{message} Partial results. {summary}"), rows, total, listed: None });
             }
@@ -146,10 +168,11 @@ impl<'a> Planner<'a> {
         let mut notes_by_command = Vec::new();
         let mut deps = Dependencies::default();
         for (index, (text, intent)) in commands.iter().enumerate() {
-            let (actions, notes, warnings, dirs) =
-                (self.actions.len(), self.notes.len(), self.warnings.len(), self.planned_dirs.clone());
+            let (actions, notes, warnings, dirs) = (self.actions.len(), self.notes.len(), self.warnings.len(), self.planned_dirs.clone());
             let result = self.step(intent, history);
-            if let Some(message) = self.search.status() { return problem(message); }
+            if let Some(message) = self.search.status() {
+                return problem(message);
+            }
             match result {
                 Ok(Step::Changes(_)) if self.actions.len() == actions => {
                     let why = self.warnings.drain(warnings..).next().unwrap_or_else(|| "nothing to change".into());
@@ -174,7 +197,9 @@ impl<'a> Planner<'a> {
                 Err(ambiguous) => return Err(ambiguous),
             }
         }
-        if let Some(message) = self.search.status() { return problem(message); }
+        if let Some(message) = self.search.status() {
+            return problem(message);
+        }
         if self.actions.is_empty() {
             return problem(format!("Nothing to change for “{name}”. {}", notes_by_command.join(" ")));
         }
@@ -201,8 +226,7 @@ impl<'a> Planner<'a> {
             }
             Intent::AddDatePrefix { src } => self.batch_rename(src, "Add date prefix", |name, path| {
                 let date = created(path)?.format("%Y-%m-%d").to_string();
-                let starts_dated = name.len() >= 10
-                    && NaiveDate::parse_from_str(name.get(..10).unwrap_or(""), "%Y-%m-%d").is_ok();
+                let starts_dated = name.len() >= 10 && NaiveDate::parse_from_str(name.get(..10).unwrap_or(""), "%Y-%m-%d").is_ok();
                 (!starts_dated).then(|| format!("{date} {name}"))
             })?,
             Intent::ReplaceInNames { src, find, replace } => {
@@ -334,22 +358,35 @@ impl<'a> Planner<'a> {
 
     /// Resolves a file or folder by name, searching the allowed folders.
     fn resolve_item(&self, name: &str, folder: Option<&str>) -> Result<PathBuf, Stop> {
-        if name == "\0chain-output" && folder.is_none() && let Some(path) = &self.chain_input { return Ok(path.clone()); }
-        if name.trim().is_empty() { return problem("Name the file or folder to use."); }
+        if name == "\0chain-output"
+            && folder.is_none()
+            && let Some(path) = &self.chain_input
+        {
+            return Ok(path.clone());
+        }
+        if name.trim().is_empty() {
+            return problem("Name the file or folder to use.");
+        }
         if let Some(scope) = &self.scope {
             let paths = scope.paths();
             if let Some(picked) = self.choices.get(name) {
-                if !paths.contains(picked) { return problem("That file isn't in the searched list."); }
+                if !paths.contains(picked) {
+                    return problem("That file isn't in the searched list.");
+                }
                 self.check(picked)?;
                 return Ok(picked.clone());
             }
             let mut found = if Path::new(name).is_absolute() {
                 paths.into_iter().filter(|p| p == Path::new(name)).collect()
-            } else { closest(name, paths) };
+            } else {
+                closest(name, paths)
+            };
             return match found.len() {
                 1 if Path::new(name).is_absolute() || strong_name_match(name, &found[0]) => {
-                    let path = found.remove(0); self.check(&path)?; Ok(path)
-                },
+                    let path = found.remove(0);
+                    self.check(&path)?;
+                    Ok(path)
+                }
                 0 => problem("That file isn't in the searched list. Name another source folder to search again."),
                 _ => Err(Stop::Ambiguous { name: name.into(), candidates: found }),
             };
@@ -371,7 +408,9 @@ impl<'a> Planner<'a> {
             let p = d.join(file);
             return if p.exists() { Ok(p) } else { problem(format!("Couldn't find “{file}” in {}.", self.roots.display(&d))) };
         }
-        if folder.is_none() && let Some(path) = self.roots.named(name) {
+        if folder.is_none()
+            && let Some(path) = self.roots.named(name)
+        {
             self.check(path)?;
             return Ok(path.clone());
         }
@@ -380,7 +419,9 @@ impl<'a> Planner<'a> {
             None => self.roots.search_roots(),
         };
         let mut found = self.find_entries(name, false, &dirs);
-        if let Some(message) = self.search.status() { return problem(message); }
+        if let Some(message) = self.search.status() {
+            return problem(message);
+        }
         if found.is_empty() {
             found = self.find_similar(name, &dirs);
         }
@@ -463,8 +504,9 @@ impl<'a> Planner<'a> {
     /// Extra summary text for read-only answers to unscoped searches.
     fn search_scope_hint(src: &Source) -> &'static str {
         match src {
-            Source::Set { folder: None, filter } if filter.file_type != Some(FileType::Screenshots) =>
-                "Searched only Downloads and Desktop. Say “in Documents” or “in Pictures” to search there. ",
+            Source::Set { folder: None, filter } if filter.file_type != Some(FileType::Screenshots) => {
+                "Searched only Downloads and Desktop. Say “in Documents” or “in Pictures” to search there. "
+            }
             _ => "",
         }
     }
@@ -479,11 +521,15 @@ impl<'a> Planner<'a> {
             }
             Source::Set { folder, filter } => {
                 if let Some(scope) = &self.scope {
-                    if folder.is_some() { return problem("An explicit source folder starts a new search."); }
+                    if folder.is_some() {
+                        return problem("An explicit source folder starts a new search.");
+                    }
                     let mut paths = Vec::new();
                     for path in scope.paths() {
                         self.check(&path)?;
-                        if matches(&path, filter, self.now.date_naive()) { paths.push(path); }
+                        if matches(&path, filter, self.now.date_naive()) {
+                            paths.push(path);
+                        }
                     }
                     return Ok((paths, "the previous results".into()));
                 }
@@ -497,9 +543,13 @@ impl<'a> Planner<'a> {
                     for e in self.search.entries(d).iter() {
                         let p = &e.path;
                         if !e.is_dir && seen.insert(p.clone()) {
-                            if (filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some() || has_date_filter(filter)) && fs::metadata(p).is_err() {
+                            if (filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some() || has_date_filter(filter))
+                                && fs::metadata(p).is_err()
+                            {
                                 self.search.issue(format!("couldn't inspect {}", p.display()));
-                            } else if matches_prepared(p, filter, today, contains.as_deref(), starts.as_deref()) { out.push(p.clone()); }
+                            } else if matches_prepared(p, filter, today, contains.as_deref(), starts.as_deref()) {
+                                out.push(p.clone());
+                            }
                         }
                     }
                 }
@@ -564,10 +614,7 @@ impl<'a> Planner<'a> {
         // folder called Trash: plan the Trash actions the delete phrasing
         // would plan for the files already selected above.
         let dest_name = file_name(&dest).to_ascii_lowercase();
-        if matches!(dest_name.as_str(), "trash" | "bin" | "recycle bin")
-            && !dest.exists()
-            && !self.planned_dirs.contains(&dest)
-        {
+        if matches!(dest_name.as_str(), "trash" | "bin" | "recycle bin") && !dest.exists() && !self.planned_dirs.contains(&dest) {
             if copy {
                 return problem("Copying to the Trash isn't supported. Use “delete” instead.");
             }
@@ -587,7 +634,10 @@ impl<'a> Planner<'a> {
         self.ensure_dir(&dest)?;
         // A destination inside the source may already hold previous results.
         let destination_in_source = match src {
-            Source::Set { folder, filter } => self.set_folders(folder.as_deref(), filter)?.0.iter()
+            Source::Set { folder, filter } => self
+                .set_folders(folder.as_deref(), filter)?
+                .0
+                .iter()
                 .any(|dir| dest != *dir && fsx::canonical(&dest).starts_with(fsx::canonical(dir))),
             _ => false,
         };
@@ -618,7 +668,9 @@ impl<'a> Planner<'a> {
     }
 
     fn rename_one(&mut self, src: &Source, new_name: &str) -> Result<String, Stop> {
-        let Source::Item { name, folder } = src else { return problem("Rename one file at a time, or use a rule like “replace X with Y”.") };
+        let Source::Item { name, folder } = src else {
+            return problem("Rename one file at a time, or use a rule like “replace X with Y”.");
+        };
         let path = self.resolve_item(name, folder.as_deref())?;
         self.check(&path)?;
         if self.roots.is_root(&path) {
@@ -650,12 +702,7 @@ impl<'a> Planner<'a> {
         self.push(Action::Rename { path: path.to_path_buf(), new_name: file_name(&target) }, note);
     }
 
-    fn batch_rename(
-        &mut self,
-        src: &Source,
-        verb: &str,
-        f: impl Fn(&str, &Path) -> Option<String>,
-    ) -> Result<String, Stop> {
+    fn batch_rename(&mut self, src: &Source, verb: &str, f: impl Fn(&str, &Path) -> Option<String>) -> Result<String, Stop> {
         let (paths, label) = self.expand_nonempty(src)?;
         let mut unchanged = 0;
         for p in &paths {
@@ -706,7 +753,9 @@ impl<'a> Planner<'a> {
                     continue;
                 }
                 Action::Move { from, to } | Action::Copy { from, to } => (vec![from.clone()], vec![to.clone()]),
-                Action::Rename { path, new_name } => (vec![path.clone()], path.parent().map(|p| vec![p.join(new_name)]).unwrap_or_default()),
+                Action::Rename { path, new_name } => {
+                    (vec![path.clone()], path.parent().map(|p| vec![p.join(new_name)]).unwrap_or_default())
+                }
                 Action::Trash { path } => (vec![path.clone()], Vec::new()),
                 Action::ConvertImage { path, output, .. } => (vec![path.clone()], vec![output.clone()]),
                 // The original is copied to `backup`, then `path` is resized in place.
@@ -735,9 +784,7 @@ impl<'a> Planner<'a> {
                         // listing (moves, copies and deletes all read direct
                         // children now). It only matters if this step reads the
                         // created folder itself.
-                        let stale_from_create = touched.iter().any(|(dir, created)| {
-                            *created && same_path(source_dir, dir)
-                        });
+                        let stale_from_create = touched.iter().any(|(dir, created)| *created && same_path(source_dir, dir));
                         if stale_from_write || stale_from_create {
                             return problem(depends());
                         }
@@ -766,13 +813,28 @@ impl<'a> Planner<'a> {
     /// Shares reservations and binds explicit output dependencies to concrete
     /// paths. Unbound disk searches still use the conservative stale-list guard.
     fn chain(&mut self, commands: &[Intent], history: &History) -> Result<String, Stop> {
-        if self.scope.is_some() { return problem("Clear the previous result list before chaining commands."); }
-        if !(2..=8).contains(&commands.len()) { return problem("Chain between 2 and 8 commands."); }
+        if self.scope.is_some() {
+            return problem("Clear the previous result list before chaining commands.");
+        }
+        if !(2..=8).contains(&commands.len()) {
+            return problem("Chain between 2 and 8 commands.");
+        }
         let mut deps = Dependencies::default();
         let mut previous = None;
         let mut created_targets = HashSet::new();
         for (index, intent) in commands.iter().enumerate() {
-            if !matches!(intent, Intent::CreateFolders { .. } | Intent::Move { .. } | Intent::Copy { .. } | Intent::Rename { .. } | Intent::Trash { .. } | Intent::Zip { .. } | Intent::Unzip { .. } | Intent::ConvertImage { .. } | Intent::ResizeImage { .. }) {
+            if !matches!(
+                intent,
+                Intent::CreateFolders { .. }
+                    | Intent::Move { .. }
+                    | Intent::Copy { .. }
+                    | Intent::Rename { .. }
+                    | Intent::Trash { .. }
+                    | Intent::Zip { .. }
+                    | Intent::Unzip { .. }
+                    | Intent::ConvertImage { .. }
+                    | Intent::ResizeImage { .. }
+            ) {
                 return problem("This command cannot be included in a file-changing chain.");
             }
             let mut bound = intent.clone();
@@ -780,22 +842,30 @@ impl<'a> Planner<'a> {
             // A named convert output is also an explicit dependency. Bind to
             // the actual reserved output, including its collision suffix.
             let converted = match (intent, self.actions.last()) {
-                (Intent::ResizeImage { src: Source::Item { name, folder: None }, .. }, Some(Action::ConvertImage { path, output, format })) => {
+                (
+                    Intent::ResizeImage { src: Source::Item { name, folder: None }, .. },
+                    Some(Action::ConvertImage { path, output, format }),
+                ) => {
                     let wanted = path.with_extension(format.ext());
                     let requested = if Path::new(name).is_absolute() { PathBuf::from(name) } else { self.roots.home.join(name) };
                     same_path(&wanted, &requested).then(|| output.clone())
-                },
+                }
                 _ => None,
             };
             self.chain_input = if explicit_it { previous.clone() } else { converted };
             if explicit_it && self.chain_input.is_none() {
-                return problem(format!("Command {} uses ‘it’, but the previous command has no single output. Name one file or folder, or run the commands separately.", index + 1));
+                return problem(format!(
+                    "Command {} uses ‘it’, but the previous command has no single output. Name one file or folder, or run the commands separately.",
+                    index + 1
+                ));
             }
             let dependent = self.chain_input.is_some();
-            if dependent { bound.replace_source(Source::item("\0chain-output")); }
+            if dependent {
+                bound.replace_source(Source::item("\0chain-output"));
+            }
             let start = self.actions.len();
             match self.step(&bound, history)? {
-                Step::Changes(_) => {},
+                Step::Changes(_) => {}
                 Step::Finished(_) => return problem("Every step in a chain must change files."),
             }
             self.chain_input = None;
@@ -807,9 +877,14 @@ impl<'a> Planner<'a> {
                 deps.files.extend(next.files);
                 deps.dirs.extend(next.dirs);
                 deps.writes.extend(next.writes);
-            } else { self.check_dependencies(start, index + 1, &mut deps)?; }
+            } else {
+                self.check_dependencies(start, index + 1, &mut deps)?;
+            }
             if let Intent::CreateFolders { names, parent } = intent {
-                let parent = match parent { Some(p) => self.resolve_folder(p, None)?, None => self.roots.desktop() };
+                let parent = match parent {
+                    Some(p) => self.resolve_folder(p, None)?,
+                    None => self.roots.desktop(),
+                };
                 created_targets.extend(names.iter().map(|n| parent.join(n)));
             }
             let added = &self.actions[start..];
@@ -817,10 +892,14 @@ impl<'a> Planner<'a> {
                 Some(Action::CreateFolder { path }) => Some(path.clone()),
                 Some(Action::Rename { path, new_name }) => Some(path.with_file_name(new_name)),
                 Some(Action::Move { to, .. } | Action::Copy { to, .. }) => {
-                    if to.parent().is_some_and(|p| created_targets.contains(p)) { to.parent().map(Path::to_path_buf) }
-                    else if added.iter().filter(|a| matches!(a, Action::Move { .. } | Action::Copy { .. })).count() == 1 { Some(to.clone()) }
-                    else { None }
-                },
+                    if to.parent().is_some_and(|p| created_targets.contains(p)) {
+                        to.parent().map(Path::to_path_buf)
+                    } else if added.iter().filter(|a| matches!(a, Action::Move { .. } | Action::Copy { .. })).count() == 1 {
+                        Some(to.clone())
+                    } else {
+                        None
+                    }
+                }
                 Some(Action::ConvertImage { output, .. } | Action::Zip { output, .. }) => Some(output.clone()),
                 Some(Action::Unzip { destination, .. }) => Some(destination.clone()),
                 Some(Action::ResizeImage { path, .. }) => Some(path.clone()),
@@ -841,7 +920,9 @@ impl<'a> Planner<'a> {
             }
             let p = parent.join(n);
             if p.exists() {
-                if !p.is_dir() { return problem(format!("A file named “{n}” already exists in {}. Choose another folder name.", file_name(&parent))); }
+                if !p.is_dir() {
+                    return problem(format!("A file named “{n}” already exists in {}. Choose another folder name.", file_name(&parent)));
+                }
                 self.warnings.push(format!("{n} already exists in {}.", file_name(&parent)));
             } else {
                 self.ensure_dir(&p)?;
@@ -862,7 +943,10 @@ impl<'a> Planner<'a> {
             paths.retain(|p| p.parent().is_some_and(|parent| fsx::same_file(parent, &dir)));
             let nested = before - paths.len();
             if nested > 0 {
-                self.warnings.push(format!("{nested} {} in subfolders left alone. Say “including subfolders” to sort them too.", plural(nested, "file was", "files were")));
+                self.warnings.push(format!(
+                    "{nested} {} in subfolders left alone. Say “including subfolders” to sort them too.",
+                    plural(nested, "file was", "files were")
+                ));
             }
         }
         let sorted_name = file_name(&dir);
@@ -922,7 +1006,11 @@ impl<'a> Planner<'a> {
             self.push(Action::ConvertImage { path: p.clone(), format, output: out }, note);
         }
         if skipped > 0 {
-            self.warnings.push(format!("{skipped} {} skipped (not an image, or already {}).", plural(skipped, "file", "files"), format.ext()));
+            self.warnings.push(format!(
+                "{skipped} {} skipped (not an image, or already {}).",
+                plural(skipped, "file", "files"),
+                format.ext()
+            ));
         }
         Ok(format!("Convert {} in {label} to {}", count_label(&paths), format.ext().to_uppercase()))
     }
@@ -949,7 +1037,8 @@ impl<'a> Planner<'a> {
             );
         }
         if small > 0 {
-            self.warnings.push(format!("{small} {} already {width} px wide or smaller, left alone.", plural(small, "image is", "images are")));
+            self.warnings
+                .push(format!("{small} {} already {width} px wide or smaller, left alone.", plural(small, "image is", "images are")));
         }
         Ok(format!("Resize {} in {label} to {width} px wide", count_label(&paths)))
     }
@@ -1034,7 +1123,9 @@ impl<'a> Planner<'a> {
 
     fn zip(&mut self, src: &Source, output: Option<&str>) -> Result<String, Stop> {
         let (paths, _) = self.expand_nonempty(src)?;
-        let [p] = paths.as_slice() else { return problem("Name one file or folder to zip. To archive several files, put them in one folder and zip that folder.") };
+        let [p] = paths.as_slice() else {
+            return problem("Name one file or folder to zip. To archive several files, put them in one folder and zip that folder.");
+        };
         self.check(p)?;
         if self.roots.is_root(p) {
             return problem(format!("Zipping all of {} isn't supported; name a folder inside it.", file_name(p)));
@@ -1063,7 +1154,8 @@ impl<'a> Planner<'a> {
 
     fn trash(&mut self, src: &Source) -> Result<String, Stop> {
         if let Source::Set { folder, filter } = src
-            && !filter.is_narrowing() && self.scope.is_none()
+            && !filter.is_narrowing()
+            && self.scope.is_none()
         {
             // A folder the user named inside Downloads, Desktop and the rest
             // may be emptied; those top-level folders themselves may not.
@@ -1124,7 +1216,15 @@ impl<'a> Planner<'a> {
                 [one] if file_name(one) == label => format!("{label} in {}", one.parent().map_or_else(|| label.clone(), file_name)),
                 _ => format!("{} in {label}", count_label(&paths)),
             },
-            summary: format!("{}{}", Self::search_scope_hint(src), if paths.is_empty() { "Nothing matches.".into() } else { format!("{} in total, including subfolders.", human_size(total_bytes)) }),
+            summary: format!(
+                "{}{}",
+                Self::search_scope_hint(src),
+                if paths.is_empty() {
+                    "Nothing matches.".into()
+                } else {
+                    format!("{} in total, including subfolders.", human_size(total_bytes))
+                }
+            ),
             rows,
             total: paths.len(),
         })
@@ -1160,14 +1260,21 @@ impl<'a> Planner<'a> {
                 sizes.entry(child.clone()).or_default();
                 if !entry.is_dir {
                     match fs::symlink_metadata(&entry.path) {
-                        Ok(meta) => { bytes += meta.len(); files += 1; *sizes.entry(child).or_default() += meta.len(); }
+                        Ok(meta) => {
+                            bytes += meta.len();
+                            files += 1;
+                            *sizes.entry(child).or_default() += meta.len();
+                        }
                         Err(e) => self.search.issue(format!("couldn't inspect {} ({e})", entry.path.display())),
                     }
                 }
             }
         } else {
             match fs::symlink_metadata(&p) {
-                Ok(meta) => { bytes = meta.len(); files = 1; }
+                Ok(meta) => {
+                    bytes = meta.len();
+                    files = 1;
+                }
                 Err(e) => self.search.issue(format!("couldn't inspect {} ({e})", p.display())),
             }
         }
@@ -1176,7 +1283,10 @@ impl<'a> Planner<'a> {
         let rows = children
             .iter()
             .take(15)
-            .map(|(b, c)| InfoRow { name: file_name(c), detail: format!("{}{}", human_size(*b), if c.is_dir() { " · folder" } else { "" }) })
+            .map(|(b, c)| InfoRow {
+                name: file_name(c),
+                detail: format!("{}{}", human_size(*b), if c.is_dir() { " · folder" } else { "" }),
+            })
             .collect();
         Ok(Planned::Info {
             listed: None,
@@ -1213,7 +1323,11 @@ impl<'a> Planner<'a> {
         Ok(Planned::Info {
             listed: None,
             title: format!("{} {} in {}", dupes.len(), plural(dupes.len(), "set of duplicates", "sets of duplicates"), file_name(&dir)),
-            summary: if dupes.is_empty() { "No duplicates by name and size.".into() } else { format!("Matched by name and size. Extra copies use {}.", human_size(wasted)) },
+            summary: if dupes.is_empty() {
+                "No duplicates by name and size.".into()
+            } else {
+                format!("Matched by name and size. Extra copies use {}.", human_size(wasted))
+            },
             rows,
             total: dupes.len(),
         })
@@ -1227,18 +1341,33 @@ fn recent(history: &History, roots: &Roots) -> Planned {
         .rev()
         .take(20)
         .map(|e| {
-            let status = if e.undone { " · undone" } else if e.undo_of.is_some() { " · undo" } else { "" };
+            let status = if e.undone {
+                " · undone"
+            } else if e.undo_of.is_some() {
+                " · undo"
+            } else {
+                ""
+            };
             let first = e.done.first().map(|a| describe_path(a, roots)).unwrap_or_default();
             InfoRow {
                 name: e.command.clone(),
-                detail: format!("{} · {} {}{status}{first}", e.time.format("%b %-d, %H:%M"), e.done.len(), plural(e.done.len(), "change", "changes")),
+                detail: format!(
+                    "{} · {} {}{status}{first}",
+                    e.time.format("%b %-d, %H:%M"),
+                    e.done.len(),
+                    plural(e.done.len(), "change", "changes")
+                ),
             }
         })
         .collect();
     Planned::Info {
-            listed: None,
+        listed: None,
         title: "Recent actions".into(),
-        summary: if rows.is_empty() { "Nothing yet.".into() } else { "Newest first. “undo last” reverses the newest one that isn't undone.".into() },
+        summary: if rows.is_empty() {
+            "Nothing yet.".into()
+        } else {
+            "Newest first. “undo last” reverses the newest one that isn't undone.".into()
+        },
         total: history.entries.len(),
         rows,
     }
@@ -1252,7 +1381,6 @@ fn describe_path(a: &Action, roots: &Roots) -> String {
 }
 
 // ---- Filters and file facts -------------------------------------------------
-
 
 fn is_ext(ext: &str, set: &[&str]) -> bool {
     set.contains(&ext)
@@ -1285,11 +1413,7 @@ fn type_folder(p: &Path, sorted_name: &str) -> Option<String> {
 }
 
 fn category(name: &'static str, alternate: &'static str, sorted_name: &str) -> String {
-    if sorted_name.eq_ignore_ascii_case(name) {
-        alternate.to_string()
-    } else {
-        name.to_string()
-    }
+    if sorted_name.eq_ignore_ascii_case(name) { alternate.to_string() } else { name.to_string() }
 }
 
 fn type_label(f: &Filter) -> &'static str {
@@ -1334,7 +1458,9 @@ fn matches_prepared(p: &Path, f: &Filter, today: NaiveDate, contains: Option<&st
     }
     if contains.is_some() || starts.is_some() {
         let name = normalized_name(&file_name(p));
-        if contains.is_some_and(|needle| !name.contains(needle)) || starts.is_some_and(|needle| !name.starts_with(needle)) { return false; }
+        if contains.is_some_and(|needle| !name.contains(needle)) || starts.is_some_and(|needle| !name.starts_with(needle)) {
+            return false;
+        }
     }
     if f.larger_than_mb.is_some() || f.smaller_than_mb.is_some() {
         let mb = fs::metadata(p).map_or(0.0, |m| m.len() as f64 / (1024.0 * 1024.0));
@@ -1402,7 +1528,9 @@ fn base_name(name: &str) -> String {
     {
         s.truncate(i);
     } else if let Some((head, tail)) = s.rsplit_once(' ')
-        && !tail.is_empty() && tail.len() <= 2 && tail.chars().all(|c| c.is_ascii_digit())
+        && !tail.is_empty()
+        && tail.len() <= 2
+        && tail.chars().all(|c| c.is_ascii_digit())
     {
         s = head.to_string();
     }
@@ -1484,7 +1612,9 @@ fn closest(name: &str, entries: Vec<PathBuf>) -> Vec<PathBuf> {
         for p in entries {
             let file = file_name(&p);
             let (stem, ext) = split_name(&file);
-            if query_ext.is_some_and(|q| !ext.is_some_and(|e| q.eq_ignore_ascii_case(e))) { continue; }
+            if query_ext.is_some_and(|q| !ext.is_some_and(|e| q.eq_ignore_ascii_case(e))) {
+                continue;
+            }
             let candidate = loose(if query_ext.is_some() { &file } else { stem });
             if near_typo(&want, &candidate) && seen.insert(fsx::canonical(&p)) {
                 scored.push((1, created(&p), p));
@@ -1500,16 +1630,22 @@ fn normalized_name(name: &str) -> String {
     let mut result = String::with_capacity(name.len());
     let mut space = false;
     for ch in name.chars() {
-        if ch.is_whitespace() || matches!(ch, '_' | '-') { space = !result.is_empty(); }
-        else {
-            if space { result.push(' '); space = false; }
+        if ch.is_whitespace() || matches!(ch, '_' | '-') {
+            space = !result.is_empty();
+        } else {
+            if space {
+                result.push(' ');
+                space = false;
+            }
             result.extend(ch.to_lowercase());
         }
     }
     result
 }
 
-pub fn scope_matches(name: &str, paths: Vec<PathBuf>) -> bool { !closest(name, paths).is_empty() }
+pub fn scope_matches(name: &str, paths: Vec<PathBuf>) -> bool {
+    !closest(name, paths).is_empty()
+}
 
 fn strong_name_match(name: &str, path: &Path) -> bool {
     let file = file_name(path);
@@ -1521,7 +1657,9 @@ fn strong_name_match(name: &str, path: &Path) -> bool {
 fn near_typo(a: &str, b: &str) -> bool {
     let length = a.chars().count();
     let limit = if length >= 12 { 2 } else { 1 };
-    if length.abs_diff(b.chars().count()) > limit || b.len() > 520 { return false; }
+    if length.abs_diff(b.chars().count()) > limit || b.len() > 520 {
+        return false;
+    }
     let a: Vec<char> = a.chars().collect();
     let b: Vec<char> = b.chars().collect();
     let mut previous: Vec<usize> = (0..=b.len()).collect();
@@ -1530,12 +1668,14 @@ fn near_typo(a: &str, b: &str) -> bool {
         let mut row = vec![limit + 1; b.len() + 1];
         row[0] = i;
         for j in i.saturating_sub(limit).max(1)..=b.len().min(i + limit) {
-            row[j] = (previous[j] + 1).min(row[j-1] + 1).min(previous[j-1] + usize::from(a[i-1] != b[j-1]));
-            if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
-                row[j] = row[j].min(older[j-2] + 1);
+            row[j] = (previous[j] + 1).min(row[j - 1] + 1).min(previous[j - 1] + usize::from(a[i - 1] != b[j - 1]));
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                row[j] = row[j].min(older[j - 2] + 1);
             }
         }
-        if row.iter().copied().min().unwrap_or(limit + 1) > limit { return false; }
+        if row.iter().copied().min().unwrap_or(limit + 1) > limit {
+            return false;
+        }
         older = previous;
         previous = row;
     }
@@ -1565,7 +1705,9 @@ fn spotlight_checked(name: &str, dirs: &[PathBuf], search: Option<&search::Searc
         cmd.arg("-onlyin").arg(d);
     }
     let Ok(child) = cmd.arg(terms.join(" && ")).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
-        if let Some(search) = search { search.issue("Spotlight could not start".into()); }
+        if let Some(search) = search {
+            search.issue("Spotlight could not start".into());
+        }
         return Vec::new();
     };
     collect_spotlight(child, search, SPOTLIGHT_TIMEOUT)
@@ -1575,7 +1717,9 @@ fn collect_spotlight(mut child: std::process::Child, search: Option<&search::Sea
     let Some(out) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
-        if let Some(s) = search { s.issue("Spotlight output unavailable".into()); }
+        if let Some(s) = search {
+            s.issue("Spotlight output unavailable".into());
+        }
         return Vec::new();
     };
     let (tx, rx) = mpsc::channel();
@@ -1587,15 +1731,24 @@ fn collect_spotlight(mut child: std::process::Child, search: Option<&search::Sea
     let started = std::time::Instant::now();
     let mut received = false;
     let lines = loop {
-        if search.is_some_and(|s| s.stopped()) { break Vec::new(); }
+        if search.is_some_and(|s| s.stopped()) {
+            break Vec::new();
+        }
         if started.elapsed() >= timeout {
-            if let Some(s) = search { s.issue("Spotlight timed out".into()); }
+            if let Some(s) = search {
+                s.issue("Spotlight timed out".into());
+            }
             break Vec::new();
         }
         match rx.recv_timeout(Duration::from_millis(25)) {
-            Ok(Ok(lines)) => { received = true; break lines; },
+            Ok(Ok(lines)) => {
+                received = true;
+                break lines;
+            }
             Ok(Err(_)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
-                if let Some(s) = search { s.issue("Spotlight results could not be read".into()); }
+                if let Some(s) = search {
+                    s.issue("Spotlight results could not be read".into());
+                }
                 break Vec::new();
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -1605,15 +1758,28 @@ fn collect_spotlight(mut child: std::process::Child, search: Option<&search::Sea
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    if !status.success() && let Some(s) = search { s.issue("Spotlight exited unsuccessfully".into()); }
+                    if !status.success()
+                        && let Some(s) = search
+                    {
+                        s.issue("Spotlight exited unsuccessfully".into());
+                    }
                     break;
                 }
-                Err(_) => { if let Some(s) = search { s.issue("Spotlight status unavailable".into()); } break; }
+                Err(_) => {
+                    if let Some(s) = search {
+                        s.issue("Spotlight status unavailable".into());
+                    }
+                    break;
+                }
                 Ok(None) => {}
             }
-            if search.is_some_and(|s| s.stopped()) { break; }
+            if search.is_some_and(|s| s.stopped()) {
+                break;
+            }
             if started.elapsed() >= timeout {
-                if let Some(s) = search { s.issue("Spotlight timed out".into()); }
+                if let Some(s) = search {
+                    s.issue("Spotlight timed out".into());
+                }
                 break;
             }
             std::thread::sleep(Duration::from_millis(1));
@@ -1724,10 +1890,13 @@ mod tests {
         fs::write(h.roots.home.join("Pictures/one.png"), b"1").unwrap();
         fs::write(h.roots.home.join("Pictures/two.jpg"), b"2").unwrap();
         let actions = steps(&h, "number images in Pictures as \"shot-001\", \"shot-002\"");
-        let mut names: Vec<_> = actions.iter().map(|action| match action {
-            Action::Rename { new_name, .. } => new_name.clone(),
-            other => panic!("expected rename action, got {other:?}"),
-        }).collect();
+        let mut names: Vec<_> = actions
+            .iter()
+            .map(|action| match action {
+                Action::Rename { new_name, .. } => new_name.clone(),
+                other => panic!("expected rename action, got {other:?}"),
+            })
+            .collect();
         names.sort();
         assert_eq!(names, ["shot-001.png", "shot-002.jpg"]);
     }
@@ -1735,8 +1904,12 @@ mod tests {
     #[test]
     fn archive_and_dmg_rules_plan_only_the_requested_extensions() {
         let h = home();
-        for (name, bytes) in [("Archive.zip", b"z".as_slice()), ("notes.txt", b"t".as_slice()),
-            ("installer.dmg", b"d".as_slice()), ("installer.pkg", b"p".as_slice())] {
+        for (name, bytes) in [
+            ("Archive.zip", b"z".as_slice()),
+            ("notes.txt", b"t".as_slice()),
+            ("installer.dmg", b"d".as_slice()),
+            ("installer.pkg", b"p".as_slice()),
+        ] {
             fs::write(h.roots.home.join("Downloads").join(name), bytes).unwrap();
         }
         let archive_actions = steps(&h, "move archive files from Downloads to External");
@@ -1839,10 +2012,14 @@ mod tests {
         let dl = h.roots.downloads();
         fs::write(dl.join("AERO_GUARD-Case.pdf"), b"a").unwrap();
         fs::write(dl.join("AeroGaurd.pdf"), b"a").unwrap();
-        assert_eq!(steps(&h, "delete files containing aero guard from Downloads"),
-            vec![Action::Trash { path: dl.join("AERO_GUARD-Case.pdf") }]);
-        assert_eq!(steps(&h, "delete files starting with aero guard from Downloads"),
-            vec![Action::Trash { path: dl.join("AERO_GUARD-Case.pdf") }]);
+        assert_eq!(
+            steps(&h, "delete files containing aero guard from Downloads"),
+            vec![Action::Trash { path: dl.join("AERO_GUARD-Case.pdf") }]
+        );
+        assert_eq!(
+            steps(&h, "delete files starting with aero guard from Downloads"),
+            vec![Action::Trash { path: dl.join("AERO_GUARD-Case.pdf") }]
+        );
     }
 
     #[test]
@@ -1935,8 +2112,10 @@ mod tests {
         let actions = steps(&h, "create a folder in Downloads called Trash and move PDFs into it");
         assert!(actions.iter().any(|a| matches!(a, Action::CreateFolder { path } if path == &dl.join("Trash"))), "{actions:?}");
         assert!(actions.iter().any(|a| matches!(a, Action::Move { to, .. } if to.starts_with(dl.join("Trash")))), "{actions:?}");
-        assert!(!actions.iter().any(|a| matches!(a, Action::Trash { .. })),
-            "the PDFs go into the folder planned earlier, not the macOS Trash");
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::Trash { .. })),
+            "the PDFs go into the folder planned earlier, not the macOS Trash"
+        );
     }
 
     #[test]
@@ -1946,8 +2125,11 @@ mod tests {
         fs::write(dl.join("a.pdf"), b"a").unwrap();
         let actions = steps(&h, "create folder named Taxes in Downloads then move PDFs from Downloads to Archive");
         assert!(actions.iter().any(|a| matches!(a, Action::CreateFolder { path } if path == &dl.join("Taxes"))), "{actions:?}");
-        assert!(actions.iter().any(|a| matches!(a, Action::Move { from, to }
-            if from == &dl.join("a.pdf") && to.starts_with(dl.join("Archive")))), "{actions:?}");
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::Move { from, to }
+            if from == &dl.join("a.pdf") && to.starts_with(dl.join("Archive")))),
+            "{actions:?}"
+        );
     }
 
     #[test]
@@ -2072,8 +2254,7 @@ mod tests {
     fn location_first_folder_creation_targets_downloads() {
         let h = home();
         let destination = h.roots.downloads().join("PDFS");
-        assert_eq!(steps(&h, "create a folder in downloads named PDFS"),
-            vec![Action::CreateFolder { path: destination.clone() }]);
+        assert_eq!(steps(&h, "create a folder in downloads named PDFS"), vec![Action::CreateFolder { path: destination.clone() }]);
         assert!(!destination.exists(), "planning must only preview the new folder");
     }
 
@@ -2082,8 +2263,7 @@ mod tests {
         let h = home();
         fs::create_dir(h.roots.home.join("Documents/Dev")).unwrap();
         let path = h.roots.home.join("Documents/Dev/Toggle Wars");
-        assert_eq!(steps(&h, "create a folder in Documents/Dev called Toggle Wars."),
-            vec![Action::CreateFolder { path: path.clone() }]);
+        assert_eq!(steps(&h, "create a folder in Documents/Dev called Toggle Wars."), vec![Action::CreateFolder { path: path.clone() }]);
         assert!(!path.exists());
     }
 
@@ -2094,9 +2274,14 @@ mod tests {
         fs::create_dir_all(&full).unwrap();
         fs::create_dir_all(h.roots.home.join("Documents/Dev/Child")).unwrap();
         assert_eq!(steps(&h, "delete folder \"Documents/Dev/Child Folder\""), vec![Action::Trash { path: full.clone() }]);
-        assert_eq!(steps(&h, "move Documents/Dev/Child Folder to Desktop"), vec![Action::Move { from: full, to: h.roots.home.join("Desktop/Child Folder") }]);
-        assert_eq!(steps(&h, "create folders named \"Alpha and Beta\" in Documents/Dev"),
-            vec![Action::CreateFolder { path: h.roots.home.join("Documents/Dev/Alpha and Beta") }]);
+        assert_eq!(
+            steps(&h, "move Documents/Dev/Child Folder to Desktop"),
+            vec![Action::Move { from: full, to: h.roots.home.join("Desktop/Child Folder") }]
+        );
+        assert_eq!(
+            steps(&h, "create folders named \"Alpha and Beta\" in Documents/Dev"),
+            vec![Action::CreateFolder { path: h.roots.home.join("Documents/Dev/Alpha and Beta") }]
+        );
     }
 
     #[test]
@@ -2105,7 +2290,10 @@ mod tests {
         let root = h.roots.home.join("Other Folder");
         fs::create_dir(&root).unwrap();
         h.roots = Roots::new(&h.roots.home, None, std::slice::from_ref(&root));
-        assert_eq!(steps(&h, "copy \"Other Folder\" to Desktop"), vec![Action::Copy { from: root.clone(), to: h.roots.home.join("Desktop/Other Folder") }]);
+        assert_eq!(
+            steps(&h, "copy \"Other Folder\" to Desktop"),
+            vec![Action::Copy { from: root.clone(), to: h.roots.home.join("Desktop/Other Folder") }]
+        );
         for command in ["delete folder Other Folder", "move Other Folder into Documents", "rename Other Folder to New Name"] {
             assert!(matches!(plan(&h, command), Err(Stop::Problem(_))), "{command}");
         }
@@ -2119,8 +2307,10 @@ mod tests {
         let outside = h.roots.home.join("Desktop/draft-plan.txt");
         fs::write(&document, b"a").unwrap();
         fs::write(&outside, b"b").unwrap();
-        assert_eq!(steps(&h, "replace draft with final in the names in documents"),
-            vec![Action::Rename { path: document, new_name: "final-plan.txt".into() }]);
+        assert_eq!(
+            steps(&h, "replace draft with final in the names in documents"),
+            vec![Action::Rename { path: document, new_name: "final-plan.txt".into() }]
+        );
         assert_eq!(fs::read(&outside).unwrap(), b"b");
     }
 
@@ -2148,9 +2338,7 @@ mod tests {
         assert!(matches!(plan(&h, "sort Downloads by type"), Err(Stop::Problem(message)) if message.starts_with("Nothing to change.")));
         // The explicit opt-in keeps the historical recursive behaviour.
         let actions = steps(&h, "sort Downloads by type including subfolders");
-        assert_eq!(actions, vec![Action::Move {
-            from: dl.join("nested/report.pdf"), to: dl.join("PDFs/report 2.pdf")
-        }]);
+        assert_eq!(actions, vec![Action::Move { from: dl.join("nested/report.pdf"), to: dl.join("PDFs/report 2.pdf") }]);
         let month = created(&dl.join("nested/report.pdf")).unwrap().format("%Y-%m").to_string();
         fs::create_dir(dl.join(&month)).unwrap();
         fs::rename(dl.join("nested/report.pdf"), dl.join(&month).join("report.pdf")).unwrap();
@@ -2165,9 +2353,10 @@ mod tests {
         fs::create_dir_all(&nested).unwrap();
         fs::write(nested.join("report.pdf"), b"a").unwrap();
         fs::write(nested.join("archive.zip"), b"a").unwrap();
-        assert_eq!(steps(&h, "rename report.pdf to final.pdf"), vec![Action::Rename {
-            path: nested.join("report.pdf"), new_name: "final.pdf".into()
-        }]);
+        assert_eq!(
+            steps(&h, "rename report.pdf to final.pdf"),
+            vec![Action::Rename { path: nested.join("report.pdf"), new_name: "final.pdf".into() }]
+        );
         assert_eq!(steps(&h, "create folder Output in Project"), vec![Action::CreateFolder { path: nested.join("Output") }]);
         assert!(matches!(steps(&h, "zip Project into Project.zip").last(), Some(Action::Zip { path, .. }) if path == &nested));
         assert!(matches!(steps(&h, "unzip archive.zip").last(), Some(Action::Unzip { path, .. }) if path == &nested.join("archive.zip")));
@@ -2219,10 +2408,13 @@ mod tests {
         ] {
             let Ok(Planned::Steps { actions, warnings, .. }) = plan(&h, command) else { panic!("expected a plan: {command}") };
             let expected: HashSet<_> = [dl.join(names[0])].into_iter().collect();
-            let actual: HashSet<_> = actions.into_iter().map(|a| match a {
-                Action::Trash { path } => path,
-                _ => panic!("expected only Trash actions"),
-            }).collect();
+            let actual: HashSet<_> = actions
+                .into_iter()
+                .map(|a| match a {
+                    Action::Trash { path } => path,
+                    _ => panic!("expected only Trash actions"),
+                })
+                .collect();
             assert_eq!(actual, expected, "{command}");
             assert!(warnings.iter().any(|w| w == "2 more matching files were left alone in subfolders."), "{command}: {warnings:?}");
             assert!(names.iter().all(|name| dl.join(name).exists()));
@@ -2295,7 +2487,9 @@ mod tests {
         fs::write(dl.join("Claude.dmg"), b"a").unwrap();
         let choices = HashMap::from([("claude".to_string(), dl.join("Claude Setup.dmg"))]);
         let history = History::load(h.roots.home.join("history.json"));
-        let Ok(Planned::Steps { actions, .. }) = Planner::new(&h.roots, &choices).plan(&parse("delete claude from downloads").unwrap(), &history) else {
+        let Ok(Planned::Steps { actions, .. }) =
+            Planner::new(&h.roots, &choices).plan(&parse("delete claude from downloads").unwrap(), &history)
+        else {
             panic!("expected a plan")
         };
         assert!(matches!(actions.last(), Some(Action::Trash { path, .. }) if *path == dl.join("Claude Setup.dmg")));
@@ -2331,7 +2525,11 @@ mod tests {
             panic!("expected one combined plan")
         };
         assert_eq!(title, "Run my usuals: 2 commands");
-        assert!(actions.iter().any(|a| matches!(a, Action::Move { to, .. } if to.ends_with("Screenshots/Screenshot 2026-10-28 at 10.00.00.png"))));
+        assert!(
+            actions
+                .iter()
+                .any(|a| matches!(a, Action::Move { to, .. } if to.ends_with("Screenshots/Screenshot 2026-10-28 at 10.00.00.png")))
+        );
         assert!(warnings.iter().any(|w| w.starts_with("“delete installers from Downloads”")), "{warnings:?}");
     }
 
@@ -2375,7 +2573,9 @@ mod tests {
         let h = home();
         let dir = h.roots.home.join("Downloads/installers");
         fs::create_dir_all(dir.join("old")).unwrap();
-        for name in ["a.dmg", "notes.txt", "old/b.pkg"] { fs::write(dir.join(name), b"a").unwrap(); }
+        for name in ["a.dmg", "notes.txt", "old/b.pkg"] {
+            fs::write(dir.join(name), b"a").unwrap();
+        }
         for cmd in ["delete items in installers folder", "delete everything in the installers folder", "delete files in installers"] {
             let mut a = steps(&h, cmd);
             a.sort_by_key(|a| format!("{a:?}"));
@@ -2441,8 +2641,11 @@ mod tests {
         fs::write(docs.join("notes.docx"), b"x").unwrap();
         let a = steps(&h, "sort Documents by type");
         let nested = docs.join("Documents");
-        assert!(!a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(&nested))),
-            "no file should land in {}: {a:?}", nested.display());
+        assert!(
+            !a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(&nested))),
+            "no file should land in {}: {a:?}",
+            nested.display()
+        );
         assert!(a.contains(&Action::Move { from: docs.join("report.pdf"), to: docs.join("PDFs/report.pdf") }));
         assert!(a.contains(&Action::Move { from: docs.join("notes.docx"), to: docs.join("Document files/notes.docx") }));
     }
@@ -2463,8 +2666,10 @@ mod tests {
         fs::create_dir(&pics).unwrap();
         fs::write(pics.join("photo.png"), b"x").unwrap();
         let a = steps(&h, "sort Images by type");
-        assert!(!a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(pics.join("Images")))),
-            "no nested Images/Images: {a:?}");
+        assert!(
+            !a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(pics.join("Images")))),
+            "no nested Images/Images: {a:?}"
+        );
         assert!(a.contains(&Action::Move { from: pics.join("photo.png"), to: pics.join("Image files/photo.png") }));
     }
 
@@ -2479,11 +2684,15 @@ mod tests {
         let a = steps(&h, "sort Documents by type including subfolders");
         // The file already in the alternate category stays put (the "already
         // there" check is path-based, so it works with the new name too).
-        assert!(!a.iter().any(|action| matches!(action, Action::Move { from, .. } if from == &alternate.join("notes.docx"))),
-            "the already-sorted file should not move: {a:?}");
+        assert!(
+            !a.iter().any(|action| matches!(action, Action::Move { from, .. } if from == &alternate.join("notes.docx"))),
+            "the already-sorted file should not move: {a:?}"
+        );
         assert!(a.contains(&Action::Move { from: docs.join("fresh.docx"), to: alternate.join("fresh.docx") }));
-        assert!(!a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(alternate.join("Document files")))),
-            "category folders must not be nested: {a:?}");
+        assert!(
+            !a.iter().any(|action| matches!(action, Action::Move { to, .. } if to.starts_with(alternate.join("Document files")))),
+            "category folders must not be nested: {a:?}"
+        );
     }
 
     #[test]
@@ -2656,10 +2865,7 @@ mod tests {
         touch(&dl.join("budget-2026.pdf"), 10);
         touch(&dl.join("notes.txt"), 10);
         touch(&desk.join("budget-old.pdf"), 10);
-        assert_eq!(
-            trash_paths(&steps(&h, "delete files named budget in Downloads")),
-            vec![dl.join("budget-2026.pdf")]
-        );
+        assert_eq!(trash_paths(&steps(&h, "delete files named budget in Downloads")), vec![dl.join("budget-2026.pdf")]);
     }
 
     #[test]
@@ -2790,7 +2996,10 @@ mod tests {
             assert_eq!(trash_paths(&steps(&h, &format!("delete \"{name}\" in Downloads"))), vec![dl.join(name)]);
         }
         let actions = steps(&h, "move \"Notes to Self.txt\" from Downloads to Documents");
-        assert_eq!(actions, vec![Action::Move { from: dl.join("Notes to Self.txt"), to: h.roots.home.join("Documents/Notes to Self.txt") }]);
+        assert_eq!(
+            actions,
+            vec![Action::Move { from: dl.join("Notes to Self.txt"), to: h.roots.home.join("Documents/Notes to Self.txt") }]
+        );
         assert!(dl.join("Notes").exists() && dl.join("Notes to Self.txt").exists());
     }
 
@@ -2810,15 +3019,24 @@ mod tests {
         let h = home();
         let choices = HashMap::new();
         let history = History::load(h.roots.home.join("history.json"));
-        for command in ["delete the last file", "delete the first file", "delete the 2nd file", "move the file to Documents", "move from Downloads to Documents"] {
+        for command in [
+            "delete the last file",
+            "delete the first file",
+            "delete the 2nd file",
+            "move the file to Documents",
+            "move from Downloads to Documents",
+        ] {
             let control = search::Control::default();
-            let result = parse(command).map(|intent| Planner::new(&h.roots, &choices).with_control(control.clone()).plan(&intent, &history));
+            let result =
+                parse(command).map(|intent| Planner::new(&h.roots, &choices).with_control(control.clone()).plan(&intent, &history));
             assert!(result.is_err(), "{command} must fail at parsing");
             assert_eq!(control.visited.load(std::sync::atomic::Ordering::Relaxed), 0);
         }
         let control = search::Control::default();
-        assert!(matches!(Planner::new(&h.roots, &choices).with_control(control.clone())
-            .plan(&Intent::Trash { src: Source::item("") }, &history), Err(Stop::Problem(_))));
+        assert!(matches!(
+            Planner::new(&h.roots, &choices).with_control(control.clone()).plan(&Intent::Trash { src: Source::item("") }, &history),
+            Err(Stop::Problem(_))
+        ));
         assert_eq!(control.visited.load(std::sync::atomic::Ordering::Relaxed), 0);
     }
 
@@ -2840,7 +3058,9 @@ mod tests {
             touch(&dl.join(name), 10);
         }
         touch(&h.roots.home.join("Documents/outside.stl"), 10);
-        let Ok(Planned::Info { rows, total, .. }) = plan(&h, " list the STL files in Downloads. ") else { panic!("expected a read-only list") };
+        let Ok(Planned::Info { rows, total, .. }) = plan(&h, " list the STL files in Downloads. ") else {
+            panic!("expected a read-only list")
+        };
         let mut names: Vec<_> = rows.iter().map(|row| row.name.as_str()).collect();
         names.sort();
         assert_eq!(names, vec!["UPPER.STL", "nested.stl", "part.stl"]);
@@ -2871,15 +3091,23 @@ mod tests {
         assert_eq!(total, 3);
 
         let moved = steps(&h, "move the STL files in Downloads to Documents");
-        let moved_names: std::collections::BTreeSet<_> = moved.iter().filter_map(|a| match a {
-            Action::Move { from, .. } => Some(file_name(from)), _ => None,
-        }).collect();
+        let moved_names: std::collections::BTreeSet<_> = moved
+            .iter()
+            .filter_map(|a| match a {
+                Action::Move { from, .. } => Some(file_name(from)),
+                _ => None,
+            })
+            .collect();
         assert_eq!(moved_names, ["UPPER.STL", "part.stl"].into_iter().map(str::to_string).collect());
 
         let trashed = steps(&h, "delete the STL files in Downloads");
-        let trashed_names: std::collections::BTreeSet<_> = trashed.iter().filter_map(|a| match a {
-            Action::Trash { path } => Some(file_name(path)), _ => None,
-        }).collect();
+        let trashed_names: std::collections::BTreeSet<_> = trashed
+            .iter()
+            .filter_map(|a| match a {
+                Action::Trash { path } => Some(file_name(path)),
+                _ => None,
+            })
+            .collect();
         assert_eq!(trashed_names, ["UPPER.STL", "nested.stl", "part.stl"].into_iter().map(str::to_string).collect());
         assert!(dl.join("part.stl").exists(), "planning previews must not execute changes");
     }
@@ -2890,18 +3118,23 @@ mod tests {
         let h = home();
         let dl = h.roots.downloads();
         let samples = [
-            ("obj", "mesh.obj"), ("3mf", "print.3mf"), ("bmp", "bitmap.bmp"),
-            ("tar.gz", "archive.tar.gz"), ("zzcustom", "custom.zzcustom"),
+            ("obj", "mesh.obj"),
+            ("3mf", "print.3mf"),
+            ("bmp", "bitmap.bmp"),
+            ("tar.gz", "archive.tar.gz"),
+            ("zzcustom", "custom.zzcustom"),
         ];
         let mut report = String::new();
         for (requested, filename) in samples {
             touch(&dl.join(filename), 1);
             touch(&dl.join(format!("guide.{requested}.txt")), 1);
             fs::create_dir(dl.join(format!("folder.{requested}"))).unwrap();
-            let intent = Intent::List { src: Source::Set {
-                folder: Some("Downloads".into()),
-                filter: Filter { file_type: Some(FileType::Files), ext: Some(vec![requested.to_string()]), ..Default::default() },
-            }};
+            let intent = Intent::List {
+                src: Source::Set {
+                    folder: Some("Downloads".into()),
+                    filter: Filter { file_type: Some(FileType::Files), ext: Some(vec![requested.to_string()]), ..Default::default() },
+                },
+            };
             let history = History::load(h.roots.home.join("history.json"));
             let actual = Planner::new(&h.roots, &HashMap::new()).plan(&intent, &history);
             let (names, total) = match actual {
@@ -2919,7 +3152,8 @@ mod tests {
             }).to_string());
             report.push('\n');
         }
-        let path = std::env::var_os("VOXI_EXTENSION_PLANNER_REPORT").map(PathBuf::from)
+        let path = std::env::var_os("VOXI_EXTENSION_PLANNER_REPORT")
+            .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/extension-planner-results.jsonl"));
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, report).unwrap();

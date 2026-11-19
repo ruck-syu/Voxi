@@ -4,27 +4,39 @@
 // bench with --cfg test but no test harness, so #[test] bodies are stripped
 // while their imports remain; those imports are irrelevant to the benchmark.
 #![allow(unused_imports)]
-#[path = "../src/fsx.rs"] mod fsx;
-#[path = "../src/history.rs"] mod history;
-#[path = "../src/model.rs"] mod model;
-#[path = "../src/parse/mod.rs"] mod parse;
-#[path = "../src/pdf.rs"] mod pdf;
-#[path = "../src/plan.rs"] mod plan;
-#[path = "../src/search.rs"] mod search;
+#[path = "../src/fsx.rs"]
+mod fsx;
+#[path = "../src/history.rs"]
+mod history;
+#[path = "../src/model.rs"]
+mod model;
+#[path = "../src/parse/mod.rs"]
+mod parse;
+#[path = "../src/pdf.rs"]
+mod pdf;
+#[path = "../src/plan.rs"]
+mod plan;
+#[path = "../src/search.rs"]
+mod search;
 // Crate-root references made by the included files (`crate::settings`, etc.).
-#[path = "../src/scheduler.rs"] mod scheduler;
-#[path = "../src/scope.rs"] mod scope;
-#[path = "../src/settings.rs"] mod settings;
+#[path = "../src/scheduler.rs"]
+mod scheduler;
+#[path = "../src/scope.rs"]
+mod scope;
+#[path = "../src/settings.rs"]
+mod settings;
 
-use std::{collections::HashMap, fs, hint::black_box, path::Path, time::Instant};
 use serde_json::{Value, json};
+use std::{collections::HashMap, fs, hint::black_box, path::Path, time::Instant};
 
 /// Benchmark-only walker: mirrors the production walk without exporting it
 /// from the library, where it has no production caller.
 fn walk(dir: &Path, depth: usize, f: &mut dyn FnMut(&Path, bool)) {
     let mut search = search::Search::default();
     search.depth = depth;
-    for e in search.entries(dir).iter() { f(&e.path, e.is_dir); }
+    for e in search.entries(dir).iter() {
+        f(&e.path, e.is_dir);
+    }
 }
 
 fn fixture(home: &Path, files: usize, nested: bool) {
@@ -32,17 +44,20 @@ fn fixture(home: &Path, files: usize, nested: bool) {
         fs::create_dir_all(home.join(folder)).unwrap();
     }
     for i in 0..files {
-        let dir = if nested {
-            home.join(format!("Downloads/group_{:02}/batch_{:02}", i / 1000, (i / 100) % 10))
-        } else { home.join("Downloads") };
-        if i % 100 == 0 { fs::create_dir_all(&dir).unwrap(); }
+        let dir =
+            if nested { home.join(format!("Downloads/group_{:02}/batch_{:02}", i / 1000, (i / 100) % 10)) } else { home.join("Downloads") };
+        if i % 100 == 0 {
+            fs::create_dir_all(&dir).unwrap();
+        }
         let name = if i % 100 == 0 { format!("AEROGUARD_{i:06}.pdf") } else { format!("file_{i:06}.txt") };
         fs::File::create(dir.join(name)).unwrap();
     }
 }
 
 fn measure(mut f: impl FnMut() -> (usize, String), expected: usize, warmups: usize, repeats: usize) -> Value {
-    for _ in 0..warmups { black_box(f()); }
+    for _ in 0..warmups {
+        black_box(f());
+    }
     let mut samples = Vec::new();
     let mut counts = Vec::new();
     let mut outcomes = Vec::new();
@@ -61,8 +76,10 @@ fn main() {
     let warmups = 2;
     let mut results = Vec::new();
     for (name, files, nested) in [
-        ("flat-1k", 1000, false), ("flat-10k", 10000, false),
-        ("nested-10k", 10000, true), ("nested-40k", 40000, true),
+        ("flat-1k", 1000, false),
+        ("flat-10k", 10000, false),
+        ("nested-10k", 10000, true),
+        ("nested-40k", 40000, true),
         ("budget-60k", 60000, true),
     ] {
         eprintln!("Benchmarking {name} ({files} files)");
@@ -73,11 +90,20 @@ fn main() {
         let history = history::History::load(home.join("history.json"));
         let choices = HashMap::new();
         let dl = roots.downloads();
-        let walk = measure(|| {
-            let mut count = 0;
-            walk(&dl, 12, &mut |_, dir| if !dir { count += 1 });
-            (count, "walk".into())
-        }, files, warmups, repeats);
+        let walk = measure(
+            || {
+                let mut count = 0;
+                walk(&dl, 12, &mut |_, dir| {
+                    if !dir {
+                        count += 1
+                    }
+                });
+                (count, "walk".into())
+            },
+            files,
+            warmups,
+            repeats,
+        );
         results.push(json!({"fixture": name, "files": files, "operation": "walk", "measurement": walk}));
         for (op, command, expected) in [
             ("group", "Delete all the Aeroguard files from Downloads".to_string(), files / 100),
@@ -85,16 +111,21 @@ fn main() {
             ("normalized", format!("delete file {:06} txt from Downloads", files - 1), 1),
             ("missing", "delete BenchmarkAbsentNeedle987.txt from Downloads".to_string(), 0),
         ] {
-            let measurement = measure(|| {
-                // Include parser + complete planning; never call the executor.
-                let intent = parse::parse(black_box(&command)).unwrap();
-                match plan::Planner::new(&roots, &choices).plan(&intent, &history) {
-                    Ok(plan::Planned::Steps { actions, .. }) => (actions.len(), "plan".into()),
-                    Err(plan::Stop::Ambiguous { candidates, .. }) => (candidates.len(), "ambiguous".into()),
-                    Err(plan::Stop::Problem(message)) => (0, message),
-                    Ok(_) => (0, "other".into()),
-                }
-            }, expected, warmups, repeats);
+            let measurement = measure(
+                || {
+                    // Include parser + complete planning; never call the executor.
+                    let intent = parse::parse(black_box(&command)).unwrap();
+                    match plan::Planner::new(&roots, &choices).plan(&intent, &history) {
+                        Ok(plan::Planned::Steps { actions, .. }) => (actions.len(), "plan".into()),
+                        Err(plan::Stop::Ambiguous { candidates, .. }) => (candidates.len(), "ambiguous".into()),
+                        Err(plan::Stop::Problem(message)) => (0, message),
+                        Ok(_) => (0, "other".into()),
+                    }
+                },
+                expected,
+                warmups,
+                repeats,
+            );
             results.push(json!({"fixture": name, "files": files, "operation": op, "command": command, "measurement": measurement}));
         }
     }
@@ -108,17 +139,27 @@ fn main() {
     let roots = fsx::Roots::new(&home, None, &[]);
     let history = history::History::load(home.join("history.json"));
     let choices = HashMap::new();
-    let measurement = measure(|| {
-        let intent = parse::parse("delete Aeroguard files from Downloads").unwrap();
-        match plan::Planner::new(&roots, &choices).plan(&intent, &history) {
-            Ok(plan::Planned::Steps { actions, .. }) => (actions.len(), "plan".into()),
-            Err(plan::Stop::Problem(message)) => (0, message),
-            _ => (0, "other".into()),
-        }
-    }, 1, warmups, repeats);
+    let measurement = measure(
+        || {
+            let intent = parse::parse("delete Aeroguard files from Downloads").unwrap();
+            match plan::Planner::new(&roots, &choices).plan(&intent, &history) {
+                Ok(plan::Planned::Steps { actions, .. }) => (actions.len(), "plan".into()),
+                Err(plan::Stop::Problem(message)) => (0, message),
+                _ => (0, "other".into()),
+            }
+        },
+        1,
+        warmups,
+        repeats,
+    );
     results.push(json!({"fixture": "depth-14", "files": 1, "operation": "group", "measurement": measurement}));
     let output = std::env::var("VOXI_BENCH_OUTPUT").expect("set VOXI_BENCH_OUTPUT");
-    fs::write(output, serde_json::to_string_pretty(&json!({
-        "warmups": warmups, "repeats": repeats, "results": results
-    })).unwrap()).unwrap();
+    fs::write(
+        output,
+        serde_json::to_string_pretty(&json!({
+            "warmups": warmups, "repeats": repeats, "results": results
+        }))
+        .unwrap(),
+    )
+    .unwrap();
 }

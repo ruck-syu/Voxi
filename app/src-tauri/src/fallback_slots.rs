@@ -50,13 +50,9 @@ pub struct PreparedRewrite {
 impl PreparedRewrite {
     /// Complete an inference result. Native errors and noncertifying rewrites
     /// remain refusals; no source-derived intent is returned as a fallback.
-    pub fn finish(
-        &self,
-        raw_model_rewrite: Result<String, String>,
-    ) -> Result<Intent, CompletionError> {
+    pub fn finish(&self, raw_model_rewrite: Result<String, String>) -> Result<Intent, CompletionError> {
         let candidate = raw_model_rewrite.map_err(CompletionError::ModelError)?;
-        let parsed = fallback_guard::certify_bound(&self.bound_original, &candidate)
-            .map_err(CompletionError::Rejected)?;
+        let parsed = fallback_guard::certify_bound(&self.bound_original, &candidate).map_err(CompletionError::Rejected)?;
         restore(parsed, &self.expected, &self.bindings)
     }
 }
@@ -73,21 +69,15 @@ pub fn prepare(original: &str) -> Result<PreparedRewrite, PrepareError> {
         Err(ParseFailure::HardRefusal(_)) => return Err(PrepareError::OriginalHardRefusal),
         Err(ParseFailure::GrammarMiss) => {}
     }
-    let expected =
-        fallback_guard::folder_creation(original).ok_or(PrepareError::UnsupportedOriginal)?;
+    let expected = fallback_guard::folder_creation(original).ok_or(PrepareError::UnsupportedOriginal)?;
     if fallback_guard::has_unquoted_unsupported_clause(original) {
         return Err(PrepareError::UnsupportedOriginal);
     }
     let Intent::CreateFolders { names, parent } = &expected else {
         return Err(PrepareError::UnsupportedOriginal);
     };
-    let captures = FOLDER_CREATE
-        .captures(original)
-        .ok_or(PrepareError::UnsupportedOriginal)?;
-    let name_match = captures
-        .get(1)
-        .or_else(|| captures.get(2))
-        .ok_or(PrepareError::UnsupportedOriginal)?;
+    let captures = FOLDER_CREATE.captures(original).ok_or(PrepareError::UnsupportedOriginal)?;
+    let name_match = captures.get(1).or_else(|| captures.get(2)).ok_or(PrepareError::UnsupportedOriginal)?;
     let parent_match = captures.get(3).ok_or(PrepareError::UnsupportedOriginal)?;
     let raw_names = name_match.as_str();
     let values = split_literal_members(raw_names).ok_or(PrepareError::UnsupportedOriginal)?;
@@ -99,50 +89,28 @@ pub fn prepare(original: &str) -> Result<PreparedRewrite, PrepareError> {
     let mut bindings = Vec::with_capacity(names.len() + 1);
     for (index, value) in names.iter().enumerate() {
         let alias = choose_alias(original, &bindings).ok_or(PrepareError::UnsupportedOriginal)?;
-        bindings.push(Binding {
-            alias,
-            value: value.clone(),
-            role: Role::Name(index),
-        });
+        bindings.push(Binding { alias, value: value.clone(), role: Role::Name(index) });
     }
-    let parent_alias =
-        choose_alias(original, &bindings).ok_or(PrepareError::UnsupportedOriginal)?;
-    bindings.push(Binding {
-        alias: parent_alias,
-        value: parent_value,
-        role: Role::Parent,
-    });
+    let parent_alias = choose_alias(original, &bindings).ok_or(PrepareError::UnsupportedOriginal)?;
+    bindings.push(Binding { alias: parent_alias, value: parent_value, role: Role::Parent });
 
     // Replace capture spans from right to left, preserving all other wording,
     // punctuation, casing and clauses byte-for-byte. Normalize commas only
     // between independently parsed quoted members.
     let mut model_input = original.to_string();
     let mut bound_original = original.to_string();
-    let name_aliases: Vec<String> = bindings
-        .iter()
-        .filter(|b| matches!(b.role, Role::Name(_)))
-        .map(|b| b.alias.clone())
-        .collect();
-    let bound_names =
-        join_like_list(raw_names, &name_aliases).ok_or(PrepareError::UnsupportedOriginal)?;
+    let name_aliases: Vec<String> = bindings.iter().filter(|b| matches!(b.role, Role::Name(_))).map(|b| b.alias.clone()).collect();
+    let bound_names = join_like_list(raw_names, &name_aliases).ok_or(PrepareError::UnsupportedOriginal)?;
     let parent_binding = bindings.last().unwrap();
     let parent_alias = parent_binding.alias.clone();
-    let mut edits = vec![
-        (name_match.start(), name_match.end(), bound_names),
-        (parent_match.start(), parent_match.end(), parent_alias),
-    ];
+    let mut edits = vec![(name_match.start(), name_match.end(), bound_names), (parent_match.start(), parent_match.end(), parent_alias)];
     edits.sort_by_key(|(start, _, _)| std::cmp::Reverse(*start));
     for (start, end, replacement) in edits {
         replace_span(&mut model_input, start, end, &replacement);
         replace_span(&mut bound_original, start, end, &replacement);
     }
 
-    Ok(PreparedRewrite {
-        model_input,
-        bound_original,
-        expected,
-        bindings,
-    })
+    Ok(PreparedRewrite { model_input, bound_original, expected, bindings })
 }
 
 static FOLDER_CREATE: LazyLock<Regex> = LazyLock::new(|| {
@@ -174,10 +142,7 @@ fn choose_alias(original: &str, used: &[Binding]) -> Option<String> {
     ];
     pool.iter()
         .find(|candidate| {
-            !original.to_lowercase().contains(&candidate.to_lowercase())
-                && used
-                    .iter()
-                    .all(|b| !b.alias.eq_ignore_ascii_case(candidate))
+            !original.to_lowercase().contains(&candidate.to_lowercase()) && used.iter().all(|b| !b.alias.eq_ignore_ascii_case(candidate))
         })
         .map(|word| (*word).to_string())
 }
@@ -196,11 +161,7 @@ fn split_literal_members(s: &str) -> Option<Vec<String>> {
             }
         } else if matches!(ch, '"' | '\'' | '“' | '‘') {
             quote = Some(ch);
-        } else if ch == ','
-            || s[i..]
-                .get(..5)
-                .is_some_and(|suffix| suffix.eq_ignore_ascii_case(" and "))
-        {
+        } else if ch == ',' || s[i..].get(..5).is_some_and(|suffix| suffix.eq_ignore_ascii_case(" and ")) {
             let member = s[start..i].trim();
             result.push(unquote(member)?);
             start = if ch == ',' { i + 1 } else { i + 5 };
@@ -248,11 +209,7 @@ fn join_like_list(raw: &str, aliases: &[String]) -> Option<String> {
             }
         } else if matches!(ch, '"' | '\'' | '“' | '‘') {
             quote = Some(ch);
-        } else if ch == ','
-            || raw[i..]
-                .get(..5)
-                .is_some_and(|suffix| suffix.eq_ignore_ascii_case(" and "))
-        {
+        } else if ch == ',' || raw[i..].get(..5).is_some_and(|suffix| suffix.eq_ignore_ascii_case(" and ")) {
             pieces.push((start, i));
             let end = if ch == ',' { i + 1 } else { i + 5 };
             separators.push((i, end));
@@ -282,20 +239,10 @@ fn replace_span(s: &mut String, start: usize, end: usize, with: &str) {
     s.replace_range(start..end, with);
 }
 
-fn restore(
-    mut parsed: Intent,
-    expected: &Intent,
-    bindings: &[Binding],
-) -> Result<Intent, CompletionError> {
+fn restore(mut parsed: Intent, expected: &Intent, bindings: &[Binding]) -> Result<Intent, CompletionError> {
     let (
-        Intent::CreateFolders {
-            names: parsed_names,
-            parent: parsed_parent,
-        },
-        Intent::CreateFolders {
-            names: expected_names,
-            parent: expected_parent,
-        },
+        Intent::CreateFolders { names: parsed_names, parent: parsed_parent },
+        Intent::CreateFolders { names: expected_names, parent: expected_parent },
     ) = (&mut parsed, expected)
     else {
         return Err(CompletionError::AliasMismatch);
@@ -310,20 +257,15 @@ fn restore(
                 if index >= restored.len() || restored[index].is_some() {
                     return Err(CompletionError::AliasMismatch);
                 }
-                let positions: Vec<usize> = parsed_names
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(i, n)| n.eq_ignore_ascii_case(&binding.alias).then_some(i))
-                    .collect();
+                let positions: Vec<usize> =
+                    parsed_names.iter().enumerate().filter_map(|(i, n)| n.eq_ignore_ascii_case(&binding.alias).then_some(i)).collect();
                 if positions.len() != 1 {
                     return Err(CompletionError::AliasMismatch);
                 }
                 restored[index] = Some(binding.value.clone());
             }
             Role::Parent => {
-                if parsed_parent.as_deref() != Some(binding.alias.as_str())
-                    || expected_parent.as_deref() != Some(binding.value.as_str())
-                {
+                if parsed_parent.as_deref() != Some(binding.alias.as_str()) || expected_parent.as_deref() != Some(binding.value.as_str()) {
                     return Err(CompletionError::AliasMismatch);
                 }
                 *parsed_parent = Some(binding.value.clone());
@@ -354,24 +296,14 @@ mod tests {
     #[test]
     fn binds_quoted_unicode_list_and_restores_exact_values() {
         let p = prepare("Create folders ‘A, B’, \"RÉSUMÉ's\" in Documents").unwrap();
-        let Intent::CreateFolders {
-            names: aliases,
-            parent: alias_parent,
-        } = fallback_guard::folder_creation(&p.bound_original).unwrap()
+        let Intent::CreateFolders { names: aliases, parent: alias_parent } = fallback_guard::folder_creation(&p.bound_original).unwrap()
         else {
             panic!()
         };
         assert!(p.model_input.contains(" and "));
         assert!(!p.model_input.contains("A, B"));
-        let rewrite = format!(
-            "create folders named {} and {} in {}",
-            aliases[0],
-            aliases[1],
-            alias_parent.unwrap()
-        );
-        let Intent::CreateFolders { names, parent } = p.finish(Ok(rewrite)).unwrap() else {
-            panic!()
-        };
+        let rewrite = format!("create folders named {} and {} in {}", aliases[0], aliases[1], alias_parent.unwrap());
+        let Intent::CreateFolders { names, parent } = p.finish(Ok(rewrite)).unwrap() else { panic!() };
         assert_eq!(names, vec!["A, B", "RÉSUMÉ's"]);
         assert_eq!(parent.as_deref(), Some("Documents"));
     }
@@ -391,19 +323,10 @@ mod tests {
 
     #[test]
     fn accepted_and_hard_refusal_keep_priority_and_model_errors_propagate() {
-        assert!(matches!(
-            prepare("Create folders X and Y in Documents"),
-            Err(PrepareError::OriginalAccepted)
-        ));
-        assert!(matches!(
-            prepare("delete everything permanently"),
-            Err(PrepareError::OriginalHardRefusal)
-        ));
+        assert!(matches!(prepare("Create folders X and Y in Documents"), Err(PrepareError::OriginalAccepted)));
+        assert!(matches!(prepare("delete everything permanently"), Err(PrepareError::OriginalHardRefusal)));
         let p = prepare("Create folders \"Quasar\", \"Xylophone\" in Documents").unwrap();
-        assert_eq!(
-            p.finish(Err("NoEos".into())),
-            Err(CompletionError::ModelError("NoEos".into()))
-        );
+        assert_eq!(p.finish(Err("NoEos".into())), Err(CompletionError::ModelError("NoEos".into())));
     }
 
     #[test]
@@ -424,50 +347,25 @@ mod tests {
     fn quoted_reserved_words_are_literal_values_and_aliases_do_not_collide() {
         let p = prepare("Create folders \"some\", \"two\" in \"Archive\"").unwrap();
         let aliases = fallback_guard::folder_creation(&p.bound_original).unwrap();
-        let Intent::CreateFolders {
-            names: alias_names,
-            parent: alias_parent,
-        } = aliases
-        else {
-            panic!()
-        };
+        let Intent::CreateFolders { names: alias_names, parent: alias_parent } = aliases else { panic!() };
         assert_ne!(alias_names[0], alias_names[1]);
         assert!(!alias_names.contains(&alias_parent.unwrap()));
     }
 
     #[test]
     fn malformed_or_unsupported_list_separators_refuse_without_panicking() {
-        for names in [
-            "\"A\", and \"B\"",
-            "\"A\",  and \"B\"",
-            "\"A\",, \"B\"",
-            "\"A\" and and \"B\"",
-            "\"A\",",
-            ", \"B\"",
-        ] {
+        for names in ["\"A\", and \"B\"", "\"A\",  and \"B\"", "\"A\",, \"B\"", "\"A\" and and \"B\"", "\"A\",", ", \"B\""] {
             let original = format!("Create folders {names} in Documents");
-            assert!(
-                std::panic::catch_unwind(|| prepare(&original)).is_ok(),
-                "{original}"
-            );
+            assert!(std::panic::catch_unwind(|| prepare(&original)).is_ok(), "{original}");
         }
     }
 
     #[test]
     fn polite_source_wording_is_preserved_while_literals_are_bound() {
-        let prepared =
-            prepare("Please create folders \"Quasar\", \"Zephyr\" in Documents").unwrap();
+        let prepared = prepare("Please create folders \"Quasar\", \"Zephyr\" in Documents").unwrap();
         assert!(prepared.model_input.starts_with("Please create folders "));
-        assert!(
-            prepared
-                .finish(Ok(
-                    "create folders named Archive and Backup in Desktop".into()
-                ))
-                .is_ok()
-        );
-        assert!(
-            prepare("Please do not create folders \"Quasar\", \"Zephyr\" in Documents").is_err()
-        );
+        assert!(prepared.finish(Ok("create folders named Archive and Backup in Desktop".into())).is_ok());
+        assert!(prepare("Please do not create folders \"Quasar\", \"Zephyr\" in Documents").is_err());
     }
 
     #[test]
@@ -497,11 +395,7 @@ mod tests {
         ] {
             let prepared = prepare(original).unwrap();
             assert_eq!(prepared.model_input, model_input);
-            let Intent::CreateFolders {
-                names: got_names,
-                parent: got_parent,
-            } = prepared.finish(Ok(rewrite.to_string())).unwrap()
-            else {
+            let Intent::CreateFolders { names: got_names, parent: got_parent } = prepared.finish(Ok(rewrite.to_string())).unwrap() else {
                 panic!()
             };
             assert_eq!(got_names, names);

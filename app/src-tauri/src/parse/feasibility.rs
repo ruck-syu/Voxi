@@ -63,8 +63,15 @@ fn feas_score() {
         let mut row: Value = serde_json::from_str(line).unwrap();
         // Inputs may be copied from an earlier score. Recompute policy and
         // schedule metadata for this command; never trust caller-supplied flags.
-        for key in ["parse_status", "hard_refusal_reason", "fallback_eligible",
-            "blocked_before_fallback", "schedule_application_refusal", "schedule_due", "schedule_rule"] {
+        for key in [
+            "parse_status",
+            "hard_refusal_reason",
+            "fallback_eligible",
+            "blocked_before_fallback",
+            "schedule_application_refusal",
+            "schedule_due",
+            "schedule_rule",
+        ] {
             row.as_object_mut().unwrap().remove(key);
         }
         if row["want"].is_object() {
@@ -102,8 +109,11 @@ fn feas_score() {
                     // The app rejects scheduled Info/Direct results and Undo
                     // after planning (lib.rs). Merely extracting a schedule is
                     // not evidence that the request passes that boundary.
-                    if when.is_some() && matches!(value["intent"].as_str(),
-                        Some("list" | "count" | "size" | "duplicates" | "recent_actions" | "reveal" | "undo"))
+                    if when.is_some()
+                        && matches!(
+                            value["intent"].as_str(),
+                            Some("list" | "count" | "size" | "duplicates" | "recent_actions" | "reveal" | "undo")
+                        )
                     {
                         row["blocked_before_fallback"] = serde_json::json!(true);
                         row["schedule_application_refusal"] = serde_json::json!(true);
@@ -111,7 +121,9 @@ fn feas_score() {
                         row["fallback_eligible"] = serde_json::json!(false);
                         value = serde_json::json!("!");
                     }
-                    if let Some(object) = value.as_object_mut() && when.is_some() {
+                    if let Some(object) = value.as_object_mut()
+                        && when.is_some()
+                    {
                         object.insert("scheduled".into(), serde_json::json!(true));
                     }
                     value

@@ -7,23 +7,20 @@ use std::sync::LazyLock;
 
 const ACTIONS: &str = "create|make|add|new|move|copy|rename|delete|trash|remove|list|show|find|count|open|undo|zip|unzip|resize|convert|merge|split|extract|sort|organize|organise|upload|send|email|encrypt|decrypt";
 
-static SEPARATOR: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
-    r"(?i)(?:\b(?:and(?:\s+(?:then|also))?|then)\s+|;\s*)(?P<verb>{ACTIONS})(?:\s+|$)"
-)).unwrap());
+static SEPARATOR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"(?i)(?:\b(?:and(?:\s+(?:then|also))?|then)\s+|;\s*)(?P<verb>{ACTIONS})(?:\s+|$)")).unwrap());
 /// A comma before an action verb is a chain separator, but only when the
 /// clause before it is itself a command. A leading scope or filler
 /// ("from Downloads, move X", "real quick, copy X") keeps its comma.
-static COMMA_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
-    r"(?i),\s*(?P<verb>{ACTIONS})(?:\s+|$)"
-)).unwrap());
-static CLAUSE_IS_ACTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
-    r"(?i)^\s*(?:(?:in|inside|within|under|on|to|into)\s+\S+\s+)?(?P<verb>{ACTIONS})\s+"
-)).unwrap());
-static DESTINATION_REFERENCE: LazyLock<Regex> = LazyLock::new(|| Regex::new(
-    r"(?i)\b(?:(?:to|into)\s+(?:it|that\s+folder|(?:the\s+)?(?:new|created)\s+folder)|there)\s*$"
-).unwrap());
+static COMMA_SEPARATOR: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"(?i),\s*(?P<verb>{ACTIONS})(?:\s+|$)")).unwrap());
+static CLAUSE_IS_ACTION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"(?i)^\s*(?:(?:in|inside|within|under|on|to|into)\s+\S+\s+)?(?P<verb>{ACTIONS})\s+")).unwrap());
+static DESTINATION_REFERENCE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(?:(?:to|into)\s+(?:it|that\s+folder|(?:the\s+)?(?:new|created)\s+folder)|there)\s*$").unwrap());
 
-fn refused() -> ParseFailure { ParseFailure::HardRefusal(RefusalReason::MultipleActions) }
+fn refused() -> ParseFailure {
+    ParseFailure::HardRefusal(RefusalReason::MultipleActions)
+}
 
 /// All separators in reading order. Comma separators are only accepted when
 /// the clause that precedes them starts with an action verb.
@@ -52,19 +49,24 @@ fn outside_syntax(text: &str) -> Option<String> {
     let outside = phrase::unquoted_text(text)?;
     // A quote mask must be a barrier, not whitespace that a separator regex
     // can absorb (e.g. `and "B" then move`). Keep byte offsets unchanged.
-    let masked: Vec<u8> = outside.bytes().zip(text.bytes()).map(|(mask, original)| {
-        if mask == b' ' && original != b' ' { b'_' } else { mask }
-    }).collect();
+    let masked: Vec<u8> =
+        outside.bytes().zip(text.bytes()).map(|(mask, original)| if mask == b' ' && original != b' ' { b'_' } else { mask }).collect();
     Some(String::from_utf8(masked).expect("quote mask preserves UTF-8 outside quoted spans"))
 }
 
 pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
-    if let Err(failure) = super::check_length(text) { return Some(Err(failure)); }
+    if let Err(failure) = super::check_length(text) {
+        return Some(Err(failure));
+    }
     let outside = outside_syntax(text)?;
     let separators = separators(&outside);
-    if separators.is_empty() { return None; }
+    if separators.is_empty() {
+        return None;
+    }
     Some((|| {
-        if separators.len() >= 8 { return Err(refused()); }
+        if separators.len() >= 8 {
+            return Err(refused());
+        }
         let mut clauses = Vec::new();
         let mut start = 0;
         for caps in separators {
@@ -85,48 +87,80 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
             if let Some(c) = file_list.captures(clause) {
                 expanded.push(format!("{} {}{}", &c[1], &c[2], &c[4]));
                 expanded.push(format!("{} {}{}", &c[1], &c[3], &c[4]));
-            } else { expanded.push(clause.to_string()); }
+            } else {
+                expanded.push(clause.to_string());
+            }
         }
-        if expanded.len() > 8 { return Err(refused()); }
+        if expanded.len() > 8 {
+            return Err(refused());
+        }
         let source_it = Regex::new(r"(?i)^(move|copy|rename|zip|unzip|resize|convert)\s+it(\s|$)").unwrap();
         for clause in &expanded {
             let clause = clause.as_str();
             // Scheduling applies to one command at a time. Do not let a time
             // clause on one step silently become a literal destination/name.
             let (_, when) = crate::scheduler::extract_schedule(clause, chrono::Local::now()).map_err(|_| refused())?;
-            if when.is_some() { return Err(refused()); }
+            if when.is_some() {
+                return Err(refused());
+            }
             let outside = outside_syntax(clause).ok_or_else(refused)?;
             let reference = DESTINATION_REFERENCE.find(&outside);
             let rewritten = if let Some(reference) = &reference {
                 let folder = created.as_ref().ok_or_else(refused)?;
                 // Quote the bound path as a literal; reject quote-bearing
                 // paths rather than changing a source literal during binding.
-                if folder.contains(['"', '\\']) { return Err(refused()); }
+                if folder.contains(['"', '\\']) {
+                    return Err(refused());
+                }
                 format!("{}to \"{folder}\"", &clause[..reference.start()])
-            } else { clause.to_string() };
+            } else {
+                clause.to_string()
+            };
             let binds_output = source_it.is_match(&outside);
             let rewritten = if binds_output {
-                if commands.is_empty() { return Err(refused()); }
+                if commands.is_empty() {
+                    return Err(refused());
+                }
                 source_it.replace(&rewritten, "${1} voxi-chain-output.zip${2}").into_owned()
-            } else { rewritten };
+            } else {
+                rewritten
+            };
             let mut intent = parse_single_classified(&rewritten).map_err(|failure| match failure {
                 ParseFailure::HardRefusal(reason) => ParseFailure::HardRefusal(reason),
                 // An unresolved "it"/"the original"/"the copy" in a clause is
                 // a reference with nothing clean to bind to, not a soft miss.
                 ParseFailure::GrammarMiss => ParseFailure::HardRefusal(RefusalReason::UnresolvedReference),
             })?;
-            if binds_output { intent.replace_source(Source::item("\0chain-output")); }
+            if binds_output {
+                intent.replace_source(Source::item("\0chain-output"));
+            }
             // Bare destinations matching a folder created in this chain bind
             // to its full planned path, regardless of the transfer's source.
             if let Intent::Move { to, .. } | Intent::Copy { to, .. } = &mut intent {
-                let matches: Vec<_> = named_folders.iter().filter(|folder| to.eq_ignore_ascii_case(folder.rsplit('/').next().unwrap())).collect();
+                let matches: Vec<_> =
+                    named_folders.iter().filter(|folder| to.eq_ignore_ascii_case(folder.rsplit('/').next().unwrap())).collect();
                 if let Some(folder) = matches.first() {
-                    if matches.iter().any(|other| !other.eq_ignore_ascii_case(folder)) { return Err(refused()); }
+                    if matches.iter().any(|other| !other.eq_ignore_ascii_case(folder)) {
+                        return Err(refused());
+                    }
                     *to = (*folder).clone();
                 }
             }
-            if reference.is_some() && !matches!(intent, Intent::Move { .. } | Intent::Copy { .. }) { return Err(refused()); }
-            if !matches!(intent, Intent::CreateFolders { .. } | Intent::Move { .. } | Intent::Copy { .. } | Intent::Rename { .. } | Intent::Trash { .. } | Intent::Zip { .. } | Intent::Unzip { .. } | Intent::ConvertImage { .. } | Intent::ResizeImage { .. }) {
+            if reference.is_some() && !matches!(intent, Intent::Move { .. } | Intent::Copy { .. }) {
+                return Err(refused());
+            }
+            if !matches!(
+                intent,
+                Intent::CreateFolders { .. }
+                    | Intent::Move { .. }
+                    | Intent::Copy { .. }
+                    | Intent::Rename { .. }
+                    | Intent::Trash { .. }
+                    | Intent::Zip { .. }
+                    | Intent::Unzip { .. }
+                    | Intent::ConvertImage { .. }
+                    | Intent::ResizeImage { .. }
+            ) {
                 return Err(refused());
             }
             if let Intent::CreateFolders { names, parent } = &intent {
@@ -135,14 +169,20 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
                 created = if names.len() == 1 {
                     let base = parent.as_deref().unwrap_or("Desktop").trim_end_matches('/');
                     Some(format!("{base}/{}", names[0]))
-                } else { None };
+                } else {
+                    None
+                };
             }
-            if matches!(intent, Intent::ResizeImage { .. })
-                && !matches!(commands.last(), Some(Intent::ConvertImage { .. })) { return Err(refused()); }
+            if matches!(intent, Intent::ResizeImage { .. }) && !matches!(commands.last(), Some(Intent::ConvertImage { .. })) {
+                return Err(refused());
+            }
             // Keep the pre-existing conservative refusal for zipping and then
             // deleting the original; this is not an output reference.
             if let Intent::Trash { src } = &intent
-                && commands.iter().any(|c| matches!(c, Intent::Zip { src: zipped, .. } if zipped == src)) { return Err(refused()); }
+                && commands.iter().any(|c| matches!(c, Intent::Zip { src: zipped, .. } if zipped == src))
+            {
+                return Err(refused());
+            }
             commands.push(intent);
         }
         Ok(Intent::Chain { commands })
@@ -167,7 +207,11 @@ mod tests {
 
     #[test]
     fn quoted_separators_and_explicit_sources_stay_literal() {
-        let Intent::Chain { commands } = parse("create a folder named \"R&D and move notes\" in Documents then copy PDFs from Downloads into that folder").unwrap() else { panic!() };
+        let Intent::Chain { commands } =
+            parse("create a folder named \"R&D and move notes\" in Documents then copy PDFs from Downloads into that folder").unwrap()
+        else {
+            panic!()
+        };
         assert!(matches!(&commands[0], Intent::CreateFolders { names, .. } if names == &["R&D and move notes"]));
         assert!(matches!(&commands[1], Intent::Copy { src: Source::Set { folder: Some(folder), .. }, to }
             if folder == "Downloads" && to == "Documents/R&D and move notes"));

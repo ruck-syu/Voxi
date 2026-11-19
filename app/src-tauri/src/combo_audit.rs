@@ -12,27 +12,26 @@
 //! Set COMBO_EXAMPLES=n to print n failing sentences per part value (default 2),
 //! and COMBO_ONLY=text to audit only the sentences that contain it.
 
-#[path = "combo/delete.rs"] mod delete;
-#[path = "combo/readonly.rs"] mod readonly;
-#[path = "combo/rename.rs"] mod rename;
-#[path = "combo/pdf_image_zip.rs"] mod pdf_image_zip;
-#[path = "combo/filters.rs"] mod filters;
-#[path = "combo/folders.rs"] mod folders;
+#[path = "combo/delete.rs"]
+mod delete;
+#[path = "combo/filters.rs"]
+mod filters;
+#[path = "combo/folders.rs"]
+mod folders;
+#[path = "combo/pdf_image_zip.rs"]
+mod pdf_image_zip;
+#[path = "combo/readonly.rs"]
+mod readonly;
+#[path = "combo/rename.rs"]
+mod rename;
 
 use crate::parse::parse;
 use crate::scheduler::extract_schedule;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-const VERBS: &[(&str, &str)] = &[
-    ("move", "move"),
-    ("copy", "copy"),
-    ("put", "move"),
-    ("shift", "move"),
-    ("transfer", "move"),
-    ("send", "move"),
-    ("Move", "move"),
-];
+const VERBS: &[(&str, &str)] =
+    &[("move", "move"), ("copy", "copy"), ("put", "move"), ("shift", "move"), ("transfer", "move"), ("send", "move"), ("Move", "move")];
 
 const QUANTITY: &[&str] = &["", "all ", "all the ", "all my ", "every ", "the ", "my ", "any "];
 
@@ -155,7 +154,9 @@ fn cases() -> Vec<Case> {
                     for &(dest, to) in DESTINATIONS {
                         for &(sched, rep) in SCHEDULES {
                             let text = format!("{verb} {q}{what}{source}{dest}{sched}");
-                            if !wanted(&text) { continue; }
+                            if !wanted(&text) {
+                                continue;
+                            }
                             let verdict = check(&text, intent, ty, folder, to, rep);
                             let parts = [verb, q, plural, source, dest, sched].map(part).to_vec();
                             out.push(Case { text, parts, verdict });
@@ -217,11 +218,13 @@ pub(crate) fn report(title: &str, names: &[&str], all: Vec<Case>) {
             e.0 += 1;
             if c.verdict.is_err() {
                 e.1 += 1;
-                if e.2.len() < examples { e.2.push(c); }
+                if e.2.len() < examples {
+                    e.2.push(c);
+                }
             }
         }
         let mut rows: Vec<_> = by.into_iter().collect();
-        rows.sort_by(|a, b| (b.1 .1 * a.1 .0).cmp(&(a.1 .1 * b.1 .0)));
+        rows.sort_by(|a, b| (b.1.1 * a.1.0).cmp(&(a.1.1 * b.1.0)));
         println!("\n{name}:");
         for (value, (n, bad, ex)) in rows {
             println!("  {:>5.1}%  {value}", 100.0 * bad as f64 / n as f64);

@@ -73,9 +73,7 @@ fn any_date_pattern() -> String {
 
 // "dated July 4" explicitly introduces a date, including invalid calendar
 // days which must reach span() rather than become part of a filename.
-static DATED_DAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
-    r"(?i)\bdated\s+({})", any_date_pattern()
-)).unwrap());
+static DATED_DAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"(?i)\bdated\s+({})", any_date_pattern())).unwrap());
 
 pub(super) fn normalize_dated(text: &str) -> String {
     DATED_DAY.replace_all(text, "on $1").to_string()
@@ -84,15 +82,14 @@ pub(super) fn normalize_dated(text: &str) -> String {
 /// A day after a filename's location preposition is a filter, not a folder
 /// name. Bare years and month-only folder names are deliberately excluded.
 pub(super) fn starts_calendar_date(text: &str) -> bool {
-    static PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
-        r"(?i)^(?:{ISO}|{}|{}|\d{{1,2}}/\d{{1,2}}/\d{{4}})", day_first_pattern(), month_day_pattern()
-    )).unwrap());
+    static PREFIX: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(&format!(r"(?i)^(?:{ISO}|{}|{}|\d{{1,2}}/\d{{1,2}}/\d{{4}})", day_first_pattern(), month_day_pattern())).unwrap()
+    });
     PREFIX.is_match(text)
 }
 
-static BARE_DAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
-    r"(?i)\b({}|{})", day_first_pattern(), month_day_pattern()
-)).unwrap());
+static BARE_DAY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"(?i)\b({}|{})", day_first_pattern(), month_day_pattern())).unwrap());
 
 /// A bare calendar word ("3 Jan", "12 May") is a date filter only when a
 /// plural file-type noun is in the subject ("3 Jan screenshots"). After a
@@ -128,14 +125,13 @@ static ONWARD: LazyLock<Regex> = LazyLock::new(|| {
 
 // A trailing "on" means onward only at a boundary or before a predicate.
 // In "from July 4 on Desktop", "on" still introduces the folder.
-static CONTINUING_ON: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(
-    r"(?i)\bfrom\s+({})\s+on(?:\s+(?:that(?:'s)?|which|are|is)\b|\s*,|\s*$)", day_or_year_pattern()
-)).unwrap());
+static CONTINUING_ON: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r"(?i)\bfrom\s+({})\s+on(?:\s+(?:that(?:'s)?|which|are|is)\b|\s*,|\s*$)", day_or_year_pattern())).unwrap()
+});
 
 /// "before this year", "after this month": the bounds of the current period.
-static PERIOD_BOUND: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(before|prior\s+to|after|since|until|till|through)\s+this\s+(week|month|year)\b").unwrap()
-});
+static PERIOD_BOUND: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\b(before|prior\s+to|after|since|until|till|through)\s+this\s+(week|month|year)\b").unwrap());
 
 /// "last Tuesday" with no "on" in front: the most recent one before today.
 static LAST_WEEKDAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(&format!(r"(?i)\blast\s+({WEEKDAY})\b")).unwrap());
@@ -157,8 +153,15 @@ static CALENDAR: LazyLock<Regex> = LazyLock::new(|| {
 /// filled in from context.
 #[derive(Debug, Clone, Copy)]
 enum When {
-    Calendar { year: Option<i32>, month: Option<u32>, day: Option<u32> },
-    Weekday { wd: Weekday, last: bool },
+    Calendar {
+        year: Option<i32>,
+        month: Option<u32>,
+        day: Option<u32>,
+    },
+    Weekday {
+        wd: Weekday,
+        last: bool,
+    },
     /// Days from today: 0 is today, -1 is yesterday.
     Relative(i64),
 }
@@ -260,10 +263,7 @@ fn span(when: When, today: NaiveDate) -> Option<(NaiveDate, NaiveDate)> {
         When::Weekday { wd, last } => {
             // "last Monday" starts from yesterday; "on Monday" includes today.
             let back = i64::from(last);
-            (back..back + 7)
-                .map(|i| today - Duration::days(i))
-                .find(|d| d.weekday() == wd)
-                .map(|d| (d, d + Duration::days(1)))
+            (back..back + 7).map(|i| today - Duration::days(i)).find(|d| d.weekday() == wd).map(|d| (d, d + Duration::days(1)))
         }
         When::Calendar { year, month: Some(m), day: Some(d) } => {
             let date = NaiveDate::from_ymd_opt(year.unwrap_or_else(|| day_year_for(m, d, today)), m, d)?;

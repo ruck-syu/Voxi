@@ -60,11 +60,7 @@ fn expected_value(expected: &str, at: &str) -> Value {
 /// A bare `!` expectation accepts either refusal kind; `!hard` and `!miss`
 /// each require that exact kind.
 fn matches_expected(got: &Value, want: &Value, expected: &str) -> bool {
-    if expected == "!" {
-        matches!(got, Value::String(s) if s == "!hard" || s == "!miss")
-    } else {
-        got == want
-    }
+    if expected == "!" { matches!(got, Value::String(s) if s == "!hard" || s == "!miss") } else { got == want }
 }
 
 /// The crate's root folder, where `src/` and `eval/` live.
@@ -86,7 +82,9 @@ fn extension_inventory_audit_jsonl() {
     let mut extensions = Vec::new();
     for line in fs::read_to_string(&source).unwrap().lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         let (_, words) = line.split_once(':').expect("category: extensions");
         extensions.extend(words.split_whitespace().map(str::to_string));
     }
@@ -113,19 +111,22 @@ fn extension_inventory_audit_jsonl() {
             _ => false,
         };
         let exact_alias_match = actual_exts == serde_json::to_value(&expected_exts).unwrap();
-        let supports_requested = exact_alias_match || type_supports_requested
-            || outcome.1.pointer("/src/filter/ext").and_then(Value::as_array)
-                .is_some_and(|a| a.iter().any(|v| v.as_str() == Some(ext)));
+        let supports_requested = exact_alias_match
+            || type_supports_requested
+            || outcome.1.pointer("/src/filter/ext").and_then(Value::as_array).is_some_and(|a| a.iter().any(|v| v.as_str() == Some(ext)));
         let pass = actual == expected;
         parser_pass += usize::from(pass);
         mismatches += usize::from(!pass);
-        rows.push_str(&serde_json::json!({
-            "kind":"catalog", "suffix":ext, "command":command,
-            "expected_extension_set":expected, "recognized_extension_syntax":actual,
-            "expected_alias_extensions":expected_exts, "actual_filter_ext":actual_exts,
-            "actual_filter_type":actual_type, "supports_requested_suffix":supports_requested,
-            "exact_alias_match":exact_alias_match, "actual_intent":outcome.1, "pass":pass,
-        }).to_string());
+        rows.push_str(
+            &serde_json::json!({
+                "kind":"catalog", "suffix":ext, "command":command,
+                "expected_extension_set":expected, "recognized_extension_syntax":actual,
+                "expected_alias_extensions":expected_exts, "actual_filter_ext":actual_exts,
+                "actual_filter_type":actual_type, "supports_requested_suffix":supports_requested,
+                "exact_alias_match":exact_alias_match, "actual_intent":outcome.1, "pass":pass,
+            })
+            .to_string(),
+        );
         rows.push('\n');
     }
 
@@ -147,12 +148,14 @@ fn extension_inventory_audit_jsonl() {
             state ^= state << 5;
             word.push(alphabet[state as usize % alphabet.len()] as char);
         }
-        if !extensions.contains(&word) { generated.insert(word); }
+        if !extensions.contains(&word) {
+            generated.insert(word);
+        }
     }
-    let boundary_samples = [
-        "abcdefghij", "extensionlongerthaneight", "abc-def", "abc_def", "éclair", "猫", "a1-b2", "a1_b2",
-    ];
-    for sample in boundary_samples { generated.insert(sample.to_string()); }
+    let boundary_samples = ["abcdefghij", "extensionlongerthaneight", "abc-def", "abc_def", "éclair", "猫", "a1-b2", "a1_b2"];
+    for sample in boundary_samples {
+        generated.insert(sample.to_string());
+    }
     let compounds = fs::read_to_string(crate_root().join("../../docs/testing/extension-audit-compound-suffixes.txt")).unwrap();
     for suffix in compounds.lines().map(str::trim).filter(|s| !s.is_empty() && !s.starts_with('#')) {
         generated.insert(suffix.to_string());
@@ -165,11 +168,14 @@ fn extension_inventory_audit_jsonl() {
         let pass = actual;
         generated_pass += usize::from(pass);
         mismatches += usize::from(!pass);
-        rows.push_str(&serde_json::json!({
-            "kind":"generated", "seed":"0x564f5849", "domain":"[a-z0-9], lengths 1..=8, xorshift32, 1024 unique custom suffixes",
-            "suffix":ext, "command":command, "expected_extension_set":true,
-            "recognized_extension_syntax":actual, "actual_intent":outcome.1, "pass":pass,
-        }).to_string());
+        rows.push_str(
+            &serde_json::json!({
+                "kind":"generated", "seed":"0x564f5849", "domain":"[a-z0-9], lengths 1..=8, xorshift32, 1024 unique custom suffixes",
+                "suffix":ext, "command":command, "expected_extension_set":true,
+                "recognized_extension_syntax":actual, "actual_intent":outcome.1, "pass":pass,
+            })
+            .to_string(),
+        );
         rows.push('\n');
     }
 
@@ -178,18 +184,24 @@ fn extension_inventory_audit_jsonl() {
     // Separately specified syntax variants check case, singular/plural, and
     // list/count forms for a confirmed suffix. All are expected as sets.
     for command in [
-        "list .stl file in Downloads", "list .STL files in Downloads",
-        "list STL files in Downloads", "count STL files in Downloads",
-        "count .stl files in Downloads", "list stl files in Downloads",
+        "list .stl file in Downloads",
+        "list .STL files in Downloads",
+        "list STL files in Downloads",
+        "count STL files in Downloads",
+        "count .stl files in Downloads",
+        "list stl files in Downloads",
     ] {
         let outcome = extension_parse_outcome(command);
         let pass = outcome.0;
         variant_pass += usize::from(pass);
         mismatches += usize::from(!pass);
-        rows.push_str(&serde_json::json!({
-            "kind":"phrase_variant", "command":command, "expected_extension_set":true,
-            "recognized_extension_syntax":outcome.0, "actual_intent":outcome.1, "pass":pass,
-        }).to_string());
+        rows.push_str(
+            &serde_json::json!({
+                "kind":"phrase_variant", "command":command, "expected_extension_set":true,
+                "recognized_extension_syntax":outcome.0, "actual_intent":outcome.1, "pass":pass,
+            })
+            .to_string(),
+        );
         rows.push('\n');
     }
 
@@ -198,8 +210,13 @@ fn extension_inventory_audit_jsonl() {
         .unwrap_or_else(|| crate_root().join("target/extension-audit-results.jsonl"));
     fs::create_dir_all(report.parent().unwrap()).unwrap();
     fs::write(&report, rows).unwrap();
-    println!("extension audit: catalog {catalog_pass}/{}; generated/boundary {generated_pass}/{}; variants {variant_pass}/6; {mismatches} mismatches; {} distinct catalog suffixes; JSONL {}",
-        extensions.len(), generated.len(), extensions.len(), report.display());
+    println!(
+        "extension audit: catalog {catalog_pass}/{}; generated/boundary {generated_pass}/{}; variants {variant_pass}/6; {mismatches} mismatches; {} distinct catalog suffixes; JSONL {}",
+        extensions.len(),
+        generated.len(),
+        extensions.len(),
+        report.display()
+    );
 }
 
 fn expected_aliases(ext: &str) -> Vec<String> {
@@ -221,9 +238,11 @@ fn extension_parse_outcome(command: &str) -> (bool, Value) {
                 crate::model::Intent::List { src } | crate::model::Intent::Count { src } => Some(src),
                 _ => None,
             };
-            let is_ext_set = source.is_some_and(|src| matches!(src,
+            let is_ext_set = source.is_some_and(|src| {
+                matches!(src,
                 Source::Set { filter, .. } if filter.name_contains.is_none() && filter.name_starts_with.is_none()
-                    && (filter.ext.is_some() || filter.file_type.is_some_and(|t| t != FileType::Files))));
+                    && (filter.ext.is_some() || filter.file_type.is_some_and(|t| t != FileType::Files)))
+            });
             (is_ext_set, strip_nulls(serde_json::to_value(intent).unwrap()))
         }
         Err(_) => (false, Value::String("!".into())),
@@ -280,9 +299,7 @@ fn haiku_300_per_case_report() {
     super::dates::TEST_TODAY.with(|t| t.set(NaiveDate::from_ymd_opt(2026, 10, 28)));
     let source = crate_root().join("src/parse/corpus/10-haiku-300.txt");
     let text = fs::read_to_string(&source).unwrap();
-    let report = std::env::var("VOXI_CASE_REPORT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| crate_root().join("target/haiku-300-cases.jsonl"));
+    let report = std::env::var("VOXI_CASE_REPORT").map(PathBuf::from).unwrap_or_else(|_| crate_root().join("target/haiku-300-cases.jsonl"));
     let (mut category, mut rows, mut passed) = (String::new(), String::new(), 0);
     let mut n = 0;
     for (i, raw) in text.lines().enumerate() {
@@ -316,8 +333,8 @@ fn haiku_300_per_case_report() {
 
 #[test]
 fn haiku_suite_contains_exactly_300_distinct_phrases() {
-    let cases: Vec<_> = cases_in(&crate_root().join("src/parse/corpus")).into_iter()
-        .filter(|(_, _, at)| at.starts_with("10-haiku-300.txt:")).collect();
+    let cases: Vec<_> =
+        cases_in(&crate_root().join("src/parse/corpus")).into_iter().filter(|(_, _, at)| at.starts_with("10-haiku-300.txt:")).collect();
     assert_eq!(cases.len(), 300);
     let unique: std::collections::HashSet<_> = cases.iter().map(|(command, _, _)| command).collect();
     assert_eq!(unique.len(), 300);

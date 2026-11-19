@@ -12,7 +12,9 @@ use std::process::Command;
 thread_local! {
     static CANCEL: std::cell::RefCell<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>> = const { std::cell::RefCell::new(None) };
 }
-fn cancelled() -> bool { CANCEL.with(|c| c.borrow().as_ref().is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))) }
+fn cancelled() -> bool {
+    CANCEL.with(|c| c.borrow().as_ref().is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed)))
+}
 
 pub struct Outcome {
     pub done: Vec<Action>,
@@ -28,7 +30,9 @@ fn check_cancel(is_cancelled: &dyn Fn() -> bool) -> Result<(), String> {
     if is_cancelled() { Err(CANCELLED.into()) } else { Ok(()) }
 }
 
-fn never_cancel() -> bool { false }
+fn never_cancel() -> bool {
+    false
+}
 
 /// Runs `actions` in order and stops at the first failure. Every path is
 /// checked against the allowed folders again right before it is touched.
@@ -90,15 +94,27 @@ const TOOL_CAPTURE_BYTES: usize = 64 * 1024;
 fn tool(cmd: &str, args: &[&std::ffi::OsStr]) -> Result<(), String> {
     bounded_tool(cmd, args, std::time::Duration::from_secs(120), || Ok(()))
 }
-fn bounded_tool(cmd: &str, args: &[&std::ffi::OsStr], deadline: std::time::Duration,
-    mut check: impl FnMut() -> Result<(), String>) -> Result<(), String> {
+fn bounded_tool(
+    cmd: &str,
+    args: &[&std::ffi::OsStr],
+    deadline: std::time::Duration,
+    mut check: impl FnMut() -> Result<(), String>,
+) -> Result<(), String> {
     use std::io::Read;
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
     use std::process::Stdio;
-    if cancelled() { return Err("Tool cancelled".into()); }
-    let mut child = Command::new(cmd).args(args).stdin(Stdio::null()).stdout(Stdio::piped())
-        .stderr(Stdio::piped()).process_group(0).spawn().map_err(|e| format!("Couldn't run {cmd}: {e}"))?;
+    if cancelled() {
+        return Err("Tool cancelled".into());
+    }
+    let mut child = Command::new(cmd)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0)
+        .spawn()
+        .map_err(|e| format!("Couldn't run {cmd}: {e}"))?;
     let mut stdout = child.stdout.take().ok_or("Tool stdout pipe missing")?;
     let mut stderr = child.stderr.take().ok_or("Tool stderr pipe missing")?;
     // Nonblocking reads avoid
@@ -125,15 +141,25 @@ fn bounded_tool(cmd: &str, args: &[&std::ffi::OsStr], deadline: std::time::Durat
         Ok(())
     }
     let start = std::time::Instant::now();
-    let mut out = Vec::new(); let mut err = Vec::new();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
     let result = loop {
-        if let Err(e) = drain(&mut stdout, &mut out).and_then(|()| drain(&mut stderr, &mut err)) { break Err(e.to_string()); }
-        if cancelled() { break Err(format!("{cmd} cancelled")); }
-        if start.elapsed() >= deadline { break Err(format!("{cmd} timed out after {} seconds", deadline.as_secs_f64())); }
-        if let Err(e) = check() { break Err(e); }
+        if let Err(e) = drain(&mut stdout, &mut out).and_then(|()| drain(&mut stderr, &mut err)) {
+            break Err(e.to_string());
+        }
+        if cancelled() {
+            break Err(format!("{cmd} cancelled"));
+        }
+        if start.elapsed() >= deadline {
+            break Err(format!("{cmd} timed out after {} seconds", deadline.as_secs_f64()));
+        }
+        if let Err(e) = check() {
+            break Err(e);
+        }
         match child.try_wait() {
             Ok(Some(status)) => {
-                let _ = drain(&mut stdout, &mut out); let _ = drain(&mut stderr, &mut err);
+                let _ = drain(&mut stdout, &mut out);
+                let _ = drain(&mut stderr, &mut err);
                 // try_wait reaped the leader: its pgid may now be reused.
                 // Drop our pipes on return; descendants need not close theirs.
                 return if status.success() { Ok(()) } else { Err(format!("{cmd} failed: {}", String::from_utf8_lossy(&err))) };
@@ -149,10 +175,11 @@ fn bounded_tool(cmd: &str, args: &[&std::ffi::OsStr], deadline: std::time::Durat
 
 fn terminate_tool(child: &mut std::process::Child) {
     // The un-reaped leader reserves its pid/pgid until after this signal.
-    unsafe { libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL); }
+    unsafe {
+        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+    }
     let _ = child.wait();
 }
-
 
 /// Maximum members, including directory entries, accepted from a ZIP.
 const ARCHIVE_ENTRIES: usize = 10_000;
@@ -165,10 +192,23 @@ const ARCHIVE_RATIO: u64 = 100;
 /// Free space reserved beyond declared output and the private archive snapshot.
 const ARCHIVE_DISK_MARGIN: u64 = 256 * 1024 * 1024;
 #[derive(Clone, Copy)]
-struct ArchiveLimits { entries: usize, file: u64, total: u64, ratio: u64, margin: u64 }
+struct ArchiveLimits {
+    entries: usize,
+    file: u64,
+    total: u64,
+    ratio: u64,
+    margin: u64,
+}
 impl Default for ArchiveLimits {
-    fn default() -> Self { Self { entries: ARCHIVE_ENTRIES, file: ARCHIVE_FILE_BYTES,
-        total: ARCHIVE_TOTAL_BYTES, ratio: ARCHIVE_RATIO, margin: ARCHIVE_DISK_MARGIN } }
+    fn default() -> Self {
+        Self {
+            entries: ARCHIVE_ENTRIES,
+            file: ARCHIVE_FILE_BYTES,
+            total: ARCHIVE_TOTAL_BYTES,
+            ratio: ARCHIVE_RATIO,
+            margin: ARCHIVE_DISK_MARGIN,
+        }
+    }
 }
 
 /// Strict classic-ZIP central/local header validation. ZIP64, encryption,
@@ -181,59 +221,126 @@ fn inspect_archive(path: &Path, limits: ArchiveLimits, is_cancelled: &dyn Fn() -
     let len = f.metadata().map_err(|e| e.to_string())?.len();
     let tail_len = len.min(65557) as usize;
     f.seek(SeekFrom::End(-(tail_len as i64))).map_err(|e| e.to_string())?;
-    let mut tail = vec![0; tail_len]; f.read_exact(&mut tail).map_err(|e| e.to_string())?;
-    let u16at = |b: &[u8], n| u16::from_le_bytes([b[n], b[n+1]]) as u64;
-    let u32at = |b: &[u8], n| u32::from_le_bytes([b[n], b[n+1], b[n+2], b[n+3]]) as u64;
-    let end = (0..tail.len().saturating_sub(21)).rev().find(|&n| tail[n..].starts_with(b"PK\x05\x06") && n+22+u16at(&tail,n+20) as usize == tail.len()).ok_or_else(invalid)?;
+    let mut tail = vec![0; tail_len];
+    f.read_exact(&mut tail).map_err(|e| e.to_string())?;
+    let u16at = |b: &[u8], n| u16::from_le_bytes([b[n], b[n + 1]]) as u64;
+    let u32at = |b: &[u8], n| u32::from_le_bytes([b[n], b[n + 1], b[n + 2], b[n + 3]]) as u64;
+    let end = (0..tail.len().saturating_sub(21))
+        .rev()
+        .find(|&n| tail[n..].starts_with(b"PK\x05\x06") && n + 22 + u16at(&tail, n + 20) as usize == tail.len())
+        .ok_or_else(invalid)?;
     let e = &tail[end..];
-    let count = u16at(e,10) as usize;
-    let offset = u32at(e,16); let size = u32at(e,12);
-    if u16at(e,4)!=0 || u16at(e,6)!=0 || u16at(e,8) as usize != count || count == 65535 || count > limits.entries || offset.checked_add(size) != Some(len-tail_len as u64+end as u64) { return Err(invalid()); }
-    let mut pos = offset; let mut total = 0u64; let mut compressed = 0u64;
+    let count = u16at(e, 10) as usize;
+    let offset = u32at(e, 16);
+    let size = u32at(e, 12);
+    if u16at(e, 4) != 0
+        || u16at(e, 6) != 0
+        || u16at(e, 8) as usize != count
+        || count == 65535
+        || count > limits.entries
+        || offset.checked_add(size) != Some(len - tail_len as u64 + end as u64)
+    {
+        return Err(invalid());
+    }
+    let mut pos = offset;
+    let mut total = 0u64;
+    let mut compressed = 0u64;
     let mut names = std::collections::HashSet::new();
     for _ in 0..count {
         check_cancel(is_cancelled)?;
         f.seek(SeekFrom::Start(pos)).map_err(|e| e.to_string())?;
-        let mut h = [0;46]; f.read_exact(&mut h).map_err(|e| e.to_string())?;
-        if &h[..4] != b"PK\x01\x02" { return Err(invalid()); }
-        let flags = u16at(&h,8); let method = u16at(&h,10);
-        let packed = u32at(&h,20); let bytes = u32at(&h,24);
-        let n = u16at(&h,28) as usize; let local = u32at(&h,42);
-        let mode = (u32at(&h,38) >> 16) & 0o170000;
-        if n == 0 || n > 4096 || flags & !0x080e != 0 || ![0,8].contains(&method) || ![0,0o100000,0o040000].contains(&mode) || (method == 0 && bytes != packed) || bytes > limits.file || bytes > packed.saturating_mul(limits.ratio) || u16at(&h,34)!=0 { return Err(invalid()); }
-        let mut name = vec![0;n]; f.read_exact(&mut name).map_err(|e| e.to_string())?;
+        let mut h = [0; 46];
+        f.read_exact(&mut h).map_err(|e| e.to_string())?;
+        if &h[..4] != b"PK\x01\x02" {
+            return Err(invalid());
+        }
+        let flags = u16at(&h, 8);
+        let method = u16at(&h, 10);
+        let packed = u32at(&h, 20);
+        let bytes = u32at(&h, 24);
+        let n = u16at(&h, 28) as usize;
+        let local = u32at(&h, 42);
+        let mode = (u32at(&h, 38) >> 16) & 0o170000;
+        if n == 0
+            || n > 4096
+            || flags & !0x080e != 0
+            || ![0, 8].contains(&method)
+            || ![0, 0o100000, 0o040000].contains(&mode)
+            || (method == 0 && bytes != packed)
+            || bytes > limits.file
+            || bytes > packed.saturating_mul(limits.ratio)
+            || u16at(&h, 34) != 0
+        {
+            return Err(invalid());
+        }
+        let mut name = vec![0; n];
+        f.read_exact(&mut name).map_err(|e| e.to_string())?;
         let name_str = std::str::from_utf8(&name).map_err(|_| invalid())?;
-        if name_str.trim_end_matches('/').split('/').any(|c| c.is_empty()) || name_str.starts_with('/') || name_str.contains(['\\', ':', '\0']) || name_str.split('/').any(|c| c == ".." || c == ".") || name_str.split('/').count()>64 || !names.insert(name_str.trim_end_matches('/').to_lowercase()) { return Err(invalid()); }
+        if name_str.trim_end_matches('/').split('/').any(|c| c.is_empty())
+            || name_str.starts_with('/')
+            || name_str.contains(['\\', ':', '\0'])
+            || name_str.split('/').any(|c| c == ".." || c == ".")
+            || name_str.split('/').count() > 64
+            || !names.insert(name_str.trim_end_matches('/').to_lowercase())
+        {
+            return Err(invalid());
+        }
         fn safe_extra(f: &mut fs::File, size: usize) -> Result<(), String> {
-            let mut extra = vec![0; size]; f.read_exact(&mut extra).map_err(|e| e.to_string())?;
+            let mut extra = vec![0; size];
+            f.read_exact(&mut extra).map_err(|e| e.to_string())?;
             let mut at = 0;
             while at < extra.len() {
-                if at+4 > extra.len() { return Err("Malformed ZIP extra field".into()); }
-                let id = u16::from_le_bytes([extra[at],extra[at+1]]);
-                let n = u16::from_le_bytes([extra[at+2],extra[at+3]]) as usize;
+                if at + 4 > extra.len() {
+                    return Err("Malformed ZIP extra field".into());
+                }
+                let id = u16::from_le_bytes([extra[at], extra[at + 1]]);
+                let n = u16::from_le_bytes([extra[at + 2], extra[at + 3]]) as usize;
                 // These fields can override names or encode link targets.
-                if [0x7075,0x000d,0x756e,0x0001].contains(&id) { return Err("Unsupported ZIP path/link/ZIP64 extra field".into()); }
-                at += 4+n;
-                if at>extra.len() { return Err("Malformed ZIP extra field".into()); }
+                if [0x7075, 0x000d, 0x756e, 0x0001].contains(&id) {
+                    return Err("Unsupported ZIP path/link/ZIP64 extra field".into());
+                }
+                at += 4 + n;
+                if at > extra.len() {
+                    return Err("Malformed ZIP extra field".into());
+                }
             }
             Ok(())
         }
-        safe_extra(&mut f,u16at(&h,30) as usize)?;
-        pos += 46+n as u64+u16at(&h,30)+u16at(&h,32);
-        if pos > offset+size { return Err(invalid()); }
+        safe_extra(&mut f, u16at(&h, 30) as usize)?;
+        pos += 46 + n as u64 + u16at(&h, 30) + u16at(&h, 32);
+        if pos > offset + size {
+            return Err(invalid());
+        }
         // The extractor must see the same member name and method locally.
         f.seek(SeekFrom::Start(local)).map_err(|e| e.to_string())?;
-        let mut l = [0;30]; f.read_exact(&mut l).map_err(|e| e.to_string())?;
-        if &l[..4] != b"PK\x03\x04" || u16at(&l,6)!=flags || u16at(&l,8)!=method || u16at(&l,26) as usize != n || local+30+n as u64+u16at(&l,28)+packed > offset { return Err(invalid()); }
-        let mut lname = vec![0;n]; f.read_exact(&mut lname).map_err(|e| e.to_string())?;
-        if lname != name { return Err(invalid()); }
-        safe_extra(&mut f,u16at(&l,28) as usize)?;
-        if flags & 8 == 0 && (u32at(&l,18)!=packed || u32at(&l,22)!=bytes) { return Err(invalid()); }
+        let mut l = [0; 30];
+        f.read_exact(&mut l).map_err(|e| e.to_string())?;
+        if &l[..4] != b"PK\x03\x04"
+            || u16at(&l, 6) != flags
+            || u16at(&l, 8) != method
+            || u16at(&l, 26) as usize != n
+            || local + 30 + n as u64 + u16at(&l, 28) + packed > offset
+        {
+            return Err(invalid());
+        }
+        let mut lname = vec![0; n];
+        f.read_exact(&mut lname).map_err(|e| e.to_string())?;
+        if lname != name {
+            return Err(invalid());
+        }
+        safe_extra(&mut f, u16at(&l, 28) as usize)?;
+        if flags & 8 == 0 && (u32at(&l, 18) != packed || u32at(&l, 22) != bytes) {
+            return Err(invalid());
+        }
         total = total.checked_add(bytes).ok_or_else(invalid)?;
         compressed = compressed.checked_add(packed).ok_or_else(invalid)?;
-        if total > limits.total { return Err(invalid()); }
+        if total > limits.total {
+            return Err(invalid());
+        }
     }
-    if pos != offset+size || total > compressed.saturating_mul(limits.ratio) { return Err(invalid()); }
+    if pos != offset + size || total > compressed.saturating_mul(limits.ratio) {
+        return Err(invalid());
+    }
     Ok(total)
 }
 
@@ -250,21 +357,39 @@ fn verify_extracted(root: &Path, limits: ArchiveLimits, extracting: bool, is_can
             Err(e) => Err(e.to_string()),
         }
     }
-    let mut pending = vec![root.to_path_buf()]; let mut entries = 0; let mut total = 0u64;
+    let mut pending = vec![root.to_path_buf()];
+    let mut entries = 0;
+    let mut total = 0u64;
     while let Some(dir) = pending.pop() {
-        let Some(children) = observed(fs::read_dir(dir), extracting)? else { continue; };
+        let Some(children) = observed(fs::read_dir(dir), extracting)? else {
+            continue;
+        };
         for entry in children {
             check_cancel(is_cancelled)?;
-            let Some(entry) = observed(entry, extracting)? else { continue; };
+            let Some(entry) = observed(entry, extracting)? else {
+                continue;
+            };
             let p = entry.path();
-            let Some(m) = observed(fs::symlink_metadata(&p), extracting)? else { continue; };
+            let Some(m) = observed(fs::symlink_metadata(&p), extracting)? else {
+                continue;
+            };
             entries += 1;
-            if entries > limits.entries || m.file_type().is_symlink() || (!m.is_file() && !m.is_dir()) { return Err("Unsafe extracted member or entry limit exceeded".into()); }
-            let Some(canonical) = observed(fs::canonicalize(&p), extracting)? else { continue; };
-            if !canonical.starts_with(root) { return Err("Unsafe extracted member or entry limit exceeded".into()); }
-            if m.is_dir() { pending.push(p); } else {
+            if entries > limits.entries || m.file_type().is_symlink() || (!m.is_file() && !m.is_dir()) {
+                return Err("Unsafe extracted member or entry limit exceeded".into());
+            }
+            let Some(canonical) = observed(fs::canonicalize(&p), extracting)? else {
+                continue;
+            };
+            if !canonical.starts_with(root) {
+                return Err("Unsafe extracted member or entry limit exceeded".into());
+            }
+            if m.is_dir() {
+                pending.push(p);
+            } else {
                 total = total.saturating_add(m.len());
-                if m.len()>limits.file || total>limits.total { return Err("Extracted byte limit exceeded".into()); }
+                if m.len() > limits.file || total > limits.total {
+                    return Err("Extracted byte limit exceeded".into());
+                }
             }
         }
     }
@@ -274,53 +399,70 @@ fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits, is_ca
     use std::os::unix::fs::OpenOptionsExt;
     let stage = fsx::Staging::new(destination)?;
     let result = (|| {
-    let snapshot = stage.dir.join("archive.zip");
-    // O_NOFOLLOW on the input's final component; ancestors remain path based.
-    let mut input = fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(path).map_err(|e| e.to_string())?;
-    let meta = input.metadata().map_err(|e| e.to_string())?;
-    let archive_bytes = meta.len();
-    if !meta.is_file() || archive_bytes > limits.total.saturating_add(64*1024*1024) { return Err("ZIP input is not a regular file or exceeds snapshot budget".into()); }
-    let space = fsx::available_space(&stage.dir)?;
-    if archive_bytes.saturating_add(limits.margin)>space { return Err("Insufficient free disk space for ZIP snapshot".into()); }
-    let mut output = fs::OpenOptions::new().write(true).create_new(true).open(&snapshot).map_err(|e| e.to_string())?;
-    use std::io::Write;
-    let snapshot_started = std::time::Instant::now();
-    let mut remaining = archive_bytes;
-    let mut buffer = [0; 65536];
-    while remaining>0 {
+        let snapshot = stage.dir.join("archive.zip");
+        // O_NOFOLLOW on the input's final component; ancestors remain path based.
+        let mut input = fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW).open(path).map_err(|e| e.to_string())?;
+        let meta = input.metadata().map_err(|e| e.to_string())?;
+        let archive_bytes = meta.len();
+        if !meta.is_file() || archive_bytes > limits.total.saturating_add(64 * 1024 * 1024) {
+            return Err("ZIP input is not a regular file or exceeds snapshot budget".into());
+        }
+        let space = fsx::available_space(&stage.dir)?;
+        if archive_bytes.saturating_add(limits.margin) > space {
+            return Err("Insufficient free disk space for ZIP snapshot".into());
+        }
+        let mut output = fs::OpenOptions::new().write(true).create_new(true).open(&snapshot).map_err(|e| e.to_string())?;
+        use std::io::Write;
+        let snapshot_started = std::time::Instant::now();
+        let mut remaining = archive_bytes;
+        let mut buffer = [0; 65536];
+        while remaining > 0 {
+            check_cancel(is_cancelled)?;
+            if snapshot_started.elapsed() > std::time::Duration::from_secs(60) {
+                return Err("ZIP snapshot timed out".into());
+            }
+            let count = input.read(&mut buffer[..remaining.min(65536) as usize]).map_err(|e| e.to_string())?;
+            if count == 0 {
+                return Err("ZIP input changed while snapshotting".into());
+            }
+            output.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
+            remaining -= count as u64;
+        }
+        drop(output);
+        let total = inspect_archive(&snapshot, limits, is_cancelled)?;
+        // Available space already excludes the allocated archive snapshot. Thus
+        // this reserves snapshot + extraction + margin across the two checks.
+        if total.saturating_add(limits.margin) > fsx::available_space(&stage.dir)? {
+            return Err("Insufficient free disk space for extraction".into());
+        }
+        // ditto restores AppleDouble metadata but can report success for a bad
+        // member CRC. Test every member without writing files before extraction.
+        // Both decompression passes share the extraction time budget.
+        let extraction_started = std::time::Instant::now();
+        let extraction_budget = std::time::Duration::from_secs(60);
         check_cancel(is_cancelled)?;
-        if snapshot_started.elapsed()>std::time::Duration::from_secs(60) { return Err("ZIP snapshot timed out".into()); }
-        let count = input.read(&mut buffer[..remaining.min(65536) as usize]).map_err(|e| e.to_string())?;
-        if count==0 { return Err("ZIP input changed while snapshotting".into()); }
-        output.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
-        remaining -= count as u64;
-    }
-    drop(output);
-    let total = inspect_archive(&snapshot, limits, is_cancelled)?;
-    // Available space already excludes the allocated archive snapshot. Thus
-    // this reserves snapshot + extraction + margin across the two checks.
-    if total.saturating_add(limits.margin)>fsx::available_space(&stage.dir)? { return Err("Insufficient free disk space for extraction".into()); }
-    // ditto restores AppleDouble metadata but can report success for a bad
-    // member CRC. Test every member without writing files before extraction.
-    // Both decompression passes share the extraction time budget.
-    let extraction_started = std::time::Instant::now();
-    let extraction_budget = std::time::Duration::from_secs(60);
-    check_cancel(is_cancelled)?;
-    bounded_tool("/usr/bin/unzip", &["-tqq".as_ref(), snapshot.as_os_str()], extraction_budget, || Ok(()))?;
-    check_cancel(is_cancelled)?;
-    fs::create_dir(&stage.path).map_err(|e| e.to_string())?;
-    let observed = ArchiveLimits { total: total.min(limits.total), ..limits };
-    bounded_tool("/usr/bin/ditto", &["-x".as_ref(), "-k".as_ref(), snapshot.as_os_str(), stage.path.as_os_str()], extraction_budget.saturating_sub(extraction_started.elapsed()), || {
-        verify_extracted(&stage.path, observed, true, &never_cancel)?;
-        if fsx::available_space(&stage.dir)? < limits.margin { return Err("Extraction disk-space reserve exhausted".into()); }
-        Ok(())
-    })?;
-    check_cancel(is_cancelled)?;
-    verify_extracted(&stage.path, observed, false, is_cancelled)?;
-    // Release the snapshot before making the extracted payload visible.
-    fs::remove_file(&snapshot).map_err(|e| e.to_string())?;
-    check_cancel(is_cancelled)?;
-    stage.publish(destination)
+        bounded_tool("/usr/bin/unzip", &["-tqq".as_ref(), snapshot.as_os_str()], extraction_budget, || Ok(()))?;
+        check_cancel(is_cancelled)?;
+        fs::create_dir(&stage.path).map_err(|e| e.to_string())?;
+        let observed = ArchiveLimits { total: total.min(limits.total), ..limits };
+        bounded_tool(
+            "/usr/bin/ditto",
+            &["-x".as_ref(), "-k".as_ref(), snapshot.as_os_str(), stage.path.as_os_str()],
+            extraction_budget.saturating_sub(extraction_started.elapsed()),
+            || {
+                verify_extracted(&stage.path, observed, true, &never_cancel)?;
+                if fsx::available_space(&stage.dir)? < limits.margin {
+                    return Err("Extraction disk-space reserve exhausted".into());
+                }
+                Ok(())
+            },
+        )?;
+        check_cancel(is_cancelled)?;
+        verify_extracted(&stage.path, observed, false, is_cancelled)?;
+        // Release the snapshot before making the extracted payload visible.
+        fs::remove_file(&snapshot).map_err(|e| e.to_string())?;
+        check_cancel(is_cancelled)?;
+        stage.publish(destination)
     })();
     stage.finish(result)
 }
@@ -395,11 +537,7 @@ fn copy_path(from: &Path, to: &Path) -> Result<(), String> {
     fsx::revalidate_parent(from, &source_parent)?;
     fsx::revalidate_parent(to, &target_parent)?;
     let from_is_dir = is_real_dir(from);
-    let claimed = if from_is_dir {
-        fs::create_dir(to)
-    } else {
-        fs::OpenOptions::new().write(true).create_new(true).open(to).map(|_| ())
-    };
+    let claimed = if from_is_dir { fs::create_dir(to) } else { fs::OpenOptions::new().write(true).create_new(true).open(to).map(|_| ()) };
     match claimed {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return Err(stopped(to)),
@@ -408,8 +546,12 @@ fn copy_path(from: &Path, to: &Path) -> Result<(), String> {
     let claim = fs::symlink_metadata(to).map_err(|e| e.to_string())?;
     if let Err(e) = tool("/usr/bin/ditto", &[from.as_os_str(), to.as_os_str()]) {
         use std::os::unix::fs::MetadataExt;
-        if !from_is_dir && fs::symlink_metadata(to).is_ok_and(|m| m.is_file() && m.len()==0 && m.ino()==claim.ino() && m.dev()==claim.dev())
-            && fs::remove_file(to).is_ok() { return Err(e); }
+        if !from_is_dir
+            && fs::symlink_metadata(to).is_ok_and(|m| m.is_file() && m.len() == 0 && m.ino() == claim.ino() && m.dev() == claim.dev())
+            && fs::remove_file(to).is_ok()
+        {
+            return Err(e);
+        }
         return Err(format!("{e}; partial copy retained at {}", to.display()));
     }
     Ok(())
@@ -439,7 +581,9 @@ pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -
         Action::Rename { path, new_name } => {
             let to = path.with_file_name(new_name);
             guard(roots, &[path, &to])?;
-            if path != &to { move_path(path, &to)?; }
+            if path != &to {
+                move_path(path, &to)?;
+            }
             Ok(vec![Action::Rename { path: to, new_name: file_name(path) }])
         }
         Action::Trash { path } => {
@@ -478,7 +622,12 @@ pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -
         }
         Action::ConvertImage { path, format, output } => {
             guard(roots, &[path, output])?;
-            fsx::staged_output(output, |out| tool("/usr/bin/sips", &["-s".as_ref(), "format".as_ref(), format.sips_name().as_ref(), path.as_os_str(), "--out".as_ref(), out.as_os_str()]))?;
+            fsx::staged_output(output, |out| {
+                tool(
+                    "/usr/bin/sips",
+                    &["-s".as_ref(), "format".as_ref(), format.sips_name().as_ref(), path.as_os_str(), "--out".as_ref(), out.as_os_str()],
+                )
+            })?;
             Ok(vec![trash_inverse(output)])
         }
         Action::ResizeImage { path, max_width_px, backup } => {
@@ -545,7 +694,12 @@ pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -
         Action::Zip { path, output } => {
             guard(roots, &[path, output])?;
             fresh(output)?;
-            fsx::staged_output(output, |out| tool("/usr/bin/ditto", &["-c".as_ref(), "-k".as_ref(), "--sequesterRsrc".as_ref(), "--keepParent".as_ref(), path.as_os_str(), out.as_os_str()]))?;
+            fsx::staged_output(output, |out| {
+                tool(
+                    "/usr/bin/ditto",
+                    &["-c".as_ref(), "-k".as_ref(), "--sequesterRsrc".as_ref(), "--keepParent".as_ref(), path.as_os_str(), out.as_os_str()],
+                )
+            })?;
             Ok(vec![trash_inverse(output)])
         }
         Action::Unzip { path, destination } => {
@@ -610,7 +764,11 @@ mod tests {
         let from = roots.home.join("Documents/source");
         let to = roots.home.join("Documents/target");
         for directory in [false, true] {
-            if directory { fs::create_dir(&from).unwrap(); } else { fs::write(&from, b"source").unwrap(); }
+            if directory {
+                fs::create_dir(&from).unwrap();
+            } else {
+                fs::write(&from, b"source").unwrap();
+            }
             let action = Action::Rename { path: from.clone(), new_name: "target".into() };
             fs::write(&to, b"concurrent creator").unwrap();
             assert!(run(&[action], &roots).error.is_some());
@@ -630,24 +788,33 @@ mod tests {
     fn staged_publication_cannot_clobber_and_cleans_failures() {
         let d = tempfile::tempdir().unwrap();
         let output = d.path().join("out");
-        assert!(fsx::staged_output(&output, |stage| {
-            fs::write(stage, b"generated").unwrap();
-            fs::write(&output, b"winner").unwrap(); Ok(())
-        }).is_err());
+        assert!(
+            fsx::staged_output(&output, |stage| {
+                fs::write(stage, b"generated").unwrap();
+                fs::write(&output, b"winner").unwrap();
+                Ok(())
+            })
+            .is_err()
+        );
         assert_eq!(fs::read(&output).unwrap(), b"winner");
         assert_eq!(fs::read_dir(d.path()).unwrap().count(), 1);
         fs::remove_file(&output).unwrap();
-        assert!(fsx::staged_output(&output, |stage| {
-            fs::create_dir(stage).unwrap(); fs::write(stage.join("partial"), b"x").unwrap();
-            Err("injected extraction failure".into())
-        }).is_err());
+        assert!(
+            fsx::staged_output(&output, |stage| {
+                fs::create_dir(stage).unwrap();
+                fs::write(stage.join("partial"), b"x").unwrap();
+                Err("injected extraction failure".into())
+            })
+            .is_err()
+        );
         assert_eq!(fs::read_dir(d.path()).unwrap().count(), 0);
     }
 
     #[test]
     fn staged_publication_rejects_parent_swap() {
         let d = tempfile::tempdir().unwrap();
-        let parent = d.path().join("parent"); let moved = d.path().join("moved");
+        let parent = d.path().join("parent");
+        let moved = d.path().join("moved");
         fs::create_dir(&parent).unwrap();
         let stage = fsx::Staging::new(&parent.join("out")).unwrap();
         fs::write(&stage.path, b"generated").unwrap();
@@ -666,19 +833,31 @@ mod tests {
         use std::time::{Duration, Instant};
         let start = Instant::now();
         let err = bounded_tool("/bin/sleep", &["2".as_ref()], Duration::from_millis(30), || Ok(())).unwrap_err();
-        assert!(err.contains("timed out")); assert!(start.elapsed()<Duration::from_secs(1));
-        let err = bounded_tool("/bin/sh", &["-c".as_ref(), "head -c 200000 /dev/zero; head -c 200000 /dev/zero >&2; exit 1".as_ref()], Duration::from_secs(5), || Ok(())).unwrap_err();
-        assert!(err.len() <= 65536+100, "{}", err.len());
+        assert!(err.contains("timed out"));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        let err = bounded_tool(
+            "/bin/sh",
+            &["-c".as_ref(), "head -c 200000 /dev/zero; head -c 200000 /dev/zero >&2; exit 1".as_ref()],
+            Duration::from_secs(5),
+            || Ok(()),
+        )
+        .unwrap_err();
+        assert!(err.len() <= 65536 + 100, "{}", err.len());
         let token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         CANCEL.with(|c| *c.borrow_mut() = Some(token));
         assert!(bounded_tool("/bin/sleep", &["2".as_ref()], Duration::from_secs(5), || Ok(())).unwrap_err().contains("cancelled"));
         let token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         CANCEL.with(|c| *c.borrow_mut() = Some(token.clone()));
         let started = Instant::now();
-        assert!(bounded_tool("/bin/sleep", &["2".as_ref()], Duration::from_secs(5), || {
-            token.store(true,std::sync::atomic::Ordering::Relaxed); Ok(())
-        }).unwrap_err().contains("cancelled"));
-        assert!(started.elapsed()<Duration::from_secs(1));
+        assert!(
+            bounded_tool("/bin/sleep", &["2".as_ref()], Duration::from_secs(5), || {
+                token.store(true, std::sync::atomic::Ordering::Relaxed);
+                Ok(())
+            })
+            .unwrap_err()
+            .contains("cancelled")
+        );
+        assert!(started.elapsed() < Duration::from_secs(1));
         CANCEL.with(|c| *c.borrow_mut() = None);
     }
 
@@ -687,9 +866,13 @@ mod tests {
         use std::time::{Duration, Instant};
         let d = tempfile::tempdir().unwrap();
         let marker = d.path().join("descendant-finished");
-        bounded_tool("/bin/sh", &["-c".as_ref(),
-            "(/bin/sleep 1; /usr/bin/touch \"$1\") & exit 0".as_ref(),
-            "test".as_ref(), marker.as_os_str()], Duration::from_secs(5), || Ok(())).unwrap();
+        bounded_tool(
+            "/bin/sh",
+            &["-c".as_ref(), "(/bin/sleep 1; /usr/bin/touch \"$1\") & exit 0".as_ref(), "test".as_ref(), marker.as_os_str()],
+            Duration::from_secs(5),
+            || Ok(()),
+        )
+        .unwrap();
         assert!(!marker.exists(), "tool must return while the descendant retains its pipes");
         let start = Instant::now();
         while !marker.exists() && start.elapsed() < Duration::from_secs(5) {
@@ -701,42 +884,57 @@ mod tests {
     // Tiny metadata-only ZIP fixtures: validation must reject before invoking
     // any decompressor. A real system-zip fixture below tests extraction.
     fn zip_fixture(path: &Path, name: &[u8], bytes: u32, packed: u32, mode: u32) {
-        let mut local = vec![0u8;30]; local[..4].copy_from_slice(b"PK\x03\x04");
-        if bytes != packed { local[8..10].copy_from_slice(&8u16.to_le_bytes()); }
+        let mut local = vec![0u8; 30];
+        local[..4].copy_from_slice(b"PK\x03\x04");
+        if bytes != packed {
+            local[8..10].copy_from_slice(&8u16.to_le_bytes());
+        }
         local[18..22].copy_from_slice(&packed.to_le_bytes());
         local[22..26].copy_from_slice(&bytes.to_le_bytes());
         local[26..28].copy_from_slice(&(name.len() as u16).to_le_bytes());
-        let mut data = local; data.extend_from_slice(name); data.resize(data.len()+packed as usize, 0);
+        let mut data = local;
+        data.extend_from_slice(name);
+        data.resize(data.len() + packed as usize, 0);
         let offset = data.len() as u32;
-        let mut central = vec![0u8;46]; central[..4].copy_from_slice(b"PK\x01\x02");
-        if bytes != packed { central[10..12].copy_from_slice(&8u16.to_le_bytes()); }
-        central[20..24].copy_from_slice(&packed.to_le_bytes()); central[24..28].copy_from_slice(&bytes.to_le_bytes());
+        let mut central = vec![0u8; 46];
+        central[..4].copy_from_slice(b"PK\x01\x02");
+        if bytes != packed {
+            central[10..12].copy_from_slice(&8u16.to_le_bytes());
+        }
+        central[20..24].copy_from_slice(&packed.to_le_bytes());
+        central[24..28].copy_from_slice(&bytes.to_le_bytes());
         central[28..30].copy_from_slice(&(name.len() as u16).to_le_bytes());
-        central[38..42].copy_from_slice(&(mode<<16).to_le_bytes());
-        data.extend(central); data.extend_from_slice(name);
-        let size = data.len() as u32-offset;
-        let mut end = vec![0u8;22]; end[..4].copy_from_slice(b"PK\x05\x06");
-        end[8..10].copy_from_slice(&1u16.to_le_bytes()); end[10..12].copy_from_slice(&1u16.to_le_bytes());
-        end[12..16].copy_from_slice(&size.to_le_bytes()); end[16..20].copy_from_slice(&offset.to_le_bytes());
-        data.extend(end); fs::write(path,data).unwrap();
+        central[38..42].copy_from_slice(&(mode << 16).to_le_bytes());
+        data.extend(central);
+        data.extend_from_slice(name);
+        let size = data.len() as u32 - offset;
+        let mut end = vec![0u8; 22];
+        end[..4].copy_from_slice(b"PK\x05\x06");
+        end[8..10].copy_from_slice(&1u16.to_le_bytes());
+        end[10..12].copy_from_slice(&1u16.to_le_bytes());
+        end[12..16].copy_from_slice(&size.to_le_bytes());
+        end[16..20].copy_from_slice(&offset.to_le_bytes());
+        data.extend(end);
+        fs::write(path, data).unwrap();
     }
     #[test]
     fn hostile_zip_metadata_is_rejected() {
-        let d = tempfile::tempdir().unwrap(); let zip = d.path().join("test.zip");
+        let d = tempfile::tempdir().unwrap();
+        let zip = d.path().join("test.zip");
         let limits = ArchiveLimits::default();
         for name in [b"../escape".as_slice(), b"/absolute", b"a/../../x", b"a\\evil"] {
-            zip_fixture(&zip,name,1,1,0o100644);
-            assert!(inspect_archive(&zip,limits, &|| false).is_err());
+            zip_fixture(&zip, name, 1, 1, 0o100644);
+            assert!(inspect_archive(&zip, limits, &|| false).is_err());
         }
-        zip_fixture(&zip,b"link",1,1,0o120777);
-        assert!(inspect_archive(&zip,limits, &|| false).is_err());
-        zip_fixture(&zip,b"ok",101,1,0o100644);
-        assert!(inspect_archive(&zip,limits, &|| false).is_err());
-        zip_fixture(&zip,b"ok",2,2,0o100644);
-        assert_eq!(inspect_archive(&zip,limits, &|| false).unwrap(),2);
-        assert!(inspect_archive(&zip,ArchiveLimits { entries:0,..limits }, &|| false).is_err());
-        assert!(inspect_archive(&zip,ArchiveLimits { file:1,..limits }, &|| false).is_err());
-        assert!(inspect_archive(&zip,ArchiveLimits { total:1,..limits }, &|| false).is_err());
+        zip_fixture(&zip, b"link", 1, 1, 0o120777);
+        assert!(inspect_archive(&zip, limits, &|| false).is_err());
+        zip_fixture(&zip, b"ok", 101, 1, 0o100644);
+        assert!(inspect_archive(&zip, limits, &|| false).is_err());
+        zip_fixture(&zip, b"ok", 2, 2, 0o100644);
+        assert_eq!(inspect_archive(&zip, limits, &|| false).unwrap(), 2);
+        assert!(inspect_archive(&zip, ArchiveLimits { entries: 0, ..limits }, &|| false).is_err());
+        assert!(inspect_archive(&zip, ArchiveLimits { file: 1, ..limits }, &|| false).is_err());
+        assert!(inspect_archive(&zip, ArchiveLimits { total: 1, ..limits }, &|| false).is_err());
     }
     #[test]
     fn extraction_polling_tolerates_removed_directories_but_final_scan_is_strict() {
@@ -760,28 +958,29 @@ mod tests {
     #[test]
     fn system_zip_limits_and_disk_margin() {
         let d = tempfile::tempdir().unwrap();
-        let input = d.path().join("input"); fs::write(&input,b"hello archive").unwrap();
+        let input = d.path().join("input");
+        fs::write(&input, b"hello archive").unwrap();
         let zip = d.path().join("a.zip");
-        tool("/usr/bin/zip", &["-j".as_ref(),zip.as_os_str(),input.as_os_str()]).unwrap();
+        tool("/usr/bin/zip", &["-j".as_ref(), zip.as_os_str(), input.as_os_str()]).unwrap();
         let destination = d.path().join("out");
         let zip_link = d.path().join("archive-link.zip");
         std::os::unix::fs::symlink(&zip, &zip_link).unwrap();
         assert!(extract_archive(&zip_link, &destination, ArchiveLimits::default(), &|| false).is_err());
         assert!(!destination.exists());
-        assert!(extract_archive(&zip,&destination,ArchiveLimits { margin:u64::MAX,..ArchiveLimits::default() }, &|| false).is_err());
+        assert!(extract_archive(&zip, &destination, ArchiveLimits { margin: u64::MAX, ..ArchiveLimits::default() }, &|| false).is_err());
         assert!(!destination.exists());
-        extract_archive(&zip,&destination,ArchiveLimits::default(), &|| false).unwrap();
-        assert_eq!(fs::read(destination.join("input")).unwrap(),b"hello archive");
+        extract_archive(&zip, &destination, ArchiveLimits::default(), &|| false).unwrap();
+        assert_eq!(fs::read(destination.join("input")).unwrap(), b"hello archive");
         let link = d.path().join("link");
-        std::os::unix::fs::symlink(&input,&link).unwrap();
+        std::os::unix::fs::symlink(&input, &link).unwrap();
         let hostile = d.path().join("links.zip");
-        tool("/usr/bin/zip", &["-y".as_ref(),"-j".as_ref(),hostile.as_os_str(),link.as_os_str()]).unwrap();
+        tool("/usr/bin/zip", &["-y".as_ref(), "-j".as_ref(), hostile.as_os_str(), link.as_os_str()]).unwrap();
         let rejected = d.path().join("rejected");
-        assert!(extract_archive(&hostile,&rejected,ArchiveLimits::default(), &|| false).is_err());
+        assert!(extract_archive(&hostile, &rejected, ArchiveLimits::default(), &|| false).is_err());
         assert!(!rejected.exists());
         // ditto alone accepts this bad CRC: integrity validation must reject it.
-        zip_fixture(&hostile,b"bad-crc",2,2,0o100644);
-        let err = extract_archive(&hostile,&rejected,ArchiveLimits::default(), &|| false).unwrap_err();
+        zip_fixture(&hostile, b"bad-crc", 2, 2, 0o100644);
+        let err = extract_archive(&hostile, &rejected, ArchiveLimits::default(), &|| false).unwrap_err();
         assert!(err.contains("/usr/bin/unzip failed"), "{err}");
         assert!(!rejected.exists());
         assert!(!fs::read_dir(d.path()).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with(".voxi-stage")));
@@ -972,8 +1171,11 @@ mod tests {
         fs::create_dir(h.join("Documents/Project")).unwrap();
         fs::write(h.join("Documents/Project/readme.md"), b"hi").unwrap();
         // Force ditto to create AppleDouble entries, even on a clean fixture.
-        tool("/usr/bin/xattr", &["-w".as_ref(), "com.voxi.roundtrip".as_ref(),
-            "metadata".as_ref(), h.join("Documents/Project/readme.md").as_os_str()]).unwrap();
+        tool(
+            "/usr/bin/xattr",
+            &["-w".as_ref(), "com.voxi.roundtrip".as_ref(), "metadata".as_ref(), h.join("Documents/Project/readme.md").as_os_str()],
+        )
+        .unwrap();
         let history = History::load(h.join("history.json"));
         assert!(plan_and_run(&roots, &history, "zip Project into Project.zip").error.is_none());
         assert!(h.join("Documents/Project.zip").exists());
@@ -981,19 +1183,23 @@ mod tests {
         let listing = Command::new("/usr/bin/unzip").args(["-Z1"]).arg(&archive).output().unwrap();
         assert!(listing.status.success());
         assert!(String::from_utf8_lossy(&listing.stdout).contains("__MACOSX/"));
-        assert!(inspect_archive(&archive, ArchiveLimits { entries: 2, ..ArchiveLimits::default() }, &|| false).is_err(),
-            "metadata entries count toward archive-wide limits");
+        assert!(
+            inspect_archive(&archive, ArchiveLimits { entries: 2, ..ArchiveLimits::default() }, &|| false).is_err(),
+            "metadata entries count toward archive-wide limits"
+        );
         let extracted = plan_and_run(&roots, &history, "unzip Project.zip into Documents/out");
         assert!(extracted.error.is_none(), "{:?}", extracted.error);
         assert_eq!(fs::read(h.join("Documents/out/Project/readme.md")).unwrap(), b"hi");
         assert!(!h.join("Documents/out/__MACOSX").exists());
         assert!(!h.join("Documents/out/archive.zip").exists());
-        let attr = Command::new("/usr/bin/xattr").args(["-p", "com.voxi.roundtrip"])
-            .arg(h.join("Documents/out/Project/readme.md")).output().unwrap();
+        let attr = Command::new("/usr/bin/xattr")
+            .args(["-p", "com.voxi.roundtrip"])
+            .arg(h.join("Documents/out/Project/readme.md"))
+            .output()
+            .unwrap();
         assert!(attr.status.success());
         assert_eq!(String::from_utf8_lossy(&attr.stdout).trim(), "metadata");
-        assert!(!fs::read_dir(h.join("Documents")).unwrap().any(|e|
-            e.unwrap().file_name().to_string_lossy().starts_with(".voxi-stage")));
+        assert!(!fs::read_dir(h.join("Documents")).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with(".voxi-stage")));
     }
 
     #[test]
@@ -1002,9 +1208,18 @@ mod tests {
         let h = &roots.home;
         let pics = h.join("Pictures");
         // A 64x32 PNG made with sips from a generated TIFF-free source.
-        tool("/usr/bin/sips", &["-s".as_ref(), "format".as_ref(), "png".as_ref(),
-            "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericDocumentIcon.icns".as_ref(),
-            "--out".as_ref(), pics.join("icon.png").as_os_str()]).unwrap();
+        tool(
+            "/usr/bin/sips",
+            &[
+                "-s".as_ref(),
+                "format".as_ref(),
+                "png".as_ref(),
+                "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericDocumentIcon.icns".as_ref(),
+                "--out".as_ref(),
+                pics.join("icon.png").as_os_str(),
+            ],
+        )
+        .unwrap();
         let history = History::load(h.join("history.json"));
 
         assert!(plan_and_run(&roots, &history, "convert icon.png to jpg").error.is_none());

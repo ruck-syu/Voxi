@@ -138,14 +138,23 @@ impl<'a> Planner<'a> {
             scope.validate().map_err(Stop::Problem)?;
         }
         let result = self.step(intent, history);
-        if let Some(message) = self.search.status() {
-            if self.search.control.is_cancelled() {
+        match self.search.completeness() {
+            search::Completeness::Complete => {}
+            search::Completeness::Cancelled => return problem("Search cancelled."),
+            // Only a read-only answer may be shown from an incomplete search;
+            // changes must never be planned from one.
+            search::Completeness::Partial(message) => {
+                if let Ok(Step::Finished(Planned::Info { title, summary, rows, total, .. })) = result {
+                    return Ok(Planned::Info {
+                        title,
+                        summary: format!("{message} Partial results. {summary}"),
+                        rows,
+                        total,
+                        listed: None,
+                    });
+                }
                 return problem(message);
             }
-            if let Ok(Step::Finished(Planned::Info { title, summary, rows, total, .. })) = result {
-                return Ok(Planned::Info { title, summary: format!("{message} Partial results. {summary}"), rows, total, listed: None });
-            }
-            return problem(message);
         }
         let title = match result? {
             Step::Changes(title) => title,

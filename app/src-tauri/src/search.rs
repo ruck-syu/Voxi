@@ -100,6 +100,17 @@ pub struct Entry {
     pub is_dir: bool,
 }
 
+/// Whether a command's scans saw everything they were asked to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Completeness {
+    Complete,
+    /// The user cancelled; nothing from this search may be used.
+    Cancelled,
+    /// A limit, an unreadable folder or another issue cut it short; the
+    /// message says what. Read-only answers may show partial results.
+    Partial(String),
+}
+
 pub struct Search {
     cache: RefCell<HashMap<PathBuf, Arc<Vec<Entry>>>>,
     issues: RefCell<Vec<String>>,
@@ -150,10 +161,27 @@ impl Search {
         }
     }
 
-    pub fn status(&self) -> Option<String> {
+    /// How complete this command's scans were.
+    pub fn completeness(&self) -> Completeness {
         if self.control.is_cancelled() {
-            return Some("Search cancelled.".into());
+            return Completeness::Cancelled;
         }
+        match self.incomplete_message() {
+            Some(message) => Completeness::Partial(message),
+            None => Completeness::Complete,
+        }
+    }
+
+    /// The message for an incomplete or cancelled search; None when complete.
+    pub fn status(&self) -> Option<String> {
+        match self.completeness() {
+            Completeness::Complete => None,
+            Completeness::Cancelled => Some("Search cancelled.".into()),
+            Completeness::Partial(message) => Some(message),
+        }
+    }
+
+    fn incomplete_message(&self) -> Option<String> {
         let mut parts = self.issues.borrow().clone();
         let count = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
         if self.too_deep.get() > 0 {

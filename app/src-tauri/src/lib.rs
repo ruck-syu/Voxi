@@ -7,6 +7,7 @@ mod exec;
 mod fallback_guard;
 #[cfg(any(test, feature = "tiny-model"))]
 mod fallback_slots;
+mod finder_selection;
 mod fsx;
 mod history;
 mod learn;
@@ -148,6 +149,9 @@ struct AppState {
     next_plan: AtomicU64,
     active_search: Mutex<Option<(u64, search::Control)>>,
     presentation: Mutex<presentation::Presentation>,
+    /// What the window should say about a Finder selection it couldn't take
+    /// in full, read once when the window opens.
+    selection_notice: Mutex<Option<String>>,
 }
 
 fn home() -> PathBuf {
@@ -223,6 +227,44 @@ fn request_hide(app: &AppHandle) {
         Some(w) if w.emit("voxi://hide", ()).is_ok() => {}
         _ => hide(app),
     }
+}
+
+/// Files handed over by "Organize with Voxi" in Finder become the results
+/// list, then the window opens so the user can say what to do with them.
+pub(crate) fn use_finder_selection(app: &AppHandle, selected: Vec<PathBuf>) {
+    let state = app.state::<AppState>();
+    let notice = take_selection(&state, selected);
+    *checked_state!(state.selection_notice.lock(), ()) = notice;
+    show_window(app, "command");
+}
+
+/// Publishes the selection as the results list. Returns the notice to show:
+/// what was left out, or why nothing could be used.
+fn take_selection(state: &AppState, selected: Vec<PathBuf>) -> Option<String> {
+    let roots = checked_state!(state.roots.read(), Some("Voxi state is unavailable. Restart the app.".into())).clone();
+    let mut context = checked_state!(state.result_scope.lock(), Some("Voxi state is unavailable. Restart the app.".into()));
+    match finder_selection::accept(&roots, selected) {
+        Err(message) => {
+            context.clear();
+            Some(message)
+        }
+        Ok((files, notice)) => match scope::Snapshot::capture(files, finder_selection::LABEL.into()) {
+            Some(snapshot) => {
+                context.publish(snapshot);
+                notice
+            }
+            None => {
+                context.clear();
+                Some("The selected files changed in Finder. Select them again.".into())
+            }
+        },
+    }
+}
+
+/// The notice about the last Finder selection, once.
+#[tauri::command]
+fn selection_notice(state: State<AppState>) -> Option<String> {
+    checked_state!(state.selection_notice.lock(), None).take()
 }
 
 fn toggle_window(app: &AppHandle) {
@@ -1576,6 +1618,7 @@ pub fn run() {
                 next_plan: AtomicU64::new(1),
                 active_search: Mutex::new(None),
                 presentation: Mutex::new(presentation::Presentation::default()),
+                selection_notice: Mutex::new(None),
             };
             app.manage(state);
             #[cfg(feature = "tiny-model")]
@@ -1611,6 +1654,10 @@ pub fn run() {
                 window.with_webview_configuration(configuration)
             };
             window.build()?;
+            #[cfg(target_os = "macos")]
+            if let Err(e) = finder_selection::service::install(app.handle()) {
+                eprintln!("Voxi: could not register the Finder service: {e}");
+            }
             #[cfg(target_os = "macos")]
             if let Err(e) = outside_click::install(app.handle()) {
                 eprintln!("Voxi: could not install the outside-click monitor: {e}");
@@ -1680,6 +1727,7 @@ pub fn run() {
             result_scope,
             confirm_plan,
             preview_page,
+            selection_notice,
             cancel_execution,
             cancel_plan,
             search_progress,

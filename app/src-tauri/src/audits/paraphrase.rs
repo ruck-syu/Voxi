@@ -332,6 +332,7 @@ fn state_for(home: &Path) -> AppState {
         active_search: Mutex::new(None),
         presentation: Mutex::new(Default::default()),
         result_scope: Mutex::new(Default::default()),
+        selection_notice: Mutex::new(None),
     }
 }
 

@@ -27,6 +27,7 @@ impl Fixture {
             schedules: Mutex::new(scheduler::Store::load(home.join("schedules.json"))),
             execution: Mutex::new(()),
             active_runs: Mutex::new(HashMap::new()),
+            selection_notice: Mutex::new(None),
         };
         Self { _temp: temp, home, state, request: Cell::new(0) }
     }
@@ -277,6 +278,7 @@ fn rule_only_probe() {
         schedules: Mutex::new(scheduler::Store::load(home.join("schedules.json"))),
         execution: Mutex::new(()),
         active_runs: Mutex::new(HashMap::new()),
+        selection_notice: Mutex::new(None),
     };
     let oversized = "x".repeat(parse::MAX_COMMAND_BYTES + 1);
     let mut outcomes = Vec::new();
@@ -1415,4 +1417,26 @@ fn unticked_steps_are_left_out_and_undo_covers_only_what_ran() {
     assert!(confirm_trimmed(&f.state, id, &[0]).unwrap_err().contains("undo"));
     assert!(confirm_input(&f.state, id).unwrap().error.is_none());
     assert!(a.exists() && b.exists() && c.exists() && !filed.exists());
+}
+#[test]
+fn a_finder_selection_becomes_the_list_that_these_refers_to() {
+    let f = Fixture::new();
+    let a = f.write("Downloads/a.pdf");
+    let b = f.write("Downloads/b.pdf");
+    let c = f.write("Downloads/c.pdf");
+    let outside = tempfile::tempdir().unwrap();
+    let stray = outside.path().join("x.pdf");
+    fs::write(&stray, b"x").unwrap();
+    let notice = take_selection(&f.state, vec![a.clone(), c.clone(), stray.clone()]).unwrap();
+    assert!(notice.contains("1 item outside the folders") && notice.contains("“x.pdf”"), "{notice}");
+    let summary = f.state.result_scope.lock().unwrap().summary().unwrap();
+    assert_eq!((summary.count, summary.label.as_str()), (2, "your Finder selection"));
+    let Outcome::Plan { id, total, .. } = f.command("move these to Documents") else { panic!("expected a plan") };
+    assert_eq!(total, 2);
+    assert!(confirm_input(&f.state, id).unwrap().error.is_none());
+    assert!(f.home.join("Documents/a.pdf").exists() && f.home.join("Documents/c.pdf").exists());
+    assert!(b.exists() && stray.exists());
+    // Nothing usable clears the list rather than leaving an older one in place.
+    assert!(take_selection(&f.state, vec![stray]).unwrap().contains("outside the folders"));
+    assert!(f.state.result_scope.lock().unwrap().current.is_none());
 }

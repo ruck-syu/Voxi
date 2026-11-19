@@ -61,6 +61,8 @@ export const api = {
   plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<CommandReply>("plan_command", { text, choices, requestId }),
   clearResultScope: () => invoke<void>("clear_result_scope"),
   resultScope: () => invoke<ResultScope | null>("result_scope"),
+  /** What Voxi left out of the last Finder selection, once. */
+  selectionNotice: () => invoke<string | null>("selection_notice"),
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   /** Runs the pending plan, leaving out the 0-based steps in `skip`. */

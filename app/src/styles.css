@@ -628,6 +628,7 @@ kbd {
   padding-top: 4px;
 }
 .result-scope { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 0; color: var(--muted); font-size: 13px; }
+.selection-hint { margin: 0; padding: 6px 22px 0; font-size: 13px; }
 .result-scope .link { flex-shrink: 0; }
 
 /* ---- Settings: one ruled row per setting; big ones fold away ---- */

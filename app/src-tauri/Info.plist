@@ -13,5 +13,24 @@
   <string>Voxi organizes files in Downloads when you ask it to.</string>
   <key>NSRemovableVolumesUsageDescription</key>
   <string>Voxi moves files to external drives when you ask it to.</string>
+  <!-- "Organize with Voxi" for files selected in Finder. -->
+  <key>NSServices</key>
+  <array>
+    <dict>
+      <key>NSMenuItem</key>
+      <dict>
+        <key>default</key>
+        <string>Organize with Voxi</string>
+      </dict>
+      <key>NSMessage</key>
+      <string>organizeWithVoxi</string>
+      <key>NSRequiredContext</key>
+      <dict/>
+      <key>NSSendFileTypes</key>
+      <array>
+        <string>public.item</string>
+      </array>
+    </dict>
+  </array>
 </dict>
 </plist>

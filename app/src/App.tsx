@@ -310,6 +310,15 @@ function CommandView({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ruleRef = useRef<HTMLSpanElement>(null);
   const planShownAt = useRef(0);
+  // Files sent from Finder ("Organize with Voxi") arrive as the results list.
+  const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.resultScope().then((scope) => { if (live && scope) setResultScope(scope); }).catch(() => {});
+    void api.selectionNotice().then((notice) => { if (live) setSelectionNotice(notice); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const fromFinder = resultScope?.label === FINDER_LABEL;
   const activeRun = useRef<{ id: number; canStop: boolean; stopping: boolean } | null>(null);
   const requestId = useRef(0);
   const [searched, setSearched] = useState(0);
@@ -637,12 +646,18 @@ function CommandView({
         </p>
       )}
       {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
-        <span>{resultScope.count} results from {resultScope.label}{resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
+        <span>{resultScope.count} {fromFinder ? (resultScope.count === 1 ? "file" : "files") : "results"} from {resultScope.label}{resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
         <button className="link" disabled={phase.k === "running"} onClick={() => {
           reset();
           void api.clearResultScope().then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: errorMessage(e) }));
         }}>Clear scope</button>
       </div>}
+      {phase.k === "ready" && (fromFinder || selectionNotice) && (
+        <p className="quiet selection-hint" role="status">
+          {selectionNotice && <span className="warn">{selectionNotice} </span>}
+          {fromFinder && "Say what to do with them, such as “move these to Receipts”."}
+        </p>
+      )}
       <Body
         searched={searched}
         key={`body-${phaseKey(phase)}`}
@@ -776,6 +791,9 @@ type PlanOutcome = Extract<Outcome, { status: "plan" }>;
 /** The preview's steps. The first page arrives with the plan; "Show more"
  *  loads the rest of the same frozen plan, and the notes view lists only the
  *  steps with a note (a name changed to avoid a clash, say). */
+/** The results label Voxi gives files sent from Finder; matches finder_selection::LABEL. */
+const FINDER_LABEL = "your Finder selection";
+
 const runLabel = (n: number) => `Run ${n} ${n === 1 ? "change" : "changes"}`;
 
 function PlanSteps({ plan, skipped, onToggle }: { plan: PlanOutcome; skipped: number[]; onToggle: (step: number) => void }) {

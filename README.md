@@ -94,6 +94,15 @@ contradictory or repeated bounds are refused rather than silently discarded.
 Use “undo last” for the newest change; selecting an earlier move or delete by
 its operation type isn't supported.
 
+## From Finder
+
+Select files in Finder, right-click, and choose **Organize with Voxi** (under
+Quick Actions or Services). Voxi opens with those files as its list, so you can
+say “move these to Receipts”. Folders and
+anything outside the folders Voxi may use are left out, and Voxi says which.
+The files are checked again before anything runs. If the item is missing, turn
+it on in System Settings → Keyboard → Keyboard Shortcuts → Services.
+
 ## Dictation
 
 Use an external dictation app such as [Wispr Flow](https://wisprflow.ai) or [Hex by Anomaly](https://anoma.ly/hex/).

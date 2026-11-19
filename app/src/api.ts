@@ -15,10 +15,12 @@ export function errorMessage(e: unknown): string {
 }
 
 export type PreviewItem = { kind: string; primary: string; detail: string; note?: string };
+/** A preview step loaded after the first page; `step` counts from 0. */
+export type PreviewRow = PreviewItem & { step: number };
 export type InfoRow = { name: string; detail: string };
 
 export type Outcome =
-  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; warnings: string[]; isUndo: boolean; scheduledFor?: string | null; repeats?: string | null }
+  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; warnings: string[]; isUndo: boolean; scheduledFor?: string | null; repeats?: string | null }
   | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
@@ -61,6 +63,8 @@ export const api = {
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
+  /** More of the pending preview from `offset`, or only the steps with notes. */
+  previewPage: (id: number, offset: number, onlyNotes: boolean) => invoke<PreviewRow[]>("preview_page", { id, offset, onlyNotes }),
   stopExecution: (id: number, scheduledFor?: string) => invoke<void>("cancel_execution", { id, scheduledFor }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: (requestId: number) => invoke<void>("hide_window", { requestId }),

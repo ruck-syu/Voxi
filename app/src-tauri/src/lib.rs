@@ -34,7 +34,7 @@ mod tray_face;
 use diagnostics::{Code, Event, Stage};
 use fsx::{Roots, file_name};
 use history::{Entry, History};
-use model::{Action, Outcome, PreviewItem, RunResult};
+use model::{Action, Outcome, PreviewItem, PreviewRow, RunResult};
 use plan::{Planned, Planner, Stop};
 use settings::Settings;
 use std::collections::HashMap;
@@ -73,11 +73,16 @@ macro_rules! checked_state {
 
 const WINDOW_WIDTH: f64 = 680.0;
 const PREVIEW_LIMIT: usize = 20;
+/// How many more steps each "Show more" loads.
+const PREVIEW_PAGE: usize = 200;
 
 struct Pending {
     id: u64,
     command: String,
     actions: Vec<Action>,
+    /// Every step as the preview shows it, built once with the plan so each
+    /// page the user loads describes the same frozen plan.
+    preview: Vec<PreviewItem>,
     undo_of: Option<u64>,
     context_generation: Option<u64>,
     context_snapshot: Option<scope::Snapshot>,
@@ -278,7 +283,6 @@ fn preview(actions: &[Action], notes: &[Option<String>], roots: &Roots) -> Vec<P
     actions
         .iter()
         .zip(notes.iter().chain(std::iter::repeat(&None)))
-        .take(PREVIEW_LIMIT)
         .map(|(a, note)| {
             let (kind, primary, detail) = describe(a, roots);
             PreviewItem { kind, primary, detail, note: note.clone() }
@@ -685,13 +689,16 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
             if use_scope {
                 warnings.insert(0, "Using files from the previous searched list.".into());
             }
-            let items = preview(&actions, &notes, &roots);
+            let all = preview(&actions, &notes, &roots);
+            let items = all.iter().take(PREVIEW_LIMIT).cloned().collect();
+            let noted = all.iter().filter(|it| it.note.is_some()).count();
             let total = actions.len();
             *checked_state!(state.pending.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }) =
                 Some(Pending {
                     id,
                     command: original_text.trim().to_string(),
                     actions,
+                    preview: all,
                     undo_of,
                     scheduled,
                     context_generation: use_scope.then_some(scope_generation),
@@ -703,6 +710,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
                 title,
                 total,
                 items,
+                noted,
                 warnings,
                 is_undo: undo_of.is_some(),
                 scheduled_for,
@@ -787,6 +795,27 @@ fn confirm_input(state: &AppState, id: u64) -> Result<RunResult, String> {
         return Ok(RunResult { done: 0, total: p.actions.len(), error: None, cancelled: false, undoable: false, summary });
     }
     Ok(execute_pending(state, p, &is_cancelled))
+}
+
+/// More of the pending preview: up to `PREVIEW_PAGE` steps from `offset`,
+/// or with `only_notes`, the steps that carry a note (a name changed to
+/// avoid a clash, say) from `offset` on, each with its step number. Fails
+/// once the plan is no longer the pending one.
+#[tauri::command]
+fn preview_page(state: State<AppState>, id: u64, offset: usize, only_notes: bool) -> Result<Vec<PreviewRow>, String> {
+    let pending = state.pending.lock().map_err(|_| "Preview state unavailable. Restart Voxi.")?;
+    let p = pending.as_ref().filter(|p| p.id == id).ok_or("This preview expired. Run the command again.")?;
+    Ok(preview_rows(&p.preview, offset, only_notes))
+}
+
+fn preview_rows(all: &[PreviewItem], offset: usize, only_notes: bool) -> Vec<PreviewRow> {
+    all.iter()
+        .enumerate()
+        .skip(offset)
+        .filter(|(_, it)| !only_notes || it.note.is_some())
+        .take(PREVIEW_PAGE)
+        .map(|(step, item)| PreviewRow { step, item: item.clone() })
+        .collect()
 }
 
 #[tauri::command]
@@ -1021,6 +1050,7 @@ fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule,
                     id: 0,
                     command: job.command.clone(),
                     actions,
+                    preview: Vec::new(),
                     undo_of: None,
                     context_generation: None,
                     context_snapshot: None,
@@ -1092,6 +1122,7 @@ fn run_due_tasks_inner(state: &AppState) -> Result<(), String> {
                     id: 0,
                     command: job.command.clone(),
                     actions: job.actions,
+                    preview: Vec::new(),
                     undo_of: None,
                     context_generation: None,
                     context_snapshot: None,
@@ -1625,6 +1656,7 @@ pub fn run() {
             clear_result_scope,
             result_scope,
             confirm_plan,
+            preview_page,
             cancel_execution,
             cancel_plan,
             search_progress,
@@ -1669,3 +1701,7 @@ mod plan_guard_tests;
 #[cfg(test)]
 #[path = "lib_tests/examples.rs"]
 mod example_tests;
+
+#[cfg(test)]
+#[path = "lib_tests/preview_pages.rs"]
+mod preview_page_tests;

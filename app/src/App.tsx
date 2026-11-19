@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorMessage, inTauri, tildify, type Outcome, type ResultScope, type RunResult, type Settings } from "./api";
+import { api, errorMessage, inTauri, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type Settings } from "./api";
 import { readChoice } from "./choice";
 import examples from "./examples.json";
 import { AccessView } from "./access";
@@ -760,6 +760,73 @@ function Tick() {
   );
 }
 
+type PlanOutcome = Extract<Outcome, { status: "plan" }>;
+
+/** The preview's steps. The first page arrives with the plan; "Show more"
+ *  loads the rest of the same frozen plan, and the notes view lists only the
+ *  steps with a note (a name changed to avoid a clash, say). */
+function PlanSteps({ plan }: { plan: PlanOutcome }) {
+  const [rows, setRows] = useState<PreviewRow[]>(() => plan.items.map((it, step) => ({ ...it, step })));
+  const [notes, setNotes] = useState<PreviewRow[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const shown = notes ?? rows;
+  const more = notes ? 0 : plan.total - rows.length;
+  const load = (offset: number, onlyNotes: boolean) => {
+    setLoading(true);
+    setError(null);
+    api.previewPage(plan.id, offset, onlyNotes)
+      .then((page) => {
+        if (onlyNotes) setNotes((prev) => [...(prev ?? []), ...page]);
+        else setRows((prev) => [...prev, ...page.filter((r) => r.step >= prev.length)]);
+      })
+      .catch((e) => setError(errorMessage(e)))
+      .finally(() => setLoading(false));
+  };
+  // Notes past the first page of noted steps load as the list is scrolled to its end.
+  const notesMore = notes !== null && notes.length < plan.noted;
+  return (
+    <>
+      <ul className={`ruled scroll${notes ? " numbered" : ""}`} aria-label={notes ? "Steps with notes" : "Steps"}>
+        {shown.map((it, i) => (
+          <li key={it.step} data-kind={it.kind} style={row(i)}>
+            {notes && <span className="num" aria-label={`Step ${it.step + 1}`}>{it.step + 1}</span>}
+            <span className="primary">{it.primary}</span>
+            <span className="detail">{it.detail}</span>
+            {it.note && <span className="note">{it.note}</span>}
+          </li>
+        ))}
+        {(more > 0 || notesMore) && (
+          <li className="more" style={row(shown.length)}>
+            <button
+              type="button"
+              className="link"
+              disabled={loading}
+              onClick={() => notesMore ? load(notes[notes.length - 1].step + 1, true) : load(rows.length, false)}
+            >
+              {loading ? "Loading…" : notesMore ? `Show more of the ${plan.noted} with notes` : `Show ${Math.min(more, PREVIEW_PAGE)} more of ${more} ${more === 1 ? "step" : "steps"}`}
+            </button>
+          </li>
+        )}
+      </ul>
+      {plan.noted > 0 && plan.total > plan.items.length && (
+        <p className="quiet">
+          <button type="button" className="link" disabled={loading} onClick={() => {
+            if (notes) setNotes(null);
+            else { setNotes([]); load(0, true); }
+          }}>
+            {notes ? "Show all steps" : `Show only the ${plan.noted} ${plan.noted === 1 ? "step" : "steps"} with notes`}
+          </button>
+        </p>
+      )}
+      {error && <p className="note warn" role="alert">{error}</p>}
+    </>
+  );
+}
+
+/** Steps each "Show more" loads; matches PREVIEW_PAGE in lib.rs. */
+const PREVIEW_PAGE = 200;
+
 function Body(props: {
   searched: number;
   phase: Phase;
@@ -885,24 +952,10 @@ function Body(props: {
         </section>
       );
     case "plan": {
-      const more = o.total - o.items.length;
       return (
         <section className="body">
           <p className="title">{o.title}</p>
-          <ul className="ruled scroll">
-            {o.items.map((it, i) => (
-              <li key={i} data-kind={it.kind} style={row(i)}>
-                <span className="primary">{it.primary}</span>
-                <span className="detail">{it.detail}</span>
-                {it.note && <span className="note">{it.note}</span>}
-              </li>
-            ))}
-            {more > 0 && (
-              <li className="more" style={row(o.items.length)}>
-                and {more} more {more === 1 ? "step" : "steps"}
-              </li>
-            )}
-          </ul>
+          <PlanSteps plan={o} />
           {o.repeats?.startsWith("Runs now, then ") && <p className="quiet">{o.repeats}</p>}
           {o.warnings.map((w) => (
             <p key={w} className="quiet">

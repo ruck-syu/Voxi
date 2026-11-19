@@ -424,6 +424,15 @@ pub struct PreviewItem {
     pub note: Option<String>,
 }
 
+/// A preview step loaded after the first page, with its 0-based position.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewRow {
+    pub step: usize,
+    #[serde(flatten)]
+    pub item: PreviewItem,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InfoRow {
@@ -440,8 +449,10 @@ pub enum Outcome {
         id: u64,
         title: String,
         total: usize,
-        /// The first 20 steps, for the preview.
+        /// The first 20 steps, for the preview. The rest load page by page.
         items: Vec<PreviewItem>,
+        /// How many steps carry a note, such as a name changed to avoid a clash.
+        noted: usize,
         warnings: Vec<String>,
         is_undo: bool,
         scheduled_for: Option<chrono::DateTime<chrono::Local>>,

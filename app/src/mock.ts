@@ -33,7 +33,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
   const t = text.toLowerCase();
   if (t.includes("usuals"))
     return {
-      status: "plan", id: 4, title: "Run my usuals: 2 commands", total: 3, isUndo: false,
+      status: "plan", id: 4, title: "Run my usuals: 2 commands", total: 3, noted: 0, isUndo: false,
       warnings: ["“delete installers from Downloads”: No files match in Downloads."],
       items: [
         { kind: "create_folder", primary: "Screenshots", detail: "new folder in ~/Desktop" },
@@ -43,7 +43,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("pdf"))
     return {
-      status: "plan", id: 1, title: "Move 26 files to Documents", total: 26, isUndo: false,
+      status: "plan", id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
       warnings: ["2 already in Documents, left alone."],
       items: [
         { kind: "move", primary: "Q3 board deck.pdf", detail: "→ ~/Documents" },
@@ -55,7 +55,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("clean"))
     return {
-      status: "plan", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, isUndo: false, warnings: [],
+      status: "plan", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, noted: 0, isUndo: false, warnings: [],
       items: [
         { kind: "trash", primary: "Zoom.pkg", detail: "→ Trash" },
         { kind: "trash", primary: "Figma-124.3.dmg", detail: "→ Trash" },
@@ -64,7 +64,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("claude") && choices.claude)
     return {
-      status: "plan", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, isUndo: false, warnings: [],
+      status: "plan", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, noted: 0, isUndo: false, warnings: [],
       items: [{ kind: "trash", primary: choices.claude.split("/").pop()!, detail: "→ Trash" }],
     };
   if (t.includes("claude"))
@@ -153,6 +153,15 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         }
       }
       return { outcome, scope: null };
+    }
+    case "preview_page": {
+      // The 26-file PDF move: steps 6 to 26, with one more name clash.
+      const offset = Number(args.offset);
+      const steps = Array.from({ length: 26 }, (_, step) => step >= 5 ? {
+        step, kind: "move", primary: `scan-${String(step + 1).padStart(2, "0")}.pdf`, detail: "→ ~/Documents",
+        ...(step === 17 ? { note: "“scan-18.pdf” already exists, so this becomes “scan-18 2.pdf”" } : {}),
+      } : step === 2 ? { step, kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”" } : null);
+      return steps.filter((r): r is NonNullable<typeof r> => !!r && r.step >= offset && (!args.onlyNotes || "note" in r));
     }
     case "confirm_plan":
       if (!recoveryReviewed && mockScenario?.startsWith("recovery")) throw new Error("Open Settings → Scheduled, check the files, then choose Mark as reviewed.");

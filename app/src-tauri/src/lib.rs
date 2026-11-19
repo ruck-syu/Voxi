@@ -82,9 +82,9 @@ struct Pending {
     id: u64,
     command: String,
     actions: Vec<Action>,
-    /// Every step as the preview shows it, built once with the plan so each
-    /// page the user loads describes the same frozen plan.
-    preview: Vec<PreviewItem>,
+    /// What describes each step on request, frozen with the plan so every
+    /// page the user loads describes the same plan.
+    preview: PreviewSource,
     /// Each existing source file and when it was last modified at preview,
     /// so a file edited before confirming (and perhaps no longer matching a
     /// date filter) stops the run instead of being acted on unseen.
@@ -359,19 +359,33 @@ fn input_times(actions: &[Action]) -> Vec<(PathBuf, std::time::SystemTime)> {
         .collect()
 }
 
-/// `skippable` is true for a plan the user may trim before confirming: one
-/// that runs now, rather than an undo or a scheduled task.
-fn preview(actions: &[Action], notes: &[Option<String>], roots: &Roots, skippable: bool) -> Vec<PreviewItem> {
-    let can_skip = if skippable { skip::skippable(actions) } else { vec![false; actions.len()] };
-    actions
-        .iter()
-        .zip(notes.iter().chain(std::iter::repeat(&None)))
-        .zip(can_skip)
-        .map(|((a, note), skippable)| {
-            let (kind, primary, detail) = describe(a, roots);
-            PreviewItem { kind, primary, detail, note: note.clone(), skippable }
-        })
-        .collect()
+/// What the preview needs to describe any step of a pending plan. Rows are
+/// formatted only when shown, so a large plan doesn't build thousands of
+/// strings the user may never page to.
+#[derive(Default)]
+struct PreviewSource {
+    notes: Vec<Option<String>>,
+    skippable: Vec<bool>,
+    roots: Option<Roots>,
+}
+
+impl PreviewSource {
+    /// `skippable` is true for a plan the user may trim before confirming:
+    /// one that runs now, rather than an undo or a scheduled task.
+    fn new(actions: &[Action], notes: Vec<Option<String>>, roots: &Roots, skippable: bool) -> Self {
+        let skippable = if skippable { skip::skippable(actions) } else { vec![false; actions.len()] };
+        PreviewSource { notes, skippable, roots: Some(roots.clone()) }
+    }
+
+    fn noted(&self) -> usize {
+        self.notes.iter().filter(|n| n.is_some()).count()
+    }
+
+    fn item(&self, actions: &[Action], step: usize) -> Option<PreviewItem> {
+        let (kind, primary, detail) = describe(actions.get(step)?, self.roots.as_ref()?);
+        let note = self.notes.get(step).cloned().flatten();
+        Some(PreviewItem { kind, primary, detail, note, skippable: self.skippable.get(step).copied().unwrap_or(false) })
+    }
 }
 
 // ---- Commands ----------------------------------------------------------------
@@ -773,9 +787,9 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
             if use_scope {
                 warnings.insert(0, "Using files from the previous searched list.".into());
             }
-            let all = preview(&actions, &notes, &roots, undo_of.is_none() && scheduled.is_none());
-            let items = all.iter().take(PREVIEW_LIMIT).cloned().collect();
-            let noted = all.iter().filter(|it| it.note.is_some()).count();
+            let source = PreviewSource::new(&actions, notes, &roots, undo_of.is_none() && scheduled.is_none());
+            let items = (0..actions.len().min(PREVIEW_LIMIT)).filter_map(|step| source.item(&actions, step)).collect();
+            let noted = source.noted();
             let total = actions.len();
             *checked_state!(state.pending.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }) =
                 Some(Pending {
@@ -783,7 +797,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
                     command: original_text.trim().to_string(),
                     inputs: if undo_of.is_none() && scheduled.is_none() { input_times(&actions) } else { Vec::new() },
                     actions,
-                    preview: all,
+                    preview: source,
                     undo_of,
                     scheduled,
                     context_generation: use_scope.then_some(scope_generation),
@@ -911,17 +925,16 @@ fn confirm_trimmed(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResul
 fn preview_page(state: State<AppState>, id: u64, offset: usize, only_notes: bool) -> Result<Vec<PreviewRow>, String> {
     let pending = state.pending.lock().map_err(|_| "Preview state unavailable. Restart Voxi.")?;
     let p = pending.as_ref().filter(|p| p.id == id).ok_or("This preview expired. Run the command again.")?;
-    Ok(preview_rows(&p.preview, offset, only_notes))
+    Ok(page_steps(&p.preview.notes, p.actions.len(), offset, only_notes)
+        .into_iter()
+        .filter_map(|step| Some(PreviewRow { step, item: p.preview.item(&p.actions, step)? }))
+        .collect())
 }
 
-fn preview_rows(all: &[PreviewItem], offset: usize, only_notes: bool) -> Vec<PreviewRow> {
-    all.iter()
-        .enumerate()
-        .skip(offset)
-        .filter(|(_, it)| !only_notes || it.note.is_some())
-        .take(PREVIEW_PAGE)
-        .map(|(step, item)| PreviewRow { step, item: item.clone() })
-        .collect()
+/// The steps a page shows: up to `PREVIEW_PAGE` from `offset`, or only
+/// those with a note.
+fn page_steps(notes: &[Option<String>], total: usize, offset: usize, only_notes: bool) -> Vec<usize> {
+    (offset..total).filter(|&i| !only_notes || notes.get(i).is_some_and(Option::is_some)).take(PREVIEW_PAGE).collect()
 }
 
 #[tauri::command]
@@ -1180,7 +1193,7 @@ fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule,
                     id: 0,
                     command: job.command.clone(),
                     actions,
-                    preview: Vec::new(),
+                    preview: PreviewSource::default(),
                     inputs: Vec::new(),
                     undo_of: None,
                     context_generation: None,
@@ -1253,7 +1266,7 @@ fn run_due_tasks_inner(state: &AppState) -> Result<(), String> {
                     id: 0,
                     command: job.command.clone(),
                     actions: job.actions,
-                    preview: Vec::new(),
+                    preview: PreviewSource::default(),
                     inputs: Vec::new(),
                     undo_of: None,
                     context_generation: None,

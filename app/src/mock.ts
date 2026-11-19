@@ -11,6 +11,8 @@ let settings: Settings = {
 };
 let reports = 0;
 let scheduled: ScheduledTask[] = [];
+/** The plan a preview page may be read from, as in the app; null once it is run, cancelled or replaced. */
+let activePlan: number | null = null;
 let pendingSchedule: (ScheduledTask & { runNow?: boolean; total?: number; intervalMs?: number }) | null = null;
 
 // Browser-only permission scenarios, selected with ?mock=<name>:
@@ -89,7 +91,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   await new Promise((r) => setTimeout(r, 250));
   switch (cmd) {
     case "updater_failed": return;
-    case "cancel_plan": pendingSchedule = null; return;
+    case "cancel_plan": pendingSchedule = null; activePlan = null; return;
     case "cancel_execution": return;
     case "search_progress": return 0;
     case "result_scope": return null;
@@ -115,6 +117,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return;
     }
     case "plan_command": {
+      activePlan = null;
       const text = String(args.text);
       if (utf8Bytes(text) > MAX_COMMAND_BYTES) return { outcome: { status: "problem", message: TOO_LONG }, scope: null };
       pendingSchedule = null;
@@ -134,6 +137,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
           if (due <= new Date()) due.setDate(due.getDate() + 1);
         }
         pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "", repeat: every, runNow, total: outcome.total, intervalMs };
+        activePlan = outcome.id;
         return { outcome: { ...outcome, scheduledFor: due.toISOString(), repeats: runNow ? `Runs now, then ${every}` : every, warnings: [`${runNow ? `Runs now, then ${every}. Next run` : `Repeats ${every}, first on`} ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null };
       }
       const timing = text.match(/\s+(?:at\s+(.+)|(after|in)\s+(\d+)\s+(hours?|minutes?))$/i);
@@ -153,9 +157,11 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
           pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "" };
         }
       }
+      if (outcome.status === "plan") activePlan = outcome.id;
       return { outcome, scope: null };
     }
     case "preview_page": {
+      if (args.id !== activePlan) throw "This preview expired. Run the command again.";
       // The 26-file PDF move: steps 6 to 26, with one more name clash.
       const offset = Number(args.offset);
       const steps = Array.from({ length: 26 }, (_, step) => step >= 5 ? {
@@ -165,6 +171,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       return steps.filter((r): r is NonNullable<typeof r> => !!r && r.step >= offset && (!args.onlyNotes || "note" in r));
     }
     case "confirm_plan":
+      activePlan = null;
       if (!recoveryReviewed && mockScenario?.startsWith("recovery")) throw new Error("Open Settings → Scheduled, check the files, then choose Mark as reviewed.");
       if (pendingSchedule) {
         const { runNow, total = 3, intervalMs } = pendingSchedule;

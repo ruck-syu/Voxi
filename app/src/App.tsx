@@ -797,31 +797,54 @@ const FINDER_LABEL = "your Finder selection";
 const runLabel = (n: number) => `Run ${n} ${n === 1 ? "change" : "changes"}`;
 
 function PlanSteps({ plan, skipped, onToggle }: { plan: PlanOutcome; skipped: number[]; onToggle: (step: number) => void }) {
-  const [rows, setRows] = useState<PreviewRow[]>(() => plan.items.map((it, step) => ({ ...it, step })));
-  const [notes, setNotes] = useState<PreviewRow[] | null>(null);
+  const first = { notes: false, before: 0, rows: plan.items.map((it, step): PreviewRow => ({ ...it, step })) };
+  // One page at a time, so a huge plan never mounts every row. `before` is
+  // how many rows of this view came on earlier pages; `back` holds them.
+  const [page, setPage] = useState<{ notes: boolean; before: number; rows: PreviewRow[] }>(first);
+  const [back, setBack] = useState<{ before: number; rows: PreviewRow[] }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const shown = notes ?? rows;
-  const more = notes ? 0 : plan.total - rows.length;
-  const load = (offset: number, onlyNotes: boolean) => {
+  const listRef = useRef<HTMLUListElement>(null);
+  const prevRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const last = page.rows[page.rows.length - 1] as PreviewRow | undefined;
+  const seen = page.before + page.rows.length;
+  const hasNext = page.notes ? seen < plan.noted : (last ? last.step + 1 : 0) < plan.total;
+  const show = (next: { notes: boolean; before: number; rows: PreviewRow[] }) => {
+    const nextHadFocus = document.activeElement === nextRef.current;
+    setPage(next);
+    listRef.current?.scrollTo({ top: 0 });
+    // The Next button goes away on the last page: keep focus nearby.
+    if (nextHadFocus) requestAnimationFrame(() => (nextRef.current ?? prevRef.current)?.focus());
+  };
+  const load = (notes: boolean, offset: number, before: number, onDone?: () => void) => {
     setLoading(true);
     setError(null);
-    api.previewPage(plan.id, offset, onlyNotes)
-      .then((page) => {
-        if (onlyNotes) setNotes((prev) => [...(prev ?? []), ...page]);
-        else setRows((prev) => [...prev, ...page.filter((r) => r.step >= prev.length)]);
-      })
+    api.previewPage(plan.id, offset, notes)
+      .then((rows) => { onDone?.(); show({ notes, before, rows }); })
       .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoading(false));
   };
-  // Notes past the first page of noted steps load as the list is scrolled to its end.
-  const notesMore = notes !== null && notes.length < plan.noted;
+  const next = () => load(page.notes, last ? last.step + 1 : 0, seen, () => setBack((b) => [...b, { before: page.before, rows: page.rows }]));
+  const previous = () => {
+    const prev = back[back.length - 1];
+    if (!prev) return;
+    setBack((b) => b.slice(0, -1));
+    show({ notes: page.notes, ...prev });
+  };
+  const toggleNotes = () => {
+    setBack([]);
+    if (page.notes) show(first);
+    else load(true, 0, 0);
+  };
+  const total = page.notes ? plan.noted : plan.total;
+  const paged = plan.total > plan.items.length || plan.noted > 0;
   return (
     <>
-      <ul className={`ruled scroll${notes ? " numbered" : ""}`} aria-label={notes ? "Steps with notes" : "Steps"}>
-        {shown.map((it, i) => (
+      <ul ref={listRef} className={`ruled scroll${page.notes ? " numbered" : ""}`} aria-label={page.notes ? "Steps with notes" : "Steps"}>
+        {page.rows.map((it, i) => (
           <li key={it.step} data-kind={it.kind} data-skipped={skipped.includes(it.step) || undefined} style={row(i)}>
-            {notes && <span className="num" aria-label={`Step ${it.step + 1}`}>{it.step + 1}</span>}
+            {page.notes && <span className="num"><span className="sr-only">Step </span>{it.step + 1}</span>}
             <span className="primary">
               {it.skippable && (
                 <input
@@ -838,35 +861,34 @@ function PlanSteps({ plan, skipped, onToggle }: { plan: PlanOutcome; skipped: nu
             {it.note && <span className="note">{it.note}</span>}
           </li>
         ))}
-        {(more > 0 || notesMore) && (
-          <li className="more" style={row(shown.length)}>
-            <button
-              type="button"
-              className="link"
-              disabled={loading}
-              onClick={() => notesMore ? load(notes[notes.length - 1].step + 1, true) : load(rows.length, false)}
-            >
-              {loading ? "Loading…" : notesMore ? `Show more of the ${plan.noted} with notes` : `Show ${Math.min(more, PREVIEW_PAGE)} more of ${more} ${more === 1 ? "step" : "steps"}`}
-            </button>
-          </li>
-        )}
       </ul>
-      {plan.noted > 0 && plan.total > plan.items.length && (
-        <p className="quiet">
-          <button type="button" className="link" disabled={loading} onClick={() => {
-            if (notes) setNotes(null);
-            else { setNotes([]); load(0, true); }
-          }}>
-            {notes ? "Show all steps" : `Show only the ${plan.noted} ${plan.noted === 1 ? "step" : "steps"} with notes`}
-          </button>
+      {paged && (
+        <p className="quiet pager">
+          {page.rows.length > 0 && (total > page.rows.length || back.length > 0) && (
+            <span>
+              {page.notes ? "With notes: " : "Steps "}
+              {page.before + 1}–{seen} of {total}
+            </span>
+          )}
+          {back.length > 0 && <button ref={prevRef} type="button" className="link" disabled={loading} onClick={previous}>Previous</button>}
+          {hasNext && (
+            <button ref={nextRef} type="button" className="link" disabled={loading} onClick={next}>
+              {loading ? "Loading…" : `Next ${Math.min(PREVIEW_PAGE, total - seen)}`}
+            </button>
+          )}
+          {plan.noted > 0 && (
+            <button type="button" className="link" disabled={loading} onClick={toggleNotes}>
+              {page.notes ? "All steps" : `Only the ${plan.noted} with notes`}
+            </button>
+          )}
+          {error && <span className="warn" role="alert">{error}</span>}
         </p>
       )}
-      {error && <p className="note warn" role="alert">{error}</p>}
     </>
   );
 }
 
-/** Steps each "Show more" loads; matches PREVIEW_PAGE in lib.rs. */
+/** Steps each later page holds; matches PREVIEW_PAGE in lib.rs. */
 const PREVIEW_PAGE = 200;
 
 function Body(props: {

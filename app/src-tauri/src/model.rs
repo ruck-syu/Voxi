@@ -422,6 +422,9 @@ pub struct PreviewItem {
     pub detail: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// True when the user may leave this step out before confirming.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub skippable: bool,
 }
 
 /// A preview step loaded after the first page, with its 0-based position.

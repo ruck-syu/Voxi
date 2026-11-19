@@ -7,6 +7,7 @@ fn items(n: usize, noted: &[usize]) -> Vec<PreviewItem> {
             primary: format!("file {i}.pdf"),
             detail: "→ ~/Documents".into(),
             note: noted.contains(&i).then(|| format!("clash {i}")),
+            skippable: false,
         })
         .collect()
 }

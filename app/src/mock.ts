@@ -46,11 +46,11 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
       status: "plan", id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
       warnings: ["2 already in Documents, left alone."],
       items: [
-        { kind: "move", primary: "Q3 board deck.pdf", detail: "→ ~/Documents" },
-        { kind: "move", primary: "lease-renewal-2026.pdf", detail: "→ ~/Documents" },
-        { kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”" },
-        { kind: "move", primary: "tax-receipt-march.pdf", detail: "→ ~/Documents" },
-        { kind: "move", primary: "W-2 2025.pdf", detail: "→ ~/Documents" },
+        { kind: "move", primary: "Q3 board deck.pdf", detail: "→ ~/Documents", skippable: true },
+        { kind: "move", primary: "lease-renewal-2026.pdf", detail: "→ ~/Documents", skippable: true },
+        { kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”", skippable: true },
+        { kind: "move", primary: "tax-receipt-march.pdf", detail: "→ ~/Documents", skippable: true },
+        { kind: "move", primary: "W-2 2025.pdf", detail: "→ ~/Documents", skippable: true },
       ],
     };
   if (t.includes("clean"))
@@ -158,7 +158,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       // The 26-file PDF move: steps 6 to 26, with one more name clash.
       const offset = Number(args.offset);
       const steps = Array.from({ length: 26 }, (_, step) => step >= 5 ? {
-        step, kind: "move", primary: `scan-${String(step + 1).padStart(2, "0")}.pdf`, detail: "→ ~/Documents",
+        step, kind: "move", primary: `scan-${String(step + 1).padStart(2, "0")}.pdf`, detail: "→ ~/Documents", skippable: true,
         ...(step === 17 ? { note: "“scan-18.pdf” already exists, so this becomes “scan-18 2.pdf”" } : {}),
       } : step === 2 ? { step, kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”" } : null);
       return steps.filter((r): r is NonNullable<typeof r> => !!r && r.step >= offset && (!args.onlyNotes || "note" in r));
@@ -174,7 +174,10 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         pendingSchedule = null;
         return { done: runNow ? total : 0, total, error: null, cancelled: false, undoable: !!runNow, summary } satisfies RunResult;
       }
-      return { done: 26, total: 26, error: null, cancelled: false, undoable: true, summary: "Done. 26 changes." } satisfies RunResult;
+      {
+        const n = 26 - ((args.skip as number[] | undefined)?.length ?? 0);
+        return { done: n, total: n, error: null, cancelled: false, undoable: true, summary: `Done. ${n} changes.` } satisfies RunResult;
+      }
     case "get_settings":
       return settings;
     case "save_settings": {

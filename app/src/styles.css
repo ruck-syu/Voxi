@@ -307,6 +307,20 @@ html:not([data-native]) .card[data-glide] {
   white-space: nowrap;
 }
 
+/* Unticking a step leaves it out of the run. */
+.ruled .keep {
+  margin: 0 7px 0 0;
+  vertical-align: -1px;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+.ruled li[data-skipped] .primary,
+.ruled li[data-skipped] .detail {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
 .ruled .detail {
   color: var(--muted);
   overflow: hidden;

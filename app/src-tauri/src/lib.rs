@@ -26,6 +26,7 @@ mod scheduler;
 mod scope;
 mod search;
 mod settings;
+mod skip;
 #[cfg(feature = "tiny-model")]
 mod tiny_model;
 mod trash;
@@ -279,13 +280,17 @@ fn describe(a: &Action, roots: &Roots) -> (String, String, String) {
     }
 }
 
-fn preview(actions: &[Action], notes: &[Option<String>], roots: &Roots) -> Vec<PreviewItem> {
+/// `skippable` is true for a plan the user may trim before confirming: one
+/// that runs now, rather than an undo or a scheduled task.
+fn preview(actions: &[Action], notes: &[Option<String>], roots: &Roots, skippable: bool) -> Vec<PreviewItem> {
+    let can_skip = if skippable { skip::skippable(actions) } else { vec![false; actions.len()] };
     actions
         .iter()
         .zip(notes.iter().chain(std::iter::repeat(&None)))
-        .map(|(a, note)| {
+        .zip(can_skip)
+        .map(|((a, note), skippable)| {
             let (kind, primary, detail) = describe(a, roots);
-            PreviewItem { kind, primary, detail, note: note.clone() }
+            PreviewItem { kind, primary, detail, note: note.clone(), skippable }
         })
         .collect()
 }
@@ -689,7 +694,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
             if use_scope {
                 warnings.insert(0, "Using files from the previous searched list.".into());
             }
-            let all = preview(&actions, &notes, &roots);
+            let all = preview(&actions, &notes, &roots, undo_of.is_none() && scheduled.is_none());
             let items = all.iter().take(PREVIEW_LIMIT).cloned().collect();
             let noted = all.iter().filter(|it| it.note.is_some()).count();
             let total = actions.len();
@@ -727,14 +732,32 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
 }
 
 #[tauri::command(async)]
-fn confirm_plan(state: State<AppState>, id: u64) -> Result<RunResult, String> {
-    confirm_input(&state, id)
+fn confirm_plan(state: State<AppState>, id: u64, skip: Option<Vec<usize>>) -> Result<RunResult, String> {
+    confirm_trimmed(&state, id, &skip.unwrap_or_default())
 }
 
+#[cfg(test)]
 fn confirm_input(state: &AppState, id: u64) -> Result<RunResult, String> {
+    confirm_trimmed(state, id, &[])
+}
+
+/// Confirms the pending plan without the steps at `skip` (0-based), which
+/// the user unticked in the preview.
+fn confirm_trimmed(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResult, String> {
     let (p, run) = {
         let mut pending = checked_state!(state.pending.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
-        let p = pending.take_if(|p| p.id == id).ok_or("That preview expired. Press Enter to plan it again.")?;
+        // Check the trim before taking the preview, so a refused one leaves it to fix.
+        if !skip.is_empty() {
+            let p = pending.as_ref().filter(|p| p.id == id).ok_or("That preview expired. Press Enter to plan it again.")?;
+            if p.undo_of.is_some() || p.scheduled.is_some() {
+                return Err("Steps can't be left out of an undo or a scheduled task.".into());
+            }
+            skip::without(&p.actions, skip)?;
+        }
+        let mut p = pending.take_if(|p| p.id == id).ok_or("That preview expired. Press Enter to plan it again.")?;
+        if !skip.is_empty() {
+            p.actions = skip::without(&p.actions, skip)?;
+        }
         // Publish the flag before releasing the preview lock, including when
         // confirmation has to wait for an earlier filesystem operation.
         let run = ActiveRun::register(&state.active_runs, RunKey::Plan(id), p.stop_requested)?;

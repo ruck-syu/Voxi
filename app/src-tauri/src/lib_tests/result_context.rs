@@ -1391,3 +1391,28 @@ fn info_about_a_file_answers_with_its_facts() {
         assert!(rows.iter().any(|r| r.name == "report.pdf" && r.detail.contains("~/Downloads")), "{command}: {rows:?}");
     }
 }
+#[test]
+fn unticked_steps_are_left_out_and_undo_covers_only_what_ran() {
+    let f = Fixture::new();
+    let a = f.write("Downloads/a.pdf");
+    let b = f.write("Downloads/b.pdf");
+    let c = f.write("Downloads/c.pdf");
+    let Outcome::Plan { id, items, .. } = f.command("move PDFs from Downloads to a new folder called Filed in Documents") else {
+        panic!("expected a plan")
+    };
+    let steps = f.actions();
+    let at = |path: &PathBuf| steps.iter().position(|s| matches!(s, Action::Move { from, .. } if from == path)).unwrap();
+    assert!(items[at(&b)].skippable && !items[0].skippable, "the folder creation stays: {items:?}");
+    // A step that isn't skippable is refused, and the preview stays to fix.
+    assert!(confirm_trimmed(&f.state, id, &[0]).unwrap_err().contains("can't be left out"));
+    let result = confirm_trimmed(&f.state, id, &[at(&b)]).unwrap();
+    assert!(result.error.is_none(), "{result:?}");
+    assert_eq!(result.total, steps.len() - 1);
+    let filed = f.home.join("Documents/Filed");
+    assert!(filed.join("a.pdf").exists() && filed.join("c.pdf").exists() && b.exists());
+    assert!(!a.exists() && !c.exists());
+    let Outcome::Plan { id, .. } = f.command("undo") else { panic!("expected an undo plan") };
+    assert!(confirm_trimmed(&f.state, id, &[0]).unwrap_err().contains("undo"));
+    assert!(confirm_input(&f.state, id).unwrap().error.is_none());
+    assert!(a.exists() && b.exists() && c.exists() && !filed.exists());
+}

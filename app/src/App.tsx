@@ -318,6 +318,13 @@ function CommandView({
   // The last phrase Voxi didn't understand, which the next run can teach.
   const missed = useRef<{ text: string; at: number } | null>(null);
   const [offer, setOffer] = useState<Offer | null>(null);
+  // Steps the user unticked, for the plan with this id only.
+  const [skip, setSkip] = useState<{ id: number; steps: number[] }>({ id: -1, steps: [] });
+  const skippedFor = (id: number) => skip.id === id ? skip.steps : [];
+  const toggleSkip = useCallback((id: number, step: number) => setSkip((prev) => {
+    const steps = prev.id === id ? prev.steps : [];
+    return { id, steps: steps.includes(step) ? steps.filter((s) => s !== step) : [...steps, step] };
+  }), []);
   // A folder picked for an ambiguous name, offered as a nickname after the plan.
   const pickedFolder = useRef<{ name: string; path: string } | null>(null);
   // Same bound the backend applies to every command; checked before trimming.
@@ -435,11 +442,13 @@ function CommandView({
   const confirm = useCallback(async () => {
     if (activeRun.current || phase.k !== "outcome" || phase.outcome.status !== "plan") return;
     const plan = phase.outcome;
+    const skipped = skip.id === plan.id ? skip.steps : [];
+    if (skipped.length >= plan.total) return;
     const canStop = !plan.scheduledFor || !!plan.repeats?.startsWith("Runs now, then ");
     activeRun.current = { id: plan.id, canStop, stopping: false };
     setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
-      const result = await api.confirm(plan.id);
+      const result = await api.confirm(plan.id, skipped);
       setResultScope(await api.resultScope().catch(() => null));
       setPhase({ k: "done", result, wasUndo: plan.isUndo });
       // A phrase Voxi missed, followed soon by a command that worked, can
@@ -455,7 +464,7 @@ function CommandView({
     } finally {
       activeRun.current = null;
     }
-  }, [phase, focusInput]);
+  }, [phase, focusInput, skip]);
 
   const stop = useCallback(async () => {
     const run = activeRun.current;
@@ -646,6 +655,8 @@ function CommandView({
         onPick={pick}
         onFill={fill}
         onUndo={undo}
+        skipped={phase.k === "outcome" && phase.outcome.status === "plan" ? skippedFor(phase.outcome.id) : []}
+        onToggleSkip={toggleSkip}
       />
       {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onDone={() => { setOffer(null); focusInput(); }} />}
       {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
@@ -765,7 +776,9 @@ type PlanOutcome = Extract<Outcome, { status: "plan" }>;
 /** The preview's steps. The first page arrives with the plan; "Show more"
  *  loads the rest of the same frozen plan, and the notes view lists only the
  *  steps with a note (a name changed to avoid a clash, say). */
-function PlanSteps({ plan }: { plan: PlanOutcome }) {
+const runLabel = (n: number) => `Run ${n} ${n === 1 ? "change" : "changes"}`;
+
+function PlanSteps({ plan, skipped, onToggle }: { plan: PlanOutcome; skipped: number[]; onToggle: (step: number) => void }) {
   const [rows, setRows] = useState<PreviewRow[]>(() => plan.items.map((it, step) => ({ ...it, step })));
   const [notes, setNotes] = useState<PreviewRow[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -789,9 +802,20 @@ function PlanSteps({ plan }: { plan: PlanOutcome }) {
     <>
       <ul className={`ruled scroll${notes ? " numbered" : ""}`} aria-label={notes ? "Steps with notes" : "Steps"}>
         {shown.map((it, i) => (
-          <li key={it.step} data-kind={it.kind} style={row(i)}>
+          <li key={it.step} data-kind={it.kind} data-skipped={skipped.includes(it.step) || undefined} style={row(i)}>
             {notes && <span className="num" aria-label={`Step ${it.step + 1}`}>{it.step + 1}</span>}
-            <span className="primary">{it.primary}</span>
+            <span className="primary">
+              {it.skippable && (
+                <input
+                  type="checkbox"
+                  className="keep"
+                  checked={!skipped.includes(it.step)}
+                  onChange={() => onToggle(it.step)}
+                  aria-label={`Include ${it.primary}`}
+                />
+              )}
+              {it.primary}
+            </span>
             <span className="detail">{it.detail}</span>
             {it.note && <span className="note">{it.note}</span>}
           </li>
@@ -838,6 +862,8 @@ function Body(props: {
   onPick: (index: number) => void;
   onFill: (s: string) => void;
   onUndo: () => void;
+  skipped: number[];
+  onToggleSkip: (id: number, step: number) => void;
 }) {
   const { phase } = props;
   if (phase.k === "ready") return null;
@@ -955,7 +981,13 @@ function Body(props: {
       return (
         <section className="body">
           <p className="title">{o.title}</p>
-          <PlanSteps plan={o} />
+          <PlanSteps plan={o} skipped={props.skipped} onToggle={(step) => props.onToggleSkip(o.id, step)} />
+          {props.skipped.length > 0 && (
+            <p className="quiet" role="status">
+              Leaving out {props.skipped.length} {props.skipped.length === 1 ? "step" : "steps"}.
+              {props.skipped.length >= o.total && " Tick at least one to run."}
+            </p>
+          )}
           {o.repeats?.startsWith("Runs now, then ") && <p className="quiet">{o.repeats}</p>}
           {o.warnings.map((w) => (
             <p key={w} className="quiet">
@@ -963,8 +995,8 @@ function Body(props: {
             </p>
           ))}
           <div className="actions">
-            <button className="primary-button" onClick={props.onConfirm}>
-              {o.repeats?.startsWith("Runs now, then ") ? "Run now and repeat" : o.repeats ? "Schedule repeating task" : o.scheduledFor ? "Schedule task" : o.isUndo ? "Undo" : `Run ${o.total} ${o.total === 1 ? "change" : "changes"}`}
+            <button className="primary-button" onClick={props.onConfirm} disabled={props.skipped.length >= o.total}>
+              {o.repeats?.startsWith("Runs now, then ") ? "Run now and repeat" : o.repeats ? "Schedule repeating task" : o.scheduledFor ? "Schedule task" : o.isUndo ? "Undo" : runLabel(o.total - props.skipped.length)}
               <kbd>↩</kbd>
             </button>
             <button className="secondary" onClick={props.onCancel}>

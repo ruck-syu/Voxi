@@ -14,7 +14,8 @@ export function errorMessage(e: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-export type PreviewItem = { kind: string; primary: string; detail: string; note?: string };
+/** `skippable` steps can be unticked to leave them out before confirming. */
+export type PreviewItem = { kind: string; primary: string; detail: string; note?: string; skippable?: boolean };
 /** A preview step loaded after the first page; `step` counts from 0. */
 export type PreviewRow = PreviewItem & { step: number };
 export type InfoRow = { name: string; detail: string };
@@ -62,7 +63,8 @@ export const api = {
   resultScope: () => invoke<ResultScope | null>("result_scope"),
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
-  confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
+  /** Runs the pending plan, leaving out the 0-based steps in `skip`. */
+  confirm: (id: number, skip: number[] = []) => invoke<RunResult>("confirm_plan", { id, skip }),
   /** More of the pending preview from `offset`, or only the steps with notes. */
   previewPage: (id: number, offset: number, onlyNotes: boolean) => invoke<PreviewRow[]>("preview_page", { id, offset, onlyNotes }),
   stopExecution: (id: number, scheduledFor?: string) => invoke<void>("cancel_execution", { id, scheduledFor }),

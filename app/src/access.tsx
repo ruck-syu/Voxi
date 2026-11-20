@@ -1,83 +1,77 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type FolderAccess, type Settings } from "./api";
 import { Sheet, prettyHotkey, row } from "./ui";
+
+type AccessAction = "checking" | "openingSettings" | "saving";
+type AccessState = { k: "idle" } | { k: AccessAction } | { k: "error"; action: AccessAction; message: string };
 
 export function AccessView({
   settings,
   firstRun,
   onDone,
-  setBusy,
+  beginOperation,
 }: {
   settings: Settings;
   firstRun: boolean;
-  onDone: () => void;
-  setBusy: (b: boolean) => void;
+  onDone: () => void | Promise<void>;
+  beginOperation: () => () => void;
 }) {
   const [folders, setFolders] = useState<FolderAccess[] | null>(null);
-  const [asking, setAsking] = useState(false);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [openingSettings, setOpeningSettings] = useState(false);
+  const [state, setState] = useState<AccessState>({ k: "idle" });
+  const owner = useRef<symbol | null>(null);
   const actionRef = useRef<HTMLButtonElement>(null);
-  const settingsErrorRef = useRef<HTMLParagraphElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  const busy = state.k !== "idle" && state.k !== "error";
+  const asking = state.k === "checking";
+  const requestError = state.k === "error" && state.action === "checking" ? state.message : null;
+  const settingsError = state.k === "error" && state.action === "openingSettings" ? state.message : null;
+  const saveError = state.k === "error" && state.action === "saving" ? state.message : null;
+
+  const run = useCallback(async (action: AccessAction, task: () => void | Promise<void>, errorPrefix: string) => {
+    if (owner.current !== null) return;
+    const operation = Symbol();
+    owner.current = operation;
+    const release = beginOperation();
+    setState({ k: action });
+    try {
+      await task();
+      if (owner.current === operation) setState({ k: "idle" });
+    } catch (e) {
+      if (owner.current === operation) setState({ k: "error", action, message: `${errorPrefix}: ${errorMessage(e)}` });
+    } finally {
+      if (owner.current === operation) owner.current = null;
+      release();
+    }
+  }, [beginOperation]);
+
+  const request = useCallback(() => run("checking", async () => {
+    setFolders(await api.requestFolderAccess());
+  }, "Couldn't check folder access"), [run]);
+  const openSettings = () => run("openingSettings", api.openPrivacySettings, "Couldn't open System Settings");
+  const done = useCallback(() => run("saving", onDone, "Couldn't save onboarding"), [run, onDone]);
 
   useEffect(() => {
     if (firstRun) return;
     // From Settings: check right away. Granted folders don't prompt again.
-    request();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void request();
+  }, [firstRun, request]);
 
   useEffect(() => {
+    if (firstRun) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !firstRun) {
+      if (e.key === "Escape") {
         e.preventDefault();
-        onDone();
+        void done();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [firstRun, onDone]);
+  }, [firstRun, done]);
 
-  // Keep keyboard focus on a recovery control when a call fails, instead of
-  // leaving it on a button whose label (or whole row) just changed.
   useEffect(() => {
     if (requestError) actionRef.current?.focus();
-  }, [requestError]);
-  useEffect(() => {
-    if (settingsError) settingsErrorRef.current?.focus();
-  }, [settingsError]);
-
-  async function request() {
-    setAsking(true);
-    setRequestError(null);
-    setSettingsError(null);
-    // macOS's prompts take focus; don't let that close the window.
-    setBusy(true);
-    try {
-      setFolders(await api.requestFolderAccess());
-    } catch (e) {
-      setRequestError(`Couldn't check folder access: ${errorMessage(e)}`);
-    } finally {
-      setBusy(false);
-      setAsking(false);
-    }
-  }
-
-  async function openSettings() {
-    setSettingsError(null);
-    setRequestError(null);
-    setOpeningSettings(true);
-    setBusy(true);
-    try {
-      await api.openPrivacySettings();
-    } catch (e) {
-      setSettingsError(`Couldn't open System Settings: ${errorMessage(e)}`);
-    } finally {
-      setBusy(false);
-      setOpeningSettings(false);
-    }
-  }
+    if (settingsError || saveError) errorRef.current?.focus();
+  }, [requestError, settingsError, saveError]);
 
   const missing = folders?.filter((f) => !f.allowed) ?? [];
   const allSet = folders !== null && missing.length === 0;
@@ -85,10 +79,12 @@ export function AccessView({
   return (
     <Sheet
       title={firstRun ? "Welcome to Voxi" : "Folder access"}
-      foot={firstRun ? `Press ${prettyHotkey(settings.hotkey)} anywhere to open Voxi.` : "Esc to go back."}
+      foot={firstRun
+        ? settings.hotkey ? `Press ${prettyHotkey(settings.hotkey)} anywhere to open Voxi.` : "Open Voxi from the menu bar."
+        : "Esc to go back."}
       footRight={
-        <button className="link" onClick={onDone}>
-          {firstRun && !allSet ? "Skip for now" : "Done"}
+        <button className="link" disabled={busy} onClick={done}>
+          {state.k === "saving" ? "Saving…" : firstRun && !allSet ? "Skip for now" : "Done"}
         </button>
       }
     >
@@ -113,9 +109,9 @@ export function AccessView({
         {requestError && <p className="hint warn">{requestError} Choose “Retry” to try again.</p>}
       </div>
       <div className="access-error" role="alert" aria-live="assertive">
-        {settingsError && (
-          <p ref={settingsErrorRef} tabIndex={-1} className="hint warn">
-            {settingsError} Open System Settings yourself from the Apple menu, then go to Privacy &amp; Security → Files and Folders and turn on Voxi.
+        {(settingsError || saveError) && (
+          <p ref={errorRef} tabIndex={-1} className="hint warn">
+            {saveError || `${settingsError} Open System Settings yourself from the Apple menu, then go to Privacy & Security → Files and Folders and turn on Voxi.`}
           </p>
         )}
       </div>
@@ -131,7 +127,7 @@ export function AccessView({
       )}
       <div className="actions">
         {allSet ? (
-          <button className="primary-button" autoFocus onClick={onDone}>
+          <button className="primary-button" autoFocus disabled={busy} onClick={done}>
             {firstRun ? "Start using Voxi" : "Done"}
           </button>
         ) : (
@@ -139,7 +135,7 @@ export function AccessView({
             ref={actionRef}
             className="primary-button"
             autoFocus={firstRun && folders === null && !requestError}
-            disabled={asking}
+            disabled={busy}
             onClick={request}
             aria-label={requestError ? "Retry folder access request" : asking ? "Waiting for macOS" : folders === null ? "Allow folder access" : "Check folder access again"}
           >
@@ -147,8 +143,8 @@ export function AccessView({
           </button>
         )}
         {missing.length > 0 && (
-          <button className="secondary" disabled={openingSettings} onClick={openSettings}>
-            {openingSettings ? "Opening System Settings…" : "Open System Settings"}
+          <button className="secondary" disabled={busy} onClick={openSettings}>
+            {state.k === "openingSettings" ? "Opening System Settings…" : "Open System Settings"}
           </button>
         )}
       </div>

@@ -11,7 +11,13 @@ export { inTauri };
 export function errorMessage(e: unknown): string {
   if (e instanceof Error && e.message.trim()) return e.message;
   if (typeof e === "string" && e.trim()) return e;
+  if (e && typeof e === "object" && "message" in e && typeof e.message === "string" && e.message.trim()) return e.message;
   return "Something went wrong. Please try again.";
+}
+
+/** Failed settings saves can report the live hotkey after compensation. */
+export function installedHotkeyAfterSave(e: unknown): string | undefined {
+  if (e && typeof e === "object" && "installedHotkey" in e && typeof e.installedHotkey === "string") return e.installedHotkey;
 }
 
 /** `skippable` steps can be unticked to leave them out before confirming. */

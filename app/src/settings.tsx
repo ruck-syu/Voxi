@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, errorMessage, tildify, type Reports, type ScheduledTask, type Settings, type Shortcut } from "./api";
+import { api, errorMessage, installedHotkeyAfterSave, tildify, type Reports, type ScheduledTask, type Settings, type Shortcut } from "./api";
 import { appVersion, checkAndInstall, type UpdateState } from "./updates";
 import { Sheet, TOO_LONG, prettyHotkey, shortcutLengthIssue } from "./ui";
 
@@ -14,11 +14,19 @@ function comboFromEvent(e: React.KeyboardEvent): string | null {
   return [...mods, key].join("+");
 }
 
+type SaveState = { k: "idle" } | { k: "saving" } | { k: "failed"; message: string };
+type ShortcutEditorState =
+  | { k: "list" }
+  | { k: "editing"; list: Shortcut[]; index: number; showLengthError: boolean };
+type FolderPicker = typeof api.pickFolder;
+
 /** Everything a Settings tab can use. */
 type TabContext = {
   settings: Settings;
   persist: (s: Settings) => Promise<boolean>;
-  setBusy: (b: boolean) => void;
+  pickFolder: FolderPicker;
+  shortcutEditor: ShortcutEditorState;
+  setShortcutEditor: (editor: ShortcutEditorState) => void;
   activeTasks: number | null;
 };
 
@@ -57,12 +65,12 @@ const TABS = [
   {
     id: "shortcuts", label: "Shortcuts", icon: "shortcuts",
     badge: (c: TabContext) => c.settings.shortcuts.length || null,
-    render: (c: TabContext) => <ShortcutsTab settings={c.settings} persist={c.persist} />,
+    render: (c: TabContext) => <ShortcutsTab settings={c.settings} persist={c.persist} editor={c.shortcutEditor} setEditor={c.setShortcutEditor} />,
   },
   {
     id: "folders", label: "Folders", icon: "folders",
     badge: () => null,
-    render: (c: TabContext) => <FoldersTab settings={c.settings} persist={c.persist} setBusy={c.setBusy} />,
+    render: (c: TabContext) => <FoldersTab settings={c.settings} persist={c.persist} pickFolder={c.pickFolder} />,
   },
 ] as const satisfies readonly {
   id: string; label: string; icon: keyof typeof ICONS;
@@ -255,7 +263,7 @@ function ScheduledTab() {
 }
 
 /** The Settings tab bar, on the title row to the right of "Settings". */
-function SettingsTabs({ value, saving, context, onSelect }: { value: Tab; saving: boolean; context: TabContext; onSelect: (tab: Tab) => void }) {
+function SettingsTabs({ value, busy, context, onSelect }: { value: Tab; busy: boolean; context: TabContext; onSelect: (tab: Tab) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
   const [animate, setAnimate] = useState(false);
@@ -277,10 +285,10 @@ function SettingsTabs({ value, saving, context, onSelect }: { value: Tab; saving
     {TABS.map((tab, index) => {
       const badge = tab.badge(context);
       return <button key={tab.id} role="tab" id={`settings-tab-${tab.id}`}
-        aria-selected={value === tab.id} aria-disabled={saving} aria-controls="settings-panel"
+        aria-selected={value === tab.id} aria-disabled={busy} aria-controls="settings-panel"
         tabIndex={value === tab.id ? 0 : -1} onClick={() => onSelect(tab.id)}
         onKeyDown={(event) => {
-          if (saving) return;
+          if (busy) return;
           const next = event.key === "ArrowRight" ? (index + 1) % TABS.length
             : event.key === "ArrowLeft" ? (index + TABS.length - 1) % TABS.length
             : event.key === "Home" ? 0 : event.key === "End" ? TABS.length - 1 : null;
@@ -302,22 +310,24 @@ export function SettingsView({
   settings,
   onSaved,
   onClose,
-  setBusy,
+  beginOperation,
 }: {
   settings: Settings;
   onSaved: (s: Settings) => void;
   onClose: () => void;
-  setBusy: (b: boolean) => void;
+  beginOperation: () => () => void;
 }) {
   const [tab, setTab] = useState<Tab>("general");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [save, setSave] = useState<SaveState>({ k: "idle" });
+  const [picking, setPicking] = useState(false);
+  const [shortcutEditor, setShortcutEditor] = useState<ShortcutEditorState>({ k: "list" });
   const [activeTasks, setActiveTasks] = useState<number | null>(null);
-  const savePending = useRef(false);
+  const operation = useRef<"saving" | "picking" | null>(null);
+  const busy = save.k === "saving" || picking;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !savePending.current) {
+      if (e.key === "Escape" && operation.current === null) {
         e.preventDefault();
         onClose();
       }
@@ -338,42 +348,59 @@ export function SettingsView({
   }, []);
 
   const persist = async (next: Settings): Promise<boolean> => {
-    if (savePending.current) return false;
-    savePending.current = true;
+    if (operation.current !== null) return false;
+    operation.current = "saving";
+    const release = beginOperation();
     const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSaving(true);
+    setSave({ k: "saving" });
     try {
       onSaved(await api.saveSettings(next));
-      setError(null);
+      setSave({ k: "idle" });
       return true;
     } catch (e) {
-      setError(errorMessage(e));
+      const hotkey = installedHotkeyAfterSave(e);
+      if (hotkey !== undefined && hotkey !== settings.hotkey) onSaved({ ...settings, hotkey });
+      setSave({ k: "failed", message: errorMessage(e) });
       return false;
     } finally {
-      savePending.current = false;
-      setSaving(false);
+      operation.current = null;
+      release();
       requestAnimationFrame(() => {
         if (focused?.isConnected && document.activeElement === document.body && !focused.matches(":disabled")) focused.focus();
       });
     }
   };
 
-  const context: TabContext = { settings, persist, setBusy, activeTasks };
+  const pickFolder: FolderPicker = async (options) => {
+    if (operation.current !== null) return null;
+    operation.current = "picking";
+    const release = beginOperation();
+    setPicking(true);
+    try {
+      return await api.pickFolder(options);
+    } finally {
+      operation.current = null;
+      setPicking(false);
+      release();
+    }
+  };
+
+  const context: TabContext = { settings, persist, pickFolder, activeTasks, shortcutEditor, setShortcutEditor };
   const current = TABS.find((t) => t.id === tab)!;
 
   return (
     <Sheet
       title="Settings"
-      aside={<SettingsTabs value={tab} saving={saving} context={context} onSelect={(id) => { if (!savePending.current) setTab(id); }} />}
+      aside={<SettingsTabs value={tab} busy={busy} context={context} onSelect={(id) => { if (operation.current === null) setTab(id); }} />}
       bodyClass="settings-body"
-      foot={error ? <span className="warn" role="alert">{error}</span> : "Esc to go back."}
+      foot={save.k === "failed" ? <span className="warn" role="alert">{save.message}</span> : "Esc to go back."}
       footRight={
-        <button className="link" aria-disabled={saving} onClick={() => { if (!savePending.current) onClose(); }}>
+        <button className="link" disabled={busy} onClick={() => { if (operation.current === null) onClose(); }}>
           Done
         </button>
       }
     >
-      <fieldset key={tab} id="settings-panel" role="tabpanel" tabIndex={0} aria-labelledby={`settings-tab-${tab}`} className="tab-panel" disabled={saving} aria-busy={saving}>
+      <fieldset key={tab} id="settings-panel" role="tabpanel" tabIndex={0} aria-labelledby={`settings-tab-${tab}`} className="tab-panel" disabled={busy} aria-busy={busy}>
         {current.render(context)}
       </fieldset>
     </Sheet>
@@ -405,7 +432,7 @@ function GeneralTab({ settings, persist }: TabProps) {
             }
           }}
         >
-          {recording ? "Press new keys" : prettyHotkey(settings.hotkey)}
+          {recording ? "Press new keys" : settings.hotkey ? prettyHotkey(settings.hotkey) : "Set hotkey"}
         </button>
       </Row>
       <Row icon="power" label="Open at login" htmlFor="login" description="Start Voxi in the menu bar when you log in.">
@@ -526,25 +553,25 @@ function ReportsRow() {
 /** Saved phrases that run several commands at once, with one preview and one
  *  undo: "run my usuals" -> move today's screenshots, clear installers. Each
  *  shortcut stays folded to its phrase until opened; Done saves it. */
-function ShortcutsTab({ settings, persist }: TabProps) {
-  const [list, setList] = useState<Shortcut[]>(settings.shortcuts);
-  const [editing, setEditing] = useState<number | null>(null);
-  const [showLengthError, setShowLengthError] = useState(false);
-  const update = (i: number, s: Shortcut) => { setList((l) => l.map((x, j) => (j === i ? s : x))); setShowLengthError(false); };
+function ShortcutsTab({ settings, persist, editor, setEditor }: TabProps & {
+  editor: ShortcutEditorState;
+  setEditor: (editor: ShortcutEditorState) => void;
+}) {
+  const list = editor.k === "editing" ? editor.list : settings.shortcuts;
+  const editing = editor.k === "editing" ? editor.index : null;
+  const edit = (index: number, list: Shortcut[], showLengthError = false) => setEditor({ k: "editing", index, list, showLengthError });
+  const update = (i: number, s: Shortcut) => edit(i, list.map((x, j) => j === i ? s : x));
   const count = (s: Shortcut) => s.commands.filter((c) => c.trim()).length;
 
-  // Backend save_settings validates every shortcut: one oversized entry
-  // refuses the whole batch, so no save path may proceed while one is invalid.
+  // Validation applies to the whole list because it is saved together.
   const commit = async (next: Shortcut[]) => {
-    if (next.some((s) => shortcutLengthIssue(s).any)) { setShowLengthError(true); return; }
-    setShowLengthError(false);
-    // Leave the editor / drop the row only once the save actually succeeded.
-    if (await persist({ ...settings, shortcuts: next })) { setList(next); setEditing(null); }
+    if (next.some((s) => shortcutLengthIssue(s).any)) {
+      if (editing !== null) edit(editing, list, true);
+      return;
+    }
+    if (await persist({ ...settings, shortcuts: next })) setEditor({ k: "list" });
   };
-  const add = () => {
-    setList((l) => [...l, { phrase: "", commands: [] }]);
-    setEditing(list.length);
-  };
+  const add = () => edit(list.length, [...list, { phrase: "", commands: [] }]);
   const foot = "When Voxi misses a phrase and you then run a command that works, it offers to learn the phrase. Learned phrases appear here too.";
 
   if (list.length === 0) {
@@ -570,7 +597,7 @@ function ShortcutsTab({ settings, persist }: TabProps) {
             canSave={!list.some((x) => shortcutLengthIssue(x).any)}
             canRemove={!list.filter((_, j) => j !== i).some((x) => shortcutLengthIssue(x).any)}
             onChange={(next) => update(i, next)}
-            showLengthError={showLengthError}
+            showLengthError={editor.k === "editing" && editor.showLengthError}
             onDone={() => commit(list)}
             onRemove={() => commit(list.filter((_, j) => j !== i))}
           />
@@ -579,7 +606,7 @@ function ShortcutsTab({ settings, persist }: TabProps) {
             <button className="shortcut-row" onClick={() => {
               // An over-limit row stays open so its error remains visible;
               // collapsing it would hide why the next row's Done is disabled.
-              if (editing === null || !list[editing] || !shortcutLengthIssue(list[editing]).any) setEditing(i);
+              if (editing === null || !list[editing] || !shortcutLengthIssue(list[editing]).any) edit(i, list);
             }}>
               <span className="row-icon"><Icon name="shortcuts" /></span>
               <span className="row-copy">
@@ -659,8 +686,9 @@ type FolderRule = { path: string; kind: "builtin" | "added" | "excluded" };
 
 const isInside = (child: string, parent: string) => child.startsWith(`${parent}/`);
 
-function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
-  const [folders, setFolders] = useState<string[]>([]);
+function FoldersTab({ settings, persist, pickFolder }: TabProps & { pickFolder: FolderPicker }) {
+  const [roots, setRoots] = useState<{ settings: Settings; folders: string[]; error?: string } | null>(null);
+  const [addedPath, setAddedPath] = useState<string | null>(null);
   const [home, setHome] = useState("");
   const [adding, setAdding] = useState("");
   const [note, setNote] = useState<string | null>(null);
@@ -668,12 +696,24 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
   const excluded = settings.excludedFolders.filter((f) => f.trim());
 
   useEffect(() => {
-    api.allowedFolders().then(setFolders);
+    // Cleanup invalidates this request when newer settings take over.
+    let current = true;
+    api.allowedFolders().then((folders) => {
+      if (current) setRoots({ settings, folders });
+    }).catch((e) => {
+      if (current) setRoots({ settings, folders: [], error: errorMessage(e) });
+    });
+    return () => { current = false; };
   }, [settings]);
   useEffect(() => {
     api.homeDir().then(setHome).catch(() => {});
   }, []);
 
+  const currentRoots = roots?.settings === settings ? roots : null;
+  const folders = currentRoots?.folders ?? [];
+  const missingAddedFolder = addedPath && extra.includes(addedPath) && currentRoots && !currentRoots.error
+    && !folders.includes(shownFolder(addedPath)) ? `Couldn't find “${addedPath}”. Check the path and try again.` : null;
+  const folderNote = note ?? currentRoots?.error ?? missingAddedFolder;
   const absolute = (p: string) => (home && (p === "~" || p.startsWith("~/")) ? home + p.slice(1) : p).replace(/\/$/, "");
   const builtIn = folders.filter((f) => !extra.some((x) => shownFolder(x) === f));
   const rules: FolderRule[] = [
@@ -687,6 +727,7 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
 
   const add = async (path: string) => {
     if (!path) return;
+    setAddedPath(null);
     const shown = shownFolder(path);
     if (folders.includes(shown) || extra.some((x) => shownFolder(x) === shown)) {
       setAdding("");
@@ -694,23 +735,19 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
       return;
     }
     if (await persist({ ...settings, extraFolders: [...extra, path] })) {
-      const now = await api.allowedFolders();
-      setFolders(now);
+      setAddedPath(path);
       setAdding("");
-      setNote(now.includes(shown) ? null : `Couldn't find “${path}”. Check the path and try again.`);
+      setNote(null);
     }
   };
 
   // The picker takes focus, which would otherwise close the window.
   const pick = async (options: { title?: string; defaultPath?: string }) => {
-    setBusy(true);
     try {
-      return await api.pickFolder(options);
+      return await pickFolder(options);
     } catch (e) {
       setNote(`Couldn't open the folder picker: ${errorMessage(e)}`);
       return null;
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -789,8 +826,8 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
   return <>
     <Group
       title="Allowed folders"
-      foot={note
-        ? <span className="warn" role="status">{note}</span>
+      foot={folderNote
+        ? <span className="warn" role="status">{folderNote}</span>
         : "Voxi only changes files inside these folders. Use − to keep it out of a folder inside one, and + to let it back into part of an excluded folder."}
     >
       <Row className="add-row">
@@ -801,7 +838,7 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
           aria-label="Folder path to add"
           onChange={(e) => setAdding(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
               add(adding.trim());
             }
@@ -813,12 +850,12 @@ function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: bo
       </Row>
       {topLevel.flatMap((rule) => renderRule(rule, 0))}
     </Group>
-    <NicknamesGroup settings={settings} persist={persist} setBusy={setBusy} />
+    <NicknamesGroup settings={settings} persist={persist} pickFolder={pickFolder} />
   </>;
 }
 
 /** Your names for folders, so “move it to dev” finds the right one. */
-function NicknamesGroup({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
+function NicknamesGroup({ settings, persist, pickFolder }: TabProps & { pickFolder: FolderPicker }) {
   const [name, setName] = useState("");
   const [note, setNote] = useState<string | null>(null);
 
@@ -826,17 +863,14 @@ function NicknamesGroup({ settings, persist, setBusy }: TabProps & { setBusy: (b
   const choose = async () => {
     const said = name.trim();
     if (!said) return setNote("Type the name you'll say first, like “dev”.");
-    setBusy(true);
     try {
-      const path = await api.pickFolder();
+      const path = await pickFolder();
       if (path && await persist({ ...settings, nicknames: [...settings.nicknames, { name: said, path }] })) {
         setName("");
         setNote(null);
       }
     } catch (e) {
       setNote(`Couldn't open the folder picker: ${errorMessage(e)}`);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -850,7 +884,7 @@ function NicknamesGroup({ settings, persist, setBusy }: TabProps & { setBusy: (b
           aria-label="Nickname to say"
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); choose(); }
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); choose(); }
           }}
         />
         <button className="secondary small" onClick={choose}>Choose folder…</button>

@@ -110,11 +110,18 @@ export default function App() {
     busyRef.current = busy;
     executingRef.current = executing;
   }, []);
+  const auxiliaryOperations = useRef(new Set<symbol>());
+  const beginOperation = useCallback(() => {
+    const owner = Symbol();
+    auxiliaryOperations.current.add(owner);
+    return () => { auxiliaryOperations.current.delete(owner); };
+  }, []);
+  const isBusy = useCallback(() => busyRef.current || auxiliaryOperations.current.size > 0, []);
   const shownAt = useRef(0);
   useEffect(() => {
     if (!inTauri) return;
     const onBlur = () => {
-      if (busyRef.current) return;
+      if (isBusy()) return;
       cancelBlurClose();
       const requestId = showId.current;
       // WebKit can briefly blur during activation, paste, or text services.
@@ -123,7 +130,7 @@ export default function App() {
       const graceLeft = Math.max(0, 300 - (performance.now() - shownAt.current));
       blurTimer.current = setTimeout(() => {
         blurTimer.current = null;
-        if (document.hasFocus() || busyRef.current || requestId !== showId.current
+        if (document.hasFocus() || isBusy() || requestId !== showId.current
           || awaitingShow.current !== null || performance.now() - shownAt.current < 300) return;
         close();
       }, graceLeft + 150);
@@ -135,7 +142,7 @@ export default function App() {
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("focus", cancelBlurClose, true);
     };
-  }, [close, cancelBlurClose]);
+  }, [close, cancelBlurClose, isBusy]);
 
   useEffect(() => {
     api.getSettings().then((s) => {
@@ -168,7 +175,7 @@ export default function App() {
     });
     const unHide = listen("voxi://hide", close);
     const unOutsideClick = listen<number>("voxi://outside-click", ({ payload: requestId }) => {
-      if (disposed || requestId !== showId.current || awaitingShow.current !== null || busyRef.current) return;
+      if (disposed || requestId !== showId.current || awaitingShow.current !== null || isBusy()) return;
       // A real click in another app is not the transient focus handoff that
       // blur's opening grace period protects against.
       close();
@@ -181,7 +188,7 @@ export default function App() {
       unHide.then((f) => f());
       unOutsideClick.then((f) => f());
     };
-  }, [close, cancelClose]);
+  }, [close, cancelClose, isBusy]);
 
   useEffect(() => {
     let disposed = false;
@@ -229,14 +236,14 @@ export default function App() {
             settings={settings}
             onSaved={setSettings}
             onClose={() => setView("command")}
-            setBusy={setBusy}
+            beginOperation={beginOperation}
           />
         )}
         {view === "welcome" && settings && (
           <AccessView
             settings={settings}
             firstRun
-            setBusy={setBusy}
+            beginOperation={beginOperation}
             onDone={async () => {
               const s = await api.saveSettings({ ...settings, onboarded: true });
               setSettings(s);

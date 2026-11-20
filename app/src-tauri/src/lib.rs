@@ -48,7 +48,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State};
 use tauri_plugin_autostart::ManagerExt as _;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::ShortcutState;
 
 // Poison means an earlier operation may have left invariants incomplete.
 // Never obtain the poisoned guard; fail the request and require a restart.
@@ -330,12 +330,7 @@ fn toggle_window(app: &AppHandle) {
     }
 }
 
-fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
-    let shortcut: Shortcut = hotkey.parse().map_err(|e| format!("“{hotkey}” isn't a valid shortcut: {e}"))?;
-    let gs = app.global_shortcut();
-    let _ = gs.unregister_all();
-    gs.register(shortcut).map_err(|e| format!("Couldn't register {hotkey}: {e}. Another app may be using it."))
-}
+struct InstalledHotkey(Mutex<String>);
 
 // ---- Preview -----------------------------------------------------------------
 
@@ -1500,6 +1495,7 @@ fn hide_window(app: AppHandle, request_id: u64) {
 #[tauri::command]
 fn get_settings(app: AppHandle, state: State<AppState>) -> Result<Settings, String> {
     let mut settings = checked_state!(state.settings.lock(), Err("Settings unavailable. Restart Voxi.".into())).clone();
+    settings.hotkey = app.state::<InstalledHotkey>().0.lock().map_err(|_| "Hotkey state unavailable. Restart Voxi.")?.clone();
     settings.start_at_login = match app.autolaunch().is_enabled() {
         Ok(enabled) => enabled,
         Err(_) => {
@@ -1511,13 +1507,20 @@ fn get_settings(app: AppHandle, state: State<AppState>) -> Result<Settings, Stri
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings) -> Result<Settings, String> {
+fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings) -> Result<Settings, settings::SaveError> {
     settings.validate_shortcuts()?;
     settings.validate_nicknames(&home())?;
-    let mut current = checked_state!(state.settings.lock(), Err("Settings unavailable. Restart Voxi.".into()));
-    let mut roots = checked_state!(state.roots.write(), Err("Folders unavailable. Restart Voxi.".into()));
-    let mut context = checked_state!(state.result_scope.lock(), Err("Results unavailable. Restart Voxi.".into()));
-    let old = current.clone();
+    let mut current = state.settings.lock().map_err(|_| "Settings unavailable. Restart Voxi.")?;
+    let hotkey = app.state::<InstalledHotkey>();
+    let mut installed = hotkey.0.lock().map_err(|_| "Hotkey state unavailable. Restart Voxi.")?;
+    let mut roots = state.roots.write().map_err(|_| "Folders unavailable. Restart Voxi.")?;
+    let mut context = state.result_scope.lock().map_err(|_| "Results unavailable. Restart Voxi.")?;
+    let requested_hotkey = settings.hotkey.clone();
+    // Preserve the configured preference when the app has no live binding
+    // and the user saves an unrelated setting.
+    if requested_hotkey.is_empty() {
+        settings.hotkey = current.hotkey.clone();
+    }
     let al = app.autolaunch();
     let os_before = al.is_enabled().map_err(|e| {
         diagnostics::emit(Event::new(Code::LoginItem, Stage::Failed));
@@ -1527,30 +1530,35 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
         diagnostics::emit(Event::new(Code::LoginItem, Stage::Failed));
         return Err("Move Voxi to /Applications or ~/Applications and open that copy before changing Start at Login.".into());
     }
-    if settings.hotkey != old.hotkey
-        && let Err(e) = register_hotkey(&app, &settings.hotkey)
-    {
-        let _ = register_hotkey(&app, &old.hotkey);
-        return Err(e);
-    }
-    let result = settings::login_transaction(&settings, &state.settings_path, os_before, |enabled| {
-        let result = if enabled { al.enable() } else { al.disable() };
-        result.map_err(|e| format!("Cannot change login registration: {e}. Check System Settings → General → Login Items."))?;
-        if al.is_enabled().map_err(|e| e.to_string())? != enabled {
-            return Err("macOS did not accept the login registration. Check Login Items in System Settings.".into());
-        }
-        Ok(())
-    });
-    if let Err(e) = result {
-        diagnostics::emit(Event::new(Code::LoginItem, Stage::Failed));
-        if settings.hotkey != old.hotkey {
-            let _ = register_hotkey(&app, &old.hotkey);
-        }
-        return Err(e);
-    }
+    let result = settings::save_transaction(
+        &settings,
+        &state.settings_path,
+        &mut installed,
+        &requested_hotkey,
+        os_before,
+        |actual, wanted| settings::set_hotkey(&app, actual, wanted),
+        |enabled| {
+            let result = if enabled { al.enable() } else { al.disable() };
+            let accepted = result
+                .map_err(|e| format!("Cannot change login registration: {e}. Check System Settings → General → Login Items."))
+                .and_then(|()| {
+                    if al.is_enabled().map_err(|e| e.to_string())? == enabled {
+                        Ok(())
+                    } else {
+                        Err("macOS did not accept the login registration. Check Login Items in System Settings.".into())
+                    }
+                });
+            if accepted.is_err() {
+                diagnostics::emit(Event::new(Code::LoginItem, Stage::Failed));
+            }
+            accepted
+        },
+    );
+    result?;
     *roots = build_roots(&settings);
     *current = settings.clone();
     context.clear();
+    settings.hotkey = installed.clone();
     Ok(settings)
 }
 
@@ -1586,9 +1594,9 @@ fn reveal_reports(state: State<AppState>) -> Result<(), String> {
 /// Teaches a phrase Voxi missed to run a command it then ran.
 #[tauri::command]
 fn teach_phrase(app: AppHandle, state: State<AppState>, phrase: String, command: String) -> Result<Settings, String> {
-    let current = checked_state!(state.settings.lock(), Err("Voxi state is unavailable. Restart the app.".into())).clone();
+    let current = get_settings(app.clone(), state.clone())?;
     let next = learn::teach_phrase(&current, &phrase, &command)?;
-    save_settings(app, state, next)
+    save_settings(app, state, next).map_err(|e| e.message)
 }
 
 /// Remembers a folder the user picked as their name for it. Only folders
@@ -1601,9 +1609,9 @@ fn remember_folder(app: AppHandle, state: State<AppState>, name: String, path: S
     {
         return Err("Voxi can't use that folder.".into());
     }
-    let current = checked_state!(state.settings.lock(), Err("Voxi state is unavailable. Restart the app.".into())).clone();
+    let current = get_settings(app.clone(), state.clone())?;
     let next = learn::add_nickname(&current, &name, &folder, &home())?;
-    save_settings(app, state, next)
+    save_settings(app, state, next).map_err(|e| e.message)
 }
 
 /// A fixed destination; the frontend cannot ask this command to open arbitrary URLs.
@@ -1804,9 +1812,11 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
-            if register_hotkey(&handle, &settings.hotkey).is_err() {
+            let mut installed = String::new();
+            if settings::set_hotkey(&handle, &mut installed, &settings.hotkey).is_err() {
                 diagnostics::emit(Event::new(Code::Startup, Stage::Failed));
             }
+            app.manage(InstalledHotkey(Mutex::new(installed)));
 
             let show = MenuItem::with_id(app, "show", "Show Voxi", true, None::<&str>)?;
             let prefs = MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?;

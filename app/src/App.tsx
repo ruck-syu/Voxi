@@ -335,12 +335,18 @@ function CommandView({
   const scopeGeneration = useRef<number | null>(null);
   useEffect(() => {
     let live = true;
-    const read = () => void api.openingContext().then((o) => {
-      if (!live) return;
-      scopeGeneration.current = o.generation;
-      setResultScope(o.scope);
-      setSelectionNotice(o.notice);
-    }).catch(() => {});
+    let latest = 0;
+    const read = () => {
+      const ask = ++latest;
+      void api.openingContext().then((o) => {
+        // Only the newest read counts, and never one older than a list this
+        // view already knows: replies can arrive out of order.
+        if (!live || ask !== latest || (scopeGeneration.current !== null && o.generation < scopeGeneration.current)) return;
+        scopeGeneration.current = o.generation;
+        setResultScope(o.scope);
+        setSelectionNotice(o.notice);
+      }).catch(() => {});
+    };
     read();
     // A Finder selection can arrive while this view stays open.
     const unlisten = inTauri ? listen("voxi://selection", read) : null;

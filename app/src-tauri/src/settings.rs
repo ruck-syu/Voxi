@@ -114,6 +114,9 @@ thread_local! { pub(crate) static WRITE_FAILURE: std::cell::Cell<u8> = const { s
 // How many writes reach the `WRITE_FAILURE` stage unharmed before one fails.
 #[cfg(test)]
 thread_local! { pub(crate) static WRITE_FAILURE_AFTER: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; }
+// Fail only one write, then let the rest through.
+#[cfg(test)]
+thread_local! { pub(crate) static WRITE_FAILURE_ONCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
 
 fn write_checkpoint(stage: u8) -> std::io::Result<()> {
     #[cfg(test)]
@@ -121,6 +124,9 @@ fn write_checkpoint(stage: u8) -> std::io::Result<()> {
         if WRITE_FAILURE_AFTER.with(|n| n.get()) > 0 {
             WRITE_FAILURE_AFTER.with(|n| n.set(n.get() - 1));
         } else {
+            if WRITE_FAILURE_ONCE.with(|o| o.replace(false)) {
+                WRITE_FAILURE.with(|f| f.set(0));
+            }
             return Err(std::io::Error::other("Injected storage failure"));
         }
     }
@@ -180,7 +186,10 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Durability, Stri
         let _ = fs::remove_file(tmp);
         return Err(format!("Couldn't save store: {error}"));
     }
-    Ok(match write_checkpoint(4).and_then(|()| fs::File::open(dir)?.sync_all()) {
+    // The rename is visible; syncing the folder makes it survive power loss.
+    // A transient failure gets a couple of retries before being reported.
+    let sync_dir = || write_checkpoint(4).and_then(|()| fs::File::open(dir)?.sync_all());
+    Ok(match sync_dir().or_else(|_| sync_dir()).or_else(|_| sync_dir()) {
         Ok(()) => Durability::Durable,
         Err(error) => Durability::Uncertain(format!("Store was saved, but its durability could not be confirmed: {error}")),
     })

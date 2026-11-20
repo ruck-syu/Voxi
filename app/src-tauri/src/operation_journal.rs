@@ -329,7 +329,20 @@ pub(crate) fn run(
             count: entry.done.len(),
             progress: Progress { entry: entry.clone(), error: out.terminal.error().map(str::to_owned) },
         };
-        sync(path, &record)?;
+        if let Err(error) = sync(path, &record) {
+            // The step already happened. Keep its undo in History (memory
+            // first, disk if it can be saved) rather than drop it with the
+            // journal write; recovery skips an entry History already has.
+            let kept = if entry.done.is_empty() {
+                String::new()
+            } else {
+                match history.try_push(entry.clone()) {
+                    Ok(()) => " The change was made and can be undone from History.".into(),
+                    Err(_) => " The change was made; its undo is kept until Voxi can save History.".into(),
+                }
+            };
+            return Err(format!("{error}.{kept} {REVIEW}"));
+        }
         if !matches!(out.terminal, RunOutcome::Completed) {
             break;
         }
@@ -479,6 +492,36 @@ mod tests {
         settings::save_store(&path, &record, Store::Journal).unwrap();
         let poll = status(&path).unwrap().unwrap();
         assert!(poll.reason.unwrap().contains("preserved"));
+    }
+
+    #[test]
+    fn a_failed_acknowledgement_keeps_the_undo_of_a_step_that_ran() {
+        use crate::settings::{WRITE_FAILURE, WRITE_FAILURE_AFTER, WRITE_FAILURE_ONCE};
+        let dir = tempfile::tempdir().unwrap();
+        let documents = dir.path().join("Documents");
+        std::fs::create_dir(&documents).unwrap();
+        let roots = Roots::new(dir.path(), None, &[]);
+        let (source, target) = (documents.join("a"), documents.join("b"));
+        std::fs::write(&source, b"original").unwrap();
+        let history_path = dir.path().join("history.json");
+        let mut history = History::load(history_path.clone());
+        let path = history.journal_path();
+        // Prepared and StepInFlight save; the Acknowledged write after the move fails.
+        WRITE_FAILURE.with(|f| f.set(3));
+        WRITE_FAILURE_AFTER.with(|n| n.set(2));
+        WRITE_FAILURE_ONCE.with(|o| o.set(true));
+        let result = run(&path, &[Action::Move { from: source.clone(), to: target.clone() }], &roots, entry(), &mut history);
+        WRITE_FAILURE.with(|f| f.set(0));
+        WRITE_FAILURE_AFTER.with(|n| n.set(0));
+        let Err(error) = result else { panic!("the failed acknowledgement must be reported") };
+        assert!(error.contains("can be undone from History"), "{error}");
+        assert!(target.exists() && !source.exists());
+        // History kept the undo on disk, and review doesn't duplicate or drop it.
+        let mut history = History::load(history_path);
+        assert_eq!(undo_actions(history.last_undoable().unwrap()), vec![Action::Move { from: target.clone(), to: source.clone() }]);
+        acknowledge(&path, &mut history).unwrap();
+        assert_eq!(history.entries.len(), 1);
+        assert!(history.last_undoable().is_some());
     }
 
     #[test]

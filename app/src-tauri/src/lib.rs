@@ -88,7 +88,7 @@ struct Pending {
     /// Each existing source file and when it was last modified at preview,
     /// so a file edited before confirming (and perhaps no longer matching a
     /// date filter) stops the run instead of being acted on unseen.
-    inputs: Vec<(PathBuf, std::time::SystemTime)>,
+    inputs: Vec<(PathBuf, FileStamp)>,
     undo_of: Option<u64>,
     /// The results list this plan was made from, as its generation and the
     /// snapshot it read (if any), held together so neither can stand alone.
@@ -104,8 +104,12 @@ impl Pending {
             .inputs
             .iter()
             .filter(|(p, _)| read.contains(p))
-            .find(|(p, at)| std::fs::metadata(p).and_then(|m| m.modified()).ok() != Some(*at))
-        {
+            // A missing file only makes its step fail, touching nothing; a
+            // different file at the path (edited or replaced) must not be used.
+            .find(|(p, at)| {
+                let gone = std::fs::symlink_metadata(p).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
+                !gone && file_stamp(p).as_ref() != Some(at)
+            }) {
             Some((p, _)) => {
                 Err(format!("“{}” changed after the preview. Run the command again to see it as it is now.", fsx::file_name(p)))
             }
@@ -395,15 +399,23 @@ fn sources(a: &Action) -> Vec<&PathBuf> {
 }
 
 /// The source files a plan reads, with when each was last modified.
-fn input_times(actions: &[Action]) -> Vec<(PathBuf, std::time::SystemTime)> {
-    actions
-        .iter()
-        .flat_map(sources)
-        .filter_map(|p| {
-            let m = std::fs::symlink_metadata(p).ok().filter(|m| m.is_file())?;
-            Some((p.clone(), m.modified().ok()?))
-        })
-        .collect()
+/// Which file sits at a path, and when it last changed: a replacement moved
+/// into place keeps its own timestamp but not the original's inode.
+#[derive(Clone, Debug, PartialEq)]
+struct FileStamp {
+    modified: std::time::SystemTime,
+    dev: u64,
+    ino: u64,
+}
+
+fn file_stamp(p: &std::path::Path) -> Option<FileStamp> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::symlink_metadata(p).ok().filter(|m| m.is_file())?;
+    Some(FileStamp { modified: m.modified().ok()?, dev: m.dev(), ino: m.ino() })
+}
+
+fn input_times(actions: &[Action]) -> Vec<(PathBuf, FileStamp)> {
+    actions.iter().flat_map(sources).filter_map(|p| Some((p.clone(), file_stamp(p)?))).collect()
 }
 
 /// What the preview needs to describe any step of a pending plan. Rows are
@@ -699,6 +711,11 @@ fn plan_input_for(
     let repeat = when.as_ref().and_then(|w| w.rule.as_ref());
     let approved_shortcut =
         shortcut.as_ref().map(|s| scheduler::RuleSource::Shortcut { phrase: s.phrase.clone(), commands: s.commands.clone() });
+    let approved_nicknames = {
+        let settings =
+            checked_state!(state.settings.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() });
+        scheduler::nickname_pairs(&settings)
+    };
     // A saved shortcut ("run my usuals") wins over the built-in commands.
     enum Work {
         Shortcut(String, Vec<(String, model::Intent)>),
@@ -796,6 +813,7 @@ fn plan_input_for(
                         scheduler::Rule {
                             choices: choices.clone(),
                             approved_source: approved_shortcut.or(Some(scheduler::RuleSource::Command)),
+                            approved_nicknames: Some(approved_nicknames),
                             ..rule.clone()
                         },
                     )
@@ -888,7 +906,13 @@ fn plan_input_for(
                 Some(Pending {
                     id,
                     command: original_text.trim().to_string(),
-                    inputs: if undo_of.is_none() && scheduled.is_none() { input_times(&actions) } else { Vec::new() },
+                    // A plan that runs now, alone or as a repeat's first run,
+                    // must act on the files previewed; later runs re-plan.
+                    inputs: if undo_of.is_none() && (scheduled.is_none() || first_run == RunNowAndRepeat) {
+                        input_times(&actions)
+                    } else {
+                        Vec::new()
+                    },
                     actions,
                     preview: source,
                     undo_of,
@@ -920,11 +944,19 @@ fn confirm_plan(state: State<AppState>, id: u64, skip: Option<Vec<usize>>) -> Re
 }
 
 fn confirm_reporting(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResult, ConfirmError> {
-    confirm_trimmed(state, id, skip).map_err(|message| ConfirmError {
+    confirm_trimmed(state, id, skip).map_err(|message| {
         // A refusal before the preview was taken (a trim or a changed file)
-        // leaves it confirmable once fixed; anything later used it up.
-        preview_kept: state.pending.lock().is_ok_and(|p| p.as_ref().is_some_and(|p| p.id == id)),
-        message,
+        // leaves it confirmable once fixed; anything later used it up. A
+        // Stop pressed during the refused attempt belonged to that attempt,
+        // so the next one doesn't start already stopped.
+        let preview_kept = state.pending.lock().is_ok_and(|mut p| match p.as_mut().filter(|p| p.id == id) {
+            Some(p) => {
+                p.stop_requested = false;
+                true
+            }
+            None => false,
+        });
+        ConfirmError { preview_kept, message }
     })
 }
 

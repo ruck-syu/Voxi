@@ -206,6 +206,11 @@ pub struct Rule {
     /// Older rules lack a record of whether a shortcut supplied the commands.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub approved_source: Option<RuleSource>,
+    /// The folder nicknames (name, path) in effect when the task was
+    /// approved. A nickname its commands use that now means another folder
+    /// sends the task to review instead of to that folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approved_nicknames: Option<Vec<(String, String)>>,
 }
 
 pub const APPROVED_RULE_VERSION: u32 = 2;
@@ -233,6 +238,8 @@ struct SavedRule {
     subfolder_opt_in: bool,
     approved_version: Option<u32>,
     approved_source: Option<RuleSource>,
+    #[serde(default)]
+    approved_nicknames: Option<Vec<(String, String)>>,
 }
 
 impl From<SavedRule> for Rule {
@@ -250,8 +257,24 @@ impl From<SavedRule> for Rule {
                 (false, _) => 0,
             }),
             approved_source: saved.approved_source,
+            approved_nicknames: saved.approved_nicknames,
         }
     }
+}
+
+/// The user's folder nicknames as (name, path) pairs, as a rule records them.
+pub fn nickname_pairs(settings: &crate::settings::Settings) -> Vec<(String, String)> {
+    settings.nicknames.iter().map(|n| (n.name.clone(), n.path.clone())).collect()
+}
+
+/// True when `text` uses `name` as whole words, ignoring case.
+fn names_word(text: &str, name: &str) -> bool {
+    let (text, name) = (text.to_lowercase(), name.to_lowercase());
+    text.match_indices(&name).any(|(i, _)| {
+        let before = text[..i].chars().next_back().is_none_or(|c| !c.is_alphanumeric());
+        let after = text[i + name.len()..].chars().next().is_none_or(|c| !c.is_alphanumeric());
+        before && after
+    })
 }
 
 /// The shortest gap allowed between runs of a repeating task.
@@ -293,6 +316,17 @@ impl Rule {
             return Err(format!(
                 "Skipped: “modified” now means the date a file was last edited. Schedule “{command}” again to keep this task."
             ));
+        }
+        if let Some(approved) = &self.approved_nicknames {
+            let current: Vec<(String, String)> = nickname_pairs(settings);
+            let used = |name: &str| commands.iter().any(|text| names_word(text, name));
+            let meaning =
+                |list: &[(String, String)], name: &str| list.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, p)| p.clone());
+            if let Some((name, _)) =
+                approved.iter().chain(current.iter()).find(|(name, _)| used(name) && meaning(approved, name) != meaning(&current, name))
+            {
+                return Err(format!("The folder name “{name}” now means another folder. Schedule “{command}” again to keep this task."));
+            }
         }
         if self.approved_version > APPROVED_RULE_VERSION {
             return Err("This task was approved in a newer version of Voxi. Schedule it again to keep this task.".into());
@@ -535,6 +569,7 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
         model_intent: None,
         approved_version: APPROVED_RULE_VERSION,
         approved_source: Some(RuleSource::Command),
+        approved_nicknames: None,
     };
     let anchor = time.is_none().then(|| day.map_or(RepeatAnchor::Interval, RepeatAnchor::Weekday));
     let due = match (day, time) {
@@ -940,17 +975,24 @@ impl Store {
             );
             return Err(error.clone());
         }
-        if let crate::settings::Durability::Uncertain(warning) =
-            crate::settings::save_store(&self.path, &jobs, crate::settings::diagnostics::Store::Schedules)?
-        {
-            *self.durability.borrow_mut() = Some(warning);
-        }
+        // A save the disk couldn't confirm keeps its warning until a later
+        // save (retried each tick) is confirmed.
+        *self.durability.borrow_mut() =
+            match crate::settings::save_store(&self.path, &jobs, crate::settings::diagnostics::Store::Schedules)? {
+                crate::settings::Durability::Durable => None,
+                crate::settings::Durability::Uncertain(warning) => Some(warning),
+            };
         Ok(())
     }
 
     /// Persist the result with the original occurrence before publishing its
     /// successor. After a restart either the staged or final result is safe.
     pub fn retry_results(&mut self) -> Result<(), String> {
+        // Save again until the disk confirms the last change (a cancelled
+        // task must stay cancelled after a crash).
+        if self.durability.borrow().is_some() {
+            self.dirty = true;
+        }
         let result = self.flush_results();
         self.notice = result.as_ref().err().map(|e| format!("Couldn't save scheduled task state. Voxi will retry. {e}"));
         result
@@ -1006,8 +1048,13 @@ impl Store {
 
     pub fn cancel(&mut self, id: u64) -> Result<(), String> {
         self.change(id, |job| {
-            if job.occurrence != OccurrenceState::Waiting || !matches!(job.series, SeriesState::Active | SeriesState::Paused) {
-                return Err("Only pending or paused tasks can be cancelled.".into());
+            // A task waiting for review can be retired too; it never resumes
+            // without a fresh preview, so stopping it is its only way out.
+            let reviewable = job.series == SeriesState::NeedsReview && job.occurrence != OccurrenceState::Running;
+            if !reviewable
+                && (job.occurrence != OccurrenceState::Waiting || !matches!(job.series, SeriesState::Active | SeriesState::Paused))
+            {
+                return Err("Only pending, paused or needs-review tasks can be cancelled.".into());
             }
             job.series = SeriesState::Stopped;
             job.occurrence = OccurrenceState::Finished;
@@ -1289,6 +1336,7 @@ mod tests {
             model_intent: None,
             approved_version: APPROVED_RULE_VERSION,
             approved_source: Some(RuleSource::Command),
+            approved_nicknames: None,
         };
         let first = Local.with_ymd_and_hms(2026, 11, 1, 21, 0, 0).unwrap();
         // Voxi was closed for ten days: one run now, then back on the 3-day grid.
@@ -1312,6 +1360,7 @@ mod tests {
             model_intent: None,
             approved_version: APPROVED_RULE_VERSION,
             approved_source: Some(RuleSource::Command),
+            approved_nicknames: None,
         };
         store.add(Job::recurring_later("move a.pdf to Documents hourly".into(), now(), rule.clone())).unwrap();
         assert_eq!(store.claim(Local::now()).unwrap().unwrap().id, 1);
@@ -1323,6 +1372,10 @@ mod tests {
         assert_eq!(store.resume(1, now()).unwrap_err(), "Schedule it again to keep this task.");
         assert_eq!(store.jobs[0].repeat, Some(rule));
         assert_eq!(store.jobs[0].summary().repeat.as_deref(), Some("every hour"));
+        // A task waiting for review can be removed, and then never runs.
+        store.cancel(1).unwrap();
+        assert_eq!(store.jobs[0].series, SeriesState::Stopped);
+        assert!(store.claim(Local::now()).unwrap().is_none());
     }
     #[test]
     fn unreadable_schedule_data_is_preserved_without_blocking_startup() {
@@ -1504,5 +1557,30 @@ mod tests {
         job.validate().unwrap();
         fs::write(&src, "changed contents").unwrap();
         assert!(job.validate().is_err());
+    }
+    #[test]
+    fn a_changed_folder_nickname_sends_a_repeat_to_review() {
+        use crate::settings::{Nickname, Settings};
+        let with =
+            |path: &str| Settings { nicknames: vec![Nickname { name: "Receipts".into(), path: path.into() }], ..Settings::default() };
+        let rule = |command: &str| Rule {
+            every: 1,
+            unit: Unit::Days,
+            time: None,
+            command: command.into(),
+            choices: HashMap::new(),
+            model_intent: None,
+            approved_version: APPROVED_RULE_VERSION,
+            approved_source: Some(RuleSource::Command),
+            approved_nicknames: Some(nickname_pairs(&with("~/Documents/Receipts"))),
+        };
+        let trash = rule("trash PDFs from Receipts");
+        assert!(trash.check_approval(&with("~/Documents/Receipts"), "x").is_ok());
+        let err = trash.check_approval(&with("~/Desktop/Other"), "x").unwrap_err();
+        assert!(err.contains("“Receipts” now means another folder"), "{err}");
+        assert!(trash.check_approval(&Settings::default(), "x").is_err(), "a removed nickname changes the meaning too");
+        // A nickname the command doesn't use can change freely.
+        assert!(rule("trash PDFs from Downloads").check_approval(&with("~/Desktop/Other"), "x").is_ok());
+        assert!(rule("trash PDFs from ReceiptsArchive").check_approval(&with("~/Desktop/Other"), "x").is_ok());
     }
 }

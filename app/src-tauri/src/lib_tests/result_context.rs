@@ -1184,6 +1184,7 @@ fn stored_recurring_model_intent_is_never_replayed_unattended() {
         model_intent: Some(model_intent()),
         approved_version: scheduler::APPROVED_RULE_VERSION,
         approved_source: Some(scheduler::RuleSource::Command),
+        approved_nicknames: None,
     };
     // The rule text is still readable: it wins over the stored model plan.
     f.state
@@ -1609,6 +1610,7 @@ fn repeats_saved_before_modified_meant_last_edit_are_skipped_not_reread() {
         model_intent: None,
         approved_version: if modified_dates { scheduler::APPROVED_RULE_VERSION } else { 0 },
         approved_source: Some(scheduler::RuleSource::Command),
+        approved_nicknames: None,
     };
     let job = |modified_dates| {
         scheduler::Job::recurring_later(
@@ -1699,6 +1701,7 @@ fn subfolder_opt_in_guards_old_rules_skipped_trees_and_followups() {
         model_intent: None,
         approved_version: 1,
         approved_source: Some(scheduler::RuleSource::Command),
+        approved_nicknames: None,
     };
     let job = scheduler::Job::recurring_later(
         "delete PDFs in Downloads including subfolders daily".into(),
@@ -1749,4 +1752,30 @@ fn a_refused_confirm_says_whether_its_preview_is_kept_and_late_stops_say_so() {
     assert!(!request_stop(&f.state, RunKey::Plan(id)).unwrap());
     let err = confirm_reporting(&f.state, id, &[]).unwrap_err();
     assert!(!err.preview_kept, "{err:?}");
+}
+#[test]
+fn run_now_and_repeat_refuses_a_file_replaced_after_the_preview() {
+    let f = Fixture::new();
+    let a = f.write("Downloads/a.pdf");
+    let Outcome::Plan { id, .. } = f.command("move PDFs from Downloads to Documents every day") else { panic!("expected a plan") };
+    // Replace the file, keeping its old timestamp: only its identity differs.
+    let when = fs::metadata(&a).unwrap().modified().unwrap();
+    let other = f.write("Desktop/replacement.pdf");
+    fs::File::options().write(true).open(&other).unwrap().set_modified(when).unwrap();
+    fs::rename(&other, &a).unwrap();
+    let err = confirm_reporting(&f.state, id, &[]).unwrap_err();
+    assert!(err.message.contains("changed after the preview"), "{err:?}");
+    assert!(a.exists() && !f.home.join("Documents/a.pdf").exists());
+}
+#[test]
+fn a_stop_during_a_refused_confirm_does_not_carry_over() {
+    let f = Fixture::new();
+    let a = f.write("Downloads/a.pdf");
+    let Outcome::Plan { id, .. } = f.command("move PDFs from Downloads to Documents") else { panic!("expected a plan") };
+    assert!(request_stop(&f.state, RunKey::Plan(id)).unwrap());
+    assert!(confirm_reporting(&f.state, id, &[99]).unwrap_err().preview_kept);
+    assert!(!f.state.pending.lock().unwrap().as_ref().unwrap().stop_requested);
+    let result = confirm_reporting(&f.state, id, &[]).unwrap();
+    assert!(!result.cancelled && result.error.is_none(), "{result:?}");
+    assert!(!a.exists());
 }

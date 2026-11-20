@@ -258,6 +258,7 @@ function ScheduledTab() {
               {task.series === "paused" && button(task, "Resume", "Resuming…", api.resumeScheduledTask)}
               {(isWaitingTask(task) || task.series === "paused") && button(task, task.repeat ? "Stop repeating" : "Cancel task", "Stopping…", api.cancelScheduledTask)}
               {task.repeat && (task.series === "stopped" || task.series === "failed") && button(task, "Move to active", "Moving…", api.resumeScheduledTask)}
+              {task.series === "needsReview" && task.occurrence !== "running" && button(task, "Remove", "Removing…", api.cancelScheduledTask)}
             </span>
           </div>
           <span className={`pill ${tone}`}>{status}</span>

@@ -365,9 +365,11 @@ impl History {
         self.save()
     }
 
-    /// The most recent change that hasn't been undone yet.
+    /// The most recent change that hasn't been undone yet. An undo attempt
+    /// counts too when it left a repair behind (a partial undo records the
+    /// steps that put things back); a completed undo records none.
     pub fn last_undoable(&self) -> Option<&Entry> {
-        self.entries.iter().rev().find(|e| e.undo_of.is_none() && !e.inverses().is_empty())
+        self.entries.iter().rev().find(|e| !e.inverses().is_empty())
     }
 
     pub(crate) fn undoable(&self, id: u64) -> Result<&Entry, String> {

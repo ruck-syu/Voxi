@@ -13,14 +13,14 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         OnceLock,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc::{self, SyncSender},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
+        mpsc::{self, Receiver, SyncSender},
     },
 };
 
 const CAP: u64 = 1024 * 1024;
 const NAMES: [&str; 3] = ["diagnostics.0.log", "diagnostics.1.log", "diagnostics.2.log"];
-static SINK: OnceLock<SyncSender<Event>> = OnceLock::new();
+static SINK: OnceLock<Sink> = OnceLock::new();
 static NOTE: AtomicBool = AtomicBool::new(false);
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -131,37 +131,64 @@ fn unavailable() {
         eprintln!("Voxi diagnostics unavailable");
     }
 }
-pub(crate) fn emit(event: Event) {
-    if let Some(sink) = SINK.get() {
-        let _ = sink.try_send(event);
+#[repr(u8)]
+enum Health {
+    Live,
+    Failed,
+}
+
+struct Sink {
+    tx: SyncSender<Event>,
+    health: AtomicU8,
+}
+
+impl Sink {
+    fn new(tx: SyncSender<Event>) -> Self {
+        Self { tx, health: AtomicU8::new(Health::Live as u8) }
+    }
+
+    fn fail(&self) {
+        self.health.store(Health::Failed as u8, Ordering::Relaxed);
+        unavailable();
+    }
+
+    fn emit(&self, event: Event) {
+        if self.health.load(Ordering::Relaxed) == Health::Live as u8
+            && matches!(self.tx.try_send(event), Err(mpsc::TrySendError::Disconnected(_)))
+        {
+            self.fail();
+        }
+    }
+
+    fn consume(&self, dir: &Path, rx: &Receiver<Event>) {
+        let result = (|| -> io::Result<()> {
+            let mut writer = Writer::open(dir)?;
+            for event in rx {
+                writer.write(event)?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            self.fail();
+        }
     }
 }
+
+pub(crate) fn emit(event: Event) {
+    if let Some(sink) = SINK.get() {
+        sink.emit(event);
+    }
+}
+
 /// Start before loading stores. Directory creation and opening run on the worker.
 pub(crate) fn init(dir: PathBuf) {
-    if SINK.get().is_some() {
-        return;
-    }
     let (tx, rx) = mpsc::sync_channel(256);
-    if SINK.set(tx).is_err() {
+    if SINK.set(Sink::new(tx)).is_err() {
         return;
     }
-    if std::thread::Builder::new()
-        .name("voxi-diagnostics".into())
-        .spawn(move || {
-            let result = (|| -> io::Result<()> {
-                let mut writer = Writer::open(&dir)?;
-                for event in rx {
-                    writer.write(event)?;
-                }
-                Ok(())
-            })();
-            if result.is_err() {
-                unavailable();
-            }
-        })
-        .is_err()
-    {
-        unavailable();
+    let sink = SINK.get().expect("sink was registered");
+    if std::thread::Builder::new().name("voxi-diagnostics".into()).spawn(move || sink.consume(&dir, &rx)).is_err() {
+        sink.fail();
     }
 }
 
@@ -352,6 +379,19 @@ mod tests {
         };
         assert_eq!(operation().unwrap(), 7);
         assert_eq!(fs::read(blocked).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn failed_worker_disables_sends() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocked = dir.path().join("file");
+        fs::write(&blocked, b"keep").unwrap();
+        let (tx, rx) = mpsc::sync_channel(1);
+        let sink = Sink::new(tx);
+        sink.consume(&blocked.join("logs"), &rx);
+        assert_eq!(sink.health.load(Ordering::Relaxed), Health::Failed as u8);
+        sink.emit(Event::new(Code::Startup, Stage::Failed));
+        assert!(matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
     }
 
     #[test]

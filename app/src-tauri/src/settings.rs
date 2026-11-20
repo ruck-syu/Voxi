@@ -111,11 +111,18 @@ pub(crate) fn load_store<T: serde::de::DeserializeOwned + Default>(path: &Path, 
 
 #[cfg(test)]
 thread_local! { pub(crate) static WRITE_FAILURE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; }
+// How many writes reach the `WRITE_FAILURE` stage unharmed before one fails.
+#[cfg(test)]
+thread_local! { pub(crate) static WRITE_FAILURE_AFTER: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; }
 
 fn write_checkpoint(stage: u8) -> std::io::Result<()> {
     #[cfg(test)]
     if WRITE_FAILURE.with(|f| f.get() == stage) {
-        return Err(std::io::Error::other("Injected storage failure"));
+        if WRITE_FAILURE_AFTER.with(|n| n.get()) > 0 {
+            WRITE_FAILURE_AFTER.with(|n| n.set(n.get() - 1));
+        } else {
+            return Err(std::io::Error::other("Injected storage failure"));
+        }
     }
     let _ = stage;
     Ok(())
@@ -137,14 +144,29 @@ fn fullfsync(file: &fs::File) -> std::io::Result<()> {
     Ok(())
 }
 
-/// On a directory-sync failure the rename has already happened: report the
-/// failure, but never attempt a second rename that could destroy newer data.
-pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+/// Errors mean the replacement was never published. After rename, callers
+/// must retain their new state even when the directory cannot be synced.
+#[derive(Debug)]
+pub(crate) enum Durability {
+    Durable,
+    Uncertain(String),
+}
+
+impl Durability {
+    pub(crate) fn require_durable(self) -> Result<(), String> {
+        match self {
+            Self::Durable => Ok(()),
+            Self::Uncertain(warning) => Err(warning),
+        }
+    }
+}
+
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Durability, String> {
     use std::io::Write;
     let dir = parent_dir(path);
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let (tmp, mut file) = unique_file(path, "tmp").map_err(|e| e.to_string())?;
-    let result = (|| -> std::io::Result<()> {
+    let publish = (|| -> std::io::Result<()> {
         write_checkpoint(1)?;
         file.write_all(bytes)?;
         write_checkpoint(2)?;
@@ -152,14 +174,16 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         fullfsync(&file)?;
         write_checkpoint(3)?;
-        fs::rename(&tmp, path)?;
-        write_checkpoint(4)?;
-        fs::File::open(dir)?.sync_all()
+        fs::rename(&tmp, path)
     })();
-    if result.is_err() {
+    if let Err(error) = publish {
         let _ = fs::remove_file(tmp);
+        return Err(format!("Couldn't save store: {error}"));
     }
-    result.map_err(|e| format!("Couldn't durably save store: {e}"))
+    Ok(match write_checkpoint(4).and_then(|()| fs::File::open(dir)?.sync_all()) {
+        Ok(()) => Durability::Durable,
+        Err(error) => Durability::Uncertain(format!("Store was saved, but its durability could not be confirmed: {error}")),
+    })
 }
 
 /// Inspect the version without deserializing the complete store. Corrupt JSON
@@ -183,15 +207,15 @@ fn save_blocked_by_version(path: &Path, store: Store) -> Option<String> {
     }
 }
 
-pub(crate) fn save_store<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<(), String> {
+pub(crate) fn save_store<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<Durability, String> {
     let result = save_store_inner(path, data, store);
-    if result.is_err() {
+    if !matches!(result, Ok(Durability::Durable)) {
         diagnostics::emit(Event::new(Code::StoreSave, Stage::Failed).store(store));
     }
     result
 }
 
-fn save_store_inner<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<(), String> {
+fn save_store_inner<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<Durability, String> {
     // Recheck the on-disk schema even when the caller loaded defaults or is
     // saving an object received from the frontend rather than a loaded object.
     // A cheap peek replaces the full load here: history saves on every command.
@@ -277,7 +301,7 @@ pub(crate) fn save_transaction(
     login_before: bool,
     mut set_hotkey: impl FnMut(&mut String, &str) -> Result<(), String>,
     mut set_login: impl FnMut(bool) -> Result<(), String>,
-) -> Result<(), SaveError> {
+) -> Result<Durability, SaveError> {
     let original = match fs::read(path) {
         Ok(bytes) => Some(bytes),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -294,11 +318,15 @@ pub(crate) fn save_transaction(
         }
         settings.save(path).map_err(|e| (SaveStage::Persist, e))
     })();
-    let Err((stage, mut message)) = change else { return Ok(()) };
+    let (stage, mut message) = match change {
+        // Published; a durability warning is the caller's to show.
+        Ok(durability) => return Ok(durability),
+        Err(failure) => failure,
+    };
 
     if matches!(stage, SaveStage::Persist) {
         let rollback = match original {
-            Some(bytes) => atomic_write(path, &bytes),
+            Some(bytes) => atomic_write(path, &bytes).map(|_| ()),
             None => match fs::remove_file(path) {
                 Ok(()) => fs::File::open(parent_dir(path)).and_then(|f| f.sync_all()).map_err(|e| e.to_string()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -496,7 +524,7 @@ impl Settings {
         load_store(path, Store::Settings)
     }
 
-    pub fn save(&self, path: &Path) -> Result<(), String> {
+    pub(crate) fn save(&self, path: &Path) -> Result<Durability, String> {
         save_store(path, self, Store::Settings)
     }
 
@@ -742,7 +770,7 @@ mod tests {
         WRITE_FAILURE.with(|f| f.set(4));
         let result = changed.save(&path);
         WRITE_FAILURE.with(|f| f.set(0));
-        assert!(result.is_err(), "directory sync failure must reach caller even after rename");
+        assert!(matches!(result, Ok(Durability::Uncertain(_))));
         assert_eq!(Settings::load(&path).hotkey, "new");
         // Actual rename failure: a target directory cannot be replaced by a file.
         let destination = dir.path().join("directory");
@@ -862,9 +890,14 @@ mod login_tests {
                 },
             );
             WRITE_FAILURE.with(|f| f.set(0));
-            assert!(result.is_err());
-            assert!(!os_enabled);
-            assert_eq!(fs::read(path).unwrap(), original);
+            if stage == 4 {
+                assert!(matches!(result, Ok(Durability::Uncertain(_))));
+                assert!(os_enabled && Settings::load(&path).start_at_login);
+            } else {
+                assert!(result.is_err());
+                assert!(!os_enabled);
+                assert_eq!(fs::read(path).unwrap(), original);
+            }
         }
     }
     #[test]

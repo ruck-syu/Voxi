@@ -877,6 +877,9 @@ pub struct Store {
     pub jobs: Vec<Job>,
     dirty: bool,
     notice: Option<String>,
+    /// A save that reached disk but couldn't be confirmed durable: the new
+    /// state is kept, and this warning shown.
+    durability: std::cell::RefCell<Option<String>>,
     unavailable: Option<String>,
 }
 
@@ -889,10 +892,11 @@ impl Store {
                 jobs: Vec::new(),
                 dirty: false,
                 notice: None,
+                durability: Default::default(),
                 unavailable: Some(format!("{} Scheduling is unavailable; original data has been kept.", warning.message)),
             };
         }
-        let mut store = Self { path, jobs, dirty: true, notice: None, unavailable: None };
+        let mut store = Self { path, jobs, dirty: true, notice: None, durability: Default::default(), unavailable: None };
         for job in &mut store.jobs {
             if job.occurrence == OccurrenceState::ResultUnsaved && job.result.is_some() {
                 continue;
@@ -922,7 +926,7 @@ impl Store {
     }
 
     pub fn notice(&self) -> Option<String> {
-        self.unavailable.clone().or_else(|| self.notice.clone())
+        self.unavailable.clone().or_else(|| self.notice.clone()).or_else(|| self.durability.borrow().clone())
     }
 
     fn save_jobs(&self, jobs: &[Job]) -> Result<(), String> {
@@ -936,7 +940,12 @@ impl Store {
             );
             return Err(error.clone());
         }
-        crate::settings::save_store(&self.path, &jobs, crate::settings::diagnostics::Store::Schedules)
+        if let crate::settings::Durability::Uncertain(warning) =
+            crate::settings::save_store(&self.path, &jobs, crate::settings::diagnostics::Store::Schedules)?
+        {
+            *self.durability.borrow_mut() = Some(warning);
+        }
+        Ok(())
     }
 
     /// Persist the result with the original occurrence before publishing its
@@ -1401,11 +1410,14 @@ mod tests {
             store.add(job.clone()).unwrap();
             assert!(store.claim(when.due).unwrap().is_none());
             if recovered_result {
-                // The process stopped between saving the result and promoting the series.
-                use crate::settings::WRITE_FAILURE;
-                WRITE_FAILURE.with(|f| f.set(4));
+                // The process stopped between saving the result and promoting
+                // the series: the first save lands, the second never does.
+                use crate::settings::{WRITE_FAILURE, WRITE_FAILURE_AFTER};
+                WRITE_FAILURE.with(|f| f.set(3));
+                WRITE_FAILURE_AFTER.with(|n| n.set(1));
                 let result = store.finish(1, Completion::Recurring("Done.".into()), now());
                 WRITE_FAILURE.with(|f| f.set(0));
+                WRITE_FAILURE_AFTER.with(|n| n.set(0));
                 assert!(result.is_err());
                 assert_eq!(store.jobs[0].occurrence, OccurrenceState::ResultUnsaved);
             }

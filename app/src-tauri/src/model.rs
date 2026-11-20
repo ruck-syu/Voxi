@@ -493,13 +493,67 @@ pub enum Outcome {
     },
 }
 
+#[derive(Debug)]
+pub(crate) enum RunOutcome {
+    Completed,
+    Cancelled,
+    Failed { error: String, partial: bool },
+    Scheduled,
+    NeedsReview { error: String },
+}
+
+impl RunOutcome {
+    pub(crate) fn error(&self) -> Option<&str> {
+        match self {
+            Self::Failed { error, .. } | Self::NeedsReview { error } => Some(error),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    Completed,
+    Cancelled,
+    Failed,
+    PartiallyFailed,
+    Scheduled,
+    NeedsReview,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunResult {
+    pub status: RunStatus,
+    pub entry_id: Option<u64>,
     pub done: usize,
     pub total: usize,
     pub error: Option<String>,
     pub cancelled: bool,
     pub undoable: bool,
     pub summary: String,
+}
+
+impl RunResult {
+    pub(crate) fn new(terminal: RunOutcome, done: usize, total: usize, entry_id: Option<u64>, undoable: bool, summary: String) -> Self {
+        let status = match terminal {
+            RunOutcome::Completed => RunStatus::Completed,
+            RunOutcome::Cancelled => RunStatus::Cancelled,
+            RunOutcome::Failed { partial: false, .. } => RunStatus::Failed,
+            RunOutcome::Failed { partial: true, .. } => RunStatus::PartiallyFailed,
+            RunOutcome::Scheduled => RunStatus::Scheduled,
+            RunOutcome::NeedsReview { .. } => RunStatus::NeedsReview,
+        };
+        Self {
+            status,
+            entry_id,
+            done,
+            total,
+            error: terminal.error().map(str::to_owned),
+            cancelled: matches!(status, RunStatus::Cancelled),
+            undoable,
+            summary,
+        }
+    }
 }

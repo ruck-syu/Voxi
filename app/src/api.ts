@@ -45,9 +45,14 @@ export type SeriesState = "active" | "paused" | "stopped" | "completed" | "faile
 export type OccurrenceState = "waiting" | "running" | "finished" | "resultUnsaved";
 export type ScheduledTask = { id: number; command: string; due: string; series: SeriesState; occurrence: OccurrenceState; summary: string; repeat?: string | null };
 
-export type RecoveryStatus = { command: string; acknowledged: number; inFlight: Record<string, unknown> | null };
+export type RecoveryStatus =
+  | { status: "clear" }
+  | { status: "busy" }
+  | { status: "needs_review"; command: string; acknowledged: number; inFlight: Record<string, unknown> | null; reason: string | null };
 
-export type RunResult = { done: number; total: number; error: string | null; cancelled: boolean; undoable: boolean; summary: string };
+export type RunResult = {
+  status: "completed" | "cancelled" | "failed" | "partially_failed" | "scheduled" | "needs_review";
+  entryId: number | null; done: number; total: number; error: string | null; cancelled: boolean; undoable: boolean; summary: string };
 
 export type FolderAccess = { name: string; path: string; allowed: boolean };
 
@@ -70,14 +75,14 @@ export type Opening = { scope: ResultScope | null; generation: number; notice: s
 export const api = {
   /** The command box changed: the menu bar face talks along. Fire and forget. */
   trayTyping: () => invoke<void>("tray_typing").catch(() => {}),
-  recoveryStatus: () => invoke<RecoveryStatus | null>("recovery_status"),
+  recoveryStatus: () => invoke<RecoveryStatus>("recovery_status"),
   acknowledgeRecovery: () => invoke<void>("acknowledge_recovery"),
   schedulerNotice: () => invoke<string | null>("scheduler_notice"),
   scheduledTasks: () => invoke<ScheduledTask[]>("scheduled_tasks"),
   cancelScheduledTask: (id: number) => invoke<void>("cancel_scheduled_task", { id }),
   pauseScheduledTask: (id: number) => invoke<void>("pause_scheduled_task", { id }),
   resumeScheduledTask: (id: number) => invoke<void>("resume_scheduled_task", { id }),
-  plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<CommandReply>("plan_command", { text, choices, requestId }),
+  plan: (text: string, choices: Record<string, string>, requestId: number, undoEntryId?: number) => invoke<CommandReply>("plan_command", { text, choices, requestId, undoEntryId }),
   /** Clears the results list, only if it is still the one at `generation` when given. */
   clearResultScope: (generation?: number | null) => invoke<void>("clear_result_scope", { generation: generation ?? null }),
   resultScope: () => invoke<ResultScope | null>("result_scope"),

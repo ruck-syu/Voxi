@@ -1,7 +1,8 @@
 //! Runs a confirmed plan step by step and records how to reverse each step.
 
-use crate::fsx::{self, Roots, file_name};
-use crate::model::Action;
+use crate::fsx::{self, FileIdentity, Publication, PublishError, Roots, file_name};
+use crate::history::Inverse;
+use crate::model::{Action, RunOutcome};
 use crate::{pdf, trash};
 use std::fs;
 use std::io;
@@ -9,25 +10,46 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub struct Outcome {
+pub(crate) struct Outcome {
     pub done: Vec<Action>,
-    /// Reverses `done`, newest step first.
-    pub inverse: Vec<Action>,
-    pub error: Option<String>,
-    pub cancelled: bool,
+    /// Reverses known effects, newest step first.
+    pub inverse: Vec<Inverse>,
+    pub terminal: RunOutcome,
+    pub entry_id: Option<u64>,
 }
 
-/// Internal sentinel. It never leaves this module: `step` turns it into
-/// `StepError::Cancelled`, so callers match a variant, not message text.
+#[derive(Debug, PartialEq)]
+pub(crate) struct Effect {
+    pub action: Action,
+    pub inverse: Vec<Inverse>,
+}
+
+impl Effect {
+    fn reversible(action: Action, inverse: Action, identities: &[FileIdentity]) -> Result<Self, StepError> {
+        let inverse = Inverse::capture(inverse, identities).map_err(StepError::Uncertain)?;
+        Ok(Self { action, inverse: vec![inverse] })
+    }
+
+    fn irreversible(action: &Action) -> Self {
+        Self { action: action.clone(), inverse: vec![] }
+    }
+}
+
+/// Internal sentinel used by cancellable tools writing only to private staging.
 const CANCELLED: &str = "Execution cancelled.";
 
-/// Why a step did not complete.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum StepError {
-    /// Stopped before the step changed anything.
     Cancelled,
-    /// Failed; the message is shown to the user.
     Failed(String),
+    Partial { message: String, effect: Box<Effect> },
+    Uncertain(String),
+}
+
+impl From<String> for StepError {
+    fn from(message: String) -> Self {
+        if message == CANCELLED { Self::Cancelled } else { Self::Failed(message) }
+    }
 }
 
 fn check_cancel(is_cancelled: &dyn Fn() -> bool) -> Result<(), String> {
@@ -38,27 +60,30 @@ fn never_cancel() -> bool {
     false
 }
 
-/// Runs `actions` in order and stops at the first failure. Every path is
-/// checked against the allowed folders again right before it is touched.
-pub fn run(actions: &[Action], roots: &Roots) -> Outcome {
+pub(crate) fn run(actions: &[Action], roots: &Roots) -> Outcome {
     run_with_cancel(actions, roots, &never_cancel)
 }
 
 pub(crate) fn run_with_cancel(actions: &[Action], roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Outcome {
-    let mut done = Vec::new();
-    let mut inverse = Vec::new();
-    for a in actions {
-        match step(a, roots, is_cancelled) {
-            Ok(mut inv) => {
-                done.push(a.clone());
-                inv.reverse();
-                inverse.splice(0..0, inv);
-            }
-            Err(StepError::Cancelled) => return Outcome { done, inverse, error: None, cancelled: true },
-            Err(StepError::Failed(e)) => return Outcome { done, inverse, error: Some(e), cancelled: false },
+    let mut out = Outcome { done: vec![], inverse: vec![], terminal: RunOutcome::Completed, entry_id: None };
+    for action in actions {
+        let (effect, terminal) = match step(action, roots, is_cancelled) {
+            Ok(effect) => (Some(effect), RunOutcome::Completed),
+            Err(StepError::Cancelled) => (None, RunOutcome::Cancelled),
+            Err(StepError::Failed(error)) => (None, RunOutcome::Failed { error, partial: !out.done.is_empty() }),
+            Err(StepError::Partial { message, effect }) => (Some(*effect), RunOutcome::Failed { error: message, partial: true }),
+            Err(StepError::Uncertain(error)) => (None, RunOutcome::NeedsReview { error }),
+        };
+        if let Some(effect) = effect {
+            out.done.push(effect.action);
+            out.inverse.splice(0..0, effect.inverse);
+        }
+        if !matches!(terminal, RunOutcome::Completed) {
+            out.terminal = terminal;
+            break;
         }
     }
-    Outcome { done, inverse, error: None, cancelled: false }
+    out
 }
 
 fn guard(roots: &Roots, paths: &[&Path]) -> Result<(), String> {
@@ -394,7 +419,7 @@ fn verify_extracted(root: &Path, limits: ArchiveLimits, extracting: bool, is_can
     }
     Ok(())
 }
-fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits, is_cancelled: &dyn Fn() -> bool) -> Result<(), String> {
+fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits, is_cancelled: &dyn Fn() -> bool) -> Publication {
     use std::os::unix::fs::OpenOptionsExt;
     let stage = fsx::Staging::new(destination)?;
     let result = (|| {
@@ -463,255 +488,302 @@ fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits, is_ca
         // Release the snapshot before making the extracted payload visible.
         fs::remove_file(&snapshot).map_err(|e| e.to_string())?;
         check_cancel(is_cancelled)?;
-        stage.publish(destination)
+        Ok(())
     })();
-    stage.finish(result)
+    stage.finish(result.map_err(PublishError::Clean).and_then(|()| stage.publish(destination)))
 }
 
-/// Errors that mean a hard link (or a same-volume rename) can't be made here,
-/// so the no-clobber `mv -n` fallback must take over: EXDEV (18), ENOTSUP (45),
-/// EPERM (1), EMLINK (31), or a Rust `Unsupported` kind. External FAT/exFAT
-/// drives and SMB/AFP shares fail this way, where the old rename just worked.
-fn needs_mv_fallback(e: &io::Error) -> bool {
-    e.kind() == io::ErrorKind::Unsupported || matches!(e.raw_os_error(), Some(18 | 45 | 1 | 31))
-}
-
-/// `mv -n` never replaces an existing destination. Check first anyway, and
-/// confirm the source actually went away (mv -n can silently do nothing).
-fn mv_no_clobber(from: &Path, to: &Path) -> Result<(), String> {
+/// The fallback tool may have copied or removed files before returning an
+/// error. Its output must be reviewed whenever success cannot be confirmed.
+fn mv_no_clobber(from: &Path, to: &Path) -> Publication {
     fresh(to)?;
-    tool("/bin/mv", &["-n".as_ref(), from.as_os_str(), to.as_os_str()])?;
-    if from.exists() { Err(stopped(to)) } else { Ok(()) }
+    tool("/bin/mv", &["-n".as_ref(), from.as_os_str(), to.as_os_str()]).map_err(PublishError::Uncertain)?;
+    if !matches!(fs::symlink_metadata(from), Err(e) if e.kind() == io::ErrorKind::NotFound) {
+        return Err(PublishError::Uncertain(format!("Couldn't confirm that {} moved to {}.", from.display(), to.display())));
+    }
+    FileIdentity::read(to).map_err(|e| PublishError::Uncertain(io_err("check moved output", to)(e)))
 }
 
-/// True only for a real directory. `Path::is_dir` follows symlinks, which
-/// would send a symlink to a folder down the directory path (create_dir +
-/// rename) and break moving/copying the link itself.
-fn is_real_dir(p: &Path) -> bool {
-    fs::symlink_metadata(p).is_ok_and(|m| m.is_dir())
-}
-
-/// Moves without ever replacing an existing file. A same-volume file is
-/// claimed with `link`, which fails atomically if the destination exists,
-/// before the source is removed. A directory is claimed with `create_dir`
-/// and a cross-volume move uses `mv -n`: neither can overwrite an existing
-/// destination.
-fn move_path(from: &Path, to: &Path) -> Result<(), String> {
-    let source_parent = fs::canonicalize(from.parent().ok_or("Missing source parent")?).map_err(|e| e.to_string())?;
-    let target_parent = fs::canonicalize(to.parent().ok_or("Missing target parent")?).map_err(|e| e.to_string())?;
+fn move_path(from: &Path, to: &Path) -> Publication {
+    let source_parent = fs::canonicalize(from.parent().ok_or_else(|| "Missing source parent".to_string())?).map_err(|e| e.to_string())?;
     fsx::revalidate_parent(from, &source_parent)?;
-    fsx::revalidate_parent(to, &target_parent)?;
-    if is_real_dir(from) {
-        // `link` can't hard-link a directory. Claim the destination first;
-        // `rename` then replaces that empty folder, and fails rather than
-        // merging if something was put into it in the meantime.
-        if let Err(e) = fs::create_dir(to) {
-            return Err(if e.kind() == io::ErrorKind::AlreadyExists { stopped(to) } else { io_err("move", to)(e) });
-        }
-        if let Err(e) = fs::rename(from, to) {
-            let _ = fs::remove_dir(to);
-            if needs_mv_fallback(&e) {
-                return mv_no_clobber(from, to);
-            }
-            return Err(io_err("move", from)(e));
-        }
-        return Ok(());
-    }
-    match fs::hard_link(from, to) {
-        Ok(()) => {
-            if let Err(e) = fs::remove_file(from) {
-                return Err(format!("Couldn't remove source {}: {e}; published copy retained at {}", from.display(), to.display()));
-            }
-            Ok(())
-        }
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Err(stopped(to)),
-        Err(e) if needs_mv_fallback(&e) => mv_no_clobber(from, to),
-        Err(e) => Err(io_err("move", from)(e)),
+    match fsx::rename_exclusive(from, to) {
+        Err(PublishError::CrossDevice(_)) => mv_no_clobber(from, to),
+        result => result,
     }
 }
 
-/// Creates the destination before ditto can write to it, so an existing file
-/// can never be overwritten by a copy planned against an empty path.
-fn copy_path(from: &Path, to: &Path) -> Result<(), String> {
-    let source_parent = fs::canonicalize(from.parent().ok_or("Missing source parent")?).map_err(|e| e.to_string())?;
-    let target_parent = fs::canonicalize(to.parent().ok_or("Missing target parent")?).map_err(|e| e.to_string())?;
-    fsx::revalidate_parent(from, &source_parent)?;
-    fsx::revalidate_parent(to, &target_parent)?;
-    let from_is_dir = is_real_dir(from);
-    let claimed = if from_is_dir { fs::create_dir(to) } else { fs::OpenOptions::new().write(true).create_new(true).open(to).map(|_| ()) };
-    match claimed {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => return Err(stopped(to)),
-        Err(e) => return Err(io_err("copy", to)(e)),
-    }
-    let claim = fs::symlink_metadata(to).map_err(|e| e.to_string())?;
-    if let Err(e) = tool("/usr/bin/ditto", &[from.as_os_str(), to.as_os_str()]) {
-        use std::os::unix::fs::MetadataExt;
-        if !from_is_dir
-            && fs::symlink_metadata(to).is_ok_and(|m| m.is_file() && m.len() == 0 && m.ino() == claim.ino() && m.dev() == claim.dev())
-            && fs::remove_file(to).is_ok()
-        {
-            return Err(e);
+fn copy_path(from: &Path, to: &Path) -> Publication {
+    fresh(to)?;
+    fsx::staged_output(to, |out| {
+        if fs::symlink_metadata(from).map_err(io_err("copy", from))?.is_symlink() {
+            let target = fs::read_link(from).map_err(io_err("read link", from))?;
+            std::os::unix::fs::symlink(target, out).map_err(io_err("copy link", from))
+        } else {
+            tool("/usr/bin/ditto", &[from.as_os_str(), out.as_os_str()])
         }
-        return Err(format!("{e}; partial copy retained at {}", to.display()));
-    }
-    Ok(())
+    })
 }
 
-/// Undoing something Voxi created puts it in the Trash, never a hard delete.
+/// Undoing something Voxi created puts it in the Trash.
 fn trash_inverse(p: &Path) -> Action {
     Action::Trash { path: p.to_path_buf() }
 }
 
-/// Runs one step and returns the steps that undo it.
-pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Vec<Action>, StepError> {
-    run_step(a, roots, is_cancelled).map_err(|e| if e == CANCELLED { StepError::Cancelled } else { StepError::Failed(e) })
+fn partial(effect: Effect, message: String) -> StepError {
+    StepError::Partial { message, effect: Box::new(effect) }
 }
 
-fn run_step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Vec<Action>, String> {
-    // External mutation tools run to completion. Only private staging and
-    // read-only loops can abandon a step after it has started.
+fn published_effect(
+    result: Publication,
+    complete: impl FnOnce(FileIdentity) -> Result<Effect, StepError>,
+    incomplete: impl FnOnce(FileIdentity) -> Result<Effect, StepError>,
+) -> Result<Effect, StepError> {
+    match result {
+        Ok(identity) => complete(identity),
+        Err(PublishError::Published { identity, message }) => Err(partial(incomplete(identity)?, message)),
+        Err(PublishError::Clean(message) | PublishError::CrossDevice(message)) => Err(message.into()),
+        Err(PublishError::Uncertain(message)) => Err(StepError::Uncertain(message)),
+    }
+}
+
+fn created(a: &Action, output: &Path, result: Publication) -> Result<Effect, StepError> {
+    let effect = |identity| Effect::reversible(a.clone(), trash_inverse(output), &[identity]);
+    published_effect(result, effect, effect)
+}
+
+fn moved(a: &Action, from: &Path, to: &Path, inverse: Action) -> Result<Effect, StepError> {
+    published_effect(
+        move_path(from, to),
+        |identity| Effect::reversible(a.clone(), inverse, &[identity]),
+        |identity| {
+            let copy = Action::Copy { from: from.to_path_buf(), to: to.to_path_buf() };
+            Effect::reversible(copy, trash_inverse(to), &[identity])
+        },
+    )
+}
+
+fn trash_with_identity(path: &Path, roots: &Roots) -> Result<(PathBuf, FileIdentity), StepError> {
+    let original = FileIdentity::read(path).map_err(io_err("check before moving to Trash", path))?;
+    let landed = trash::to_trash(path, &roots.home).map_err(StepError::Uncertain)?;
+    let identity = FileIdentity::read(&landed).map_err(|error| StepError::Uncertain(io_err("check Trash", &landed)(error)))?;
+    if identity != original {
+        return Err(StepError::Uncertain(format!("Couldn't verify the file moved to {}.", landed.display())));
+    }
+    Ok((landed, identity))
+}
+
+fn resize(a: &Action, path: &Path, backup: &Path, width: u32, roots: &Roots) -> Result<Effect, StepError> {
+    let original = FileIdentity::read(path).map_err(io_err("check before resizing", path))?;
+    if let Some(dir) = backup.parent() {
+        fs::create_dir_all(dir).map_err(io_err("create", dir))?;
+    }
+    let copied = Action::Copy { from: path.to_path_buf(), to: backup.to_path_buf() };
+    let backup_id = match copy_path(path, backup) {
+        Ok(identity) => identity,
+        result => return created(&copied, backup, result),
+    };
+    let resize = (|| -> Publication {
+        let stage = fsx::Staging::new(path)?;
+        let prepared = (|| {
+            tool("/usr/bin/ditto", &[backup.as_os_str(), stage.path.as_os_str()])?;
+            tool("/usr/bin/sips", &["--resampleWidth".as_ref(), width.to_string().as_ref(), stage.path.as_os_str()])?;
+            guard(roots, &[path])
+        })();
+        stage.finish(prepared.map_err(PublishError::Clean).and_then(|()| stage.replace(path, &original)))
+    })();
+    let resized = |identity| {
+        Effect::reversible(
+            a.clone(),
+            Action::Restore { from: backup.to_path_buf(), to: path.to_path_buf() },
+            &[backup_id.clone(), identity],
+        )
+    };
+    match resize {
+        Err(PublishError::Clean(message)) => {
+            let effect = Effect::reversible(copied, trash_inverse(backup), &[backup_id])?;
+            Err(partial(effect, format!("{message}; original backup retained at {}", backup.display())))
+        }
+        result => published_effect(result, resized, resized),
+    }
+}
+
+fn restore(a: &Action, from: &Path, to: &Path, roots: &Roots) -> Result<Effect, StepError> {
+    fs::symlink_metadata(from).map_err(io_err("restore", from))?;
+    let trashed = match fs::symlink_metadata(to) {
+        Ok(_) => {
+            let (landed, identity) = trash_with_identity(to, roots)?;
+            Some(
+                Inverse::capture(Action::RestoreFromTrash { from: landed, to: to.to_path_buf() }, &[identity])
+                    .map_err(StepError::Uncertain)?,
+            )
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+        Err(e) => return Err(io_err("check restore destination", to)(e).into()),
+    };
+    match move_path(from, to) {
+        Ok(identity) => Effect::reversible(a.clone(), trash_inverse(to), &[identity]),
+        Err(PublishError::Clean(message) | PublishError::CrossDevice(message)) => match trashed {
+            Some(put_back) => Err(partial(Effect { action: trash_inverse(to), inverse: vec![put_back] }, message)),
+            None => Err(message.into()),
+        },
+        Err(PublishError::Published { identity, message }) => {
+            let mut effect =
+                Effect::reversible(Action::Copy { from: from.to_path_buf(), to: to.to_path_buf() }, trash_inverse(to), &[identity])?;
+            effect.inverse.extend(trashed);
+            Err(partial(effect, message))
+        }
+        Err(PublishError::Uncertain(message)) => Err(StepError::Uncertain(message)),
+    }
+}
+
+/// Runs one step and captures the identities of the files its inverse can touch.
+pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Effect, StepError> {
     check_cancel(is_cancelled)?;
     match a {
         Action::Move { from, to } => {
             guard(roots, &[from, to])?;
-            move_path(from, to)?;
-            Ok(vec![Action::Move { from: to.clone(), to: from.clone() }])
+            moved(a, from, to, Action::Move { from: to.clone(), to: from.clone() })
         }
         Action::Copy { from, to } => {
             guard(roots, &[from, to])?;
-            copy_path(from, to)?;
-            Ok(vec![trash_inverse(to)])
+            created(a, to, copy_path(from, to))
         }
         Action::Rename { path, new_name } => {
             let to = path.with_file_name(new_name);
             guard(roots, &[path, &to])?;
-            if path != &to {
-                move_path(path, &to)?;
+            if path == &to {
+                return Ok(Effect::irreversible(a));
             }
-            Ok(vec![Action::Rename { path: to, new_name: file_name(path) }])
+            moved(a, path, &to, Action::Rename { path: to.clone(), new_name: file_name(path) })
         }
         Action::Trash { path } => {
             guard(roots, &[path])?;
-            if roots.is_root(path) {
-                return Err(format!("Stopped: Voxi won't move {} itself to the Trash.", file_name(path)));
-            }
-            let landed = trash::to_trash(path, &roots.home)?;
-            Ok(vec![Action::RestoreFromTrash { from: landed, to: path.clone() }])
+            let (landed, identity) = trash_with_identity(path, roots)?;
+            Effect::reversible(a.clone(), Action::RestoreFromTrash { from: landed, to: path.clone() }, &[identity])
         }
         Action::RestoreFromTrash { from, to } => {
             guard(roots, &[to])?;
             if !trash::is_in_trash(from) {
-                return Err(format!("Stopped: {} isn't in the Trash.", from.display()));
+                return Err(format!("Stopped: {} isn't in the Trash.", from.display()).into());
             }
-            move_path(from, to)?;
-            Ok(vec![Action::Trash { path: to.clone() }])
+            moved(a, from, to, trash_inverse(to))
         }
         Action::CreateFolder { path } => {
             guard(roots, &[path])?;
             match fs::create_dir(path) {
-                Ok(()) => Ok(vec![Action::RemoveEmptyFolder { path: path.clone() }]),
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists && path.is_dir() => Ok(vec![]),
-                Err(e) => Err(io_err("create", path)(e)),
+                Ok(()) => {
+                    let identity = FileIdentity::read(path).map_err(|e| StepError::Uncertain(io_err("check created folder", path)(e)))?;
+                    Effect::reversible(a.clone(), Action::RemoveEmptyFolder { path: path.clone() }, &[identity])
+                }
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists && path.is_dir() => Ok(Effect::irreversible(a)),
+                Err(e) => Err(io_err("create", path)(e).into()),
             }
         }
         Action::RemoveEmptyFolder { path } => {
             guard(roots, &[path])?;
-            // Only an empty folder goes; anything with contents stays put.
-            let empty = fs::read_dir(path).map(|mut rd| rd.all(|e| e.is_ok_and(|e| e.file_name() == ".DS_Store"))).unwrap_or(false);
-            if empty {
-                let _ = fs::remove_file(path.join(".DS_Store"));
-                let _ = fs::remove_dir(path);
+            match fs::remove_dir(path) {
+                Ok(()) => Ok(Effect::irreversible(a)),
+                Err(e) if e.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(Effect::irreversible(a)),
+                Err(e) => Err(io_err("remove empty folder", path)(e).into()),
             }
-            Ok(vec![])
         }
         Action::ConvertImage { path, format, output } => {
             guard(roots, &[path, output])?;
-            fsx::staged_output(output, |out| {
-                tool(
-                    "/usr/bin/sips",
-                    &["-s".as_ref(), "format".as_ref(), format.sips_name().as_ref(), path.as_os_str(), "--out".as_ref(), out.as_os_str()],
-                )
-            })?;
-            Ok(vec![trash_inverse(output)])
+            created(
+                a,
+                output,
+                fsx::staged_output(output, |out| {
+                    tool(
+                        "/usr/bin/sips",
+                        &[
+                            "-s".as_ref(),
+                            "format".as_ref(),
+                            format.sips_name().as_ref(),
+                            path.as_os_str(),
+                            "--out".as_ref(),
+                            out.as_os_str(),
+                        ],
+                    )
+                }),
+            )
         }
         Action::ResizeImage { path, max_width_px, backup } => {
             guard(roots, &[path, backup])?;
-            if let Some(dir) = backup.parent() {
-                fs::create_dir_all(dir).map_err(io_err("create", dir))?;
-            }
-            fsx::staged_output(backup, |out| tool("/usr/bin/ditto", &[path.as_os_str(), out.as_os_str()]))?;
-            let stage = fsx::Staging::new(path)?;
-            let resize = (|| {
-                tool("/usr/bin/ditto", &[path.as_os_str(), stage.path.as_os_str()])?;
-                tool("/usr/bin/sips", &["--resampleWidth".as_ref(), max_width_px.to_string().as_ref(), stage.path.as_os_str()])?;
-                guard(roots, &[path])?;
-                fs::rename(&stage.path, path).map_err(io_err("resize", path))
-            })();
-            stage.finish(resize).map_err(|e| format!("{e}; original backup retained at {}", backup.display()))?;
-            Ok(vec![Action::Restore { from: backup.clone(), to: path.clone() }])
+            resize(a, path, backup, *max_width_px, roots)
         }
         Action::Restore { from, to } => {
             guard(roots, &[from, to])?;
-            fs::symlink_metadata(from).map_err(io_err("restore", from))?;
-            // Keep the modified version too: it goes to the Trash.
-            if to.exists() {
-                trash::to_trash(to, &roots.home)?;
-            }
-            move_path(from, to)?;
-            Ok(vec![])
+            restore(a, from, to, roots)
         }
         Action::MergePdf { paths, output } => {
             guard(roots, &[output])?;
             guard(roots, &paths.iter().map(PathBuf::as_path).collect::<Vec<_>>())?;
             fresh(output)?;
-            fsx::staged_output(output, |out| {
-                pdf::merge(paths, out, &|| check_cancel(is_cancelled))?;
-                check_cancel(is_cancelled)
-            })?;
-            Ok(vec![trash_inverse(output)])
+            created(
+                a,
+                output,
+                fsx::staged_output(output, |out| {
+                    pdf::merge(paths, out, &|| check_cancel(is_cancelled))?;
+                    check_cancel(is_cancelled)
+                }),
+            )
         }
         Action::ImagesToPdf { paths, output } => {
             guard(roots, &[output])?;
             guard(roots, &paths.iter().map(PathBuf::as_path).collect::<Vec<_>>())?;
             fresh(output)?;
-            fsx::staged_output(output, |out| {
-                pdf::images_to_pdf(paths, out, &|| check_cancel(is_cancelled))?;
-                check_cancel(is_cancelled)
-            })?;
-            Ok(vec![trash_inverse(output)])
+            created(
+                a,
+                output,
+                fsx::staged_output(output, |out| {
+                    pdf::images_to_pdf(paths, out, &|| check_cancel(is_cancelled))?;
+                    check_cancel(is_cancelled)
+                }),
+            )
         }
         Action::SplitPdf { path, output_dir } => {
             guard(roots, &[path, output_dir])?;
             fresh(output_dir)?;
-            fsx::staged_output(output_dir, |out| {
-                fs::create_dir(out).map_err(|e| e.to_string())?;
-                pdf::split(path, out, &|| check_cancel(is_cancelled)).map(|_| ())
-            })?;
-            Ok(vec![trash_inverse(output_dir)])
+            created(
+                a,
+                output_dir,
+                fsx::staged_output(output_dir, |out| {
+                    fs::create_dir(out).map_err(|e| e.to_string())?;
+                    pdf::split(path, out, &|| check_cancel(is_cancelled)).map(|_| ())
+                }),
+            )
         }
         Action::ExtractPages { path, from, to, output } => {
             guard(roots, &[path, output])?;
             fresh(output)?;
-            fsx::staged_output(output, |out| pdf::extract(path, *from, *to, out))?;
-            Ok(vec![trash_inverse(output)])
+            created(a, output, fsx::staged_output(output, |out| pdf::extract(path, *from, *to, out)))
         }
         Action::Zip { path, output } => {
             guard(roots, &[path, output])?;
             fresh(output)?;
-            fsx::staged_output(output, |out| {
-                tool(
-                    "/usr/bin/ditto",
-                    &["-c".as_ref(), "-k".as_ref(), "--sequesterRsrc".as_ref(), "--keepParent".as_ref(), path.as_os_str(), out.as_os_str()],
-                )
-            })?;
-            Ok(vec![trash_inverse(output)])
+            created(
+                a,
+                output,
+                fsx::staged_output(output, |out| {
+                    tool(
+                        "/usr/bin/ditto",
+                        &[
+                            "-c".as_ref(),
+                            "-k".as_ref(),
+                            "--sequesterRsrc".as_ref(),
+                            "--keepParent".as_ref(),
+                            path.as_os_str(),
+                            out.as_os_str(),
+                        ],
+                    )
+                }),
+            )
         }
         Action::Unzip { path, destination } => {
             guard(roots, &[path, destination])?;
             fresh(destination)?;
-            extract_archive(path, destination, ArchiveLimits::default(), is_cancelled)?;
-            Ok(vec![trash_inverse(destination)])
+            created(a, destination, extract_archive(path, destination, ArchiveLimits::default(), is_cancelled))
         }
         Action::OpenInFinder { path, reveal } => {
             guard_open(roots, path)?;
@@ -721,7 +793,7 @@ fn run_step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Resul
             }
             args.push(path.as_os_str());
             tool("/usr/bin/open", &args)?;
-            Ok(vec![])
+            Ok(Effect::irreversible(a))
         }
     }
 }
@@ -758,7 +830,7 @@ mod tests {
         let current = roots.home.join("Documents/current");
         fs::write(&current, b"modified version").unwrap();
         let out = run(&[Action::Restore { from: roots.home.join("Documents/missing"), to: current.clone() }], &roots);
-        assert!(out.error.is_some());
+        assert!(out.terminal.error().is_some());
         assert!(out.done.is_empty());
         assert_eq!(fs::read(current).unwrap(), b"modified version");
     }
@@ -776,13 +848,13 @@ mod tests {
             }
             let action = Action::Rename { path: from.clone(), new_name: "target".into() };
             fs::write(&to, b"concurrent creator").unwrap();
-            assert!(run(&[action], &roots).error.is_some());
+            assert!(run(&[action], &roots).terminal.error().is_some());
             assert_eq!(fs::read(&to).unwrap(), b"concurrent creator");
             fs::remove_file(&to).unwrap();
             let landed = trash::to_trash(&from, &roots.home).unwrap();
             let action = Action::RestoreFromTrash { from: landed.clone(), to: to.clone() };
             fs::write(&to, b"concurrent creator").unwrap();
-            assert!(run(&[action], &roots).error.is_some());
+            assert!(run(&[action], &roots).terminal.error().is_some());
             assert!(landed.exists());
             assert_eq!(fs::read(&to).unwrap(), b"concurrent creator");
             fs::remove_file(&to).unwrap();
@@ -1009,7 +1081,9 @@ mod tests {
         assert!(!rejected.exists());
         // ditto alone accepts this bad CRC: integrity validation must reject it.
         zip_fixture(&hostile, b"bad-crc", 2, 2, 0o100644);
-        let err = extract_archive(&hostile, &rejected, ArchiveLimits::default(), &|| false).unwrap_err();
+        let Err(PublishError::Clean(err)) = extract_archive(&hostile, &rejected, ArchiveLimits::default(), &|| false) else {
+            panic!("expected clean failure")
+        };
         assert!(err.contains("/usr/bin/unzip failed"), "{err}");
         assert!(!rejected.exists());
         assert!(!fs::read_dir(d.path()).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().starts_with(".voxi-stage")));
@@ -1026,21 +1100,17 @@ mod tests {
         let mut history = History::load(h.join("history.json"));
 
         let out = plan_and_run(&roots, &history, "move PDFs from Downloads to Archive");
-        assert!(out.error.is_none());
+        assert!(out.terminal.error().is_none());
         assert!(h.join("Downloads/Archive/a.pdf").exists());
         assert!(!h.join("Downloads/Archive/a 2.pdf").exists(), "files in subfolders stay put");
         history.push(crate::history::Entry {
-            id: 1,
-            time: chrono::Local::now(),
-            command: "move".into(),
             done: out.done,
-            inverse: out.inverse,
-            undone: false,
-            undo_of: None,
+            state: crate::history::EntryState::with_inverses(out.inverse),
+            ..crate::history::Entry::new(1, "move".into(), None)
         });
 
         let undo = plan_and_run(&roots, &history, "undo last");
-        assert!(undo.error.is_none(), "{:?}", undo.error);
+        assert!(undo.terminal.error().is_none(), "{:?}", undo.terminal.error());
         assert!(h.join("Downloads/a.pdf").exists());
         assert!(h.join("Downloads/b.pdf").exists());
         assert_eq!(fs::read(h.join("Downloads/nested/deep/a.pdf")).unwrap(), b"nested");
@@ -1054,12 +1124,12 @@ mod tests {
         fs::write(h.join("Downloads/setup.dmg"), b"x").unwrap();
         let history = History::load(h.join("history.json"));
         let out = plan_and_run(&roots, &history, "delete installers from Downloads");
-        assert!(out.error.is_none());
+        assert!(out.terminal.error().is_none());
         assert!(!h.join("Downloads/setup.dmg").exists());
         assert_eq!(fs::read(h.join(".Trash/setup.dmg")).unwrap(), b"x", "in the (stand-in) Trash, not deleted");
         // And undo takes it back out.
-        let back = run(&out.inverse, &roots);
-        assert!(back.error.is_none(), "{:?}", back.error);
+        let back = run(&out.inverse.into_iter().map(|inverse| inverse.action).collect::<Vec<_>>(), &roots);
+        assert!(back.terminal.error().is_none(), "{:?}", back.terminal.error());
         assert_eq!(fs::read(h.join("Downloads/setup.dmg")).unwrap(), b"x");
     }
 
@@ -1071,7 +1141,7 @@ mod tests {
         fs::write(h.join("Downloads/a.txt"), b"new").unwrap();
         fs::write(&to, b"old").unwrap();
         let out = run(&[Action::Move { from: h.join("Downloads/a.txt"), to: to.clone() }], &roots);
-        assert!(out.error.is_some());
+        assert!(out.terminal.error().is_some());
         assert_eq!(fs::read(&to).unwrap(), b"old");
     }
 
@@ -1083,7 +1153,7 @@ mod tests {
         fs::write(h.join("Downloads/a.txt"), b"new").unwrap();
         fs::write(&to, b"old").unwrap();
         let out = run(&[Action::Copy { from: h.join("Downloads/a.txt"), to: to.clone() }], &roots);
-        assert!(out.error.is_some());
+        assert!(out.terminal.error().is_some());
         assert_eq!(fs::read(&to).unwrap(), b"old");
     }
 
@@ -1096,7 +1166,7 @@ mod tests {
         let from = h.join("Downloads/Project");
         let to = h.join("Documents/Project");
         let out = run(&[Action::Move { from: from.clone(), to: to.clone() }], &roots);
-        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(out.terminal.error().is_none(), "{:?}", out.terminal.error());
         assert_eq!(fs::read(to.join("sub/a.txt")).unwrap(), b"new");
         assert!(!from.exists());
 
@@ -1105,22 +1175,12 @@ mod tests {
         fs::write(h.join("Downloads/Other/b.txt"), b"old").unwrap();
         fs::write(h.join("Documents/Other/b.txt"), b"keep").unwrap();
         let out = run(&[Action::Move { from: h.join("Downloads/Other"), to: h.join("Documents/Other") }], &roots);
-        assert!(out.error.is_some());
+        assert!(out.terminal.error().is_some());
         assert_eq!(fs::read(h.join("Documents/Other/b.txt")).unwrap(), b"keep");
     }
 
     #[test]
-    fn hard_link_unsupported_errors_use_the_no_clobber_fallback() {
-        // Filesystems without hard-link support (exFAT/FAT, SMB/AFP shares),
-        // and other volumes, report one of these instead of letting `link`
-        // succeed. All of them must go through `mv -n`, not become an error.
-        for code in [18, 45, 1, 31] {
-            assert!(needs_mv_fallback(&io::Error::from_raw_os_error(code)), "errno {code}");
-        }
-        assert!(needs_mv_fallback(&io::Error::new(io::ErrorKind::Unsupported, "no links")));
-        assert!(!needs_mv_fallback(&io::Error::new(io::ErrorKind::AlreadyExists, "taken")));
-        assert!(!needs_mv_fallback(&io::Error::new(io::ErrorKind::PermissionDenied, "denied")));
-
+    fn move_tool_fallback_moves_without_clobbering() {
         let (_d, roots) = setup();
         let h = &roots.home;
         let from = h.join("Downloads/move-me.txt");
@@ -1133,7 +1193,7 @@ mod tests {
         // The fallback still refuses to overwrite an existing destination.
         fs::write(&from, b"new").unwrap();
         let err = mv_no_clobber(&from, &to).unwrap_err();
-        assert!(err.contains("Stopped"), "{err}");
+        assert!(matches!(err, PublishError::Clean(message) if message.contains("Stopped")));
         assert_eq!(fs::read(&to).unwrap(), b"contents");
         assert!(from.exists());
     }
@@ -1175,22 +1235,16 @@ mod tests {
         // rename, so the link itself is moved.
         let to = h.join("Documents/link");
         let out = run(&[Action::Move { from: link.clone(), to: to.clone() }], &roots);
-        assert!(out.error.is_none(), "{:?}", out.error);
+        assert!(out.terminal.error().is_none(), "{:?}", out.terminal.error());
         assert!(!link.exists());
         assert_eq!(fs::read_link(&to).unwrap(), target, "the link itself moved, not the folder");
         assert_eq!(fs::read(to.join("keep.txt")).unwrap(), b"keep");
 
-        // Copying uses the same real-directory check for its claim and
-        // cleanup: a symlink is never claimed with create_dir, and a failed
-        // ditto leaves no directory (or file) behind.
+        // Copy the link itself, without letting ditto follow it.
         let copy = h.join("Documents/link-copy");
         let out = run(&[Action::Copy { from: to.clone(), to: copy.clone() }], &roots);
-        assert!(!copy.is_dir(), "a symlink must not be claimed as a directory");
-        if out.error.is_some() {
-            assert!(!copy.exists(), "a failed copy cleans up its claim");
-        } else {
-            assert_eq!(fs::read_link(&copy).unwrap(), target);
-        }
+        assert!(out.terminal.error().is_none(), "{:?}", out.terminal);
+        assert_eq!(fs::read_link(&copy).unwrap(), target);
     }
 
     #[test]
@@ -1206,7 +1260,7 @@ mod tests {
         )
         .unwrap();
         let history = History::load(h.join("history.json"));
-        assert!(plan_and_run(&roots, &history, "zip Project into Project.zip").error.is_none());
+        assert!(plan_and_run(&roots, &history, "zip Project into Project.zip").terminal.error().is_none());
         assert!(h.join("Documents/Project.zip").exists());
         let archive = h.join("Documents/Project.zip");
         let listing = Command::new("/usr/bin/unzip").args(["-Z1"]).arg(&archive).output().unwrap();
@@ -1217,7 +1271,7 @@ mod tests {
             "metadata entries count toward archive-wide limits"
         );
         let extracted = plan_and_run(&roots, &history, "unzip Project.zip into Documents/out");
-        assert!(extracted.error.is_none(), "{:?}", extracted.error);
+        assert!(extracted.terminal.error().is_none(), "{:?}", extracted.terminal.error());
         assert_eq!(fs::read(h.join("Documents/out/Project/readme.md")).unwrap(), b"hi");
         assert!(!h.join("Documents/out/__MACOSX").exists());
         assert!(!h.join("Documents/out/archive.zip").exists());
@@ -1251,24 +1305,24 @@ mod tests {
         .unwrap();
         let history = History::load(h.join("history.json"));
 
-        assert!(plan_and_run(&roots, &history, "convert icon.png to jpg").error.is_none());
+        assert!(plan_and_run(&roots, &history, "convert icon.png to jpg").terminal.error().is_none());
         assert!(pics.join("icon.jpg").exists());
 
-        assert!(plan_and_run(&roots, &history, "resize icon.png to 16 pixels wide").error.is_none());
+        assert!(plan_and_run(&roots, &history, "resize icon.png to 16 pixels wide").terminal.error().is_none());
         let w = Command::new("/usr/bin/sips").args(["-g", "pixelWidth"]).arg(pics.join("icon.png")).output().unwrap();
         assert!(String::from_utf8_lossy(&w.stdout).contains("pixelWidth: 16"));
 
-        assert!(plan_and_run(&roots, &history, "make a pdf from images in Pictures named icon").error.is_none());
+        assert!(plan_and_run(&roots, &history, "make a pdf from images in Pictures named icon").terminal.error().is_none());
         assert_eq!(pdf::page_count(&pics.join("icon.pdf")).unwrap(), 2);
 
         fs::copy(pics.join("icon.pdf"), pics.join("two.pdf")).unwrap();
-        assert!(plan_and_run(&roots, &history, "merge PDFs in Pictures into all.pdf").error.is_none());
+        assert!(plan_and_run(&roots, &history, "merge PDFs in Pictures into all.pdf").terminal.error().is_none());
         assert_eq!(pdf::page_count(&pics.join("all.pdf")).unwrap(), 4);
 
-        assert!(plan_and_run(&roots, &history, "extract pages 2 to 3 from all.pdf into mid.pdf").error.is_none());
+        assert!(plan_and_run(&roots, &history, "extract pages 2 to 3 from all.pdf into mid.pdf").terminal.error().is_none());
         assert_eq!(pdf::page_count(&pics.join("mid.pdf")).unwrap(), 2);
 
-        assert!(plan_and_run(&roots, &history, "split all.pdf into pages").error.is_none());
+        assert!(plan_and_run(&roots, &history, "split all.pdf into pages").terminal.error().is_none());
         assert_eq!(fs::read_dir(pics.join("all pages")).unwrap().count(), 4);
     }
 

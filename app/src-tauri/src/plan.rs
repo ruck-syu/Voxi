@@ -3,7 +3,7 @@
 //! allowed folders, and picks non-clobbering names for every output.
 
 use crate::fsx::{self, Roots, file_name, human_size, split_name, unique_path};
-use crate::history::History;
+use crate::history::{Entry, EntryState, History};
 use crate::model::{
     ARCHIVE_EXTS, AUDIO_EXTS, Action, DOC_EXTS, DateField, DayRef, FileType, Filter, IMAGE_EXTS, INSTALLER_EXTS, ImageFormat, InfoRow,
     Intent, Source, VIDEO_EXTS,
@@ -272,16 +272,7 @@ impl<'a> Planner<'a> {
             Intent::RecentActions => return Ok(Step::Finished(recent(history, self.roots))),
             Intent::Undo => {
                 let Some(entry) = history.last_undoable() else { return problem("Nothing to undo.") };
-                for a in &entry.inverse {
-                    self.push(a.clone(), None);
-                }
-                return Ok(Step::Finished(Planned::Steps {
-                    title: format!("Undo “{}”", entry.command),
-                    actions: std::mem::take(&mut self.actions),
-                    notes: std::mem::take(&mut self.notes),
-                    warnings: std::mem::take(&mut self.warnings),
-                    undo_of: Some(entry.id),
-                }));
+                return plan_undo(entry).map(Step::Finished);
             }
         };
         Ok(Step::Changes(title))
@@ -1404,6 +1395,18 @@ impl<'a> Planner<'a> {
     }
 }
 
+pub(crate) fn plan_undo(entry: &Entry) -> Result<Planned, Stop> {
+    crate::history::validate_inverses(entry.inverses()).map_err(Stop::Problem)?;
+    let actions: Vec<_> = entry.inverses().iter().map(|inverse| inverse.action.clone()).collect();
+    Ok(Planned::Steps {
+        title: format!("Undo “{}”", entry.command),
+        notes: vec![None; actions.len()],
+        actions,
+        warnings: vec![],
+        undo_of: Some(entry.id),
+    })
+}
+
 fn recent(history: &History, roots: &Roots) -> Planned {
     let rows: Vec<InfoRow> = history
         .entries
@@ -1411,12 +1414,11 @@ fn recent(history: &History, roots: &Roots) -> Planned {
         .rev()
         .take(20)
         .map(|e| {
-            let status = if e.undone {
-                " · undone"
-            } else if e.undo_of.is_some() {
-                " · undo"
-            } else {
-                ""
+            let status = match &e.state {
+                EntryState::Exhausted => " · undone",
+                EntryState::PartiallyUndone(_) => " · partially undone",
+                _ if e.undo_of.is_some() => " · undo",
+                _ => "",
             };
             let first = e.done.first().map(|a| describe_path(a, roots)).unwrap_or_default();
             InfoRow {

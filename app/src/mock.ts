@@ -1,6 +1,6 @@
 // Browser-only stand-in for the Rust backend, so the window can be designed
 // and reviewed with `npm run dev` outside Tauri. Never loaded inside the app.
-import type { Outcome, RunResult, Settings, ScheduledTask } from "./api";
+import type { Outcome, RecoveryStatus, RunResult, Settings, ScheduledTask } from "./api";
 
 let settings: Settings = {
   hotkey: "Control+Alt+Space", extraFolders: [], excludedFolders: [], startAtLogin: false,
@@ -15,6 +15,7 @@ let scheduled: ScheduledTask[] = [];
 let activePlan: number | null = null;
 /** Each preview gets a fresh id, as in the app, so unticked steps never carry over. */
 let planSeq = 100;
+let entrySeq = 0;
 let pendingSchedule: (ScheduledTask & { runNow?: boolean; total?: number; intervalMs?: number }) | null = null;
 
 // Browser-only permission scenarios, selected with ?mock=<name>:
@@ -99,10 +100,12 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "result_scope": return null;
     case "opening_context": return { scope: null, generation: 0, notice: null };
     case "clear_result_scope": return;
-    case "recovery_status": return !recoveryReviewed && mockScenario?.startsWith("recovery") ? {
-      command: "move PDFs to Documents", acknowledged: 2,
-      inFlight: { kind: "move", from: "/Users/me/Downloads/a.pdf", to: "/Users/me/Documents/a.pdf" },
-    } : null;
+    case "recovery_status": return (
+      !recoveryReviewed && mockScenario?.startsWith("recovery") ? {
+        status: "needs_review", command: "move PDFs to Documents", acknowledged: 2, reason: null,
+        inFlight: { kind: "move", from: "/Users/me/Downloads/a.pdf", to: "/Users/me/Documents/a.pdf" },
+      } : { status: "clear" }
+    ) satisfies RecoveryStatus;
     case "acknowledge_recovery":
       if (mockScenario === "recovery-fail") throw new Error("Cannot archive recovery evidence. Try Mark as reviewed again.");
       recoveryReviewed = true; return;
@@ -188,11 +191,17 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         const first = new Date(pendingSchedule.due).toLocaleString();
         const summary = runNow ? `Done. ${total} ${total === 1 ? "change" : "changes"}. Repeats ${pendingSchedule.repeat}; next run ${first}. Manage tasks in Settings → Scheduled.` : pendingSchedule.repeat ? `Repeats ${pendingSchedule.repeat}, first on ${first}. Manage tasks in Settings → Scheduled.` : `Scheduled for ${first}. Manage tasks in Settings → Scheduled.`;
         pendingSchedule = null;
-        return { done: runNow ? total : 0, total, error: null, cancelled: false, undoable: !!runNow, summary } satisfies RunResult;
+        return {
+          status: runNow ? "completed" : "scheduled", entryId: runNow ? ++entrySeq : null,
+          done: runNow ? total : 0, total, error: null, cancelled: false, undoable: !!runNow, summary,
+        } satisfies RunResult;
       }
       {
         const n = 26 - ((args.skip as number[] | undefined)?.length ?? 0);
-        return { done: n, total: n, error: null, cancelled: false, undoable: true, summary: `Done. ${n} changes.` } satisfies RunResult;
+        return {
+          status: "completed", entryId: ++entrySeq,
+          done: n, total: n, error: null, cancelled: false, undoable: true, summary: `Done. ${n} changes.`,
+        } satisfies RunResult;
       }
     case "get_settings":
       return settings;

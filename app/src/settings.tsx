@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, errorMessage, installedHotkeyAfterSave, tildify, type Reports, type ScheduledTask, type Settings, type Shortcut } from "./api";
+import { api, errorMessage, installedHotkeyAfterSave, tildify, type RecoveryStatus, type Reports, type ScheduledTask, type Settings, type Shortcut } from "./api";
 import { appVersion, canCheckForUpdates, checkAndInstall, useUpdateState } from "./updates";
 import { Sheet, TOO_LONG, prettyHotkey, shortcutLengthIssue } from "./ui";
 
@@ -128,7 +128,7 @@ const OCCURRENCE_LABELS: Record<ScheduledTask["occurrence"], StatusLabel | null>
 
 function RecoveryNotice() {
   const [reviewed, setReviewed] = useState(false);
-  const [recovery, setRecovery] = useState<Awaited<ReturnType<typeof api.recoveryStatus>>>(null);
+  const [recovery, setRecovery] = useState<Extract<RecoveryStatus, { status: "needs_review" }> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const actionRef = useRef<HTMLButtonElement>(null);
@@ -137,9 +137,12 @@ function RecoveryNotice() {
   useEffect(() => {
     let alive = true;
     const refresh = () => {
-      const started = generation.current;
+      const started = ++generation.current;
       return api.recoveryStatus().then((next) => {
-        if (alive && started === generation.current) { setRecovery(next); setError(null); }
+        if (alive && started === generation.current && next.status !== "busy") {
+          setRecovery(next.status === "needs_review" ? next : null);
+          setError(null);
+        }
       }).catch((e) => { if (alive && started === generation.current) setError(errorMessage(e)); });
     };
     void refresh();
@@ -165,6 +168,7 @@ function RecoveryNotice() {
       {error && ` ${error}`}
     </p>
     {recovery && <>
+      {recovery.reason && <p className="hint">{recovery.reason}</p>}
       {recovery.inFlight && <pre>{JSON.stringify(recovery.inFlight, null, 2)}</pre>}
       <button ref={actionRef} className="link" aria-disabled={working} onClick={() => void review()}>{working ? "Archiving…" : "Mark as reviewed"}</button>
       <p className="hint">The recovery journal will be archived beside the original. Review does not retry or undo the interrupted step.</p>

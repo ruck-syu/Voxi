@@ -422,7 +422,7 @@ function CommandView({
   }, [text]);
 
   const submit = useCallback(
-    async (command: string, picked: Record<string, string> = {}) => {
+    async (command: string, picked: Record<string, string> = {}, undoEntryId?: number) => {
       if (!command.trim()) return;
       // Never send an oversized command, and never truncate one to fit: the
       // text stays in the box with an inline message until it is shortened.
@@ -440,7 +440,7 @@ function CommandView({
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const { outcome, scope, generation } = await api.plan(command, picked, request);
+        const { outcome, scope, generation } = await api.plan(command, picked, request, undoEntryId);
         if (request !== requestId.current) return;
         scopeGeneration.current = generation;
         setResultScope(scope);
@@ -654,8 +654,10 @@ function CommandView({
   };
 
   const undo = () => {
-    setAsking(null);
-    submit("undo last", {});
+    if (phase.k === "done" && phase.result.entryId !== null) {
+      setAsking(null);
+      submit("undo last", {}, phase.result.entryId);
+    }
   };
 
   const executing = phase.k === "running";

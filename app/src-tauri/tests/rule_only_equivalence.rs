@@ -5,8 +5,13 @@ use std::{fs, process::Command};
 fn normalize(value: &mut Value) {
     match value {
         Value::Object(fields) => {
+            // The probe validates each recorded identity against its own
+            // fixture. Re-creating that fixture allocates fresh inodes and times.
+            let file_identity = ["dev", "ino", "size", "mtime", "mtime_nsec"].iter().all(|field| fields.contains_key(*field));
             for (key, value) in fields {
-                if ["id", "time", "scheduledFor", "due"].contains(&key.as_str()) && !value.is_null() {
+                if file_identity && ["ino", "mtime", "mtime_nsec"].contains(&key.as_str()) {
+                    *value = Value::String("<fixture-specific>".into());
+                } else if ["id", "time", "scheduledFor", "due"].contains(&key.as_str()) && !value.is_null() {
                     *value = Value::String("<timestamp-or-id>".into());
                 } else {
                     normalize(value);

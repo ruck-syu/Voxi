@@ -99,7 +99,92 @@ fn recovery_and_notice_do_not_wait_for_history_lock() {
     let f = Fixture::new();
     let _history = f.state.history.lock().unwrap();
     assert!(scheduler_notice_for(&f.state).is_none());
-    assert!(recovery_status_for(&f.state).unwrap().is_none());
+    assert!(matches!(recovery_status_for(&f.state).unwrap(), operation_journal::RecoveryPoll::Clear));
+}
+
+#[test]
+fn recovery_poll_distinguishes_busy_clear_and_needs_review() {
+    use operation_journal::RecoveryPoll;
+    let f = Fixture::new();
+    assert!(matches!(recovery_status_for(&f.state).unwrap(), RecoveryPoll::Clear));
+    let running = f.state.execution.lock().unwrap();
+    let busy = recovery_status_for(&f.state).unwrap();
+    assert_eq!(serde_json::to_value(busy).unwrap(), serde_json::json!({"status": "busy"}));
+    drop(running);
+    fs::write(f.home.join("operation-journal.json"), br#"{"entry":null,"actions":[],"in_flight":0,"finished":false}"#).unwrap();
+    let review = serde_json::to_value(recovery_status_for(&f.state).unwrap()).unwrap();
+    assert_eq!(review["status"], "needs_review");
+    assert_eq!(review["acknowledged"], 0);
+}
+
+#[test]
+fn undo_rejects_replacement_at_plan_and_confirm() {
+    for replace_after_preview in [false, true] {
+        let f = Fixture::new();
+        let source = f.write("Downloads/a.pdf");
+        let copy = f.home.join("Documents/a.pdf");
+        let Outcome::Plan { id, .. } = f.command("copy a.pdf from Downloads to Documents") else { panic!("expected copy plan") };
+        assert!(confirm_input(&f.state, id).unwrap().undoable);
+        let undo_preview = replace_after_preview.then(|| f.command("undo last"));
+        fs::rename(&copy, f.home.join("Documents/older.pdf")).unwrap();
+        fs::write(&copy, b"new file").unwrap();
+        let failure = if let Some(Outcome::Plan { id, is_undo: true, .. }) = undo_preview {
+            confirm_input(&f.state, id).unwrap().error.unwrap()
+        } else {
+            let Outcome::Problem { message } = f.command("undo last") else { panic!("replacement should block the preview") };
+            message
+        };
+        assert!(failure.contains("was replaced"), "{failure}");
+        assert_eq!(fs::read(&copy).unwrap(), b"new file");
+        assert_eq!(fs::read(source).unwrap(), b"data");
+        assert!(!f.home.join(".Trash").exists());
+        assert!(matches!(recovery_status_for(&f.state).unwrap(), operation_journal::RecoveryPoll::Clear));
+    }
+}
+
+#[test]
+fn undo_entry_targets_the_displayed_run_after_a_scheduled_run() {
+    let f = Fixture::new();
+    f.write("Downloads/a.pdf");
+    f.write("Downloads/b.pdf");
+    let Outcome::Plan { id, .. } = f.command("copy a.pdf from Downloads to Documents") else { panic!("expected copy plan") };
+    let first = confirm_input(&f.state, id).unwrap();
+    let Outcome::Plan { id, .. } = f.command("in 10 minutes copy b.pdf from Downloads to Documents") else {
+        panic!("expected scheduled plan")
+    };
+    let scheduled = confirm_input(&f.state, id).unwrap();
+    assert!(matches!(scheduled.status, model::RunStatus::Scheduled));
+    assert!(scheduled.entry_id.is_none());
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::seconds(1);
+    run_due_tasks_inner(&f.state).unwrap();
+    assert!(f.home.join("Documents/b.pdf").exists());
+    assert_ne!(first.entry_id, f.state.history.lock().unwrap().last_undoable().map(|e| e.id));
+
+    let planned = plan_input_for(&f.state, "undo last".into(), HashMap::new(), f.request.get() + 1, first.entry_id);
+    let Outcome::Plan { id, is_undo: true, .. } = planned else { panic!("{planned:?}") };
+    assert!(confirm_input(&f.state, id).unwrap().error.is_none());
+    assert!(!f.home.join("Documents/a.pdf").exists());
+    assert!(f.home.join("Documents/b.pdf").exists());
+    assert!(matches!(f.command("undo last"), Outcome::Plan { is_undo: true, .. }));
+    assert!(matches!(&f.actions()[0], Action::Trash { path } if path.ends_with("b.pdf")));
+}
+
+#[test]
+fn published_schedule_is_retained_when_directory_sync_fails() {
+    let f = Fixture::new();
+    f.write("Downloads/a.pdf");
+    let Outcome::Plan { id, .. } = f.command("in 10 minutes copy a.pdf from Downloads to Documents") else {
+        panic!("expected scheduled plan")
+    };
+    settings::WRITE_FAILURE.with(|failure| failure.set(4));
+    let result = confirm_input(&f.state, id);
+    settings::WRITE_FAILURE.with(|failure| failure.set(0));
+    assert!(matches!(result.unwrap().status, model::RunStatus::Scheduled));
+    let current = f.state.schedules.lock().unwrap();
+    assert_eq!(current.jobs.len(), 1);
+    assert!(current.notice().unwrap().contains("durability could not be confirmed"));
+    let reloaded = scheduler::Store::load(f.home.join("schedules.json"));
+    assert_eq!(reloaded.jobs[0].id, current.jobs[0].id);
 }
 
 #[test]
@@ -141,7 +226,7 @@ fn stopping_between_moves_persists_only_completed_changes_and_resolves_journal()
     let mut saved = History::load(f.home.join("history.json"));
     let entry = saved.last_undoable().unwrap();
     assert_eq!(entry.done, actions[..1]);
-    assert_eq!(entry.inverse, vec![Action::Move { from: moved_a.clone(), to: a.clone() }]);
+    assert_eq!(entry.inverses()[0].action, Action::Move { from: moved_a.clone(), to: a.clone() });
     let journal = saved.journal_path();
     assert!(operation_journal::status(&journal).unwrap().is_none());
     operation_journal::recover(&journal, &mut saved).unwrap();
@@ -166,7 +251,7 @@ fn stop_requested_before_confirmation_never_changes_files_or_the_next_plan() {
     assert!(stopped.cancelled && stopped.error.is_none() && !stopped.undoable);
     assert_eq!(stopped.done, 0);
     assert!(source.exists() && !target.exists());
-    assert!(recovery_status_for(&f.state).unwrap().is_none());
+    assert!(matches!(recovery_status_for(&f.state).unwrap(), operation_journal::RecoveryPoll::Clear));
     assert!(f.state.history.lock().unwrap().entries.is_empty());
 
     let Outcome::Plan { id: next_id, .. } = f.command(command) else { panic!("expected new move plan") };
@@ -319,14 +404,18 @@ fn rule_only_probe() {
         ))
         .unwrap(),
     );
-    outcomes.push(serde_json::json!({
+    let effects = serde_json::json!({
         "source": fs::read(home.join("Downloads/a.pdf")).unwrap(),
         "destinationExists": home.join("Documents/a.pdf").exists(),
         "createdExists": home.join("Documents/created").exists(),
         "missingExists": home.join("Documents/missing").exists(),
         "history": state.history.lock().unwrap().entries,
         "journal": serde_json::from_slice::<serde_json::Value>(&fs::read(home.join("operation-journal.json")).unwrap()).unwrap()
-    }));
+    });
+    let identity = serde_json::to_value(fsx::FileIdentity::read(&home.join("Documents/created")).unwrap()).unwrap();
+    assert_eq!(effects.pointer("/history/0/state/undoable/0/identities/0/root"), Some(&identity));
+    assert_eq!(effects.pointer("/journal/data/state/finished/entry/state/undoable/0/identities/0/root"), Some(&identity));
+    outcomes.push(effects);
     fs::write(home.join("outcomes.json"), serde_json::to_vec_pretty(&outcomes).unwrap()).unwrap();
 }
 
@@ -405,7 +494,7 @@ fn history_save_failure_does_not_advertise_durable_undo() {
     let mut history = History::load(f.home.join("history.json"));
     assert!(operation_journal::recover(&history.journal_path(), &mut history).is_err());
     assert_eq!(history.entries.len(), 1);
-    assert_eq!(history.entries[0].inverse.len(), 1);
+    assert_eq!(history.entries[0].inverses().len(), 1);
     let _ = operation_journal::recover(&history.journal_path(), &mut history);
     assert_eq!(history.entries.len(), 1);
 }

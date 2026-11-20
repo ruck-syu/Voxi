@@ -35,8 +35,8 @@ mod tray_face;
 
 use diagnostics::{Code, Event, Stage};
 use fsx::{Roots, file_name};
-use history::{Entry, History};
-use model::{Action, Outcome, PreviewItem, PreviewRow, RunResult};
+use history::History;
+use model::{Action, Outcome, PreviewItem, PreviewRow, RunOutcome, RunResult};
 use plan::{Planned, Planner, Stop};
 use settings::Settings;
 use std::collections::HashMap;
@@ -432,8 +432,14 @@ impl PreviewSource {
 // ---- Commands ----------------------------------------------------------------
 
 #[tauri::command(async)]
-fn plan_command(state: State<AppState>, text: String, choices: HashMap<String, String>, request_id: u64) -> CommandReply {
-    let outcome = plan_input(&state, text, choices, request_id);
+fn plan_command(
+    state: State<AppState>,
+    text: String,
+    choices: HashMap<String, String>,
+    request_id: u64,
+    undo_entry_id: Option<u64>,
+) -> CommandReply {
+    let outcome = plan_input_for(&state, text, choices, request_id, undo_entry_id);
     let context = checked_state!(
         state.result_scope.lock(),
         CommandReply {
@@ -537,7 +543,19 @@ fn recurring_route(rule_recurring: bool, rule_intent_present: bool, model_recurr
     if rule_recurring || model_recurring { if rule_intent_present { Route::Rule } else { Route::Refuse } } else { Route::Model }
 }
 
+#[cfg(test)]
 fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, request_id: u64) -> Outcome {
+    plan_input_for(state, text, choices, request_id, None)
+}
+
+fn plan_input_for(
+    state: &AppState,
+    text: String,
+    choices: HashMap<String, String>,
+    request_id: u64,
+    undo_entry_id: Option<u64>,
+) -> Outcome {
+    let text = if undo_entry_id.is_some() { "undo last".into() } else { text };
     if parse::check_length(&text).is_err() {
         let message = "That command is too long.".to_string();
         let mut active =
@@ -584,7 +602,9 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
 
     // A saved shortcut wins over both the rule parser and the model. Resolve
     // it up front, exact phrase and near miss, before any model inference.
-    let shortcut = {
+    let shortcut = if undo_entry_id.is_some() {
+        None
+    } else {
         let settings =
             checked_state!(state.settings.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() });
         settings
@@ -673,10 +693,12 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
     enum Work {
         Shortcut(String, Vec<(String, model::Intent)>),
         Command(model::Intent),
+        UndoEntry(u64),
     }
     let mut use_scope = false;
-    let work = match shortcut {
-        Some(s) => {
+    let work = match (undo_entry_id, shortcut) {
+        (Some(id), _) => Work::UndoEntry(id),
+        (None, Some(s)) => {
             let parsed: Result<Vec<_>, _> = s.commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect();
             match parsed {
                 // A shortcut holding one read-only command runs it as if typed.
@@ -691,8 +713,8 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
                 }
             }
         }
-        None if model_intent.is_some() => Work::Command(model_intent.expect("is_some match guard establishes model intent")),
-        None => match scope::prepare(&text, previous_scope.as_ref()) {
+        (None, None) if model_intent.is_some() => Work::Command(model_intent.expect("is_some match guard establishes model intent")),
+        (None, None) => match scope::prepare(&text, previous_scope.as_ref()) {
             Ok((intent, scoped)) => {
                 use_scope = scoped;
                 Work::Command(intent)
@@ -745,6 +767,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
         match &work {
             Work::Shortcut(phrase, commands) => planner.plan_shortcut(phrase, commands, &history),
             Work::Command(intent) => planner.plan(intent, &history),
+            Work::UndoEntry(id) => history.undoable(*id).map_err(Stop::Problem).and_then(plan::plan_undo),
         }
     };
     // Fingerprinting can walk a folder tree. Keep it cancellable and outside
@@ -810,8 +833,8 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
         }
         Ok(Planned::Direct { action, title }) => {
             let out = exec::run(std::slice::from_ref(&action), &roots);
-            match out.error {
-                Some(message) => Outcome::Problem { message },
+            match out.terminal.error() {
+                Some(message) => Outcome::Problem { message: message.to_owned() },
                 None => Outcome::Info { title, summary: String::new(), rows: vec![], total: 0, numbered: false },
             }
         }
@@ -971,7 +994,7 @@ fn confirm_trimmed(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResul
             ),
             None => format!("Scheduled for {}. Manage tasks in Settings → Scheduled.", scheduler::display(job.due)),
         };
-        return Ok(RunResult { done: 0, total: p.actions.len(), error: None, cancelled: false, undoable: false, summary });
+        return Ok(RunResult::new(RunOutcome::Scheduled, 0, p.actions.len(), None, false, summary));
     }
     Ok(execute_pending(state, p, &is_cancelled))
 }
@@ -1019,14 +1042,14 @@ fn request_stop(state: &AppState, key: RunKey) -> Result<(), String> {
 fn execute_pending(state: &AppState, p: Pending, is_cancelled: &dyn Fn() -> bool) -> RunResult {
     match execute_durable(state, &p, is_cancelled) {
         Ok(result) => result,
-        Err(error) => RunResult {
-            done: 0,
-            total: p.actions.len(),
-            error: Some(error),
-            cancelled: false,
-            undoable: false,
-            summary: "Stopped. Durable execution or undo could not be confirmed; review the recovery journal.".into(),
-        },
+        Err(error) => RunResult::new(
+            RunOutcome::NeedsReview { error },
+            0,
+            p.actions.len(),
+            None,
+            false,
+            "Stopped. Durable execution or undo could not be confirmed. Check the recovery journal in Settings → Scheduled.".into(),
+        ),
     }
 }
 
@@ -1034,16 +1057,7 @@ fn execute_durable(state: &AppState, p: &Pending, is_cancelled: &dyn Fn() -> boo
     let roots = state.roots.read().map_err(|_| "Folder state is unavailable. Restart Voxi.")?.clone();
     let mut history = state.history.lock().map_err(|_| "History state is unavailable. Restart Voxi.")?;
     let path = history.journal_path();
-    let entry = Entry {
-        id: history.next_id(),
-        time: chrono::Local::now(),
-        command: p.command.clone(),
-        done: vec![],
-        inverse: vec![],
-        undone: false,
-        undo_of: p.undo_of,
-    };
-    let out = operation_journal::run(&path, &p.actions, &roots, entry, &mut history, is_cancelled)?;
+    let out = operation_journal::run(&path, &p.actions, &roots, p.command.clone(), p.undo_of, &mut history, is_cancelled)?;
     let mut context = state.result_scope.lock().map_err(|_| "Result state is unavailable. Restart Voxi.")?;
     if p.context_generation == Some(context.generation)
         && let Some(snapshot) = &mut context.current
@@ -1051,14 +1065,14 @@ fn execute_durable(state: &AppState, p: &Pending, is_cancelled: &dyn Fn() -> boo
         snapshot.apply(&out.done);
     }
     let done = out.done.len();
-    let undoable = !out.inverse.is_empty() && p.undo_of.is_none();
-    let summary = match (out.cancelled, &out.error, p.undo_of) {
-        (true, _, _) => stopped_summary(&p.actions, &out.done, undoable, p.undo_of.is_some()),
-        (false, None, Some(_)) => "Undone.".to_string(),
-        (false, None, None) => format!("Done. {done} {}.", if done == 1 { "change" } else { "changes" }),
-        (false, Some(_), _) => format!("Stopped after {done} of {} steps.", p.actions.len()),
+    let undoable = out.entry_id.is_some() && !out.inverse.is_empty();
+    let summary = match (&out.terminal, p.undo_of) {
+        (RunOutcome::Cancelled, _) => stopped_summary(&p.actions, &out.done, undoable, p.undo_of.is_some()),
+        (RunOutcome::Completed, Some(_)) => "Undone.".to_string(),
+        (RunOutcome::Completed, None) => format!("Done. {done} {}.", if done == 1 { "change" } else { "changes" }),
+        _ => format!("Stopped after {done} of {} steps.", p.actions.len()),
     };
-    Ok(RunResult { done, total: p.actions.len(), error: out.error, cancelled: out.cancelled, undoable, summary })
+    Ok(RunResult::new(out.terminal, done, p.actions.len(), out.entry_id, undoable, summary))
 }
 
 fn stopped_summary(actions: &[Action], done: &[Action], undoable: bool, was_undo: bool) -> String {
@@ -1113,17 +1127,21 @@ fn scheduler_notice_for(state: &AppState) -> Option<String> {
 }
 
 #[tauri::command]
-fn recovery_status(state: State<AppState>) -> Result<Option<operation_journal::RecoveryStatus>, String> {
+fn recovery_status(state: State<AppState>) -> Result<operation_journal::RecoveryPoll, String> {
     recovery_status_for(&state)
 }
 
-fn recovery_status_for(state: &AppState) -> Result<Option<operation_journal::RecoveryStatus>, String> {
+fn recovery_status_for(state: &AppState) -> Result<operation_journal::RecoveryPoll, String> {
+    use operation_journal::RecoveryPoll;
     let _execution = match state.execution.try_lock() {
         Ok(guard) => guard,
-        Err(std::sync::TryLockError::WouldBlock) => return Ok(None),
+        Err(std::sync::TryLockError::WouldBlock) => return Ok(RecoveryPoll::Busy),
         Err(_) => return Err("Execution state unavailable. Restart Voxi.".into()),
     };
-    operation_journal::status(&state.reports_path.with_file_name("operation-journal.json"))
+    Ok(match operation_journal::status(&state.reports_path.with_file_name("operation-journal.json"))? {
+        Some(details) => RecoveryPoll::NeedsReview { details },
+        None => RecoveryPoll::Clear,
+    })
 }
 
 #[tauri::command(async)]

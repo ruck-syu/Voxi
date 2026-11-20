@@ -46,10 +46,9 @@ mod imp {
         Ok(())
     }
 
+    // The executor supplies a private staging path for all PDF outputs.
     pub fn write(doc: &PDFDocument, out: &Path) -> Result<(), String> {
-        crate::fsx::staged_output(out, |stage| {
-            if unsafe { doc.writeToURL(&url(stage)) } { Ok(()) } else { Err(format!("Couldn't write {}", out.display())) }
-        })
+        if unsafe { doc.writeToURL(&url(out)) } { Ok(()) } else { Err(format!("Couldn't write {}", out.display())) }
     }
 }
 

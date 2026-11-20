@@ -6,43 +6,122 @@ use crate::settings::diagnostics::{self, Code, Event, Stage, Store};
 use crate::{
     exec,
     fsx::Roots,
-    history::{Entry, History},
-    model::Action,
+    history::{Entry, EntryState, History, Inverse, validate_inverses},
+    model::{Action, RunOutcome},
     settings,
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Record {
+    actions: Vec<Action>,
+    state: State,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+enum State {
+    Prepared(Entry),
+    StepInFlight { entry: Entry, index: usize },
+    Acknowledged { progress: Progress, count: usize },
+    HistorySaved(Progress),
+    Finished(Progress),
+    NeedsReview { entry: Option<Entry>, index: Option<usize>, reason: String },
+}
+
+#[derive(Serialize, Deserialize)]
+struct Progress {
+    entry: Entry,
+    error: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyRecord {
     #[serde(default)]
     unknown: bool,
     entry: Option<Entry>,
     actions: Vec<Action>,
-    /// Persisted before entering a tool; cleared when the tool returns.
     in_flight: Option<usize>,
     finished: bool,
     #[serde(default)]
     error: Option<String>,
 }
 
+impl Record {
+    fn entry(&self) -> Option<&Entry> {
+        match &self.state {
+            State::Prepared(entry) | State::StepInFlight { entry, .. } => Some(entry),
+            State::Acknowledged { progress, .. } | State::HistorySaved(progress) | State::Finished(progress) => Some(&progress.entry),
+            State::NeedsReview { entry, .. } => entry.as_ref(),
+        }
+    }
+
+    fn in_flight(&self) -> Option<usize> {
+        match &self.state {
+            State::StepInFlight { index, .. } => Some(*index),
+            State::NeedsReview { index, .. } => *index,
+            _ => None,
+        }
+    }
+
+    fn interrupted(&self) -> bool {
+        !matches!(self.state, State::HistorySaved(_) | State::Finished(_))
+    }
+
+    fn valid(&self) -> bool {
+        let done = self.entry().map_or(0, |entry| entry.done.len());
+        done <= self.actions.len()
+            && match &self.state {
+                State::Prepared(entry) => done == 0 && matches!(entry.state, EntryState::Irreversible),
+                State::StepInFlight { index, .. } => *index == done && *index < self.actions.len(),
+                State::Acknowledged { count, .. } => *count == done,
+                State::NeedsReview { entry: Some(_), index: Some(index), .. } => *index == done && *index < self.actions.len(),
+                _ => true,
+            }
+    }
+}
+
+fn decode(bytes: &[u8]) -> Result<Option<Record>, String> {
+    if let Ok(record) = settings::decode_store::<Record>(bytes) {
+        return if record.valid() { Ok(Some(record)) } else { Err("Invalid journal state".into()) };
+    }
+    let LegacyRecord { unknown, entry, actions, in_flight, finished, error } = settings::decode_store(bytes)?;
+    let state = match entry {
+        Some(entry) if finished && !unknown && in_flight.is_none() => State::Finished(Progress { entry, error }),
+        None if !unknown && actions.is_empty() && in_flight.is_none() && !finished && error.is_none() => return Ok(None),
+        entry => State::NeedsReview {
+            reason: if unknown || entry.is_none() { "Journal evidence is incomplete.".into() } else { error.unwrap_or_default() },
+            entry,
+            index: in_flight,
+        },
+    };
+    let record = Record { actions, state };
+    if record.valid() { Ok(Some(record)) } else { Err("Invalid legacy journal state".into()) }
+}
+
 fn sync(path: &Path, record: &Record) -> Result<(), String> {
+    if !record.valid() {
+        return Err("Cannot save an invalid journal state.".into());
+    }
     checkpoint("before_sync");
     settings::save_store(path, record, Store::Journal)?.require_durable()?;
     checkpoint("after_sync");
     Ok(())
 }
 
-fn read(path: &Path) -> Result<Record, String> {
+fn read(path: &Path) -> Result<Option<Record>, String> {
     // Serialize corrupt-file conversion so concurrent status polls preserve it once.
     static READ: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _read = READ.lock().map_err(|_| "Journal state unavailable")?;
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Record::default()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e.to_string()),
     };
-    match settings::decode_store(&bytes) {
+    match decode(&bytes) {
         Ok(record) => Ok(record),
         Err(_) => {
             // Reuse evidence if a previous attempt preserved it but failed to
@@ -64,11 +143,14 @@ fn read(path: &Path) -> Result<Record, String> {
             if !preserved {
                 settings::preserve_store(path, &bytes)?;
             }
-            let record = Record { unknown: true, ..Record::default() };
+            let record = Record {
+                actions: vec![],
+                state: State::NeedsReview { entry: None, index: None, reason: "Unreadable journal preserved in backup.".into() },
+            };
             // Already preserved above: bypass save_store's second corruption backup.
             let marker = serde_json::json!({ "version": settings::STORE_VERSION, "data": &record });
             settings::atomic_write(path, &serde_json::to_vec(&marker).map_err(|e| e.to_string())?)?.require_durable()?;
-            Ok(record)
+            Ok(Some(record))
         }
     }
 }
@@ -79,65 +161,60 @@ pub(crate) struct RecoveryStatus {
     command: String,
     acknowledged: usize,
     in_flight: Option<Action>,
+    reason: Option<String>,
 }
 
-fn interrupted(record: &Record) -> bool {
-    record.unknown || (record.entry.is_some() && (!record.finished || record.in_flight.is_some()))
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub(crate) enum RecoveryPoll {
+    Clear,
+    Busy,
+    NeedsReview {
+        #[serde(flatten)]
+        details: RecoveryStatus,
+    },
 }
 
 pub(crate) fn status(path: &Path) -> Result<Option<RecoveryStatus>, String> {
-    let record = read(path)?;
-    Ok(if interrupted(&record) {
-        Some(record.entry.map_or_else(
-            || RecoveryStatus {
-                command: "Unknown interrupted operation (corrupt journal preserved in backup)".into(),
-                acknowledged: 0,
-                in_flight: None,
-            },
-            |entry| RecoveryStatus {
-                command: entry.command,
-                acknowledged: entry.done.len(),
-                in_flight: record.in_flight.and_then(|i| record.actions.get(i).cloned()),
-            },
-        ))
-    } else {
-        None
-    })
+    Ok(read(path)?.filter(Record::interrupted).map(|record| RecoveryStatus {
+        command: record.entry().map_or_else(|| "Unknown interrupted operation".into(), |entry| entry.command.clone()),
+        acknowledged: record.entry().map_or(0, |entry| entry.done.len()),
+        in_flight: record.in_flight().and_then(|index| record.actions.get(index).cloned()),
+        reason: match record.state {
+            State::NeedsReview { reason, .. } if !reason.is_empty() => Some(reason),
+            _ => None,
+        },
+    }))
 }
 
 fn import(record: &Record, history: &mut History) -> Result<(), String> {
-    if let Some(entry) = &record.entry {
-        if !entry.done.is_empty() && !history.entries.iter().any(|e| e.id == entry.id) {
-            history.try_push(entry.clone())?;
-        }
-        // Retry persistence even if an earlier try_push only updated memory.
-        if !entry.done.is_empty() {
-            history.save()?;
-        }
+    if let Some(entry) = record.entry()
+        && !entry.done.is_empty()
+        && (record.interrupted() || !history.entries.iter().any(|existing| existing.id == entry.id))
+    {
+        history.try_push(entry.clone())?;
     }
     Ok(())
 }
 
-/// Import known steps without replaying anything. Only the user can resolve
-/// an interruption, after inspecting the paths shown in Settings → Scheduled.
+const REVIEW: &str =
+    "Open Settings → Scheduled, check the files in the recovery notice, then choose Mark as reviewed. No action was retried.";
+
+/// Import known steps without replaying anything. The user resolves uncertain effects.
 pub(crate) fn recover(path: &Path, history: &mut History) -> Result<(), String> {
-    let record = read(path)?;
+    let Some(record) = read(path)? else { return Ok(()) };
     import(&record, history)?;
-    if record.entry.is_some() && !interrupted(&record) {
-        diagnostics::emit(
-            Event::new(Code::JournalRecovered, Stage::Recovered)
-                .operation(record.entry.as_ref().map_or(0, |e| e.id))
-                .count(record.entry.as_ref().map_or(0, |e| e.done.len())),
-        );
-    }
-    if interrupted(&record) {
-        diagnostics::emit(
-            Event::new(Code::JournalInterrupted, Stage::Interrupted)
-                .operation(record.entry.as_ref().map_or(0, |e| e.id))
-                .count(record.entry.as_ref().map_or(0, |e| e.done.len()))
-                .step(record.in_flight),
-        );
-        return Err("Interrupted operation. Open Settings → Scheduled, check the files in the recovery notice, then choose Mark as reviewed. No action was retried.".into());
+    diagnostics::emit(
+        Event::new(
+            if record.interrupted() { Code::JournalInterrupted } else { Code::JournalRecovered },
+            if record.interrupted() { Stage::Interrupted } else { Stage::Recovered },
+        )
+        .operation(record.entry().map_or(0, |e| e.id))
+        .count(record.entry().map_or(0, |e| e.done.len()))
+        .step(record.in_flight()),
+    );
+    if record.interrupted() {
+        return Err(format!("Interrupted operation. {REVIEW}"));
     }
     Ok(())
 }
@@ -145,10 +222,7 @@ pub(crate) fn recover(path: &Path, history: &mut History) -> Result<(), String> 
 /// Preserve the exact journal bytes before removing the active name. A hard
 /// link reserves a unique archive name without ever overwriting old evidence.
 pub(crate) fn acknowledge(path: &Path, history: &mut History) -> Result<(), String> {
-    let record = read(path)?;
-    if !interrupted(&record) {
-        return Ok(());
-    }
+    let Some(record) = read(path)?.filter(Record::interrupted) else { return Ok(()) };
     import(&record, history)?;
     let parent = path.parent().ok_or("Journal directory unavailable")?;
     let stamp = chrono::Utc::now().timestamp_micros();
@@ -162,7 +236,7 @@ pub(crate) fn acknowledge(path: &Path, history: &mut History) -> Result<(), Stri
                 let result = directory.sync_all().map_err(|e| e.to_string());
                 if result.is_ok() {
                     diagnostics::emit(
-                        Event::new(Code::JournalRecovered, Stage::Recovered).count(record.entry.as_ref().map_or(0, |e| e.done.len())),
+                        Event::new(Code::JournalRecovered, Stage::Recovered).count(record.entry().map_or(0, |e| e.done.len())),
                     );
                 }
                 return result;
@@ -178,7 +252,8 @@ pub(crate) fn run(
     path: &Path,
     actions: &[Action],
     roots: &Roots,
-    mut entry: Entry,
+    command: String,
+    undo_of: Option<u64>,
     history: &mut History,
     is_cancelled: &dyn Fn() -> bool,
 ) -> Result<exec::Outcome, String> {
@@ -188,53 +263,101 @@ pub(crate) fn run(
     }
     history.ensure_writable()?;
     recover(path, history)?;
-    let mut record = Record { entry: Some(entry.clone()), actions: actions.to_vec(), ..Record::default() };
+    let mut entry = Entry::new(history.next_id(), command, undo_of);
+    let mut out = exec::Outcome { done: vec![], inverse: vec![], terminal: RunOutcome::Completed, entry_id: None };
+    let mut undo = match undo_of.map(|id| approved_inverses(history, id, actions)).transpose() {
+        Ok(undo) => undo,
+        Err(error) => {
+            out.terminal = RunOutcome::Failed { error, partial: false };
+            return Ok(out);
+        }
+    };
+    let mut record = Record { actions: actions.to_vec(), state: State::Prepared(entry.clone()) };
     sync(path, &record)?;
-    let mut error = None;
-    let mut cancelled = false;
     for (index, action) in actions.iter().enumerate() {
         if is_cancelled() {
-            cancelled = true;
+            out.terminal = RunOutcome::Cancelled;
             break;
         }
-        record.in_flight = Some(index);
+        record.state = State::StepInFlight { entry: entry.clone(), index };
         sync(path, &record)?;
         checkpoint("before_mutation");
-        let result = exec::step(action, roots, is_cancelled);
+        let result = undo
+            .as_ref()
+            .map_or(Ok(()), |undo| undo[index].validate())
+            .map_err(exec::StepError::Failed)
+            .and_then(|()| exec::step(action, roots, is_cancelled));
         checkpoint("after_mutation");
-        match result {
-            Ok(mut inverse) => {
-                entry.done.push(action.clone());
-                inverse.reverse();
-                entry.inverse.splice(0..0, inverse);
-                record.entry = Some(entry.clone());
-                record.in_flight = None;
-                sync(path, &record)?;
-            }
-            Err(e) => {
-                // The call returned: its error is evidence, not an interruption.
-                // Executor publication is staged/no-clobber; retained backups
-                // and cleanup errors are described by the returned error.
-                record.in_flight = None;
-                match e {
-                    exec::StepError::Cancelled => cancelled = true,
-                    exec::StepError::Failed(e) => {
-                        record.error = Some(e.clone());
-                        error = Some(e);
+        let effect = match result {
+            Ok(effect) => {
+                if let Some(undo) = &mut undo {
+                    entry.reversed += 1;
+                    if let (Some(placed), Some(evidence)) = (undo[index].placement(), effect.inverse.first()) {
+                        entry.identity_updates.rebind(&placed, evidence, &mut undo[index + 1..]);
                     }
+                    Some(exec::Effect { inverse: vec![], ..effect })
+                } else {
+                    Some(effect)
                 }
-                sync(path, &record)?;
-                break;
             }
+            Err(exec::StepError::Cancelled) => {
+                out.terminal = RunOutcome::Cancelled;
+                None
+            }
+            Err(exec::StepError::Failed(error)) => {
+                out.terminal = RunOutcome::Failed { error, partial: !entry.done.is_empty() };
+                None
+            }
+            Err(exec::StepError::Partial { message, effect }) => {
+                out.terminal = RunOutcome::Failed { error: message, partial: true };
+                Some(*effect)
+            }
+            Err(exec::StepError::Uncertain(error)) => {
+                record.state = State::NeedsReview { entry: Some(entry.clone()), index: Some(index), reason: error.clone() };
+                sync(path, &record)?;
+                out.done = entry.done;
+                out.terminal = RunOutcome::NeedsReview { error: format!("{error} {REVIEW}") };
+                return Ok(out);
+            }
+        };
+        if let Some(effect) = effect {
+            entry.done.push(effect.action);
+            out.inverse.splice(0..0, effect.inverse);
+            entry.state = EntryState::with_inverses(out.inverse.clone());
+        }
+        record.state = State::Acknowledged {
+            count: entry.done.len(),
+            progress: Progress { entry: entry.clone(), error: out.terminal.error().map(str::to_owned) },
+        };
+        sync(path, &record)?;
+        if !matches!(out.terminal, RunOutcome::Completed) {
+            break;
         }
     }
-    // Keep the journal until history is durable; a failure must not advertise undo.
+    // Only advertise durable history after it and the journal checkpoint are synced.
     if !entry.done.is_empty() {
         history.try_push(entry.clone())?;
+        out.entry_id = Some(entry.id);
     }
-    record.finished = true;
+    record.state = State::HistorySaved(Progress { entry: entry.clone(), error: out.terminal.error().map(str::to_owned) });
     sync(path, &record)?;
-    Ok(exec::Outcome { done: entry.done, inverse: entry.inverse, error, cancelled })
+    let State::HistorySaved(progress) = record.state else { unreachable!() };
+    record.state = State::Finished(progress);
+    // HistorySaved is already recoverable and has no unresolved filesystem step.
+    if let Err(warning) = sync(path, &record) {
+        history.notices.push(warning);
+    }
+    out.done = entry.done;
+    Ok(out)
+}
+
+fn approved_inverses(history: &History, id: u64, actions: &[Action]) -> Result<Vec<Inverse>, String> {
+    let inverses = history.undoable(id)?.inverses();
+    if !inverses.iter().map(|inverse| &inverse.action).eq(actions) {
+        return Err("This undo preview changed. Plan the undo again.".into());
+    }
+    validate_inverses(inverses)?;
+    Ok(inverses.to_vec())
 }
 
 // Only test binaries honor crash injection; production environment variables
@@ -261,18 +384,25 @@ fn checkpoint(_point: &str) {
 mod tests {
     use super::*;
     fn run(path: &Path, actions: &[Action], roots: &Roots, entry: Entry, history: &mut History) -> Result<exec::Outcome, String> {
-        super::run(path, actions, roots, entry, history, &|| false)
+        super::run(path, actions, roots, entry.command, entry.undo_of, history, &|| false)
     }
     fn entry() -> Entry {
-        Entry {
-            id: 1,
-            time: chrono::Local::now(),
-            command: "move files".into(),
-            done: vec![],
-            inverse: vec![],
-            undone: false,
-            undo_of: None,
-        }
+        Entry::new(1, "move files".into(), None)
+    }
+
+    fn undo_actions(entry: &Entry) -> Vec<Action> {
+        entry.inverses().iter().map(|inverse| inverse.action.clone()).collect()
+    }
+
+    fn entry_with_inverses(actions: &[Action]) -> Entry {
+        let inverses = actions
+            .iter()
+            .map(|action| {
+                let Action::Move { from, .. } = action else { panic!("expected move") };
+                crate::history::Inverse::capture(action.clone(), &[crate::fsx::FileIdentity::read(from).unwrap()]).unwrap()
+            })
+            .collect();
+        Entry { state: EntryState::with_inverses(inverses), ..entry() }
     }
 
     #[test]
@@ -290,7 +420,7 @@ mod tests {
         settings::WRITE_FAILURE.with(|failure| failure.set(0));
         for _ in 0..3 {
             assert!(status(&path).unwrap().is_some());
-            assert!(run(&path, &[], &roots, entry(), &mut history).unwrap().error.is_none());
+            assert!(run(&path, &[], &roots, entry(), &mut history).unwrap().terminal.error().is_none());
             assert!(recover(&path, &mut history).is_err());
             assert!(run(&path, &[Action::CreateFolder { path: dir.path().join("Documents/new") }], &roots, entry(), &mut history).is_err());
         }
@@ -308,10 +438,110 @@ mod tests {
         assert!(
             run(&path, &[Action::CreateFolder { path: dir.path().join("Documents/new") }], &roots, entry(), &mut history)
                 .unwrap()
-                .error
+                .terminal
+                .error()
                 .is_none()
         );
         assert_eq!(std::fs::read(&backups[0]).unwrap(), b"{broken journal");
+    }
+
+    #[test]
+    fn legacy_entryless_in_flight_requires_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let documents = dir.path().join("Documents");
+        std::fs::create_dir(&documents).unwrap();
+        let path = dir.path().join("operation-journal.json");
+        let action = Action::CreateFolder { path: documents.join("interrupted") };
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "entry": null, "actions": [&action], "in_flight": 0, "finished": true
+        }))
+        .unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let poll = status(&path).unwrap().unwrap();
+        assert_eq!(poll.in_flight, Some(action.clone()));
+        assert_eq!(poll.acknowledged, 0);
+        let mut history = History::load(dir.path().join("history.json"));
+        let roots = Roots::new(dir.path(), None, &[]);
+        assert!(run(&path, &[action], &roots, entry(), &mut history).is_err());
+        assert!(!documents.join("interrupted").exists());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        acknowledge(&path, &mut history).unwrap();
+        assert!(status(&path).unwrap().is_none());
+    }
+
+    #[test]
+    fn contradictory_persisted_index_requires_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("operation-journal.json");
+        let action = Action::CreateFolder { path: dir.path().join("Documents/unused") };
+        let record = Record { actions: vec![action], state: State::StepInFlight { entry: entry(), index: 1 } };
+        assert!(sync(&path, &record).is_err());
+        settings::save_store(&path, &record, Store::Journal).unwrap();
+        let poll = status(&path).unwrap().unwrap();
+        assert!(poll.reason.unwrap().contains("preserved"));
+    }
+
+    #[test]
+    fn published_move_and_staging_cleanup_failures_are_undoable() {
+        use crate::fsx::{STAGE_CLEANUP_FAILURE, UNLINK_FAILURE};
+        for (injection, move_file) in [(&UNLINK_FAILURE, true), (&STAGE_CLEANUP_FAILURE, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let documents = dir.path().join("Documents");
+            std::fs::create_dir(&documents).unwrap();
+            let roots = Roots::new(dir.path(), None, &[]);
+            let source = documents.join("a");
+            let target = documents.join("b");
+            let next = documents.join("never-ran");
+            std::fs::write(&source, b"original").unwrap();
+            let copy = Action::Copy { from: source.clone(), to: target.clone() };
+            let action = if move_file { Action::Move { from: source.clone(), to: target.clone() } } else { copy.clone() };
+            let history_path = dir.path().join("history.json");
+            let mut history = History::load(history_path.clone());
+            let path = history.journal_path();
+            injection.with(|failure| failure.set(true));
+            let result = run(&path, &[action, Action::CreateFolder { path: next.clone() }], &roots, entry(), &mut history);
+            injection.with(|failure| failure.set(false));
+            let out = result.unwrap();
+            assert!(matches!(out.terminal, RunOutcome::Failed { partial: true, .. }));
+            assert_eq!(out.done, vec![copy]);
+            assert!(status(&path).unwrap().is_none());
+            assert!(!next.exists());
+            assert_eq!(std::fs::read(&source).unwrap(), b"original");
+            assert_eq!(std::fs::read(&target).unwrap(), b"original");
+
+            let mut history = History::load(history_path);
+            let undo = undo_actions(history.last_undoable().unwrap());
+            assert_eq!(undo, vec![Action::Trash { path: target.clone() }]);
+            let attempt = Entry::new(2, "undo last".into(), Some(1));
+            assert!(matches!(run(&path, &undo, &roots, attempt, &mut history).unwrap().terminal, RunOutcome::Completed));
+            assert!(!target.exists());
+            assert_eq!(std::fs::read(&source).unwrap(), b"original");
+            assert_eq!(std::fs::read(dir.path().join(".Trash/b")).unwrap(), b"original");
+        }
+    }
+
+    #[test]
+    fn uncertain_step_blocks_mutations_until_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let documents = dir.path().join("Documents");
+        std::fs::create_dir(&documents).unwrap();
+        let roots = Roots::new(dir.path(), None, &[]);
+        let mut history = History::load(dir.path().join("history.json"));
+        let path = history.journal_path();
+        let source = documents.join("a");
+        std::fs::write(&source, b"original").unwrap();
+        std::fs::write(dir.path().join(".Trash"), b"blocked").unwrap();
+        let trash = Action::Trash { path: source.clone() };
+        let next = Action::CreateFolder { path: documents.join("next") };
+        let out = run(&path, &[trash.clone(), next.clone()], &roots, entry(), &mut history).unwrap();
+        assert!(matches!(out.terminal, RunOutcome::NeedsReview { .. }));
+        assert!(out.done.is_empty());
+        assert_eq!(status(&path).unwrap().unwrap().in_flight, Some(trash));
+        assert!(run(&path, std::slice::from_ref(&next), &roots, entry(), &mut history).is_err());
+        assert!(!documents.join("next").exists());
+        acknowledge(&path, &mut history).unwrap();
+        assert!(matches!(run(&path, &[next], &roots, entry(), &mut history).unwrap().terminal, RunOutcome::Completed));
+        assert_eq!(std::fs::read(source).unwrap(), b"original");
     }
 
     #[test]
@@ -324,26 +554,29 @@ mod tests {
         let c = dir.path().join("Documents/c");
         std::fs::write(&a, b"original").unwrap();
         let first = Action::Move { from: a.clone(), to: b.clone() };
-        let second = Action::Move { from: dir.path().join("Documents/missing"), to: c.clone() };
+        let remaining_path = dir.path().join("Documents/remaining");
+        std::fs::write(&remaining_path, b"remaining").unwrap();
+        std::fs::write(&c, b"collision").unwrap();
+        let second = Action::Move { from: remaining_path, to: c.clone() };
         let history_path = dir.path().join("history.json");
         let mut history = History::load(history_path.clone());
-        history.try_push(Entry { inverse: vec![first.clone(), second.clone()], ..entry() }).unwrap();
+        history.try_push(entry_with_inverses(&[first.clone(), second.clone()])).unwrap();
         let path = dir.path().join("operation-journal.json");
         let undo = Entry { id: 2, undo_of: Some(1), ..entry() };
         let out = run(&path, &[first, second.clone()], &roots, undo, &mut history).unwrap();
         assert_eq!(out.done.len(), 1);
-        assert!(out.error.is_some());
+        assert!(out.terminal.error().is_some());
         let mut history = History::load(history_path.clone());
         let remaining = history.last_undoable().unwrap();
         assert_eq!(remaining.id, 1);
-        assert!(!remaining.undone);
-        assert_eq!(remaining.inverse, vec![second.clone()]);
-        std::fs::write(dir.path().join("Documents/missing"), b"remaining").unwrap();
+        assert!(matches!(remaining.state, EntryState::PartiallyUndone(_)));
+        assert_eq!(undo_actions(remaining), vec![second.clone()]);
+        std::fs::remove_file(&c).unwrap();
         let undo = Entry { id: 3, undo_of: Some(1), ..entry() };
-        assert!(run(&path, &[second], &roots, undo, &mut history).unwrap().error.is_none());
+        assert!(run(&path, &[second], &roots, undo, &mut history).unwrap().terminal.error().is_none());
         let history = History::load(history_path);
-        assert!(history.entries[0].undone);
-        assert!(history.entries[0].inverse.is_empty());
+        assert!(matches!(history.entries[0].state, EntryState::Exhausted));
+        assert!(history.entries[0].inverses().is_empty());
         assert!(b.exists() && c.exists() && !a.exists());
     }
 
@@ -359,25 +592,70 @@ mod tests {
         std::fs::write(documents.join("b"), b"second").unwrap();
         let history_path = dir.path().join("history.json");
         let mut history = History::load(history_path.clone());
-        history.try_push(Entry { inverse: vec![first.clone(), second.clone()], ..entry() }).unwrap();
+        history.try_push(entry_with_inverses(&[first.clone(), second.clone()])).unwrap();
         let path = history.journal_path();
         let undo = Entry { id: 2, undo_of: Some(1), ..entry() };
-        let out =
-            super::run(&path, &[first.clone(), second.clone()], &roots, undo, &mut history, &|| documents.join("a-restored").exists())
-                .unwrap();
-        assert!(out.cancelled && out.error.is_none());
+        let out = super::run(&path, &[first.clone(), second.clone()], &roots, undo.command, undo.undo_of, &mut history, &|| {
+            documents.join("a-restored").exists()
+        })
+        .unwrap();
+        assert!(matches!(out.terminal, RunOutcome::Cancelled));
         assert_eq!(out.done, vec![first]);
-        let record = read(&path).unwrap();
-        assert!(record.finished && record.in_flight.is_none());
+        let record = read(&path).unwrap().unwrap();
+        assert!(matches!(record.state, State::Finished(_)));
         assert!(status(&path).unwrap().is_none());
 
         let mut history = History::load(history_path.clone());
-        assert_eq!(history.last_undoable().unwrap().inverse, vec![second.clone()]);
+        assert_eq!(undo_actions(history.last_undoable().unwrap()), vec![second.clone()]);
         let undo = Entry { id: 3, undo_of: Some(1), ..entry() };
-        assert!(run(&path, &[second], &roots, undo, &mut history).unwrap().error.is_none());
+        assert!(run(&path, &[second], &roots, undo, &mut history).unwrap().terminal.error().is_none());
         assert!(History::load(history_path).last_undoable().is_none());
         assert_eq!(std::fs::read(documents.join("a-restored")).unwrap(), b"first");
         assert_eq!(std::fs::read(documents.join("b-restored")).unwrap(), b"second");
+    }
+
+    #[test]
+    fn cancelled_undo_keeps_the_identity_restored_by_a_completed_inverse() {
+        use crate::fsx::FileIdentity;
+        let dir = tempfile::tempdir().unwrap();
+        let documents = dir.path().join("Documents");
+        std::fs::create_dir(&documents).unwrap();
+        let original = documents.join("converted.png");
+        let backup = documents.join("backup.png");
+        std::fs::write(&original, b"converted").unwrap();
+        let remove = Action::Trash { path: original.clone() };
+        let remove_original = Inverse::capture(remove.clone(), &[FileIdentity::read(&original).unwrap()]).unwrap();
+        std::fs::copy(&original, &backup).unwrap();
+        std::fs::write(&original, b"resized").unwrap();
+        let restore = Action::Restore { from: backup.clone(), to: original.clone() };
+        let restore_backup =
+            Inverse::capture(restore.clone(), &[FileIdentity::read(&backup).unwrap(), FileIdentity::read(&original).unwrap()]).unwrap();
+        let history_path = dir.path().join("history.json");
+        let mut history = History::load(history_path.clone());
+        history.try_push(Entry { state: EntryState::with_inverses(vec![restore_backup, remove_original]), ..entry() }).unwrap();
+        let path = history.journal_path();
+        let cancelled = super::run(
+            &path,
+            &[restore, remove.clone()],
+            &Roots::new(dir.path(), None, &[]),
+            "undo last".into(),
+            Some(1),
+            &mut history,
+            &|| !backup.exists(),
+        )
+        .unwrap();
+        assert!(matches!(cancelled.terminal, RunOutcome::Cancelled));
+
+        let mut history = History::load(history_path);
+        let remaining = history.last_undoable().unwrap();
+        assert!(matches!(remaining.state, EntryState::PartiallyUndone(_)));
+        assert_eq!(undo_actions(remaining), vec![remove.clone()]);
+        validate_inverses(remaining.inverses()).unwrap();
+        let roots = Roots::new(dir.path(), None, &[]);
+        let attempt = Entry::new(3, "undo last".into(), Some(1));
+        assert!(matches!(run(&path, &[remove], &roots, attempt, &mut history).unwrap().terminal, RunOutcome::Completed));
+        assert!(!original.exists());
+        assert_eq!(std::fs::read(dir.path().join(".Trash/converted.png")).unwrap(), b"resized");
     }
 
     #[test]
@@ -397,10 +675,11 @@ mod tests {
             let path = dir.path().join("operation-journal.json");
             let mut history = History::load(dir.path().join("history.json"));
             let out = run(&path, &[Action::Move { from: source, to: target.clone() }], &roots, entry(), &mut history).unwrap();
-            assert!(out.error.is_some());
-            let record = read(&path).unwrap();
-            assert!(record.finished && record.in_flight.is_none());
-            assert_eq!(record.error, out.error);
+            assert!(out.terminal.error().is_some());
+            let record = read(&path).unwrap().unwrap();
+            assert!(matches!(record.state, State::Finished(_)));
+            let State::Finished(progress) = record.state else { unreachable!() };
+            assert_eq!(progress.error.as_deref(), out.terminal.error());
             assert!(status(&path).unwrap().is_none());
             recover(&path, &mut history).unwrap();
             run(&path, &[Action::CreateFolder { path: dir.path().join("Documents/next") }], &roots, entry(), &mut history).unwrap();
@@ -412,17 +691,17 @@ mod tests {
 
     #[test]
     fn interruption_requires_review_and_archives_exact_evidence() {
-        for in_flight in [None, Some(0)] {
+        for in_flight in [None, Some(1)] {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("operation-journal.json");
             let mut history = History::load(dir.path().join("history.json"));
             let action = Action::Move { from: dir.path().join("Downloads/a"), to: dir.path().join("Documents/a") };
-            let record = Record {
-                entry: Some(Entry { done: vec![action.clone()], ..entry() }),
-                actions: vec![action.clone()],
-                in_flight,
-                ..Record::default()
+            let entry = Entry { done: vec![action.clone()], ..entry() };
+            let state = match in_flight {
+                Some(index) => State::StepInFlight { entry, index },
+                None => State::Acknowledged { count: 1, progress: Progress { entry, error: None } },
             };
+            let record = Record { actions: vec![action.clone(), action.clone()], state };
             sync(&path, &record).unwrap();
             let original = std::fs::read(&path).unwrap();
             let status = status(&path).unwrap().unwrap();
@@ -452,7 +731,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("journal.json");
         let action = Action::CreateFolder { path: dir.path().join("Documents/a") };
-        sync(&path, &Record { entry: Some(Entry { done: vec![action], ..entry() }), ..Record::default() }).unwrap();
+        let progress = Progress { entry: Entry { done: vec![action.clone()], ..entry() }, error: None };
+        sync(&path, &Record { actions: vec![action], state: State::Acknowledged { progress, count: 1 } }).unwrap();
         let original = std::fs::read(&path).unwrap();
         std::fs::create_dir(dir.path().join("history.json")).unwrap();
         let mut history = History::load(dir.path().join("history.json"));
@@ -473,15 +753,7 @@ mod tests {
                 Action::Move { from: home.join("Downloads/b"), to: home.join("Documents/b") },
             ],
             &roots,
-            Entry {
-                id: 1,
-                time: chrono::Local::now(),
-                command: "move".into(),
-                done: vec![],
-                inverse: vec![],
-                undone: false,
-                undo_of: None,
-            },
+            Entry::new(1, "move".into(), None),
             &mut history,
         )
         .unwrap();
@@ -490,7 +762,7 @@ mod tests {
     #[test]
     fn crash_boundaries_never_replay_mutations() {
         for point in ["before_sync", "after_sync", "before_mutation", "after_mutation"] {
-            let count = if point.ends_with("sync") { 6 } else { 2 };
+            let count = if point.ends_with("sync") { 7 } else { 2 };
             for nth in 1..=count {
                 let dir = tempfile::tempdir().unwrap();
                 for folder in ["Downloads", "Documents"] {

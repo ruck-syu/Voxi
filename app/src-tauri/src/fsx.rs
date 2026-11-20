@@ -299,41 +299,121 @@ pub fn revalidate_parent(path: &Path, expected: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// No-replace publication using the same claims as executor move/copy.
-/// Directories are claimed before rename; files are linked before unlink.
-pub fn rename_exclusive(from: &Path, to: &Path) -> Result<(), String> {
-    let parent = fs::canonicalize(to.parent().ok_or("Missing parent")?).map_err(|e| e.to_string())?;
-    revalidate_parent(to, &parent)?;
-    if fs::symlink_metadata(from).map_err(|e| e.to_string())?.is_dir() {
-        fs::create_dir(to).map_err(|e| format!("Cannot claim {}: {e}", to.display()))?;
-        if let Err(e) = fs::rename(from, to) {
-            let _ = fs::remove_dir(to);
-            return Err(format!("Cannot publish {}: {e}", to.display()));
-        }
-    } else {
-        if let Err(e) = fs::hard_link(from, to) {
-            return rename_after_link_failure(from, to, e);
-        }
-        fs::remove_file(from).map_err(|e| format!("Published {}; source remains at {}: {e}", to.display(), from.display()))?;
-    }
-    Ok(())
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FileIdentity {
+    dev: u64,
+    ino: u64,
+    size: u64,
+    mtime: i64,
+    mtime_nsec: i64,
 }
 
-// Preserve the original hard-link error if the platform fallback cannot publish.
-fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    if matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK)) {
-        use std::{ffi::CString, os::unix::ffi::OsStrExt};
-        if let (Ok(from), Ok(to)) = (CString::new(from.as_os_str().as_bytes()), CString::new(to.as_os_str().as_bytes())) {
-            // SAFETY: both C strings are live, NUL-terminated paths. EXCL forbids replacement.
-            if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) } == 0 {
-                return Ok(());
-            }
+impl FileIdentity {
+    pub(crate) fn read(path: &Path) -> std::io::Result<Self> {
+        fs::symlink_metadata(path).map(|meta| Self::from_metadata(&meta))
+    }
+
+    pub(crate) fn from_metadata(meta: &fs::Metadata) -> Self {
+        Self { dev: meta.dev(), ino: meta.ino(), size: meta.len(), mtime: meta.mtime(), mtime_nsec: meta.mtime_nsec() }
+    }
+
+    pub(crate) fn same_object(&self, other: &Self) -> bool {
+        self.dev == other.dev && self.ino == other.ino
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PublishError {
+    Clean(String),
+    Published { identity: FileIdentity, message: String },
+    Uncertain(String),
+    CrossDevice(String),
+}
+
+impl From<String> for PublishError {
+    fn from(message: String) -> Self {
+        Self::Clean(message)
+    }
+}
+
+pub(crate) type Publication = Result<FileIdentity, PublishError>;
+
+/// Capture the identity before publication, so a replacement at the output
+/// cannot be mistaken for the result of this operation.
+pub(crate) fn rename_exclusive(from: &Path, to: &Path) -> Publication {
+    let parent = fs::canonicalize(to.parent().ok_or_else(|| "Missing parent".to_string())?).map_err(|e| e.to_string())?;
+    revalidate_parent(to, &parent)?;
+    let meta = fs::symlink_metadata(from).map_err(|e| e.to_string())?;
+    let identity = FileIdentity::from_metadata(&meta);
+    if meta.is_dir() {
+        rename_no_replace(from, to).map_err(|error| rename_error(to, error))?;
+    } else if let Err(error) = fs::hard_link(from, to) {
+        rename_after_link_failure(from, to, error)?;
+    } else {
+        // A source replaced after publication must never be unlinked.
+        if !FileIdentity::read(from).is_ok_and(|current| current == identity)
+            || !FileIdentity::read(to).is_ok_and(|current| current == identity)
+        {
+            return Err(PublishError::Uncertain(format!(
+                "The source {} or published destination {} changed during the move.",
+                from.display(),
+                to.display()
+            )));
+        }
+        if let Err(e) = unlink_published_source(from) {
+            let message = format!("Published {}; couldn't remove source {}: {e}", to.display(), from.display());
+            return Err(
+                if FileIdentity::read(from).is_ok_and(|current| current == identity)
+                    && FileIdentity::read(to).is_ok_and(|current| current == identity)
+                {
+                    PublishError::Published { identity, message }
+                } else {
+                    PublishError::Uncertain(message)
+                },
+            );
         }
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = from;
-    Err(format!("Cannot claim {}: {error}", to.display()))
+    Ok(identity)
+}
+
+fn unlink_published_source(from: &Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if UNLINK_FAILURE.with(|failure| failure.get()) {
+        return Err(std::io::Error::other("Injected source cleanup failure"));
+    }
+    fs::remove_file(from)
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static UNLINK_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    pub(crate) static STAGE_CLEANUP_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn rename_error(to: &Path, error: std::io::Error) -> PublishError {
+    let message = format!("Cannot publish {}: {error}", to.display());
+    if error.raw_os_error() == Some(libc::EXDEV) { PublishError::CrossDevice(message) } else { PublishError::Clean(message) }
+}
+
+fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> Result<(), PublishError> {
+    if error.kind() == std::io::ErrorKind::Unsupported || matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK)) {
+        return rename_no_replace(from, to).map_err(|error| rename_error(to, error));
+    }
+    Err(rename_error(to, error))
+}
+
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let from = CString::new(from.as_os_str().as_bytes())?;
+    let to = CString::new(to.as_os_str().as_bytes())?;
+    // SAFETY: both C strings are live and NUL-terminated. The flags forbid replacement.
+    #[cfg(target_os = "macos")]
+    let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+    #[cfg(target_os = "linux")]
+    let result = unsafe { libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE) };
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let result = -1;
+    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
 
 /// An exclusive mode-0700 directory in the output's parent. Writers may
@@ -366,8 +446,12 @@ impl Staging {
         Err("Cannot claim staging directory".into())
     }
     /// Remove only our private tree, reporting any evidence that could not be cleaned.
-    pub fn finish(&self, result: Result<(), String>) -> Result<(), String> {
+    pub(crate) fn finish(&self, result: Publication) -> Publication {
         let cleanup = (|| {
+            #[cfg(test)]
+            if STAGE_CLEANUP_FAILURE.with(|failure| failure.get()) {
+                return Err("Injected stage cleanup failure".into());
+            }
             let before = self.dir_handle.metadata().map_err(|e| e.to_string())?;
             let now = fs::symlink_metadata(&self.dir).map_err(|e| e.to_string())?;
             if before.dev() != now.dev() || before.ino() != now.ino() {
@@ -375,23 +459,38 @@ impl Staging {
             }
             fs::remove_dir_all(&self.dir).map_err(|e| e.to_string())
         })();
-        match (result, cleanup) {
-            (result, Ok(())) => result,
-            (result, Err(e)) => Err(format!(
-                "{}; staging cleanup failed at {}: {e}",
-                result.err().unwrap_or_else(|| "Output published successfully".into()),
-                self.dir.display()
-            )),
-        }
+        let Err(error) = cleanup else { return result };
+        let append = |message: &str| format!("{message}; staging cleanup failed at {}: {error}", self.dir.display());
+        Err(match result {
+            Ok(identity) => PublishError::Published { identity, message: append("Output published successfully") },
+            Err(PublishError::Published { identity, message }) => PublishError::Published { identity, message: append(&message) },
+            Err(PublishError::Uncertain(message)) => PublishError::Uncertain(append(&message)),
+            Err(PublishError::Clean(message) | PublishError::CrossDevice(message)) => PublishError::Clean(append(&message)),
+        })
     }
-    pub fn publish(&self, output: &Path) -> Result<(), String> {
+    pub(crate) fn publish(&self, output: &Path) -> Publication {
+        self.validate_parent(output)?;
+        rename_exclusive(&self.path, output)
+    }
+
+    pub(crate) fn replace(&self, output: &Path, expected: &FileIdentity) -> Publication {
+        self.validate_parent(output)?;
+        if !FileIdentity::read(output).is_ok_and(|current| current == *expected) {
+            return Err(format!("Stopped: {} changed while preparing the replacement.", output.display()).into());
+        }
+        let identity = FileIdentity::read(&self.path).map_err(|e| e.to_string())?;
+        fs::rename(&self.path, output).map_err(|e| format!("Cannot replace {}: {e}", output.display()))?;
+        Ok(identity)
+    }
+
+    fn validate_parent(&self, output: &Path) -> Result<(), String> {
         revalidate_parent(output, &self.parent)?;
         let before = self.parent_handle.metadata().map_err(|e| e.to_string())?;
         let now = fs::metadata(&self.parent).map_err(|e| e.to_string())?;
         if before.dev() != now.dev() || before.ino() != now.ino() {
             return Err("Stopped: output parent was replaced".into());
         }
-        rename_exclusive(&self.path, output)
+        Ok(())
     }
 }
 impl Drop for Staging {
@@ -407,9 +506,9 @@ impl Drop for Staging {
 }
 
 /// Generate privately, then publish with a no-replace claim.
-pub fn staged_output(output: &Path, write: impl FnOnce(&Path) -> Result<(), String>) -> Result<(), String> {
+pub(crate) fn staged_output(output: &Path, write: impl FnOnce(&Path) -> Result<(), String>) -> Publication {
     let stage = Staging::new(output)?;
-    let result = write(&stage.path).and_then(|()| stage.publish(output));
+    let result = write(&stage.path).map_err(PublishError::Clean).and_then(|()| stage.publish(output));
     stage.finish(result)
 }
 

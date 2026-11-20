@@ -18,6 +18,7 @@ impl Fixture {
             history: Mutex::new(History::load(home.join("history.json"))),
             pending: Mutex::new(None),
             settings: Mutex::new(Settings::default()),
+            settings_blocked: None,
             settings_path: home.join("settings.json"),
             reports_path: home.join("reports.jsonl"),
             next_plan: AtomicU64::new(1),
@@ -354,6 +355,7 @@ fn rule_only_probe() {
         history: Mutex::new(History::load(home.join("history.json"))),
         pending: Mutex::new(None),
         settings: Mutex::new(Settings::default()),
+        settings_blocked: None,
         settings_path: home.join("settings.json"),
         reports_path: home.join("reports.jsonl"),
         next_plan: AtomicU64::new(1),
@@ -1778,4 +1780,22 @@ fn a_stop_during_a_refused_confirm_does_not_carry_over() {
     let result = confirm_reporting(&f.state, id, &[]).unwrap();
     assert!(!result.cancelled && result.error.is_none(), "{result:?}");
     assert!(!a.exists());
+}
+
+#[test]
+fn settings_write_blocked_refuses_save_and_surfaces_warning() {
+    let mut f = Fixture::new();
+    let bad = br#"{"version":1,"data":{"hotkey":12345}}"#;
+    fs::write(&f.state.settings_path, bad).unwrap();
+    settings::WRITE_FAILURE.with(|fail| fail.set(5));
+    let (loaded, warning) = Settings::load_with_warning(&f.state.settings_path);
+    settings::WRITE_FAILURE.with(|fail| fail.set(0));
+    let warning = warning.unwrap();
+    assert!(warning.write_blocked);
+    assert!(warning.backup.is_none());
+    *f.state.settings.lock().unwrap() = loaded;
+    f.state.settings_blocked = warning.write_blocked.then_some(warning.message.clone());
+    let err = f.state.ensure_settings_writable().unwrap_err();
+    assert_eq!(err, warning.message);
+    assert_eq!(fs::read(&f.state.settings_path).unwrap(), bad);
 }

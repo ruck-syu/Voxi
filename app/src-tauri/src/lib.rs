@@ -165,6 +165,7 @@ struct AppState {
     history: Mutex<History>,
     pending: Mutex<Option<Pending>>,
     settings: Mutex<Settings>,
+    settings_blocked: Option<String>,
     schedules: Mutex<scheduler::Store>,
     execution: Mutex<()>,
     active_runs: ActiveRuns,
@@ -179,6 +180,16 @@ struct AppState {
     /// results-list generation it belongs to. It shows only while that list
     /// is current; one with no generation (sent before setup) shows once.
     selection_notice: Mutex<Option<(Option<u64>, String)>>,
+}
+
+impl AppState {
+    fn ensure_settings_writable(&self) -> Result<(), String> {
+        if let Some(reason) = &self.settings_blocked {
+            diagnostics::emit(Event::new(Code::StoreSave, Stage::Failed).store(diagnostics::Store::Settings));
+            return Err(reason.clone());
+        }
+        Ok(())
+    }
 }
 
 fn home() -> PathBuf {
@@ -1591,6 +1602,7 @@ fn get_settings(app: AppHandle, state: State<AppState>) -> Result<Settings, Stri
 
 #[tauri::command]
 fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings) -> Result<Settings, settings::SaveError> {
+    state.ensure_settings_writable()?;
     settings.validate_shortcuts()?;
     settings.validate_nicknames(&home())?;
     let mut current = state.settings.lock().map_err(|_| "Settings unavailable. Restart Voxi.")?;
@@ -1812,6 +1824,7 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             let settings_path = config_dir.join("settings.json");
             let (settings, settings_warning) = Settings::load_with_warning(&settings_path);
+            let settings_blocked = settings_warning.as_ref().filter(|w| w.write_blocked).map(|w| w.message.clone());
             let (mut history, history_warning) = History::load_with_warning(data_dir.join("history.json"));
             let mut storage_notices: Vec<String> = [settings_warning, history_warning]
                 .into_iter()
@@ -1842,6 +1855,7 @@ pub fn run() {
                 history: Mutex::new(history),
                 pending: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
+                settings_blocked,
                 schedules: Mutex::new(scheduler::Store::load(data_dir.join("schedules.json"))),
                 execution: Mutex::new(()),
                 active_runs: Mutex::new(HashMap::new()),

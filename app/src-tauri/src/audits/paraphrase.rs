@@ -323,6 +323,7 @@ fn state_for(home: &Path) -> AppState {
         history: Mutex::new(History::load(home.join("history.json"))),
         pending: Mutex::new(None),
         settings: Mutex::new(Settings::default()),
+        settings_blocked: None,
         schedules: Mutex::new(crate::scheduler::Store::load(home.join("schedules.json"))),
         execution: Mutex::new(()),
         active_runs: Mutex::default(),

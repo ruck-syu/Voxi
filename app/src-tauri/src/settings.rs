@@ -106,10 +106,7 @@ pub(crate) fn load_store<T: serde::de::DeserializeOwned + Default>(path: &Path, 
             diagnostics::emit(
                 Event::new(Code::StoreBackup, if backup.is_ok() { Stage::Preserved } else { Stage::BackupFailed }).store(store),
             );
-            let blocked = backup.is_err()
-                || serde_json::from_slice::<serde_json::Value>(&bytes)
-                    .ok()
-                    .is_some_and(|v| v.get("version").is_some() && v.get("version").and_then(|n| n.as_u64()) != Some(STORE_VERSION));
+            let blocked = backup.is_err() || unsupported_store_version(&bytes).is_some();
             let message = match &backup {
                 Ok(p) => format!("Store is unreadable ({error}); preserved at {}.", p.display()),
                 Err(e) => format!("Store is unreadable ({error}); couldn't preserve it ({e}). Original kept."),
@@ -205,6 +202,21 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Durability, Stri
     })
 }
 
+fn has_matching_backup(path: &Path, bytes: &[u8]) -> bool {
+    let Some(name) = path.file_name() else { return false };
+    let prefix = format!("{}.corrupt-", name.to_string_lossy());
+    let Ok(entries) = fs::read_dir(parent_dir(path)) else { return false };
+    for entry in entries.flatten() {
+        let candidate = entry.path();
+        if candidate.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&prefix))
+            && fs::read(&candidate).is_ok_and(|saved| saved == bytes)
+        {
+            return true;
+        }
+    }
+    false
+}
+
 /// Inspect the version without deserializing the complete store. Corrupt JSON
 /// must be durably preserved before replacement, even if no load was attempted.
 fn save_blocked_by_version(path: &Path, store: Store) -> Option<String> {
@@ -214,6 +226,9 @@ fn save_blocked_by_version(path: &Path, store: Store) -> Option<String> {
         Err(e) => return Some(format!("Couldn't read store: {e}. Original kept.")),
     };
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        if has_matching_backup(path, &bytes) {
+            return None;
+        }
         let result = preserve_store(path, &bytes);
         diagnostics::emit(Event::new(Code::StoreBackup, if result.is_ok() { Stage::Preserved } else { Stage::BackupFailed }).store(store));
         return result.err();
@@ -224,6 +239,25 @@ fn save_blocked_by_version(path: &Path, store: Store) -> Option<String> {
         Some(v) => Some(format!("Unsupported store version {v}; expected {STORE_VERSION}")),
         None => Some("Invalid store version".into()),
     }
+}
+
+/// Ensure an existing store either decodes cleanly as `T` or is durably
+/// preserved before being overwritten. Unsupported versions still block writes.
+fn ensure_decodable_or_preserved<T: serde::de::DeserializeOwned>(path: &Path, store: Store) -> Result<(), String> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("Couldn't read store: {e}. Original kept.")),
+    };
+    if let Some(reason) = unsupported_store_version(&bytes) {
+        return Err(reason);
+    }
+    if decode_store::<T>(&bytes).is_ok() || has_matching_backup(path, &bytes) {
+        return Ok(());
+    }
+    let result = preserve_store(path, &bytes);
+    diagnostics::emit(Event::new(Code::StoreBackup, if result.is_ok() { Stage::Preserved } else { Stage::BackupFailed }).store(store));
+    result.map(|_| ())
 }
 
 pub(crate) fn save_store<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<Durability, String> {
@@ -544,6 +578,10 @@ impl Settings {
     }
 
     pub(crate) fn save(&self, path: &Path) -> Result<Durability, String> {
+        if let Err(error) = ensure_decodable_or_preserved::<Self>(path, Store::Settings) {
+            diagnostics::emit(Event::new(Code::StoreSave, Stage::Failed).store(Store::Settings));
+            return Err(error);
+        }
         save_store(path, self, Store::Settings)
     }
 
@@ -978,5 +1016,37 @@ mod raw_budget_tests {
         WRITE_FAILURE.with(|f| f.set(0));
         assert!(result.is_err());
         assert_eq!(fs::read(path).unwrap(), b"corrupt");
+    }
+
+    #[test]
+    fn valid_json_v1_schema_error_requires_backup_before_overwrite() {
+        for bad in [
+            br#"{"version":1,"data":{"hotkey":12345}}"#.as_slice(),
+            br#"{"hotkey":12345}"#.as_slice(),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("settings.json");
+            fs::write(&path, bad).unwrap();
+            WRITE_FAILURE.with(|f| f.set(5));
+            let (settings, warning) = Settings::load_with_warning(&path);
+            let warning = warning.unwrap();
+            assert!(warning.write_blocked);
+            assert!(warning.backup.is_none());
+            // Saving while backup still fails must refuse to overwrite the file.
+            assert!(settings.save(&path).is_err());
+            WRITE_FAILURE.with(|f| f.set(0));
+            assert_eq!(fs::read(&path).unwrap(), bad);
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+            // Once backup succeeds, saving must preserve the original before overwriting.
+            settings.save(&path).unwrap();
+            let backups: Vec<_> = fs::read_dir(dir.path())
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .filter(|p| p.to_string_lossy().contains(".corrupt-"))
+                .collect();
+            assert_eq!(backups.len(), 1);
+            assert_eq!(fs::read(&backups[0]).unwrap(), bad);
+            assert!(Settings::load_with_warning(&path).1.is_none());
+        }
     }
 }

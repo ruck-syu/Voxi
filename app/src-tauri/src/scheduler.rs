@@ -684,7 +684,7 @@ impl Store {
     pub fn notice(&self) -> Option<String> {
         self.unavailable.clone().or_else(|| self.notice.clone())
     }
-    fn save(&self) -> Result<(), String> {
+    fn save(&mut self) -> Result<(), String> {
         if let Some(error) = &self.unavailable {
             crate::settings::diagnostics::emit(
                 crate::settings::diagnostics::Event::new(
@@ -695,7 +695,12 @@ impl Store {
             );
             return Err(error.clone());
         }
-        crate::settings::save_store(&self.path, &self.jobs, crate::settings::diagnostics::Store::Schedules)
+        if let crate::settings::Durability::Uncertain(warning) =
+            crate::settings::save_store(&self.path, &self.jobs, crate::settings::diagnostics::Store::Schedules)?
+        {
+            self.notice = Some(warning);
+        }
+        Ok(())
     }
 
     pub fn add(&mut self, mut job: Job) -> Result<(), String> {

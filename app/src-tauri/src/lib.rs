@@ -1545,12 +1545,16 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
         }
         Ok(())
     });
-    if let Err(e) = result {
-        diagnostics::emit(Event::new(Code::LoginItem, Stage::Failed));
-        if settings.hotkey != old.hotkey {
-            let _ = register_hotkey(&app, &old.hotkey);
+    match result {
+        Ok(settings::Durability::Durable) => {}
+        Ok(settings::Durability::Uncertain(warning)) => eprintln!("{warning}"),
+        Err(e) => {
+            diagnostics::emit(Event::new(Code::LoginItem, Stage::Failed));
+            if settings.hotkey != old.hotkey {
+                let _ = register_hotkey(&app, &old.hotkey);
+            }
+            return Err(e);
         }
-        return Err(e);
     }
     *roots = build_roots(&settings);
     *current = settings.clone();

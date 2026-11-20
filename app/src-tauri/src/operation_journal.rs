@@ -28,7 +28,7 @@ struct Record {
 
 fn sync(path: &Path, record: &Record) -> Result<(), String> {
     checkpoint("before_sync");
-    settings::save_store(path, record, Store::Journal)?;
+    settings::save_store(path, record, Store::Journal)?.require_durable()?;
     checkpoint("after_sync");
     Ok(())
 }
@@ -67,7 +67,7 @@ fn read(path: &Path) -> Result<Record, String> {
             let record = Record { unknown: true, ..Record::default() };
             // Already preserved above: bypass save_store's second corruption backup.
             let marker = serde_json::json!({ "version": settings::STORE_VERSION, "data": &record });
-            settings::atomic_write(path, &serde_json::to_vec(&marker).map_err(|e| e.to_string())?)?;
+            settings::atomic_write(path, &serde_json::to_vec(&marker).map_err(|e| e.to_string())?)?.require_durable()?;
             Ok(record)
         }
     }

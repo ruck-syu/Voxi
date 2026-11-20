@@ -101,7 +101,7 @@ impl History {
             );
             return Err(error);
         }
-        save_store(&self.path, &self.entries, crate::settings::diagnostics::Store::History)
+        save_store(&self.path, &self.entries, crate::settings::diagnostics::Store::History)?.require_durable()
     }
 }
 

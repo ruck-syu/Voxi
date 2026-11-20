@@ -463,6 +463,7 @@ pub enum Outcome {
         warnings: Vec<String>,
         is_undo: bool,
         scheduled_for: Option<chrono::DateTime<chrono::Local>>,
+        first_run: crate::scheduler::FirstRunPolicy,
         /// How often a repeating task runs, such as “every 3 days”.
         repeats: Option<String>,
     },

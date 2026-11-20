@@ -461,7 +461,7 @@ function CommandView({
     const plan = phase.outcome;
     const skipped = skip.id === plan.id ? skip.steps : [];
     if (skipped.length >= plan.total) return;
-    const canStop = !plan.scheduledFor || !!plan.repeats?.startsWith("Runs now, then ");
+    const canStop = plan.firstRun === "immediate" || plan.firstRun === "runNowAndRepeat";
     activeRun.current = { id: plan.id, canStop, stopping: false };
     setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
@@ -1039,7 +1039,7 @@ function Body(props: {
               {props.skipped.length >= o.total && " Tick at least one to run."}
             </p>
           )}
-          {o.repeats?.startsWith("Runs now, then ") && <p className="quiet">{o.repeats}</p>}
+          {o.firstRun === "runNowAndRepeat" && <p className="quiet">{o.repeats}</p>}
           {o.warnings.map((w) => (
             <p key={w} className="quiet">
               {w}
@@ -1047,7 +1047,7 @@ function Body(props: {
           ))}
           <div className="actions">
             <button className="primary-button" onClick={props.onConfirm} disabled={props.skipped.length >= o.total}>
-              {o.repeats?.startsWith("Runs now, then ") ? "Run now and repeat" : o.repeats ? "Schedule repeating task" : o.scheduledFor ? "Schedule task" : o.isUndo ? "Undo" : runLabel(o.total - props.skipped.length)}
+              {o.firstRun === "runNowAndRepeat" ? "Run now and repeat" : o.firstRun === "repeatLater" ? "Schedule repeating task" : o.firstRun === "oneTimeDeferred" ? "Schedule task" : o.isUndo ? "Undo" : runLabel(o.total - props.skipped.length)}
               <kbd>↩</kbd>
             </button>
             <button className="secondary" onClick={props.onCancel}>
@@ -1068,7 +1068,12 @@ function Footer({ phase, asking, onSettings }: { phase: Phase; asking: boolean; 
       : phase.k === "ready"
         ? "Enter to preview. Shift-Enter for a new line."
         : phase.k === "outcome" && phase.outcome.status === "plan"
-          ? (phase.outcome.scheduledFor ? (phase.outcome.repeats?.startsWith("Runs now, then ") ? "Enter to run now and repeat. Later runs won't ask first. Esc to cancel." : phase.outcome.repeats ? "Enter to schedule. Later runs won't ask first. Esc to cancel." : "Enter to schedule. Esc to cancel.") : "Enter to run. Nothing changes until then.")
+          ? ({
+            runNowAndRepeat: "Enter to run now and repeat. Later runs won't ask first. Esc to cancel.",
+            repeatLater: "Enter to schedule. Later runs won't ask first. Esc to cancel.",
+            oneTimeDeferred: "Enter to schedule. Esc to cancel.",
+            immediate: "Enter to run. Nothing changes until then.",
+          }[phase.outcome.firstRun])
           : phase.k === "outcome" && phase.outcome.status === "ambiguous"
             ? "Esc to go back"
             : phase.k === "running" ? "" : "Say the next command. Esc to go back.";

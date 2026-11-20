@@ -97,7 +97,26 @@ function Row({ icon, label, htmlFor, description, children, className, style }: 
   </li>;
 }
 
-const ACTIVE_STATUSES: ScheduledTask["status"][] = ["pending", "running", "paused"];
+const ACTIVE_SERIES: ScheduledTask["series"][] = ["active", "paused", "firstRunPending", "needsReview"];
+const isActiveTask = (task: ScheduledTask) => ACTIVE_SERIES.includes(task.series);
+const isWaitingTask = (task: ScheduledTask) => task.series === "active" && task.occurrence === "waiting";
+
+type StatusLabel = [label: string, tone: string];
+const SERIES_LABELS: Record<ScheduledTask["series"], StatusLabel> = {
+  active: ["Scheduled", "ok"],
+  paused: ["Paused", "muted"],
+  completed: ["Done", "muted"],
+  stopped: ["Stopped", "muted"],
+  failed: ["Failed", "warn"],
+  firstRunPending: ["First run pending", "ok"],
+  needsReview: ["Needs review", "warn"],
+};
+const OCCURRENCE_LABELS: Record<ScheduledTask["occurrence"], StatusLabel | null> = {
+  waiting: null,
+  finished: null,
+  running: ["Running", "ok"],
+  resultUnsaved: ["Result unsaved", "warn"],
+};
 
 function RecoveryNotice() {
   const [reviewed, setReviewed] = useState(false);
@@ -181,14 +200,10 @@ function ScheduledTab() {
     const at = new Date(task.due).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
     if (!task.repeat) return at;
     const every = `${task.repeat[0].toUpperCase()}${task.repeat.slice(1)}`;
-    return task.status === "pending" ? `${every} · next ${at}` : every;
+    return isWaitingTask(task) ? `${every} · next ${at}` : every;
   };
-  const STATUS: Record<ScheduledTask["status"], [string, string]> = {
-    pending: ["Scheduled", "ok"], running: ["Running", "ok"], paused: ["Paused", "muted"],
-    completed: ["Done", "muted"], cancelled: ["Stopped", "muted"], failed: ["Failed", "warn"],
-  };
-  const active = tasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).reverse();
-  const done = tasks.filter((t) => !ACTIVE_STATUSES.includes(t.status)).reverse();
+  const active = tasks.filter(isActiveTask).reverse();
+  const done = tasks.filter((t) => !isActiveTask(t)).reverse();
   const shown = showing === "active" ? active : done;
   const button = (task: ScheduledTask, label: string, busy: string, action: (id: number) => Promise<void>) =>
     <button className="link" disabled={working !== null} onClick={() => void act(task.id, action)}>{working === task.id ? busy : label}</button>;
@@ -212,7 +227,9 @@ function ScheduledTab() {
       </>}
     </div> :
       <ul className="group-rows tasks-list">{shown.map((task) => {
-        const [status, tone] = STATUS[task.status];
+        const seriesLabel = SERIES_LABELS[task.series];
+        const [status, tone] = task.series === "firstRunPending" && task.occurrence === "running"
+          ? seriesLabel : OCCURRENCE_LABELS[task.occurrence] ?? seriesLabel;
         const run = `${task.id}-${task.due}`;
         return <li className="row task" key={task.id}>
           <span className="row-icon"><Icon name={task.repeat ? "update" : "scheduled"} /></span>
@@ -220,14 +237,15 @@ function ScheduledTab() {
             <span className="row-label task-command">{task.command}</span>
             <span className="row-desc">{when(task)}</span>
             {task.summary && <span className="row-desc task-summary">{task.summary}</span>}
+            {task.series === "needsReview" && <span className="row-desc">Schedule it again to keep this task</span>}
             <span className="task-actions">
-              {task.status === "running" && <button type="button" className="link" disabled={stoppingRun === run} onClick={() => void stopRun(task, run)}>
+              {task.occurrence === "running" && task.series !== "firstRunPending" && <button type="button" className="link" disabled={stoppingRun === run} onClick={() => void stopRun(task, run)}>
                 {stoppingRun === run ? "Stopping…" : "Stop this run"}
               </button>}
-              {task.repeat && task.status === "pending" && button(task, "Pause", "Pausing…", api.pauseScheduledTask)}
-              {task.status === "paused" && button(task, "Resume", "Resuming…", api.resumeScheduledTask)}
-              {(task.status === "pending" || task.status === "paused") && button(task, task.repeat ? "Stop repeating" : "Cancel task", "Stopping…", api.cancelScheduledTask)}
-              {task.repeat && (task.status === "cancelled" || task.status === "failed") && button(task, "Move to active", "Moving…", api.resumeScheduledTask)}
+              {task.repeat && isWaitingTask(task) && button(task, "Pause", "Pausing…", api.pauseScheduledTask)}
+              {task.series === "paused" && button(task, "Resume", "Resuming…", api.resumeScheduledTask)}
+              {(isWaitingTask(task) || task.series === "paused") && button(task, task.repeat ? "Stop repeating" : "Cancel task", "Stopping…", api.cancelScheduledTask)}
+              {task.repeat && (task.series === "stopped" || task.series === "failed") && button(task, "Move to active", "Moving…", api.resumeScheduledTask)}
             </span>
           </div>
           <span className={`pill ${tone}`}>{status}</span>
@@ -312,7 +330,7 @@ export function SettingsView({
   useEffect(() => {
     let alive = true;
     const refresh = () => api.scheduledTasks()
-      .then((tasks) => { if (alive) setActiveTasks(tasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).length); })
+      .then((tasks) => { if (alive) setActiveTasks(tasks.filter(isActiveTask).length); })
       .catch(() => {});
     void refresh();
     const timer = window.setInterval(refresh, 4000);

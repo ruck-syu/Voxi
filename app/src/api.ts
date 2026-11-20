@@ -20,14 +20,18 @@ export type PreviewItem = { kind: string; primary: string; detail: string; note?
 export type PreviewRow = PreviewItem & { step: number };
 export type InfoRow = { name: string; detail: string };
 
+export type FirstRunPolicy = "immediate" | "oneTimeDeferred" | "repeatLater" | "runNowAndRepeat";
+
 export type Outcome =
-  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; warnings: string[]; isUndo: boolean; scheduledFor?: string | null; repeats?: string | null }
+  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; warnings: string[]; isUndo: boolean; firstRun: FirstRunPolicy; scheduledFor?: string | null; repeats?: string | null }
   | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
   | { status: "not_understood"; text: string };
 
-export type ScheduledTask = { id: number; command: string; due: string; status: "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"; summary: string; repeat?: string | null };
+export type SeriesState = "active" | "paused" | "stopped" | "completed" | "failed" | "firstRunPending" | "needsReview";
+export type OccurrenceState = "waiting" | "running" | "finished" | "resultUnsaved";
+export type ScheduledTask = { id: number; command: string; due: string; series: SeriesState; occurrence: OccurrenceState; summary: string; repeat?: string | null };
 
 export type RecoveryStatus = { command: string; acknowledged: number; inFlight: Record<string, unknown> | null };
 

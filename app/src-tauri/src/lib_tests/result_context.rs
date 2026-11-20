@@ -184,7 +184,7 @@ fn stopping_a_scheduled_occurrence_keeps_its_next_run() {
     let due = chrono::Local::now() - chrono::Duration::minutes(1);
     let (_, when) = scheduler::extract_schedule(&format!("{command} daily"), chrono::Local::now()).unwrap();
     let rule = when.unwrap().rule.unwrap();
-    f.state.schedules.lock().unwrap().add(scheduler::Job::recurring(command.into(), due, rule)).unwrap();
+    f.state.schedules.lock().unwrap().add(scheduler::Job::recurring_later(command.into(), due, rule)).unwrap();
     let state = &f.state;
     std::thread::scope(|scope| {
         // The job registers the occurrence before trying to acquire history.
@@ -192,7 +192,7 @@ fn stopping_a_scheduled_occurrence_keeps_its_next_run() {
         let worker = scope.spawn(|| run_due_tasks_inner(state));
         let start = std::time::Instant::now();
         loop {
-            if state.schedules.lock().unwrap().jobs[0].status == "running" {
+            if state.schedules.lock().unwrap().jobs[0].occurrence == scheduler::OccurrenceState::Running {
                 break;
             }
             assert!(start.elapsed() < std::time::Duration::from_secs(5), "job did not start");
@@ -205,7 +205,7 @@ fn stopping_a_scheduled_occurrence_keeps_its_next_run() {
     assert!(source.exists());
     let saved = scheduler::Store::load(f.home.join("schedules.json"));
     let job = &saved.jobs[0];
-    assert_eq!(job.status, "pending");
+    assert_eq!(job.series, scheduler::SeriesState::Active);
     assert!(job.due > chrono::Local::now());
     assert!(job.summary.contains("Stopped. Moved 0 of 1 item."));
     let next = ActiveRun::register(&state.active_runs, RunKey::Scheduled(job.id, job.due), false).unwrap();
@@ -229,11 +229,11 @@ fn scheduler_leaves_due_job_pending_until_recovery_reviewed() {
     for _ in 0..2 {
         run_due_tasks_inner(&f.state).unwrap();
     }
-    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "pending");
+    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].series, scheduler::SeriesState::Active);
     assert!(!output.exists());
     operation_journal::acknowledge(&journal, &mut f.state.history.lock().unwrap()).unwrap();
     run_due_tasks_inner(&f.state).unwrap();
-    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "completed");
+    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].series, scheduler::SeriesState::Completed);
     assert!(output.exists());
 }
 
@@ -674,7 +674,7 @@ fn scheduled_move_is_deferred_persisted_and_undoable() {
     *f.state.schedules.lock().unwrap() = store;
     run_due_tasks(&f.state).unwrap();
     assert!(!source.exists());
-    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "completed");
+    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].series, scheduler::SeriesState::Completed);
     assert_eq!(f.state.history.lock().unwrap().entries.len(), 1);
     run_due_tasks(&f.state).unwrap();
     assert_eq!(f.state.history.lock().unwrap().entries.len(), 1);
@@ -882,7 +882,7 @@ fn recurring_confirm_with_no_completed_steps_still_saves_repeat() {
     assert!(result.error.is_some());
     assert!(!result.undoable);
     assert!(f.state.history.lock().unwrap().entries.is_empty());
-    assert_eq!(scheduler::Store::load(f.home.join("schedules.json")).jobs[0].status, "pending");
+    assert_eq!(scheduler::Store::load(f.home.join("schedules.json")).jobs[0].series, scheduler::SeriesState::Active);
 }
 
 #[test]
@@ -907,7 +907,7 @@ fn recurring_confirm_uses_only_approved_files_and_retains_partial_failure() {
         assert_eq!(history.entries[0].done.len(), result.done);
         let store = scheduler::Store::load(f.home.join("schedules.json"));
         assert_eq!(store.jobs.len(), 1);
-        assert_eq!(store.jobs[0].status, "pending");
+        assert_eq!(store.jobs[0].series, scheduler::SeriesState::Active);
         assert!(store.jobs[0].due > chrono::Local::now());
         let Outcome::Plan { id, is_undo: true, .. } = f.command("undo last") else { panic!("expected undo") };
         assert!(confirm_input(&f.state, id).unwrap().error.is_none());
@@ -918,6 +918,71 @@ fn recurring_confirm_uses_only_approved_files_and_retains_partial_failure() {
         assert!(!arrived_after_preview.exists());
         assert!(f.home.join("Downloads/PDFS/new.pdf").exists());
         assert_eq!(f.state.history.lock().unwrap().entries.len(), 3);
+    }
+}
+
+#[test]
+fn preview_policy_and_persisted_first_run_agree() {
+    use scheduler::FirstRunPolicy::*;
+    let f = Fixture::new();
+    f.write("Downloads/a.pdf");
+    for (suffix, policy, wire_policy) in [
+        ("", Immediate, "immediate"),
+        (" in 20 minutes", OneTimeDeferred, "oneTimeDeferred"),
+        (" every day at 9 pm", RepeatLater, "repeatLater"),
+        (" every day", RunNowAndRepeat, "runNowAndRepeat"),
+    ] {
+        let outcome = f.command(&format!("copy PDFs from Downloads to Documents{suffix}"));
+        let Outcome::Plan { first_run, .. } = outcome else { panic!("{outcome:?}") };
+        assert_eq!(first_run, policy);
+        assert_eq!(serde_json::to_value(outcome).unwrap()["firstRun"], wire_policy);
+        let pending = f.state.pending.lock().unwrap();
+        let job = pending.as_ref().unwrap().scheduled.as_ref();
+        assert_eq!(job.map_or(Immediate, |job| job.first_run), policy);
+    }
+}
+
+#[test]
+fn repeating_shortcut_checks_the_approved_snapshot_before_each_run() {
+    for removed in [false, true] {
+        let f = Fixture::new();
+        let first = f.write("Downloads/first.pdf");
+        let phrase = "run invoice filing";
+        let commands = vec!["move PDFs from Downloads to Documents".into()];
+        f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands: commands.clone() });
+        let outcome = f.command(&format!("{phrase} every day at 9 pm"));
+        let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RepeatLater, .. } = outcome else { panic!("{outcome:?}") };
+        assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+        let path = f.home.join("schedules.json");
+        let store = scheduler::Store::load(path.clone());
+        assert_eq!(
+            store.jobs[0].repeat.as_ref().unwrap().approved_source,
+            Some(scheduler::RuleSource::Shortcut { phrase: phrase.into(), commands })
+        );
+
+        let make_due = || f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+        make_due();
+        run_due_tasks(&f.state).unwrap();
+        assert!(!first.exists());
+        assert!(f.home.join("Documents/first.pdf").exists());
+
+        let second = f.write("Downloads/second.pdf");
+        let mut settings = f.state.settings.lock().unwrap();
+        if removed {
+            settings.shortcuts.clear();
+        } else {
+            settings.shortcuts[0].commands = vec!["move PDFs from Downloads to Desktop".into()];
+        }
+        drop(settings);
+        make_due();
+        run_due_tasks(&f.state).unwrap();
+        assert!(second.exists());
+        assert!(!f.home.join("Desktop/second.pdf").exists());
+        let mut store = scheduler::Store::load(path);
+        assert_eq!(store.jobs[0].series, scheduler::SeriesState::NeedsReview);
+        assert!(store.jobs[0].summary.contains("changed or removed"));
+        assert!(store.claim(chrono::Local::now()).unwrap().is_none());
+        assert!(store.resume(1, chrono::Local::now()).is_err());
     }
 }
 
@@ -972,7 +1037,7 @@ fn repeating_task_replans_each_run_and_keeps_going() {
     // Confirm ran the file that existed in the preview.
     assert!(!first.exists());
     let job = f.state.schedules.lock().unwrap().jobs[0].clone();
-    assert_eq!(job.status, "pending");
+    assert_eq!(job.series, scheduler::SeriesState::Active);
     assert!(job.due > chrono::Local::now() && job.due <= chrono::Local::now() + chrono::Duration::days(3), "missed runs collapse into one");
     assert!(job.summary.contains("Done. 1 change."), "{}", job.summary);
     // A file added later is picked up by the next run.
@@ -984,7 +1049,7 @@ fn repeating_task_replans_each_run_and_keeps_going() {
     // Nothing left to match: the series keeps going.
     make_due(&f);
     run_due_tasks(&f.state).unwrap();
-    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "pending");
+    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].series, scheduler::SeriesState::Active);
     assert!(f.state.schedules.lock().unwrap().jobs[0].summary.contains("Nothing to change"));
     // Paused tasks don't run; resuming skips the missed runs.
     let third = f.write("Downloads/c.dmg");
@@ -1000,7 +1065,7 @@ fn repeating_task_replans_each_run_and_keeps_going() {
     assert!(third.exists());
     // A stopped repeating task can be made active again; a one-time task can't.
     f.state.schedules.lock().unwrap().resume(1, chrono::Local::now()).unwrap();
-    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "pending");
+    assert_eq!(f.state.schedules.lock().unwrap().jobs[0].series, scheduler::SeriesState::Active);
     assert!(due(&f) > chrono::Local::now());
     let Outcome::Plan { id, .. } = f.command("move c.dmg from downloads to documents in 5 minutes") else {
         panic!("plan");
@@ -1031,15 +1096,15 @@ fn stored_recurring_model_intent_is_never_replayed_unattended() {
         command: command.into(),
         choices: HashMap::new(),
         model_intent: Some(model_intent()),
-        modified_dates: true,
-        subfolder_opt_in: true,
+        approved_version: scheduler::APPROVED_RULE_VERSION,
+        approved_source: Some(scheduler::RuleSource::Command),
     };
     // The rule text is still readable: it wins over the stored model plan.
     f.state
         .schedules
         .lock()
         .unwrap()
-        .add(scheduler::Job::recurring(
+        .add(scheduler::Job::recurring_later(
             "create a folder in downloads called PDFS and move pdfs into it".into(),
             chrono::Local::now() - chrono::Duration::days(2),
             stale_rule("create a folder in downloads called PDFS and move pdfs into it"),
@@ -1057,7 +1122,7 @@ fn stored_recurring_model_intent_is_never_replayed_unattended() {
         .schedules
         .lock()
         .unwrap()
-        .add(scheduler::Job::recurring(
+        .add(scheduler::Job::recurring_later(
             "unparseable legacy task".into(),
             chrono::Local::now() - chrono::Duration::days(2),
             stale_rule("this is not a parseable command"),
@@ -1068,7 +1133,7 @@ fn stored_recurring_model_intent_is_never_replayed_unattended() {
     assert_eq!(f.state.history.lock().unwrap().entries.len(), 1);
     let jobs = f.state.schedules.lock().unwrap();
     assert!(jobs.jobs[1].summary.contains("Skipped: Voxi doesn't understand"), "{}", jobs.jobs[1].summary);
-    assert_eq!(jobs.jobs[1].status, "pending");
+    assert_eq!(jobs.jobs[1].series, scheduler::SeriesState::Active);
 }
 
 #[test]
@@ -1088,7 +1153,7 @@ fn scheduled_changed_sources_and_collisions_stop_without_overwriting() {
         f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::seconds(1);
         run_due_tasks(&f.state).unwrap();
         assert!(source.exists());
-        assert_eq!(f.state.schedules.lock().unwrap().jobs[0].status, "failed");
+        assert_eq!(f.state.schedules.lock().unwrap().jobs[0].series, scheduler::SeriesState::Failed);
         assert!(f.state.history.lock().unwrap().entries.is_empty());
     }
 }
@@ -1456,11 +1521,11 @@ fn repeats_saved_before_modified_meant_last_edit_are_skipped_not_reread() {
         command: "trash files in Downloads modified today".into(),
         choices: HashMap::new(),
         model_intent: None,
-        modified_dates,
-        subfolder_opt_in: true,
+        approved_version: if modified_dates { scheduler::APPROVED_RULE_VERSION } else { 0 },
+        approved_source: Some(scheduler::RuleSource::Command),
     };
     let job = |modified_dates| {
-        scheduler::Job::recurring(
+        scheduler::Job::recurring_later(
             "trash files in Downloads modified today daily".into(),
             chrono::Local::now() - chrono::Duration::minutes(5),
             rule(modified_dates),
@@ -1469,7 +1534,7 @@ fn repeats_saved_before_modified_meant_last_edit_are_skipped_not_reread() {
     // A saved rule's JSON from before the field existed reads as an old rule.
     let legacy: scheduler::Rule =
         serde_json::from_value(serde_json::json!({"every": 1, "unit": "days", "time": null, "command": "x"})).unwrap();
-    assert!(!legacy.modified_dates);
+    assert_eq!(legacy.approved_version, 0);
 
     f.state.schedules.lock().unwrap().add(job(false)).unwrap();
     run_due_tasks(&f.state).unwrap();
@@ -1546,10 +1611,10 @@ fn subfolder_opt_in_guards_old_rules_skipped_trees_and_followups() {
         command: "delete PDFs in Downloads including subfolders".into(),
         choices: HashMap::new(),
         model_intent: None,
-        modified_dates: true,
-        subfolder_opt_in: false,
+        approved_version: 1,
+        approved_source: Some(scheduler::RuleSource::Command),
     };
-    let job = scheduler::Job::recurring(
+    let job = scheduler::Job::recurring_later(
         "delete PDFs in Downloads including subfolders daily".into(),
         chrono::Local::now() - chrono::Duration::minutes(5),
         rule,

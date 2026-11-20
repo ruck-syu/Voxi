@@ -615,7 +615,7 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
                 Ok(Some(value)) => {
                     let model_recurring = value.when.as_ref().is_some_and(|w| w.rule.is_some());
                     match recurring_route(rule_recurring, rule_intent_present, model_recurring) {
-                        Route::Rule => None, // use the rule path; its rule keeps model_intent: None
+                        Route::Rule => None,
                         Route::Refuse => {
                             return Outcome::Problem {
                                 message: "Repeating tasks need a command Voxi understands without the model.".into(),
@@ -668,7 +668,11 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
         },
     };
     let scheduled_for = when.as_ref().map(|w| w.due);
-    let repeat = when.and_then(|w| w.rule);
+    use scheduler::FirstRunPolicy::{Immediate, RunNowAndRepeat};
+    let first_run = when.as_ref().map_or(Immediate, |w| w.first_run);
+    let repeat = when.as_ref().and_then(|w| w.rule.as_ref());
+    let approved_shortcut =
+        shortcut.as_ref().map(|s| scheduler::RuleSource::Shortcut { phrase: s.phrase.clone(), commands: s.commands.clone() });
     // A saved shortcut ("run my usuals") wins over the built-in commands.
     enum Work {
         Shortcut(String, Vec<(String, model::Intent)>),
@@ -749,23 +753,27 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
     };
     // Fingerprinting can walk a folder tree. Keep it cancellable and outside
     // the publication lock; only installing the resulting preview is serialized.
-    let scheduled = match (&planned, scheduled_for) {
-        (Ok(Planned::Steps { actions, undo_of, .. }), Some(due)) => Some(if undo_of.is_some() {
+    let scheduled = match (&planned, &when) {
+        (Ok(Planned::Steps { actions, undo_of, .. }), Some(when)) => Some(if undo_of.is_some() {
             Err("Undo cannot be scheduled.".into())
-        } else if let Some(rule) = &repeat {
+        } else if let Some(rule) = repeat {
             if use_scope {
                 Err("A repeating task can't use a previous list. Name the files or folder instead.".into())
             } else {
                 scheduler::check_actions(actions).map(|()| {
                     scheduler::Job::recurring(
                         original_text.trim().to_string(),
-                        due,
-                        scheduler::Rule { choices: choices.clone(), ..rule.clone() },
+                        when,
+                        scheduler::Rule {
+                            choices: choices.clone(),
+                            approved_source: approved_shortcut.or(Some(scheduler::RuleSource::Command)),
+                            ..rule.clone()
+                        },
                     )
                 })
             }
         } else {
-            scheduler::Job::new_with_control(original_text.clone(), due, actions.clone(), &control)
+            scheduler::Job::new_with_control(original_text.clone(), when.due, actions.clone(), &control)
         }),
         _ => None,
     };
@@ -823,8 +831,8 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
                 Ok(job) => job,
                 Err(message) => return Outcome::Problem { message },
             };
-            match (scheduled_for, &repeat) {
-                (Some(due), Some(rule)) if scheduler::runs_on_confirm(&original_text) => warnings.insert(0, format!(
+            match (scheduled_for, repeat) {
+                (Some(due), Some(rule)) if first_run == RunNowAndRepeat => warnings.insert(0, format!(
                     "Runs now, then {}. Next run {}. Later runs change whatever matches at that time, without a preview, and can be undone from History. Voxi must be running; a missed run happens once when it next opens.",
                     rule.describe(due), scheduler::display(due))),
                 (Some(due), Some(rule)) => warnings.insert(0, format!(
@@ -869,12 +877,9 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
                 warnings,
                 is_undo: undo_of.is_some(),
                 scheduled_for,
-                repeats: repeat.as_ref().zip(scheduled_for).map(|(rule, due)| {
-                    if scheduler::runs_on_confirm(&original_text) {
-                        format!("Runs now, then {}", rule.describe(due))
-                    } else {
-                        rule.describe(due)
-                    }
+                first_run,
+                repeats: repeat.zip(scheduled_for).map(|(rule, due)| {
+                    if first_run == RunNowAndRepeat { format!("Runs now, then {}", rule.describe(due)) } else { rule.describe(due) }
                 }),
             }
         }
@@ -923,32 +928,27 @@ fn confirm_trimmed(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResul
     let _execution = checked_state!(state.execution.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
     p.validate_context(&*checked_state!(state.result_scope.lock(), Err("Voxi state is unavailable. Restart the app.".into())))?;
     if let Some(mut job) = p.scheduled.clone() {
-        if job.repeat.is_some() && scheduler::runs_on_confirm(&job.command) {
-            let now = chrono::Local::now();
-            let refreshed = scheduler::extract_schedule(&job.command, now)?.1.ok_or("That schedule is no longer valid.")?;
-            job.due = refreshed.due;
-            // Anchor the saved wall clock at confirmation as well as its due
-            // date, retaining the approved folder choices and rule command.
-            if let (Some(rule), Some(fresh_rule)) = (&mut job.repeat, refreshed.rule) {
-                rule.time = fresh_rule.time;
-            }
+        if job.first_run == scheduler::FirstRunPolicy::RunNowAndRepeat {
+            job.anchor_first_run(chrono::Local::now())?;
             job.validate()?;
-            // Persist before mutating files: a storage failure must not leave an
-            // executed first run with no saved repeat. The execution lock keeps
-            // the scheduler out until this approved, durable run finishes.
+            // Save the pending first run before changing files. The execution
+            // lock keeps later occurrences out until its result is recorded.
             let mut store = checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
-            store.add(job.clone())?;
-            let job_id = store.jobs.last().ok_or("That task could not be saved.")?.id;
+            let job_id = store.add(job.clone())?;
             drop(store);
             let mut result = execute_pending(state, p, &is_cancelled);
             let run_summary = result.error.as_ref().map_or_else(|| result.summary.clone(), |error| format!("{} {error}", result.summary));
             // As with later recurring runs, execution failures retain the series:
             // missing files and collisions may be transient. Structural errors
             // have already been rejected by validation above.
-            if let Err(error) = checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into()))
-                .record_summary(job_id, run_summary)
-            {
+            if let Err(error) = checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into())).finish(
+                job_id,
+                scheduler::Completion::Recurring(run_summary),
+                chrono::Local::now(),
+            ) {
+                let error = format!("Couldn't save the first run's result. Voxi will retry saving it. {error}");
                 result.error = Some(result.error.map_or(error.clone(), |first| format!("{first} {error}")));
+                return Ok(result);
             }
             let rule = job.repeat.as_ref().ok_or("That task doesn't repeat.")?;
             result.summary.push_str(&format!(
@@ -1164,7 +1164,7 @@ fn schedule_of(
         let known = |t: &str| parse::parse(t).is_ok() || settings.find_shortcut(t).is_some();
         if !known(&command) && known(text.trim()) {
             scheduler::check_unscheduled(text)?;
-            return scheduler::extract(text, now).map(|(c, due)| (c, due.map(|due| scheduler::When { due, rule: None })));
+            return scheduler::extract(text, now).map(|(c, due)| (c, due.map(scheduler::When::once)));
         }
     }
     Ok((command, when))
@@ -1175,63 +1175,47 @@ fn sched_skip(job: &scheduler::Job) {
     diagnostics::emit(Event::new(Code::SchedulerSkip, Stage::Skipped).operation(job.id));
 }
 
-/// True when any filter in `intent` reads the last-modified date.
-fn reads_modified_date(intent: &model::Intent) -> bool {
-    fn walk(v: &serde_json::Value) -> bool {
-        match v {
-            serde_json::Value::Object(m) => m.get("dateField").is_some_and(|f| f == "modified") || m.values().any(walk),
-            serde_json::Value::Array(a) => a.iter().any(walk),
-            _ => false,
-        }
+fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule, is_cancelled: &dyn Fn() -> bool) -> scheduler::Completion {
+    let approval = {
+        let settings = checked_state!(
+            state.settings.lock(),
+            scheduler::Completion::NeedsReview("Settings unavailable. Restart Voxi and schedule this task again.".into())
+        );
+        rule.check_approval(&settings, &job.command)
+    };
+    if let Err(message) = approval {
+        sched_skip(job);
+        return scheduler::Completion::NeedsReview(message);
     }
-    serde_json::to_value(intent).is_ok_and(|v| walk(&v))
+    scheduler::Completion::Recurring(execute_recurring_rule(state, job, rule, is_cancelled))
 }
 
-fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule, is_cancelled: &dyn Fn() -> bool) -> String {
+fn execute_recurring_rule(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule, is_cancelled: &dyn Fn() -> bool) -> String {
     let roots = checked_state!(state.roots.read(), "Voxi state is unavailable. Restart the app.".into()).clone();
-    let shortcut =
-        checked_state!(state.settings.lock(), "Voxi state is unavailable. Restart the app.".into()).find_shortcut(&rule.command).cloned();
-    if let Err(e) = parse::check_length(&rule.command)
-        .map_err(|_| "That command is too long.".to_string())
-        .and_then(|()| shortcut.as_ref().map_or(Ok(()), |s| settings::check_shortcut_commands(&s.commands)))
-    {
+    if let Err(e) = parse::check_length(&rule.command).map_err(|_| "That command is too long.".to_string()) {
         sched_skip(job);
         return e;
-    }
-    let texts: Vec<&String> = shortcut.as_ref().map_or_else(|| vec![&rule.command], |s| s.commands.iter().collect());
-    // A rule saved before "including subfolders" opted in read those words
-    // as part of a name; it may now reach other files. Don't run it unattended.
-    if !rule.subfolder_opt_in && texts.iter().any(|t| parse::names_subfolders(t)) {
-        sched_skip(job);
-        return format!("Skipped: Voxi now reads “subfolders” differently. Schedule “{}” again to keep this task.", job.command);
-    }
-    // A rule saved before "modified" meant the last edit was approved with
-    // the creation date. Don't run it unattended with the new meaning.
-    if !rule.modified_dates && texts.iter().any(|t| parse::parse(t).is_ok_and(|intent| reads_modified_date(&intent))) {
-        sched_skip(job);
-        return format!(
-            "Skipped: “modified” now means the date a file was last edited. Schedule “{}” again to keep this task.",
-            job.command
-        );
     }
     let planned = {
         let history = checked_state!(state.history.lock(), "Voxi state is unavailable. Restart the app.".into());
         let planner = Planner::new(&roots, &rule.choices).with_control(search::Control::default());
-        // A repeating task is always re-planned from its own rule text. Jobs
-        // saved before the rule-only recurring policy may still carry a
-        // `model_intent`, but replaying a model plan unattended is not allowed:
-        // it was never previewed at run time. Ignore any stored intent and use
-        // the rule parser, skipping with the usual clear notice if the text can
-        // no longer be read.
-        match shortcut {
-            Some(s) => match s.commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect::<Result<Vec<_>, _>>() {
-                Ok(commands) => planner.plan_shortcut(&s.phrase, &commands, &history),
-                Err(bad) => {
+        // Legacy model intent is ignored. Use the approved shortcut snapshot
+        // or parse the approved standalone command against the current files.
+        match &rule.approved_source {
+            Some(scheduler::RuleSource::Shortcut { phrase, commands }) => {
+                if let Err(message) = settings::check_shortcut_commands(commands) {
                     sched_skip(job);
-                    return format!("Skipped: Voxi doesn't understand “{bad}” in “{}”.", s.phrase);
+                    return message;
                 }
-            },
-            None => match parse::parse(&rule.command) {
+                match commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect::<Result<Vec<_>, _>>() {
+                    Ok(commands) => planner.plan_shortcut(phrase, &commands, &history),
+                    Err(bad) => {
+                        sched_skip(job);
+                        return format!("Skipped: Voxi doesn't understand “{bad}” in “{phrase}”.");
+                    }
+                }
+            }
+            _ => match parse::parse(&rule.command) {
                 Ok(intent) => planner.plan(&intent, &history),
                 Err(_) => {
                     sched_skip(job);
@@ -1299,29 +1283,37 @@ fn run_due_tasks(state: &AppState) -> Result<(), String> {
 
 fn run_due_tasks_inner(state: &AppState) -> Result<(), String> {
     let _execution = checked_state!(state.execution.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
-    // Check under the execution lock, before persisting any job claim.
-    if operation_journal::status(&state.reports_path.with_file_name("operation-journal.json"))?.is_some() {
-        return Ok(());
-    }
+    use scheduler::{Completion, SeriesState};
     let (job, run) = {
         let mut store = checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
+        store.retry_results()?;
+        // Check under the execution lock, before persisting any job claim.
+        if operation_journal::status(&state.reports_path.with_file_name("operation-journal.json"))?.is_some() {
+            return Ok(());
+        }
         let Some(job) = store.claim(chrono::Local::now())? else {
             return Ok(());
         };
-        let run = ActiveRun::register(&state.active_runs, RunKey::Scheduled(job.id, job.due), false)?;
+        let run = match ActiveRun::register(&state.active_runs, RunKey::Scheduled(job.id, job.due), false) {
+            Ok(run) => run,
+            Err(error) => {
+                store.finish(job.id, Completion::NeedsReview(error.clone()), chrono::Local::now())?;
+                return Err(error);
+            }
+        };
         (job, run)
     };
     let is_cancelled = || run.is_stopped();
-    if let Some(rule) = job.repeat.clone() {
-        let summary = run_recurring(state, &job, &rule, &is_cancelled);
-        return checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into())).finish_recurring(
+    if let Some(rule) = &job.repeat {
+        let completion = run_recurring(state, &job, rule, &is_cancelled);
+        return checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into())).finish(
             job.id,
-            summary,
+            completion,
             chrono::Local::now(),
         );
     }
     let result = match job.validate() {
-        Err(message) => ("failed", message),
+        Err(message) => (SeriesState::Failed, message),
         Ok(()) => {
             let result = execute_pending(
                 state,
@@ -1341,20 +1333,24 @@ fn run_due_tasks_inner(state: &AppState) -> Result<(), String> {
             );
             (
                 if result.error.is_some() {
-                    "failed"
+                    SeriesState::Failed
                 } else if result.cancelled {
-                    "cancelled"
+                    SeriesState::Stopped
                 } else {
-                    "completed"
+                    SeriesState::Completed
                 },
                 result.error.map_or(result.summary.clone(), |error| format!("{} {error}", result.summary)),
             )
         }
     };
-    if result.0 == "failed" {
+    if result.0 == SeriesState::Failed {
         diagnostics::emit(Event::new(Code::SchedulerRun, Stage::Failed).operation(job.id));
     }
-    checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into())).update(job.id, result.0, result.1)
+    checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into())).finish(
+        job.id,
+        Completion::OneTime { series: result.0, summary: result.1 },
+        chrono::Local::now(),
+    )
 }
 
 #[tauri::command]

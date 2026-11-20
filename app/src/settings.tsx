@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, errorMessage, installedHotkeyAfterSave, tildify, type Reports, type ScheduledTask, type Settings, type Shortcut } from "./api";
-import { appVersion, checkAndInstall, type UpdateState } from "./updates";
+import { appVersion, canCheckForUpdates, checkAndInstall, useUpdateState } from "./updates";
 import { Sheet, TOO_LONG, prettyHotkey, shortcutLengthIssue } from "./ui";
 
 const KEY_NAMES: Record<string, string> = { " ": "Space", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right" };
@@ -465,13 +465,12 @@ const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1);
  *  release, with a progress bar and its notes while it downloads. */
 function UpdatesRow() {
   const [version, setVersion] = useState("");
-  const [state, setState] = useState<UpdateState>({ k: "idle" });
+  const state = useUpdateState();
 
   useEffect(() => {
     appVersion().then(setVersion);
   }, []);
 
-  const busy = state.k === "checking" || state.k === "downloading" || state.k === "restarting";
   const status =
     state.k === "checking"
       ? "Checking…"
@@ -481,16 +480,18 @@ function UpdatesRow() {
           : `Downloading ${state.version}…`
         : state.k === "restarting"
           ? `Installed ${state.version}. Restarting…`
-          : state.k === "error"
-            ? state.message
-            : null;
+          : state.k === "relaunchFailed"
+            ? "Update installed. Quit and reopen Voxi to finish."
+            : state.k === "error"
+              ? state.message
+              : null;
   const fraction = state.k === "downloading" && state.total ? Math.min(state.done / state.total, 1) : null;
-  const notes = state.k === "downloading" || state.k === "restarting" ? state.notes : [];
+  const notes = "notes" in state ? state.notes : [];
 
   return (
     <Row icon="update" className="updates" label={<>Voxi {version} {state.k === "latest" && <span className="pill ok">Up to date</span>}</>}
-      description={status ? <span className={state.k === "error" ? "warn" : undefined} role="status">{status}</span> : "Your settings carry over."}>
-      <button className="secondary small" disabled={busy} onClick={() => checkAndInstall(setState)}>
+      description={status ? <span className={state.k === "error" || state.k === "relaunchFailed" ? "warn" : undefined} role="status">{status}</span> : "Your settings carry over."}>
+      <button className="secondary small" disabled={!canCheckForUpdates(state)} onClick={() => void checkAndInstall()}>
         Check for updates
       </button>
       {(state.k === "downloading" || state.k === "restarting" || notes.length > 0) && (

@@ -121,6 +121,9 @@ fn read(path: &Path) -> Result<Option<Record>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e.to_string()),
     };
+    if let Some(reason) = settings::unsupported_store_version(&bytes) {
+        return Err(format!("Cannot read operation journal: {reason}. Original file kept; update Voxi before running commands."));
+    }
     match decode(&bytes) {
         Ok(record) => Ok(record),
         Err(_) => {
@@ -841,5 +844,37 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn future_version_journal_is_untouched_and_blocks_execution() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("Documents")).unwrap();
+        let path = dir.path().join("operation-journal.json");
+        let future = br#"{"version":2,"data":{"futureField":true}}"#;
+        std::fs::write(&path, future).unwrap();
+        let roots = Roots::new(dir.path(), None, &[]);
+        let mut history = History::load(dir.path().join("history.json"));
+
+        let Err(err) = status(&path) else { panic!("expected unsupported version error from status") };
+        assert!(err.contains("Unsupported store version 2"), "{err}");
+        let err = recover(&path, &mut history).unwrap_err();
+        assert!(err.contains("Unsupported store version 2"), "{err}");
+        let action = Action::CreateFolder { path: dir.path().join("Documents/new") };
+        let Err(err) = run(&path, std::slice::from_ref(&action), &roots, entry(), &mut history) else {
+            panic!("expected unsupported version error from run")
+        };
+        assert!(err.contains("Unsupported store version 2"), "{err}");
+        assert!(!dir.path().join("Documents/new").exists());
+        let err = acknowledge(&path, &mut history).unwrap_err();
+        assert!(err.contains("Unsupported store version 2"), "{err}");
+
+        assert_eq!(std::fs::read(&path).unwrap(), future);
+        let backups: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.to_string_lossy().contains(".corrupt-") || p.to_string_lossy().contains(".interrupted-"))
+            .collect();
+        assert!(backups.is_empty(), "future version must not be treated as corruption: {backups:?}");
     }
 }

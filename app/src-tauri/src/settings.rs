@@ -64,6 +64,16 @@ pub(crate) fn preserve_store(path: &Path, bytes: &[u8]) -> Result<PathBuf, Strin
     Ok(backup)
 }
 
+pub(crate) fn unsupported_store_version(bytes: &[u8]) -> Option<String> {
+    let value = serde_json::from_slice::<serde_json::Value>(bytes).ok()?;
+    let version = value.get("version")?;
+    match version.as_u64() {
+        Some(v) if v == STORE_VERSION => None,
+        Some(v) => Some(format!("Unsupported store version {v}; expected {STORE_VERSION}")),
+        None => Some("Invalid store version".into()),
+    }
+}
+
 pub(crate) fn decode_store<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, String> {
     let mut value: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     if value.get("version").is_some() || value.get("data").is_some() {

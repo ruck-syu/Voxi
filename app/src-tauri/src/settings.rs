@@ -207,27 +207,97 @@ fn save_store_inner<T: Serialize>(path: &Path, data: &T, store: Store) -> Result
     atomic_write(path, &bytes)
 }
 
-/// Roll back both sides on save failure, including failures after atomic rename.
-pub(crate) fn login_transaction(
+pub(crate) fn set_hotkey(app: &tauri::AppHandle, installed: &mut String, requested: &str) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+
+    if *installed == requested {
+        return Ok(());
+    }
+    let parse = |hotkey: &str| -> Result<Option<Shortcut>, String> {
+        if hotkey.is_empty() {
+            return Ok(None);
+        }
+        hotkey.parse().map(Some).map_err(|e| format!("“{hotkey}” isn't a valid shortcut: {e}"))
+    };
+    // Parse before uninstalling the previous binding, and clear the tracked
+    // binding only once the plugin confirms its removal.
+    let new = parse(requested)?;
+    let old = parse(installed)?;
+    if new == old {
+        *installed = requested.into();
+        return Ok(());
+    }
+    let gs = app.global_shortcut();
+    if let Some(old) = old {
+        gs.unregister(old).map_err(|e| format!("Couldn't unregister {installed}: {e}"))?;
+        installed.clear();
+    }
+    if let Some(new) = new {
+        gs.register(new).map_err(|e| format!("Couldn't register {requested}: {e}. Another app may be using it."))?;
+        *installed = requested.into();
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum SaveStage {
+    ApplyHotkey,
+    ApplyLoginItem,
+    Persist,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveError {
+    pub message: String,
+    /// Empty when Voxi has no registered shortcut. None means it was not queried.
+    pub installed_hotkey: Option<String>,
+}
+
+impl From<String> for SaveError {
+    fn from(message: String) -> Self {
+        Self { message, installed_hotkey: None }
+    }
+}
+
+impl From<&str> for SaveError {
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
+}
+
+/// Apply OS changes before persisting. The caller commits its in-memory
+/// settings only on success. A failed atomic save may already have renamed
+/// the file, so compensate for disk changes as well as OS changes.
+pub(crate) fn save_transaction(
     settings: &Settings,
     path: &Path,
-    os_before: bool,
-    mut set_os: impl FnMut(bool) -> Result<(), String>,
-) -> Result<(), String> {
+    installed_hotkey: &mut String,
+    requested_hotkey: &str,
+    login_before: bool,
+    mut set_hotkey: impl FnMut(&mut String, &str) -> Result<(), String>,
+    mut set_login: impl FnMut(bool) -> Result<(), String>,
+) -> Result<(), SaveError> {
     let original = match fs::read(path) {
         Ok(bytes) => Some(bytes),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(format!("Cannot read settings before changing login registration: {e}")),
+        Err(e) => return Err(format!("Cannot read settings before saving: {e}").into()),
     };
-    if settings.start_at_login != os_before
-        && let Err(e) = set_os(settings.start_at_login)
-    {
-        let rollback = set_os(os_before);
-        return Err(format!("{e}; login rollback: {rollback:?}"));
-    }
-    if let Err(e) = settings.save(path) {
-        let os_rollback = set_os(os_before);
-        let disk_rollback = match original {
+    let hotkey_before = installed_hotkey.clone();
+    let login_changed = settings.start_at_login != login_before;
+    let change = (|| {
+        if requested_hotkey != hotkey_before {
+            set_hotkey(installed_hotkey, requested_hotkey).map_err(|e| (SaveStage::ApplyHotkey, e))?;
+        }
+        if login_changed {
+            set_login(settings.start_at_login).map_err(|e| (SaveStage::ApplyLoginItem, e))?;
+        }
+        settings.save(path).map_err(|e| (SaveStage::Persist, e))
+    })();
+    let Err((stage, mut message)) = change else { return Ok(()) };
+
+    if matches!(stage, SaveStage::Persist) {
+        let rollback = match original {
             Some(bytes) => atomic_write(path, &bytes),
             None => match fs::remove_file(path) {
                 Ok(()) => fs::File::open(parent_dir(path)).and_then(|f| f.sync_all()).map_err(|e| e.to_string()),
@@ -235,11 +305,27 @@ pub(crate) fn login_transaction(
                 Err(e) => Err(e.to_string()),
             },
         };
-        return Err(format!(
-            "{e}; login rollback: {os_rollback:?}; preference rollback: {disk_rollback:?}. Review Login Items in System Settings."
-        ));
+        if let Err(e) = rollback {
+            message.push_str(&format!(" Could not restore the saved preferences: {e}."));
+        }
     }
-    Ok(())
+    if login_changed
+        && matches!(stage, SaveStage::ApplyLoginItem | SaveStage::Persist)
+        && let Err(e) = set_login(login_before)
+    {
+        message.push_str(&format!(" Could not restore Start at Login: {e}. Check Login Items in System Settings."));
+    }
+    if *installed_hotkey != hotkey_before
+        && let Err(e) = set_hotkey(installed_hotkey, &hotkey_before)
+    {
+        message.push_str(&format!(" Could not restore the previous hotkey: {e}"));
+        if installed_hotkey.is_empty() {
+            message.push_str(" Voxi has no hotkey installed.");
+        } else {
+            message.push_str(&format!(" Voxi is using {installed_hotkey}."));
+        }
+    }
+    Err(SaveError { message, installed_hotkey: Some(installed_hotkey.clone()) })
 }
 
 /// Clear of Wispr Flow's defaults (Fn, Fn+Space) and of Spotlight (Cmd+Space).
@@ -762,15 +848,49 @@ mod login_tests {
             let original = fs::read(&path).unwrap();
             let mut os_enabled = false;
             WRITE_FAILURE.with(|f| f.set(stage));
-            let result = login_transaction(&Settings { start_at_login: true, ..Settings::default() }, &path, false, |enabled| {
-                os_enabled = enabled;
-                Ok(())
-            });
+            let mut hotkey = DEFAULT_HOTKEY.into();
+            let result = save_transaction(
+                &Settings { start_at_login: true, ..Settings::default() },
+                &path,
+                &mut hotkey,
+                DEFAULT_HOTKEY,
+                false,
+                |_, _| panic!("hotkey did not change"),
+                |enabled| {
+                    os_enabled = enabled;
+                    Ok(())
+                },
+            );
             WRITE_FAILURE.with(|f| f.set(0));
             assert!(result.is_err());
             assert!(!os_enabled);
             assert_eq!(fs::read(path).unwrap(), original);
         }
+    }
+    #[test]
+    fn hotkey_rollback_failure_reports_the_installed_shortcut() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut registered = DEFAULT_HOTKEY.into();
+        let error = save_transaction(
+            &Settings { start_at_login: true, ..Settings::default() },
+            &dir.path().join("settings.json"),
+            &mut registered,
+            "Control+Shift+V",
+            false,
+            |installed, wanted| {
+                if wanted == DEFAULT_HOTKEY {
+                    return Err("old shortcut is busy".into());
+                }
+                *installed = wanted.into();
+                Ok(())
+            },
+            |enabled| if enabled { Err("login registration failed".into()) } else { Ok(()) },
+        )
+        .unwrap_err();
+        assert!(error.message.contains("login registration failed"));
+        assert!(error.message.contains("Could not restore the previous hotkey: old shortcut is busy"));
+        assert_eq!(error.installed_hotkey.as_deref(), Some("Control+Shift+V"));
+        assert_eq!(registered, "Control+Shift+V");
     }
 }
 

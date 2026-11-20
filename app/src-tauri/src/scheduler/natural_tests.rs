@@ -67,8 +67,8 @@ fn repeats_have_exact_rules_and_first_runs() {
     assert_eq!(when.rule.unwrap().unit, Unit::Weeks);
     let (_, when) = extract_schedule(&format!("every 2 hours {base}"), now()).unwrap();
     assert_eq!(when.unwrap().due, now() + Duration::hours(2));
-    assert!(runs_on_confirm(&format!("every 2 hours {base}")));
-    assert!(!runs_on_confirm(&format!("{base} every morning at 8")));
+    assert_eq!(extract_schedule(&format!("every 2 hours {base}"), now()).unwrap().1.unwrap().first_run, FirstRunPolicy::RunNowAndRepeat);
+    assert_eq!(extract_schedule(&format!("{base} every morning at 8"), now()).unwrap().1.unwrap().first_run, FirstRunPolicy::RepeatLater);
 }
 
 #[test]

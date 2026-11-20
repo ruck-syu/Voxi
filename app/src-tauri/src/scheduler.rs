@@ -188,7 +188,7 @@ pub enum Unit {
 
 /// How a repeating task repeats, and what it runs each time.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", from = "SavedRule")]
 pub struct Rule {
     pub every: u32,
     pub unit: Unit,
@@ -199,18 +199,59 @@ pub struct Rule {
     /// Folder and file choices made when the task was scheduled.
     #[serde(default)]
     pub choices: HashMap<String, PathBuf>,
-    /// Approved structured model interpretation. Reuse it without inference.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Read legacy model data for compatibility. Persist and run only rule text.
+    #[serde(skip_serializing)]
     pub model_intent: Option<crate::model::Intent>,
-    /// True for rules saved once "modified" meant the date a file was last
-    /// edited. Older rules read the creation date then, so they don't run
-    /// unattended with the new meaning (see `reads_modified_date`).
+    pub approved_version: u32,
+    /// Older rules lack a record of whether a shortcut supplied the commands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approved_source: Option<RuleSource>,
+}
+
+pub const APPROVED_RULE_VERSION: u32 = 2;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RuleSource {
+    Command,
+    Shortcut { phrase: String, commands: Vec<String> },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedRule {
+    every: u32,
+    unit: Unit,
+    time: Option<NaiveTime>,
+    command: String,
     #[serde(default)]
-    pub modified_dates: bool,
-    /// True for rules saved once "including subfolders" opted into
-    /// subfolders. Older rules read those words as part of a name.
+    choices: HashMap<String, PathBuf>,
+    model_intent: Option<crate::model::Intent>,
     #[serde(default)]
-    pub subfolder_opt_in: bool,
+    modified_dates: bool,
+    #[serde(default)]
+    subfolder_opt_in: bool,
+    approved_version: Option<u32>,
+    approved_source: Option<RuleSource>,
+}
+
+impl From<SavedRule> for Rule {
+    fn from(saved: SavedRule) -> Self {
+        Self {
+            every: saved.every,
+            unit: saved.unit,
+            time: saved.time,
+            command: saved.command,
+            choices: saved.choices,
+            model_intent: saved.model_intent,
+            approved_version: saved.approved_version.unwrap_or(match (saved.modified_dates, saved.subfolder_opt_in) {
+                (true, true) => 2,
+                (true, false) => 1,
+                (false, _) => 0,
+            }),
+            approved_source: saved.approved_source,
+        }
+    }
 }
 
 /// The shortest gap allowed between runs of a repeating task.
@@ -222,7 +263,54 @@ fn local_at(date: NaiveDate, time: NaiveTime) -> Option<DateTime<Local>> {
     Local.from_local_datetime(&at).earliest().or_else(|| Local.from_local_datetime(&(at + Duration::hours(1))).earliest())
 }
 
+/// True when any filter in `intent` reads the last-modified date.
+fn reads_modified_date(intent: &crate::model::Intent) -> bool {
+    fn walk(v: &serde_json::Value) -> bool {
+        match v {
+            serde_json::Value::Object(m) => m.get("dateField").is_some_and(|f| f == "modified") || m.values().any(walk),
+            serde_json::Value::Array(a) => a.iter().any(walk),
+            _ => false,
+        }
+    }
+    serde_json::to_value(intent).is_ok_and(|v| walk(&v))
+}
+
 impl Rule {
+    pub fn check_approval(&self, settings: &crate::settings::Settings, command: &str) -> Result<(), String> {
+        let commands = match &self.approved_source {
+            Some(RuleSource::Shortcut { commands, .. }) => commands.as_slice(),
+            Some(RuleSource::Command) => std::slice::from_ref(&self.command),
+            // Legacy shortcut definitions may explain a changed date or scope rule,
+            // but they can never be treated as approved execution inputs.
+            None => settings.find_shortcut(&self.command).map_or(std::slice::from_ref(&self.command), |s| s.commands.as_slice()),
+        };
+        if self.approved_version < 2 && commands.iter().any(|text| crate::parse::names_subfolders(text)) {
+            return Err(format!("Skipped: Voxi now reads “subfolders” differently. Schedule “{command}” again to keep this task."));
+        }
+        if self.approved_version < 1
+            && commands.iter().any(|text| crate::parse::parse(text).is_ok_and(|intent| reads_modified_date(&intent)))
+        {
+            return Err(format!(
+                "Skipped: “modified” now means the date a file was last edited. Schedule “{command}” again to keep this task."
+            ));
+        }
+        if self.approved_version > APPROVED_RULE_VERSION {
+            return Err("This task was approved in a newer version of Voxi. Schedule it again to keep this task.".into());
+        }
+        match &self.approved_source {
+            Some(RuleSource::Command) => Ok(()),
+            Some(RuleSource::Shortcut { phrase, commands })
+                if settings.shortcuts.iter().any(|s| s.phrase == *phrase && s.commands == *commands) =>
+            {
+                Ok(())
+            }
+            Some(RuleSource::Shortcut { phrase, .. }) => {
+                Err(format!("The shortcut “{phrase}” was changed or removed. Schedule it again to keep this task."))
+            }
+            None => Err("Voxi couldn't verify the original command or shortcut. Schedule it again to keep this task.".into()),
+        }
+    }
+
     fn step(&self, due: DateTime<Local>) -> Option<DateTime<Local>> {
         let n = i64::from(self.every);
         match self.unit {
@@ -261,15 +349,6 @@ impl Rule {
             Unit::Weeks => format!("{} on {}{time}", unit("week", "weeks"), first.format("%A")),
         }
     }
-}
-
-/// Only a repeat without a clock suffix executes its approved preview now.
-pub fn runs_on_confirm(text: &str) -> bool {
-    natural::normalize(text)
-        .ok()
-        .and_then(|text| crate::parse::phrase::unquoted_text(&text))
-        .and_then(|masked| RECUR.captures(&masked).map(|c| c.name("t1").is_none() && c.name("t2").is_none()))
-        .unwrap_or(false)
 }
 
 /// A clock time such as “9:40 pm”, “9 pm” or “21:40”.
@@ -312,11 +391,57 @@ fn weekday(name: &str) -> Option<Weekday> {
     })
 }
 
-/// When a command should run: once, or first at `due` and then by `rule`.
+/// What confirmation does with the approved preview.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FirstRunPolicy {
+    Immediate,
+    OneTimeDeferred,
+    RepeatLater,
+    RunNowAndRepeat,
+}
+
+/// The first future occurrence and, for a repeat, its cadence.
 #[derive(Clone, Debug, PartialEq)]
 pub struct When {
     pub due: DateTime<Local>,
     pub rule: Option<Rule>,
+    pub first_run: FirstRunPolicy,
+    anchor: Option<RepeatAnchor>,
+}
+
+impl When {
+    pub fn once(due: DateTime<Local>) -> Self {
+        Self { due, rule: None, first_run: FirstRunPolicy::OneTimeDeferred, anchor: None }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+enum RepeatAnchor {
+    Interval,
+    Weekday(Weekday),
+}
+
+impl RepeatAnchor {
+    fn next(self, rule: &mut Rule, now: DateTime<Local>) -> Option<DateTime<Local>> {
+        match self {
+            Self::Interval => {
+                if matches!(rule.unit, Unit::Days | Unit::Weeks) {
+                    rule.time = Some(now.time().with_nanosecond(0).unwrap_or(now.time()));
+                }
+                rule.step(now)
+            }
+            Self::Weekday(day) => next_weekday(day, rule.time?, now),
+        }
+    }
+}
+
+fn next_weekday(day: Weekday, time: NaiveTime, now: DateTime<Local>) -> Option<DateTime<Local>> {
+    let ahead = (7 + i64::from(day.num_days_from_monday()) - i64::from(now.weekday().num_days_from_monday())) % 7;
+    let date = now.date_naive().checked_add_signed(Duration::days(ahead))?;
+    let due = local_at(date, time)?;
+    if due > now { Some(due) } else { local_at(date.checked_add_signed(Duration::days(7))?, time) }
 }
 
 pub(crate) fn check_unscheduled(text: &str) -> Result<(), String> {
@@ -335,7 +460,7 @@ pub fn extract_schedule(text: &str, now: DateTime<Local>) -> Result<(String, Opt
     }
     let (command, due) = extract(text, now)?;
     natural::check_residual(&command)?;
-    Ok((command, due.map(|due| When { due, rule: None })))
+    Ok((command, due.map(When::once)))
 }
 
 fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, When)>, String> {
@@ -401,66 +526,32 @@ fn extract_repeat(text: &str, now: DateTime<Local>) -> Result<Option<(String, Wh
         return Err("A time of day works with days or weeks, such as “every day at 9 pm”.".into());
     }
 
-    let (time, due) = match (unit, time, day) {
-        (Unit::Minutes | Unit::Hours, _, _) => {
-            let rule = Rule {
-                every,
-                unit,
-                time: None,
-                command: String::new(),
-                choices: HashMap::new(),
-                model_intent: None,
-                modified_dates: true,
-                subfolder_opt_in: true,
-            };
-            (None, rule.step(now).ok_or("That time is too far away.")?)
-        }
-        // A weekday without a time runs at 9 am.
-        (_, time, Some(day)) => {
-            let time = time.unwrap_or_else(|| NaiveTime::from_hms_opt(9, 0, 0).unwrap());
-            let ahead = (7 + day.num_days_from_monday() as i64 - now.weekday().num_days_from_monday() as i64) % 7;
-            let mut date = now.date_naive() + Duration::days(ahead);
-            let mut due = local_at(date, time).ok_or("Invalid date.")?;
-            if due <= now {
-                date += Duration::days(7);
-                due = local_at(date, time).ok_or("Invalid date.")?;
-            }
-            (Some(time), due)
-        }
-        // With a time: the next time it comes round. Without: one interval from now.
-        (_, Some(time), None) => {
-            let mut due = local_at(now.date_naive(), time).ok_or("Invalid date.")?;
-            if due <= now {
-                due = local_at(now.date_naive() + Duration::days(1), time).ok_or("Invalid date.")?;
-            }
-            (Some(time), due)
-        }
-        (_, None, None) => {
-            let time = now.time().with_nanosecond(0).unwrap_or(now.time());
-            let rule = Rule {
-                every,
-                unit,
-                time: Some(time),
-                command: String::new(),
-                choices: HashMap::new(),
-                model_intent: None,
-                modified_dates: true,
-                subfolder_opt_in: true,
-            };
-            (Some(time), rule.step(now).ok_or("That time is too far away.")?)
-        }
-    };
-    let rule = Rule {
+    let mut rule = Rule {
         every,
         unit,
         time,
         command: command.clone(),
         choices: HashMap::new(),
         model_intent: None,
-        modified_dates: true,
-        subfolder_opt_in: true,
+        approved_version: APPROVED_RULE_VERSION,
+        approved_source: Some(RuleSource::Command),
     };
-    Ok(Some((command, When { due, rule: Some(rule) })))
+    let anchor = time.is_none().then(|| day.map_or(RepeatAnchor::Interval, RepeatAnchor::Weekday));
+    let due = match (day, time) {
+        (Some(day), time) => {
+            let time = time.unwrap_or_else(|| NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+            rule.time = Some(time);
+            next_weekday(day, time, now)
+        }
+        (None, Some(time)) => {
+            let date = now.date_naive();
+            local_at(date, time).and_then(|due| if due > now { Some(due) } else { local_at(date.succ_opt()?, time) })
+        }
+        (None, None) => RepeatAnchor::Interval.next(&mut rule, now),
+    }
+    .ok_or("That time is too far away.")?;
+    let first_run = if anchor.is_some() { FirstRunPolicy::RunNowAndRepeat } else { FirstRunPolicy::RepeatLater };
+    Ok(Some((command, When { due, rule: Some(rule), first_run, anchor })))
 }
 
 pub fn display(due: DateTime<Local>) -> String {
@@ -497,19 +588,130 @@ impl Stamp {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SeriesState {
+    Active,
+    Paused,
+    Stopped,
+    Completed,
+    Failed,
+    FirstRunPending,
+    NeedsReview,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OccurrenceState {
+    Waiting,
+    Running,
+    Finished,
+    ResultUnsaved,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RecordedResult {
+    series: SeriesState,
+    due: DateTime<Local>,
+    summary: String,
+}
+
+pub enum Completion {
+    OneTime { series: SeriesState, summary: String },
+    Recurring(String),
+    NeedsReview(String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", from = "SavedJob")]
 pub struct Job {
     pub id: u64,
     pub command: String,
     pub due: DateTime<Local>,
-    pub status: String,
+    pub series: SeriesState,
+    pub occurrence: OccurrenceState,
     pub summary: String,
     pub actions: Vec<Action>,
     stamps: Vec<Stamp>,
-    /// Present for repeating tasks, which plan their command again at each run.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub repeat: Option<Rule>,
+    pub first_run: FirstRunPolicy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    anchor: Option<RepeatAnchor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<RecordedResult>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedJob {
+    id: u64,
+    command: String,
+    due: DateTime<Local>,
+    #[serde(flatten)]
+    state: SavedState,
+    summary: String,
+    actions: Vec<Action>,
+    stamps: Vec<Stamp>,
+    repeat: Option<Rule>,
+    first_run: Option<FirstRunPolicy>,
+    anchor: Option<RepeatAnchor>,
+    result: Option<RecordedResult>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum SavedState {
+    Current { series: SeriesState, occurrence: OccurrenceState },
+    Legacy { status: LegacyStatus },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LegacyStatus {
+    Pending,
+    Running,
+    Paused,
+    Cancelled,
+    Completed,
+    Failed,
+}
+
+impl From<SavedJob> for Job {
+    fn from(saved: SavedJob) -> Self {
+        use OccurrenceState::{Finished, Running, Waiting};
+        use SeriesState::{Active, Completed, Failed, Paused, Stopped};
+        let (series, occurrence) = match saved.state {
+            SavedState::Current { series, occurrence } => (series, occurrence),
+            SavedState::Legacy { status } => match status {
+                LegacyStatus::Pending => (Active, Waiting),
+                LegacyStatus::Running => (Active, Running),
+                LegacyStatus::Paused => (Paused, Waiting),
+                LegacyStatus::Cancelled => (Stopped, Finished),
+                LegacyStatus::Completed => (Completed, Finished),
+                LegacyStatus::Failed => (Failed, Finished),
+            },
+        };
+        Self {
+            id: saved.id,
+            command: saved.command,
+            due: saved.due,
+            series,
+            occurrence,
+            summary: saved.summary,
+            actions: saved.actions,
+            stamps: saved.stamps,
+            first_run: saved.first_run.unwrap_or(if saved.repeat.is_some() {
+                FirstRunPolicy::RepeatLater
+            } else {
+                FirstRunPolicy::OneTimeDeferred
+            }),
+            repeat: saved.repeat,
+            anchor: saved.anchor,
+            result: saved.result,
+        }
+    }
 }
 
 /// Actions a scheduled task may run. Undo steps and Finder commands may not.
@@ -526,19 +728,40 @@ pub fn check_actions(actions: &[Action]) -> Result<(), String> {
 }
 
 impl Job {
-    /// A repeating task. It keeps no file list: each run uses what matches then.
-    pub fn recurring(command: String, due: DateTime<Local>, rule: Rule) -> Self {
+    /// A repeating task keeps no file list. Each run uses what matches then.
+    pub fn recurring(command: String, when: &When, rule: Rule) -> Self {
+        let (series, occurrence) = if when.first_run == FirstRunPolicy::RunNowAndRepeat {
+            (SeriesState::FirstRunPending, OccurrenceState::Running)
+        } else {
+            (SeriesState::Active, OccurrenceState::Waiting)
+        };
         Self {
             id: 0,
             command,
-            due,
-            status: "pending".into(),
+            due: when.due,
+            series,
+            occurrence,
             summary: String::new(),
             actions: Vec::new(),
             stamps: Vec::new(),
             repeat: Some(rule),
+            first_run: when.first_run,
+            anchor: when.anchor,
+            result: None,
         }
     }
+
+    #[cfg(test)]
+    pub fn recurring_later(command: String, due: DateTime<Local>, rule: Rule) -> Self {
+        Self::recurring(command, &When { due, rule: None, first_run: FirstRunPolicy::RepeatLater, anchor: None }, rule)
+    }
+
+    pub fn anchor_first_run(&mut self, now: DateTime<Local>) -> Result<(), String> {
+        let rule = self.repeat.as_mut().ok_or("That task doesn't repeat.")?;
+        self.due = self.anchor.and_then(|anchor| anchor.next(rule, now)).ok_or("That time is too far away.")?;
+        Ok(())
+    }
+
     #[cfg(test)]
     pub fn new(command: String, due: DateTime<Local>, actions: Vec<Action>) -> Result<Self, String> {
         Self::new_with_control(command, due, actions, &crate::search::Control::default())
@@ -598,7 +821,20 @@ impl Job {
             }
             stamps.push(stamp);
         }
-        Ok(Self { id: 0, command, due, status: "pending".into(), summary: String::new(), actions, stamps, repeat: None })
+        Ok(Self {
+            id: 0,
+            command,
+            due,
+            series: SeriesState::Active,
+            occurrence: OccurrenceState::Waiting,
+            summary: String::new(),
+            actions,
+            stamps,
+            repeat: None,
+            first_run: FirstRunPolicy::OneTimeDeferred,
+            anchor: None,
+            result: None,
+        })
     }
     pub fn validate(&self) -> Result<(), String> {
         for stamp in &self.stamps {
@@ -616,7 +852,8 @@ pub struct Summary {
     pub id: u64,
     pub command: String,
     pub due: DateTime<Local>,
-    pub status: String,
+    pub series: SeriesState,
+    pub occurrence: OccurrenceState,
     pub summary: String,
     /// How often a repeating task runs, such as “every 3 days at 9:00 PM”.
     pub repeat: Option<String>,
@@ -627,7 +864,8 @@ impl Job {
             id: self.id,
             command: self.command.clone(),
             due: self.due,
-            status: self.status.clone(),
+            series: self.series,
+            occurrence: self.occurrence,
             summary: self.summary.clone(),
             repeat: self.repeat.as_ref().map(|rule| rule.describe(self.due)),
         }
@@ -637,22 +875,31 @@ impl Job {
 pub struct Store {
     path: PathBuf,
     pub jobs: Vec<Job>,
+    dirty: bool,
     notice: Option<String>,
     unavailable: Option<String>,
 }
+
 impl Store {
     pub fn load(path: PathBuf) -> Self {
         let (jobs, warning) = crate::settings::load_store::<Vec<Job>>(&path, crate::settings::diagnostics::Store::Schedules);
         if let Some(warning) = warning {
-            return Self::unavailable(path, format!("{} Scheduling is unavailable; original data has been kept.", warning.message));
+            return Self {
+                path,
+                jobs: Vec::new(),
+                dirty: false,
+                notice: None,
+                unavailable: Some(format!("{} Scheduling is unavailable; original data has been kept.", warning.message)),
+            };
         }
-        let notice = None;
-        let mut store = Self { path, jobs, notice, unavailable: None };
-        // Never rerun a task whose process stopped partway through execution.
-        // A repeating task skips to its next run instead.
-        let now = Local::now();
+        let mut store = Self { path, jobs, dirty: true, notice: None, unavailable: None };
         for job in &mut store.jobs {
-            if job.status == "running" {
+            if job.occurrence == OccurrenceState::ResultUnsaved && job.result.is_some() {
+                continue;
+            }
+            if job.series == SeriesState::FirstRunPending
+                || matches!(job.occurrence, OccurrenceState::Running | OccurrenceState::ResultUnsaved)
+            {
                 crate::settings::diagnostics::emit(
                     crate::settings::diagnostics::Event::new(
                         crate::settings::diagnostics::Code::SchedulerSkip,
@@ -660,31 +907,25 @@ impl Store {
                     )
                     .operation(job.id),
                 );
-            }
-            if job.status == "running"
-                && let Some(next) = job.repeat.as_ref().and_then(|rule| rule.next_after(job.due, now))
-            {
-                job.status = "pending".into();
-                job.due = next;
-                job.summary = "Voxi stopped during the last run. Check History; the next run is scheduled.".into();
-            } else if job.status == "running" {
-                job.status = "failed".into();
-                job.summary = "Voxi stopped during this task. Check files and History before scheduling again.".into();
+                job.summary = if job.series == SeriesState::FirstRunPending {
+                    "Voxi closed before recording the first run. Check your files and History before scheduling again.".into()
+                } else {
+                    "Voxi closed before recording the last run. Check your files and History before scheduling again.".into()
+                };
+                job.series = SeriesState::NeedsReview;
+                job.occurrence = OccurrenceState::Finished;
+                job.result = None;
             }
         }
-        if let Err(error) = store.save() {
-            store.jobs.clear();
-            store.unavailable = Some(error);
-        }
+        let _ = store.retry_results();
         store
     }
-    fn unavailable(path: PathBuf, error: String) -> Self {
-        Self { path, jobs: Vec::new(), notice: None, unavailable: Some(error) }
-    }
+
     pub fn notice(&self) -> Option<String> {
         self.unavailable.clone().or_else(|| self.notice.clone())
     }
-    fn save(&self) -> Result<(), String> {
+
+    fn save_jobs(&self, jobs: &[Job]) -> Result<(), String> {
         if let Some(error) = &self.unavailable {
             crate::settings::diagnostics::emit(
                 crate::settings::diagnostics::Event::new(
@@ -695,106 +936,158 @@ impl Store {
             );
             return Err(error.clone());
         }
-        crate::settings::save_store(&self.path, &self.jobs, crate::settings::diagnostics::Store::Schedules)
+        crate::settings::save_store(&self.path, &jobs, crate::settings::diagnostics::Store::Schedules)
     }
 
-    pub fn add(&mut self, mut job: Job) -> Result<(), String> {
-        job.id = self.jobs.iter().map(|j| j.id).max().unwrap_or(0) + 1;
+    /// Persist the result with the original occurrence before publishing its
+    /// successor. After a restart either the staged or final result is safe.
+    pub fn retry_results(&mut self) -> Result<(), String> {
+        let result = self.flush_results();
+        self.notice = result.as_ref().err().map(|e| format!("Couldn't save scheduled task state. Voxi will retry. {e}"));
+        result
+    }
+
+    fn flush_results(&mut self) -> Result<(), String> {
+        if self.dirty {
+            self.save_jobs(&self.jobs)?;
+            self.dirty = false;
+        }
+        if self.jobs.iter().any(|job| job.occurrence == OccurrenceState::ResultUnsaved) {
+            let mut saved = self.jobs.clone();
+            for job in &mut saved {
+                if job.occurrence == OccurrenceState::ResultUnsaved {
+                    let result = job.result.take().ok_or("Missing scheduled task result.")?;
+                    job.series = result.series;
+                    job.occurrence =
+                        if result.series == SeriesState::Active { OccurrenceState::Waiting } else { OccurrenceState::Finished };
+                    job.due = result.due;
+                    job.summary = result.summary;
+                }
+            }
+            self.save_jobs(&saved)?;
+            self.jobs = saved;
+        }
+        Ok(())
+    }
+
+    pub fn add(&mut self, mut job: Job) -> Result<u64, String> {
+        self.retry_results()?;
+        let id = self.jobs.iter().map(|j| j.id).max().unwrap_or(0).checked_add(1).ok_or("Too many scheduled tasks.")?;
+        job.id = id;
         self.jobs.push(job);
-        if let Err(e) = self.save() {
+        if let Err(e) = self.save_jobs(&self.jobs) {
             self.jobs.pop();
             return Err(e);
         }
-        Ok(())
+        Ok(id)
     }
-    pub fn update(&mut self, id: u64, status: &str, summary: String) -> Result<(), String> {
-        let job = self.jobs.iter_mut().find(|j| j.id == id).ok_or("That task no longer exists.")?;
-        let old = job.clone();
-        job.status = status.into();
-        job.summary = summary;
-        if let Err(e) = self.save() {
-            *self.jobs.iter_mut().find(|j| j.id == id).unwrap() = old;
-            return Err(e);
-        }
-        Ok(())
-    }
-    /// Records a run's summary without changing status, so a stop or pause
-    /// made while the run was in progress stays in effect.
-    pub fn record_summary(&mut self, id: u64, summary: String) -> Result<(), String> {
-        let status = self.jobs.iter().find(|j| j.id == id).ok_or("That task no longer exists.")?.status.clone();
-        self.update(id, &status, summary)
-    }
-    pub fn cancel(&mut self, id: u64) -> Result<(), String> {
-        let job = self
-            .jobs
-            .iter()
-            .find(|j| j.id == id && matches!(j.status.as_str(), "pending" | "paused"))
-            .ok_or("Only pending or paused tasks can be cancelled.")?;
-        let summary = if job.repeat.is_some() { "Stopped.".into() } else { "Cancelled before running.".into() };
-        self.update(id, "cancelled", summary)
-    }
-    /// Stops a repeating task from running until it is resumed.
-    pub fn pause(&mut self, id: u64) -> Result<(), String> {
-        let job = self
-            .jobs
-            .iter()
-            .find(|j| j.id == id && j.status == "pending" && j.repeat.is_some())
-            .ok_or("Only waiting repeating tasks can be paused.")?;
-        let summary = job.summary.clone();
-        self.update(id, "paused", summary)
-    }
-    /// Makes a paused, stopped, or failed repeating task active again.
-    /// Runs missed in the meantime are skipped. One-time tasks can't come
-    /// back: the files they were checked against may have changed.
-    pub fn resume(&mut self, id: u64, now: DateTime<Local>) -> Result<(), String> {
-        let index = self
-            .jobs
-            .iter()
-            .position(|j| j.id == id && j.repeat.is_some() && matches!(j.status.as_str(), "paused" | "cancelled" | "failed"))
-            .ok_or("Only repeating tasks that aren't running can be made active again.")?;
-        let old = self.jobs[index].clone();
-        let job = &mut self.jobs[index];
-        let rule = job.repeat.as_ref().ok_or("Only repeating tasks can be resumed.")?;
-        if job.due <= now {
-            job.due = rule.next_after(job.due, now).ok_or("That time is too far away.")?;
-        }
-        if job.status != "paused" {
-            job.summary = "Made active again.".into();
-        }
-        job.status = "pending".into();
-        if let Err(e) = self.save() {
-            self.jobs[index] = old;
-            return Err(e);
-        }
-        Ok(())
-    }
-    /// Records a repeating task's run and schedules the next one.
-    pub fn finish_recurring(&mut self, id: u64, summary: String, now: DateTime<Local>) -> Result<(), String> {
+
+    fn change(&mut self, id: u64, change: impl FnOnce(&mut Job) -> Result<(), String>) -> Result<(), String> {
+        self.retry_results()?;
         let index = self.jobs.iter().position(|j| j.id == id).ok_or("That task no longer exists.")?;
-        let old = self.jobs[index].clone();
-        let job = &mut self.jobs[index];
-        let rule = job.repeat.as_ref().ok_or("That task doesn't repeat.")?;
-        job.summary = format!("Last run {}: {summary}", display(now));
-        match rule.next_after(job.due, now) {
-            Some(next) => {
-                job.due = next;
-                job.status = "pending".into();
-            }
-            None => {
-                job.status = "failed".into();
-                job.summary.push_str(" The next run is too far away.");
-            }
-        }
-        if let Err(e) = self.save() {
+        let mut next = self.jobs[index].clone();
+        change(&mut next)?;
+        let old = std::mem::replace(&mut self.jobs[index], next);
+        if let Err(e) = self.save_jobs(&self.jobs) {
             self.jobs[index] = old;
             return Err(e);
         }
         Ok(())
     }
+
+    pub fn cancel(&mut self, id: u64) -> Result<(), String> {
+        self.change(id, |job| {
+            if job.occurrence != OccurrenceState::Waiting || !matches!(job.series, SeriesState::Active | SeriesState::Paused) {
+                return Err("Only pending or paused tasks can be cancelled.".into());
+            }
+            job.series = SeriesState::Stopped;
+            job.occurrence = OccurrenceState::Finished;
+            job.summary = if job.repeat.is_some() { "Stopped.".into() } else { "Cancelled before running.".into() };
+            Ok(())
+        })
+    }
+
+    pub fn pause(&mut self, id: u64) -> Result<(), String> {
+        self.change(id, |job| {
+            if job.series != SeriesState::Active || job.occurrence != OccurrenceState::Waiting || job.repeat.is_none() {
+                return Err("Only waiting repeating tasks can be paused.".into());
+            }
+            job.series = SeriesState::Paused;
+            Ok(())
+        })
+    }
+
+    /// Runs missed while paused or stopped are skipped. A one-time task's
+    /// approved files may have changed, so only repeat schedules can resume.
+    pub fn resume(&mut self, id: u64, now: DateTime<Local>) -> Result<(), String> {
+        self.change(id, |job| {
+            if job.series == SeriesState::NeedsReview {
+                return Err("Schedule it again to keep this task.".into());
+            }
+            if !matches!(job.series, SeriesState::Paused | SeriesState::Stopped | SeriesState::Failed) {
+                return Err("Only paused, stopped or failed repeating tasks can be made active again.".into());
+            }
+            let rule = job.repeat.as_ref().ok_or("Only repeating tasks can be resumed.")?;
+            if job.due <= now {
+                job.due = rule.next_after(job.due, now).ok_or("That time is too far away.")?;
+            }
+            if job.series != SeriesState::Paused {
+                job.summary = "Made active again.".into();
+            }
+            job.series = SeriesState::Active;
+            job.occurrence = OccurrenceState::Waiting;
+            Ok(())
+        })
+    }
+
+    pub fn finish(&mut self, id: u64, completion: Completion, now: DateTime<Local>) -> Result<(), String> {
+        let job = self.jobs.iter_mut().find(|j| j.id == id).ok_or("That task no longer exists.")?;
+        let first = job.series == SeriesState::FirstRunPending;
+        if job.occurrence != OccurrenceState::Running {
+            return Err("That task has no run to finish.".into());
+        }
+        let mut due = job.due;
+        let (series, summary) = match completion {
+            Completion::OneTime { series, summary } => (series, summary),
+            Completion::NeedsReview(summary) => (SeriesState::NeedsReview, summary),
+            Completion::Recurring(summary) if first => (SeriesState::Active, summary),
+            Completion::Recurring(summary) => {
+                let rule = job.repeat.as_ref().ok_or("That task doesn't repeat.")?;
+                let mut summary = format!("Last run {}: {summary}", display(now));
+                let series = match rule.next_after(due, now) {
+                    Some(next) => {
+                        due = next;
+                        SeriesState::Active
+                    }
+                    None => {
+                        summary.push_str(" The next run is too far away.");
+                        SeriesState::Failed
+                    }
+                };
+                (series, summary)
+            }
+        };
+        job.summary = summary.clone();
+        job.result = Some(RecordedResult { series, due, summary });
+        job.occurrence = OccurrenceState::ResultUnsaved;
+        self.dirty = true;
+        self.retry_results()
+    }
+
     pub fn claim(&mut self, now: DateTime<Local>) -> Result<Option<Job>, String> {
-        let job = self.jobs.iter().filter(|j| j.status == "pending" && j.due <= now).min_by_key(|j| j.due).cloned();
+        self.retry_results()?;
+        let job = self
+            .jobs
+            .iter()
+            .filter(|j| j.series == SeriesState::Active && j.occurrence == OccurrenceState::Waiting && j.due <= now)
+            .min_by_key(|j| j.due)
+            .cloned();
         if let Some(job) = &job {
-            self.update(job.id, "running", "Running…".into())?;
+            self.change(job.id, |job| {
+                job.occurrence = OccurrenceState::Running;
+                job.summary = "Running…".into();
+                Ok(())
+            })?;
         }
         Ok(job)
     }
@@ -985,8 +1278,8 @@ mod tests {
             command: "x".into(),
             choices: HashMap::new(),
             model_intent: None,
-            modified_dates: true,
-            subfolder_opt_in: true,
+            approved_version: APPROVED_RULE_VERSION,
+            approved_source: Some(RuleSource::Command),
         };
         let first = Local.with_ymd_and_hms(2026, 11, 1, 21, 0, 0).unwrap();
         // Voxi was closed for ten days: one run now, then back on the 3-day grid.
@@ -997,7 +1290,7 @@ mod tests {
         assert_eq!(weekly.describe(Local.with_ymd_and_hms(2026, 11, 16, 21, 0, 0).unwrap()), "every Monday at 9:00 PM");
     }
     #[test]
-    fn repeating_tasks_survive_reload_and_interrupted_runs() {
+    fn interrupted_repeats_need_review_after_reload() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("jobs.json");
         let mut store = Store::load(path.clone());
@@ -1008,15 +1301,17 @@ mod tests {
             command: "move a.pdf to Documents".into(),
             choices: HashMap::new(),
             model_intent: None,
-            modified_dates: true,
-            subfolder_opt_in: true,
+            approved_version: APPROVED_RULE_VERSION,
+            approved_source: Some(RuleSource::Command),
         };
-        store.add(Job::recurring("move a.pdf to Documents hourly".into(), Local::now() - Duration::minutes(1), rule.clone())).unwrap();
+        store.add(Job::recurring_later("move a.pdf to Documents hourly".into(), now(), rule.clone())).unwrap();
         assert_eq!(store.claim(Local::now()).unwrap().unwrap().id, 1);
-        // Voxi quit mid-run: the task skips ahead instead of failing or rerunning.
-        let store = Store::load(path.clone());
-        assert_eq!(store.jobs[0].status, "pending");
-        assert!(store.jobs[0].due > Local::now());
+        let mut store = Store::load(path.clone());
+        assert_eq!(store.jobs[0].series, SeriesState::NeedsReview);
+        assert_eq!(store.jobs[0].occurrence, OccurrenceState::Finished);
+        assert!(store.jobs[0].summary.contains("Check your files and History"));
+        assert!(store.claim(Local::now()).unwrap().is_none());
+        assert_eq!(store.resume(1, now()).unwrap_err(), "Schedule it again to keep this task.");
         assert_eq!(store.jobs[0].repeat, Some(rule));
         assert_eq!(store.jobs[0].summary().repeat.as_deref(), Some("every hour"));
     }
@@ -1066,20 +1361,107 @@ mod tests {
         assert_eq!(store.claim(now()).unwrap().unwrap().id, 1);
         assert!(store.claim(now()).unwrap().is_none());
         let mut store = Store::load(path);
-        assert_eq!(store.jobs[0].status, "failed");
+        assert_eq!(store.jobs[0].series, SeriesState::NeedsReview);
         store.add(Job::new("create folder".into(), now(), vec![]).unwrap()).unwrap();
         store.cancel(2).unwrap();
         assert!(store.claim(now()).unwrap().is_none());
     }
     #[test]
-    fn run_summary_keeps_a_stop_made_during_the_run() {
+    fn failed_result_save_is_retried_without_reclaiming_the_run() {
+        use crate::settings::WRITE_FAILURE;
         let dir = tempfile::tempdir().unwrap();
-        let mut store = Store::load(dir.path().join("jobs.json"));
-        store.add(Job::new("create folder".into(), now(), vec![]).unwrap()).unwrap();
-        store.cancel(1).unwrap();
-        store.record_summary(1, "Done. 1 change.".into()).unwrap();
-        assert_eq!((store.jobs[0].status.as_str(), store.jobs[0].summary.as_str()), ("cancelled", "Done. 1 change."));
+        let path = dir.path().join("schedules.json");
+        let mut store = Store::load(path.clone());
+        let id = store.add(Job::new("create folder".into(), now(), vec![]).unwrap()).unwrap();
+        assert!(store.claim(now()).unwrap().is_some());
+
+        WRITE_FAILURE.with(|f| f.set(2));
+        let failed = store.finish(id, Completion::OneTime { series: SeriesState::Completed, summary: "Done.".into() }, now());
+        assert!(failed.is_err());
+        assert_eq!(store.jobs[0].occurrence, OccurrenceState::ResultUnsaved);
+        assert!(store.claim(now()).is_err());
+        WRITE_FAILURE.with(|f| f.set(0));
+
+        assert!(store.claim(now()).unwrap().is_none());
+        let reloaded = Store::load(path);
+        assert_eq!(reloaded.jobs[0].series, SeriesState::Completed);
+        assert_eq!(reloaded.jobs[0].occurrence, OccurrenceState::Finished);
+        assert_eq!(reloaded.jobs[0].summary, "Done.");
     }
+
+    #[test]
+    fn first_run_pending_requires_review_unless_the_result_was_staged() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, when) = extract_schedule("move PDFs to Documents every day", now()).unwrap();
+        let when = when.unwrap();
+        let job = Job::recurring("move PDFs to Documents every day".into(), &when, when.rule.clone().unwrap());
+        for recovered_result in [false, true] {
+            let path = dir.path().join(format!("schedules-{recovered_result}.json"));
+            let mut store = Store::load(path.clone());
+            store.add(job.clone()).unwrap();
+            assert!(store.claim(when.due).unwrap().is_none());
+            if recovered_result {
+                // The process stopped between saving the result and promoting the series.
+                use crate::settings::WRITE_FAILURE;
+                WRITE_FAILURE.with(|f| f.set(4));
+                let result = store.finish(1, Completion::Recurring("Done.".into()), now());
+                WRITE_FAILURE.with(|f| f.set(0));
+                assert!(result.is_err());
+                assert_eq!(store.jobs[0].occurrence, OccurrenceState::ResultUnsaved);
+            }
+            let store = Store::load(path);
+            let expected = if recovered_result { SeriesState::Active } else { SeriesState::NeedsReview };
+            assert_eq!(store.jobs[0].series, expected);
+            if recovered_result {
+                assert_eq!(store.jobs[0].occurrence, OccurrenceState::Waiting);
+                assert_eq!(store.jobs[0].summary, "Done.");
+            }
+        }
+    }
+
+    #[test]
+    fn legacy_status_and_approval_versions_migrate() {
+        use OccurrenceState::{Finished, Running, Waiting};
+        use SeriesState::{Active, Completed, Failed, Paused, Stopped};
+        for (status, series, occurrence) in [
+            ("pending", Active, Waiting),
+            ("running", Active, Running),
+            ("paused", Paused, Waiting),
+            ("cancelled", Stopped, Finished),
+            ("completed", Completed, Finished),
+            ("failed", Failed, Finished),
+        ] {
+            let value = serde_json::json!({
+                "id": 1, "command": "create folder", "due": now(), "status": status, "summary": "", "actions": [], "stamps": []
+            });
+            let job: Job = serde_json::from_value(value).unwrap();
+            assert_eq!((job.series, job.occurrence), (series, occurrence));
+            assert_eq!(job.first_run, FirstRunPolicy::OneTimeDeferred);
+            assert!(serde_json::to_value(job).unwrap().get("status").is_none());
+        }
+        for (old_flags, version) in [
+            (serde_json::json!({}), 0),
+            (serde_json::json!({"modifiedDates": true, "subfolderOptIn": false}), 1),
+            (serde_json::json!({"modifiedDates": true, "subfolderOptIn": true}), 2),
+            (serde_json::json!({"approvedVersion": 2}), 2),
+        ] {
+            let mut value = serde_json::json!({
+                "every": 1, "unit": "days", "command": "create folder",
+                "modelIntent": crate::model::Intent::CreateFolders { names: vec!["folder".into()], parent: None },
+            });
+            value.as_object_mut().unwrap().extend(old_flags.as_object().unwrap().clone());
+            let rule: Rule = serde_json::from_value(value).unwrap();
+            assert_eq!(rule.approved_version, version);
+            assert!(rule.model_intent.is_some());
+            assert!(rule.approved_source.is_none());
+            let saved = serde_json::to_value(rule).unwrap();
+            assert_eq!(saved["approvedVersion"], version);
+            assert!(saved.get("modifiedDates").is_none());
+            assert!(saved.get("subfolderOptIn").is_none());
+            assert!(saved.get("modelIntent").is_none());
+        }
+    }
+
     #[test]
     fn names_with_at_are_preserved() {
         assert_eq!(extract("rename a.txt to Notes at Work", now()).unwrap(), ("rename a.txt to Notes at Work".into(), None));

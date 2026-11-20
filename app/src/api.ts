@@ -17,8 +17,13 @@ export function isConfirmError(e: unknown): e is ConfirmError {
 export function errorMessage(e: unknown): string {
   if (e instanceof Error && e.message.trim()) return e.message;
   if (typeof e === "string" && e.trim()) return e;
-  if (isConfirmError(e) && e.message.trim()) return e.message;
+  if (e && typeof e === "object" && "message" in e && typeof e.message === "string" && e.message.trim()) return e.message;
   return "Something went wrong. Please try again.";
+}
+
+/** Failed settings saves can report the live hotkey after compensation. */
+export function installedHotkeyAfterSave(e: unknown): string | undefined {
+  if (e && typeof e === "object" && "installedHotkey" in e && typeof e.installedHotkey === "string") return e.installedHotkey;
 }
 
 /** `skippable` steps can be unticked to leave them out before confirming. */
@@ -27,14 +32,18 @@ export type PreviewItem = { kind: string; primary: string; detail: string; note?
 export type PreviewRow = PreviewItem & { step: number };
 export type InfoRow = { name: string; detail: string };
 
+export type FirstRunPolicy = "immediate" | "oneTimeDeferred" | "repeatLater" | "runNowAndRepeat";
+
 export type Outcome =
-  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; warnings: string[]; isUndo: boolean; scheduledFor?: string | null; repeats?: string | null }
+  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; warnings: string[]; isUndo: boolean; firstRun: FirstRunPolicy; scheduledFor?: string | null; repeats?: string | null }
   | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
   | { status: "not_understood"; text: string };
 
-export type ScheduledTask = { id: number; command: string; due: string; status: "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"; summary: string; repeat?: string | null };
+export type SeriesState = "active" | "paused" | "stopped" | "completed" | "failed" | "firstRunPending" | "needsReview";
+export type OccurrenceState = "waiting" | "running" | "finished" | "resultUnsaved";
+export type ScheduledTask = { id: number; command: string; due: string; series: SeriesState; occurrence: OccurrenceState; summary: string; repeat?: string | null };
 
 export type RecoveryStatus = { command: string; acknowledged: number; inFlight: Record<string, unknown> | null };
 

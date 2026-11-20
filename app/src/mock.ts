@@ -37,7 +37,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
   const t = text.toLowerCase();
   if (t.includes("usuals"))
     return {
-      status: "plan", id: 4, title: "Run my usuals: 2 commands", total: 3, noted: 0, isUndo: false,
+      status: "plan", firstRun: "immediate", id: 4, title: "Run my usuals: 2 commands", total: 3, noted: 0, isUndo: false,
       warnings: ["“delete installers from Downloads”: No files match in Downloads."],
       items: [
         { kind: "create_folder", primary: "Screenshots", detail: "new folder in ~/Desktop" },
@@ -47,7 +47,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("pdf"))
     return {
-      status: "plan", id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
+      status: "plan", firstRun: "immediate", id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
       warnings: ["2 already in Documents, left alone."],
       items: [
         { kind: "move", primary: "Q3 board deck.pdf", detail: "→ ~/Documents", skippable: true },
@@ -59,7 +59,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("clean"))
     return {
-      status: "plan", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, noted: 0, isUndo: false, warnings: [],
+      status: "plan", firstRun: "immediate", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, noted: 0, isUndo: false, warnings: [],
       items: [
         { kind: "trash", primary: "Zoom.pkg", detail: "→ Trash" },
         { kind: "trash", primary: "Figma-124.3.dmg", detail: "→ Trash" },
@@ -68,7 +68,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("claude") && choices.claude)
     return {
-      status: "plan", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, noted: 0, isUndo: false, warnings: [],
+      status: "plan", firstRun: "immediate", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, noted: 0, isUndo: false, warnings: [],
       items: [{ kind: "trash", primary: choices.claude.split("/").pop()!, detail: "→ Trash" }],
     };
   if (t.includes("claude"))
@@ -109,13 +109,13 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "scheduler_notice": return null;
     case "scheduled_tasks": return scheduled;
     case "cancel_scheduled_task": {
-      scheduled = scheduled.map((task) => task.id === args.id ? { ...task, status: "cancelled", summary: task.repeat ? "Stopped." : "Cancelled before running." } : task);
+      scheduled = scheduled.map((task) => task.id === args.id ? { ...task, series: "stopped", occurrence: "finished", summary: task.repeat ? "Stopped." : "Cancelled before running." } : task);
       return;
     }
     case "pause_scheduled_task":
     case "resume_scheduled_task": {
-      const status = cmd === "pause_scheduled_task" ? "paused" : "pending";
-      scheduled = scheduled.map((task) => task.id === args.id && task.repeat ? { ...task, status, summary: task.status === "paused" ? task.summary : "Made active again." } : task);
+      const series = cmd === "pause_scheduled_task" ? "paused" : "active";
+      scheduled = scheduled.map((task) => task.id === args.id && task.repeat ? { ...task, series, occurrence: "waiting", summary: task.series === "paused" ? task.summary : "Made active again." } : task);
       return;
     }
     case "plan_command": {
@@ -139,9 +139,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
           due.setHours(Number(repeat[3]) % (repeat[5] ? 12 : 24) + (repeat[5]?.toLowerCase() === "pm" ? 12 : 0), Number(repeat[4] || 0), 0, 0);
           if (due <= new Date()) due.setDate(due.getDate() + 1);
         }
-        pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "", repeat: every, runNow, total: outcome.total, intervalMs };
+        pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), series: "active", occurrence: "waiting", summary: "", repeat: every, runNow, total: outcome.total, intervalMs };
         activePlan = outcome.id;
-        return { outcome: { ...outcome, scheduledFor: due.toISOString(), repeats: runNow ? `Runs now, then ${every}` : every, warnings: [`${runNow ? `Runs now, then ${every}. Next run` : `Repeats ${every}, first on`} ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null };
+        return { outcome: { ...outcome, scheduledFor: due.toISOString(), firstRun: runNow ? "runNowAndRepeat" : "repeatLater", repeats: runNow ? `Runs now, then ${every}` : every, warnings: [`${runNow ? `Runs now, then ${every}. Next run` : `Repeats ${every}, first on`} ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null };
       }
       const timing = text.match(/\s+(?:at\s+(.+)|(after|in)\s+(\d+)\s+(hours?|minutes?))$/i);
       let outcome = plan(timing ? text.slice(0, timing.index) : text, args.choices as Record<string, string>);
@@ -156,8 +156,8 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         } else due.setTime(due.getTime() + Number(timing[3]) * (timing[4].startsWith("hour") ? 3600000 : 60000));
         if (text.toLowerCase().includes("screenshot")) outcome = plan("run my usuals");
         if (outcome.status === "plan") {
-          outcome = { ...outcome, scheduledFor: due.toISOString(), warnings: [...outcome.warnings, `Scheduled for ${due.toLocaleString()}. Only the files shown here will be changed. Voxi must be running.`] };
-          pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "" };
+          outcome = { ...outcome, scheduledFor: due.toISOString(), firstRun: "oneTimeDeferred", warnings: [...outcome.warnings, `Scheduled for ${due.toLocaleString()}. Only the files shown here will be changed. Voxi must be running.`] };
+          pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), series: "active", occurrence: "waiting", summary: "" };
         }
       }
       if (outcome.status === "plan") {

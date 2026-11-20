@@ -1,6 +1,8 @@
 use super::*;
 
-fn now() -> DateTime<Local> { Local.with_ymd_and_hms(2026, 11, 18, 7, 0, 0).single().unwrap() }
+fn now() -> DateTime<Local> {
+    Local.with_ymd_and_hms(2026, 11, 18, 7, 0, 0).single().unwrap()
+}
 
 #[test]
 fn calendar_and_prefix_schedules_keep_destinations_clean() {
@@ -65,21 +67,51 @@ fn repeats_have_exact_rules_and_first_runs() {
     assert_eq!(when.rule.unwrap().unit, Unit::Weeks);
     let (_, when) = extract_schedule(&format!("every 2 hours {base}"), now()).unwrap();
     assert_eq!(when.unwrap().due, now() + Duration::hours(2));
-    assert!(runs_on_confirm(&format!("every 2 hours {base}")));
-    assert!(!runs_on_confirm(&format!("{base} every morning at 8")));
+    assert_eq!(extract_schedule(&format!("every 2 hours {base}"), now()).unwrap().1.unwrap().first_run, FirstRunPolicy::RunNowAndRepeat);
+    assert_eq!(extract_schedule(&format!("{base} every morning at 8"), now()).unwrap().1.unwrap().first_run, FirstRunPolicy::RepeatLater);
 }
 
 #[test]
 fn unclear_dates_never_become_destination_names() {
-    for suffix in ["on Friday", "next Monday", "tonight", "this morning", "this evening", "this afternoon", "on November 20", "on 2026-11-20", "each morning", "every morning", "every month", "monthly", "every -5 minutes", "every 0 minutes", "daily at 9", "on firday", "next fortnight", "last week", "in 0 minutes"] {
+    for suffix in [
+        "on Friday",
+        "next Monday",
+        "tonight",
+        "this morning",
+        "this evening",
+        "this afternoon",
+        "on November 20",
+        "on 2026-11-20",
+        "each morning",
+        "every morning",
+        "every month",
+        "monthly",
+        "every -5 minutes",
+        "every 0 minutes",
+        "daily at 9",
+        "on firday",
+        "next fortnight",
+        "last week",
+        "in 0 minutes",
+    ] {
         let command = format!("move dinner.jpg from Desktop to Pictures {suffix}");
         assert!(extract_schedule(&command, now()).is_err(), "{command}");
     }
     for suffix in ["yesterday at 3pm", "on 2025-01-01 at 10am", "today at 6am"] {
-        assert_eq!(extract_schedule(&format!("move a.pdf from Downloads to Documents {suffix}"), now()).unwrap_err(), "That time has already passed.");
+        assert_eq!(
+            extract_schedule(&format!("move a.pdf from Downloads to Documents {suffix}"), now()).unwrap_err(),
+            "That time has already passed."
+        );
     }
     assert!(extract_schedule("move a.pdf to Documents every day and move b.pdf to Documents every week", now()).is_err());
-    for name in ["Pictures morning", "Documents month", "Documents on firday", "Pictures weekly on Friday", "Documents in 5 minutes", "Documents on 2025-01-01"] {
+    for name in [
+        "Pictures morning",
+        "Documents month",
+        "Documents on firday",
+        "Pictures weekly on Friday",
+        "Documents in 5 minutes",
+        "Documents on 2025-01-01",
+    ] {
         let command = format!("move a.pdf to \"{name}\"");
         assert_eq!(extract_schedule(&command, now()).unwrap(), (command, None));
     }

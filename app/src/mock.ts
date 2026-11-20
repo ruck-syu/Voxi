@@ -1,9 +1,9 @@
 // Browser-only stand-in for the Rust backend, so the window can be designed
 // and reviewed with `npm run dev` outside Tauri. Never loaded inside the app.
-import type { Outcome, RunResult, Settings, ScheduledTask } from "./api";
+import type { Outcome, RecoveryStatus, RunResult, Settings, ScheduledTask } from "./api";
 
 let settings: Settings = {
-  hotkey: "Control+Alt+Space", extraFolders: [], startAtLogin: false,
+  hotkey: "Control+Alt+Space", extraFolders: [], excludedFolders: [], startAtLogin: false,
   // ?welcome previews the first-run page.
   onboarded: !new URLSearchParams(location.search).has("welcome"),
   shortcuts: [{ phrase: "run my usuals", commands: ["move screenshots from today to Screenshots", "delete installers from Downloads"] }],
@@ -11,6 +11,11 @@ let settings: Settings = {
 };
 let reports = 0;
 let scheduled: ScheduledTask[] = [];
+/** The plan a preview page may be read from, as in the app; null once it is run, cancelled or replaced. */
+let activePlan: number | null = null;
+/** Each preview gets a fresh id, as in the app, so unticked steps never carry over. */
+let planSeq = 100;
+let entrySeq = 0;
 let pendingSchedule: (ScheduledTask & { runNow?: boolean; total?: number; intervalMs?: number }) | null = null;
 
 // Browser-only permission scenarios, selected with ?mock=<name>:
@@ -33,7 +38,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
   const t = text.toLowerCase();
   if (t.includes("usuals"))
     return {
-      status: "plan", id: 4, title: "Run my usuals: 2 commands", total: 3, isUndo: false,
+      status: "plan", firstRun: "immediate", id: 4, title: "Run my usuals: 2 commands", total: 3, noted: 0, isUndo: false,
       warnings: ["“delete installers from Downloads”: No files match in Downloads."],
       items: [
         { kind: "create_folder", primary: "Screenshots", detail: "new folder in ~/Desktop" },
@@ -43,19 +48,19 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("pdf"))
     return {
-      status: "plan", id: 1, title: "Move 26 files to Documents", total: 26, isUndo: false,
+      status: "plan", firstRun: "immediate", id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
       warnings: ["2 already in Documents, left alone."],
       items: [
-        { kind: "move", primary: "Q3 board deck.pdf", detail: "→ ~/Documents" },
-        { kind: "move", primary: "lease-renewal-2026.pdf", detail: "→ ~/Documents" },
-        { kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”" },
-        { kind: "move", primary: "tax-receipt-march.pdf", detail: "→ ~/Documents" },
-        { kind: "move", primary: "W-2 2025.pdf", detail: "→ ~/Documents" },
+        { kind: "move", primary: "Q3 board deck.pdf", detail: "→ ~/Documents", skippable: true },
+        { kind: "move", primary: "lease-renewal-2026.pdf", detail: "→ ~/Documents", skippable: true },
+        { kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”", skippable: true },
+        { kind: "move", primary: "tax-receipt-march.pdf", detail: "→ ~/Documents", skippable: true },
+        { kind: "move", primary: "W-2 2025.pdf", detail: "→ ~/Documents", skippable: true },
       ],
     };
   if (t.includes("clean"))
     return {
-      status: "plan", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, isUndo: false, warnings: [],
+      status: "plan", firstRun: "immediate", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, noted: 0, isUndo: false, warnings: [],
       items: [
         { kind: "trash", primary: "Zoom.pkg", detail: "→ Trash" },
         { kind: "trash", primary: "Figma-124.3.dmg", detail: "→ Trash" },
@@ -64,7 +69,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("claude") && choices.claude)
     return {
-      status: "plan", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, isUndo: false, warnings: [],
+      status: "plan", firstRun: "immediate", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, noted: 0, isUndo: false, warnings: [],
       items: [{ kind: "trash", primary: choices.claude.split("/").pop()!, detail: "→ Trash" }],
     };
   if (t.includes("claude"))
@@ -89,38 +94,43 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   await new Promise((r) => setTimeout(r, 250));
   switch (cmd) {
     case "updater_failed": return;
-    case "cancel_plan": pendingSchedule = null; return;
-    case "cancel_execution": return;
+    case "cancel_plan": pendingSchedule = null; activePlan = null; return;
+    case "cancel_execution": return false;
     case "search_progress": return 0;
     case "result_scope": return null;
+    case "opening_context": return { scope: null, generation: 0, notice: null };
     case "clear_result_scope": return;
-    case "recovery_status": return !recoveryReviewed && mockScenario?.startsWith("recovery") ? {
-      command: "move PDFs to Documents", acknowledged: 2,
-      inFlight: { kind: "move", from: "/Users/me/Downloads/a.pdf", to: "/Users/me/Documents/a.pdf" },
-    } : null;
+    case "recovery_status": return (
+      !recoveryReviewed && mockScenario?.startsWith("recovery") ? {
+        status: "needs_review", command: "move PDFs to Documents", acknowledged: 2, reason: null,
+        inFlight: { kind: "move", from: "/Users/me/Downloads/a.pdf", to: "/Users/me/Documents/a.pdf" },
+      } : { status: "clear" }
+    ) satisfies RecoveryStatus;
     case "acknowledge_recovery":
       if (mockScenario === "recovery-fail") throw new Error("Cannot archive recovery evidence. Try Mark as reviewed again.");
       recoveryReviewed = true; return;
     case "scheduler_notice": return null;
     case "scheduled_tasks": return scheduled;
     case "cancel_scheduled_task": {
-      scheduled = scheduled.map((task) => task.id === args.id ? { ...task, status: "cancelled", summary: task.repeat ? "Stopped." : "Cancelled before running." } : task);
+      scheduled = scheduled.map((task) => task.id === args.id ? { ...task, series: "stopped", occurrence: "finished", summary: task.repeat ? "Stopped." : "Cancelled before running." } : task);
       return;
     }
     case "pause_scheduled_task":
     case "resume_scheduled_task": {
-      const status = cmd === "pause_scheduled_task" ? "paused" : "pending";
-      scheduled = scheduled.map((task) => task.id === args.id && task.repeat ? { ...task, status, summary: task.status === "paused" ? task.summary : "Made active again." } : task);
+      const series = cmd === "pause_scheduled_task" ? "paused" : "active";
+      scheduled = scheduled.map((task) => task.id === args.id && task.repeat ? { ...task, series, occurrence: "waiting", summary: task.series === "paused" ? task.summary : "Made active again." } : task);
       return;
     }
     case "plan_command": {
+      activePlan = null;
       const text = String(args.text);
       if (utf8Bytes(text) > MAX_COMMAND_BYTES) return { outcome: { status: "problem", message: TOO_LONG }, scope: null };
       pendingSchedule = null;
       const repeat = text.match(/\s+(?:every\s+(?:(\d+)\s+)?(days?|hours?)|daily|everyday|hourly)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i);
       if (repeat) {
-        const outcome = plan(text.slice(0, repeat.index), args.choices as Record<string, string>);
-        if (outcome.status !== "plan") return { outcome, scope: null };
+        const planned = plan(text.slice(0, repeat.index), args.choices as Record<string, string>);
+        if (planned.status !== "plan") return { outcome: planned, scope: null };
+        const outcome = { ...planned, id: ++planSeq };
         const n = Number(repeat[1] || 1);
         const unit = repeat[2] || (/hourly/i.test(repeat[0]) ? "hour" : "day");
         const intervalMs = n * (unit.startsWith("day") ? 86400000 : 3600000);
@@ -132,8 +142,9 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
           due.setHours(Number(repeat[3]) % (repeat[5] ? 12 : 24) + (repeat[5]?.toLowerCase() === "pm" ? 12 : 0), Number(repeat[4] || 0), 0, 0);
           if (due <= new Date()) due.setDate(due.getDate() + 1);
         }
-        pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "", repeat: every, runNow, total: outcome.total, intervalMs };
-        return { outcome: { ...outcome, scheduledFor: due.toISOString(), repeats: runNow ? `Runs now, then ${every}` : every, warnings: [`${runNow ? `Runs now, then ${every}. Next run` : `Repeats ${every}, first on`} ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null };
+        pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), series: "active", occurrence: "waiting", summary: "", repeat: every, runNow, total: outcome.total, intervalMs };
+        activePlan = outcome.id;
+        return { outcome: { ...outcome, scheduledFor: due.toISOString(), firstRun: runNow ? "runNowAndRepeat" : "repeatLater", repeats: runNow ? `Runs now, then ${every}` : every, warnings: [`${runNow ? `Runs now, then ${every}. Next run` : `Repeats ${every}, first on`} ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null };
       }
       const timing = text.match(/\s+(?:at\s+(.+)|(after|in)\s+(\d+)\s+(hours?|minutes?))$/i);
       let outcome = plan(timing ? text.slice(0, timing.index) : text, args.choices as Record<string, string>);
@@ -148,13 +159,30 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         } else due.setTime(due.getTime() + Number(timing[3]) * (timing[4].startsWith("hour") ? 3600000 : 60000));
         if (text.toLowerCase().includes("screenshot")) outcome = plan("run my usuals");
         if (outcome.status === "plan") {
-          outcome = { ...outcome, scheduledFor: due.toISOString(), warnings: [...outcome.warnings, `Scheduled for ${due.toLocaleString()}. Only the files shown here will be changed. Voxi must be running.`] };
-          pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), status: "pending", summary: "" };
+          outcome = { ...outcome, scheduledFor: due.toISOString(), firstRun: "oneTimeDeferred", warnings: [...outcome.warnings, `Scheduled for ${due.toLocaleString()}. Only the files shown here will be changed. Voxi must be running.`] };
+          pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), series: "active", occurrence: "waiting", summary: "" };
         }
+      }
+      if (outcome.status === "plan") {
+        outcome = { ...outcome, id: ++planSeq };
+        activePlan = outcome.id;
       }
       return { outcome, scope: null };
     }
+    case "preview_page": {
+      if (args.id !== activePlan) throw "This preview expired. Run the command again.";
+      // The 26-file PDF move: steps 6 to 26, with one more name clash.
+      const offset = Number(args.offset);
+      const steps = Array.from({ length: 26 }, (_, step) => step >= 5 ? {
+        step, kind: "move", primary: `scan-${String(step + 1).padStart(2, "0")}.pdf`, detail: "→ ~/Documents", skippable: true,
+        ...(step === 17 ? { note: "“scan-18.pdf” already exists, so this becomes “scan-18 2.pdf”" } : {}),
+      } : step === 2 ? { step, kind: "move", primary: "report.pdf", detail: "→ ~/Documents/report 2.pdf", note: "“report.pdf” already exists, so this becomes “report 2.pdf”", skippable: true } : null);
+      return steps.filter((r): r is NonNullable<typeof r> => !!r && r.step >= offset && (!args.onlyNotes || "note" in r));
+    }
     case "confirm_plan":
+      // As in the app, only the pending preview can be confirmed, once.
+      if (args.id !== activePlan) throw { message: "That preview expired. Press Enter to plan it again.", previewKept: false };
+      activePlan = null;
       if (!recoveryReviewed && mockScenario?.startsWith("recovery")) throw new Error("Open Settings → Scheduled, check the files, then choose Mark as reviewed.");
       if (pendingSchedule) {
         const { runNow, total = 3, intervalMs } = pendingSchedule;
@@ -163,9 +191,18 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         const first = new Date(pendingSchedule.due).toLocaleString();
         const summary = runNow ? `Done. ${total} ${total === 1 ? "change" : "changes"}. Repeats ${pendingSchedule.repeat}; next run ${first}. Manage tasks in Settings → Scheduled.` : pendingSchedule.repeat ? `Repeats ${pendingSchedule.repeat}, first on ${first}. Manage tasks in Settings → Scheduled.` : `Scheduled for ${first}. Manage tasks in Settings → Scheduled.`;
         pendingSchedule = null;
-        return { done: runNow ? total : 0, total, error: null, cancelled: false, undoable: !!runNow, summary } satisfies RunResult;
+        return {
+          status: runNow ? "completed" : "scheduled", entryId: runNow ? ++entrySeq : null,
+          done: runNow ? total : 0, total, error: null, cancelled: false, undoable: !!runNow, summary,
+        } satisfies RunResult;
       }
-      return { done: 26, total: 26, error: null, cancelled: false, undoable: true, summary: "Done. 26 changes." } satisfies RunResult;
+      {
+        const n = 26 - ((args.skip as number[] | undefined)?.length ?? 0);
+        return {
+          status: "completed", entryId: ++entrySeq,
+          done: n, total: n, error: null, cancelled: false, undoable: true, summary: `Done. ${n} changes.`,
+        } satisfies RunResult;
+      }
     case "get_settings":
       return settings;
     case "save_settings": {
@@ -222,8 +259,13 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "open_privacy_settings":
       if (mockScenario === "settings-fail") throw new Error("Mock: System Settings could not be opened.");
       return;
-    case "allowed_folders":
-      return ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"];
+    case "allowed_folders": {
+      const shown = (p: string) => p.replace(/^\/Users\/you/, "~");
+      const excluded = settings.excludedFolders.map(shown);
+      const hidden = (p: string) => excluded.some((x) => p === x || p.startsWith(`${x}/`));
+      const builtIn = ["~/Desktop", "~/Downloads", "~/Documents", "~/Pictures"].filter((p) => !hidden(p));
+      return [...builtIn, ...settings.extraFolders.map(shown)];
+    }
     default:
       return null;
   }

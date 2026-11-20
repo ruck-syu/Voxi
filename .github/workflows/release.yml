@@ -40,9 +40,10 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       - run: npm ci
       - run: node scripts/check-versions.mjs
+      - run: npm run lint
       - run: npm run build
       # Unset (rather than empty) model env vars for the no-weights feature suite.
       - name: Default tests
@@ -57,6 +58,9 @@ jobs:
       - name: Experimental rule-only cross-build equivalence
         working-directory: app/src-tauri
         run: env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --test rule_only_equivalence --features tiny-model
+      - name: Rust formatting
+        working-directory: app/src-tauri
+        run: cargo fmt --check
       - name: Strict Clippy
         working-directory: app/src-tauri
         run: cargo clippy --locked --all-targets -- -D warnings

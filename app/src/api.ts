@@ -8,27 +8,51 @@ export { inTauri };
 
 /** Turn a Tauri command rejection (or browser-mock throw) into text that is
  *  safe to show in the UI. Backends sometimes reject with a bare string. */
+/** A refused confirmation; `previewKept` means the preview is still confirmable. */
+export type ConfirmError = { message: string; previewKept: boolean };
+export function isConfirmError(e: unknown): e is ConfirmError {
+  return typeof e === "object" && e !== null && typeof (e as ConfirmError).message === "string" && typeof (e as ConfirmError).previewKept === "boolean";
+}
+
 export function errorMessage(e: unknown): string {
   if (e instanceof Error && e.message.trim()) return e.message;
   if (typeof e === "string" && e.trim()) return e;
+  if (e && typeof e === "object" && "message" in e && typeof e.message === "string" && e.message.trim()) return e.message;
   return "Something went wrong. Please try again.";
 }
 
-export type PreviewItem = { kind: string; primary: string; detail: string; note?: string };
+/** Failed settings saves can report the live hotkey after compensation. */
+export function installedHotkeyAfterSave(e: unknown): string | undefined {
+  if (e && typeof e === "object" && "installedHotkey" in e && typeof e.installedHotkey === "string") return e.installedHotkey;
+}
+
+/** `skippable` steps can be unticked to leave them out before confirming. */
+export type PreviewItem = { kind: string; primary: string; detail: string; note?: string; skippable?: boolean };
+/** A preview step loaded after the first page; `step` counts from 0. */
+export type PreviewRow = PreviewItem & { step: number };
 export type InfoRow = { name: string; detail: string };
 
+export type FirstRunPolicy = "immediate" | "oneTimeDeferred" | "repeatLater" | "runNowAndRepeat";
+
 export type Outcome =
-  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; warnings: string[]; isUndo: boolean; scheduledFor?: string | null; repeats?: string | null }
+  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; warnings: string[]; isUndo: boolean; firstRun: FirstRunPolicy; scheduledFor?: string | null; repeats?: string | null }
   | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
   | { status: "not_understood"; text: string };
 
-export type ScheduledTask = { id: number; command: string; due: string; status: "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"; summary: string; repeat?: string | null };
+export type SeriesState = "active" | "paused" | "stopped" | "completed" | "failed" | "firstRunPending" | "needsReview";
+export type OccurrenceState = "waiting" | "running" | "finished" | "resultUnsaved";
+export type ScheduledTask = { id: number; command: string; due: string; series: SeriesState; occurrence: OccurrenceState; summary: string; repeat?: string | null };
 
-export type RecoveryStatus = { command: string; acknowledged: number; inFlight: Record<string, unknown> | null };
+export type RecoveryStatus =
+  | { status: "clear" }
+  | { status: "busy" }
+  | { status: "needs_review"; command: string; acknowledged: number; inFlight: Record<string, unknown> | null; reason: string | null };
 
-export type RunResult = { done: number; total: number; error: string | null; cancelled: boolean; undoable: boolean; summary: string };
+export type RunResult = {
+  status: "completed" | "cancelled" | "failed" | "partially_failed" | "scheduled" | "needs_review";
+  entryId: number | null; done: number; total: number; error: string | null; cancelled: boolean; undoable: boolean; summary: string };
 
 export type FolderAccess = { name: string; path: string; allowed: boolean };
 
@@ -38,29 +62,39 @@ export type Shortcut = { phrase: string; commands: string[] };
 /** The user's own name for a folder ("dev" for ~/Documents/Dev). */
 export type Nickname = { name: string; path: string };
 
-export type Settings = { hotkey: string; extraFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
+/** `excludedFolders` sit inside allowed ones; the deepest matching folder wins. */
+export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
 /** "This was wrong" reports, saved only on this Mac. */
 export type Reports = { count: number; path: string };
 export type ResultScope = { count: number; visible: number; label: string };
-export type CommandReply = { outcome: Outcome; scope: ResultScope | null };
+/** `generation` names the results list after the command, for clearing only that one. */
+export type CommandReply = { outcome: Outcome; scope: ResultScope | null; generation: number };
+/** What a newly opened command view starts from; reading it twice gives the same answer. */
+export type Opening = { scope: ResultScope | null; generation: number; notice: string | null };
 
 export const api = {
   /** The command box changed: the menu bar face talks along. Fire and forget. */
   trayTyping: () => invoke<void>("tray_typing").catch(() => {}),
-  recoveryStatus: () => invoke<RecoveryStatus | null>("recovery_status"),
+  recoveryStatus: () => invoke<RecoveryStatus>("recovery_status"),
   acknowledgeRecovery: () => invoke<void>("acknowledge_recovery"),
   schedulerNotice: () => invoke<string | null>("scheduler_notice"),
   scheduledTasks: () => invoke<ScheduledTask[]>("scheduled_tasks"),
   cancelScheduledTask: (id: number) => invoke<void>("cancel_scheduled_task", { id }),
   pauseScheduledTask: (id: number) => invoke<void>("pause_scheduled_task", { id }),
   resumeScheduledTask: (id: number) => invoke<void>("resume_scheduled_task", { id }),
-  plan: (text: string, choices: Record<string, string>, requestId: number) => invoke<CommandReply>("plan_command", { text, choices, requestId }),
-  clearResultScope: () => invoke<void>("clear_result_scope"),
+  plan: (text: string, choices: Record<string, string>, requestId: number, undoEntryId?: number) => invoke<CommandReply>("plan_command", { text, choices, requestId, undoEntryId }),
+  /** Clears the results list, only if it is still the one at `generation` when given. */
+  clearResultScope: (generation?: number | null) => invoke<void>("clear_result_scope", { generation: generation ?? null }),
   resultScope: () => invoke<ResultScope | null>("result_scope"),
+  openingContext: () => invoke<Opening>("opening_context"),
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
-  confirm: (id: number) => invoke<RunResult>("confirm_plan", { id }),
-  stopExecution: (id: number, scheduledFor?: string) => invoke<void>("cancel_execution", { id, scheduledFor }),
+  /** Runs the pending plan, leaving out the 0-based steps in `skip`. */
+  confirm: (id: number, skip: number[] = []) => invoke<RunResult>("confirm_plan", { id, skip }),
+  /** More of the pending preview from `offset`, or only the steps with notes. */
+  previewPage: (id: number, offset: number, onlyNotes: boolean) => invoke<PreviewRow[]>("preview_page", { id, offset, onlyNotes }),
+  /** False when the run had already finished, so there was nothing to stop. */
+  stopExecution: (id: number, scheduledFor?: string) => invoke<boolean>("cancel_execution", { id, scheduledFor }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: (requestId: number) => invoke<void>("hide_window", { requestId }),
   reportWrong: (command: string, outcome: unknown, note: string) => invoke<Reports>("report_wrong", { command, outcome, note }),
@@ -75,10 +109,16 @@ export const api = {
   requestFolderAccess: () => invoke<FolderAccess[]>("request_folder_access"),
   openPrivacySettings: () => invoke<void>("open_privacy_settings"),
   /** The Finder folder picker. Resolves to null if the user cancels. */
-  pickFolder: async (): Promise<string | null> => {
-    if (!inTauri) return "/Volumes/External";
+  pickFolder: async (options: { title?: string; defaultPath?: string } = {}): Promise<string | null> => {
+    if (!inTauri) return options.defaultPath ? `${options.defaultPath}/Archive` : "/Volumes/External";
     const { open } = await import("@tauri-apps/plugin-dialog");
-    return open({ directory: true, title: "Add a folder" });
+    return open({ directory: true, title: options.title ?? "Add a folder", defaultPath: options.defaultPath });
+  },
+  /** The user's home folder, to turn "~/Documents" into a real path. */
+  homeDir: async (): Promise<string> => {
+    if (!inTauri) return "/Users/you";
+    const { homeDir } = await import("@tauri-apps/api/path");
+    return (await homeDir()).replace(/\/$/, "");
   },
 };
 

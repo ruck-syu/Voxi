@@ -7,6 +7,34 @@ use std::path::{Component, Path, PathBuf};
 
 pub const TRASH_DIR: &str = "_to_delete";
 
+/// Folders the user excluded, checked against the allowed roots. The deepest
+/// matching folder wins, so an allowed folder inside an excluded one is
+/// included again. All paths are canonical.
+#[derive(Clone, Debug, Default)]
+pub struct Exclusions {
+    excluded: Vec<PathBuf>,
+    included: Vec<PathBuf>,
+}
+
+impl Exclusions {
+    pub fn is_empty(&self) -> bool {
+        self.excluded.is_empty()
+    }
+
+    /// True when an exclusion covers canonical path `c` and no deeper allowed
+    /// folder includes it again. A folder both added and excluded is excluded.
+    pub fn hides(&self, c: &Path) -> bool {
+        let deepest = |rules: &[PathBuf]| rules.iter().filter(|r| c.starts_with(r)).map(|r| r.components().count()).max();
+        deepest(&self.excluded).is_some_and(|excluded| deepest(&self.included).is_none_or(|included| included <= excluded))
+    }
+
+    /// True when nothing at or below canonical `c` is allowed, so a folder
+    /// walk can skip the whole tree.
+    pub fn prunes(&self, c: &Path) -> bool {
+        self.hides(c) && !self.included.iter().any(|r| r != c && r.starts_with(c))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Roots {
     pub home: PathBuf,
@@ -19,6 +47,8 @@ pub struct Roots {
     /// The user's own folder names, looked up before the standard ones but
     /// never searched as extra roots (they already sit inside one).
     pub nicknames: Vec<(String, PathBuf)>,
+    /// Folders inside the allowed roots that Voxi must not touch.
+    pub exclusions: Exclusions,
 }
 
 impl Roots {
@@ -39,18 +69,14 @@ impl Roots {
             }
             allowed.push(canonical(p));
         }
-        let mut roots = Roots { home: home.to_path_buf(), named, allowed, screenshots: None, nicknames: Vec::new() };
+        let mut roots =
+            Roots { home: home.to_path_buf(), named, allowed, screenshots: None, nicknames: Vec::new(), exclusions: Exclusions::default() };
         // Where screenshots land: the system setting if there is one, else
         // the usual Screenshots folders. A custom location inside the home
         // folder is allowed even outside the four standard folders.
-        let screenshots = screenshots
-            .filter(|p| p.is_dir() && p.starts_with(home) && p != home)
-            .or_else(|| {
-                ["Desktop/Screenshots", "Pictures/Screenshots", "Documents/Screenshots"]
-                    .iter()
-                    .map(|d| home.join(d))
-                    .find(|p| p.is_dir())
-            });
+        let screenshots = screenshots.filter(|p| p.is_dir() && p.starts_with(home) && p != home).or_else(|| {
+            ["Desktop/Screenshots", "Pictures/Screenshots", "Documents/Screenshots"].iter().map(|d| home.join(d)).find(|p| p.is_dir())
+        });
         if let Some(s) = &screenshots {
             if !roots.is_allowed(s) {
                 roots.allowed.push(canonical(s));
@@ -59,6 +85,13 @@ impl Roots {
         }
         roots.screenshots = screenshots;
         roots
+    }
+
+    /// Adds the folders the user excluded. Call before `with_nicknames`, so a
+    /// nickname for an excluded folder is dropped.
+    pub fn with_exclusions(mut self, excluded: &[PathBuf]) -> Self {
+        self.exclusions = Exclusions { excluded: excluded.iter().map(|p| canonical(p)).collect(), included: self.allowed.clone() };
+        self
     }
 
     /// Adds the user's folder nicknames. Only folders inside the allowed
@@ -100,7 +133,7 @@ impl Roots {
             return false;
         }
         let c = canonical(p);
-        self.allowed.iter().any(|root| c.starts_with(root))
+        self.allowed.iter().any(|root| c.starts_with(root)) && !self.exclusions.hides(&c)
     }
 
     /// True when `p` is one of the allowed roots itself.
@@ -128,7 +161,10 @@ impl Roots {
     pub fn search_roots(&self) -> Vec<PathBuf> {
         let mut v: Vec<PathBuf> = self.named.iter().map(|(_, p)| p.clone()).collect();
         let mut seen = HashSet::new();
-        v.retain(|p| p.is_dir() && seen.insert(canonical(p)));
+        v.retain(|p| {
+            let c = canonical(p);
+            p.is_dir() && !self.exclusions.hides(&c) && seen.insert(c)
+        });
         v
     }
 }
@@ -226,7 +262,13 @@ pub fn human_size(bytes: u64) -> String {
         v /= 1000.0;
         i += 1;
     }
-    if i == 0 { format!("{bytes} B") } else if v < 10.0 { format!("{v:.1} {}", UNITS[i]) } else { format!("{v:.0} {}", UNITS[i]) }
+    if i == 0 {
+        format!("{bytes} B")
+    } else if v < 10.0 {
+        format!("{v:.1} {}", UNITS[i])
+    } else {
+        format!("{v:.0} {}", UNITS[i])
+    }
 }
 
 /// Total size of a file or folder, following no symlinks.
@@ -257,39 +299,121 @@ pub fn revalidate_parent(path: &Path, expected: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// No-replace publication using the same claims as executor move/copy.
-/// Directories are claimed before rename; files are linked before unlink.
-pub fn rename_exclusive(from: &Path, to: &Path) -> Result<(), String> {
-    let parent = fs::canonicalize(to.parent().ok_or("Missing parent")?).map_err(|e| e.to_string())?;
-    revalidate_parent(to, &parent)?;
-    if fs::symlink_metadata(from).map_err(|e| e.to_string())?.is_dir() {
-        fs::create_dir(to).map_err(|e| format!("Cannot claim {}: {e}", to.display()))?;
-        if let Err(e) = fs::rename(from, to) {
-            let _ = fs::remove_dir(to);
-            return Err(format!("Cannot publish {}: {e}", to.display()));
-        }
-    } else {
-        if let Err(e) = fs::hard_link(from, to) {
-            return rename_after_link_failure(from, to, e);
-        }
-        fs::remove_file(from).map_err(|e| format!("Published {}; source remains at {}: {e}", to.display(), from.display()))?;
-    }
-    Ok(())
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FileIdentity {
+    dev: u64,
+    ino: u64,
+    size: u64,
+    mtime: i64,
+    mtime_nsec: i64,
 }
 
-// Preserve the original hard-link error if the platform fallback cannot publish.
-fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    if matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK)) {
-        use std::{ffi::CString, os::unix::ffi::OsStrExt};
-        if let (Ok(from), Ok(to)) = (CString::new(from.as_os_str().as_bytes()), CString::new(to.as_os_str().as_bytes())) {
-            // SAFETY: both C strings are live, NUL-terminated paths. EXCL forbids replacement.
-            if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) } == 0 { return Ok(()); }
+impl FileIdentity {
+    pub(crate) fn read(path: &Path) -> std::io::Result<Self> {
+        fs::symlink_metadata(path).map(|meta| Self::from_metadata(&meta))
+    }
+
+    pub(crate) fn from_metadata(meta: &fs::Metadata) -> Self {
+        Self { dev: meta.dev(), ino: meta.ino(), size: meta.len(), mtime: meta.mtime(), mtime_nsec: meta.mtime_nsec() }
+    }
+
+    pub(crate) fn same_object(&self, other: &Self) -> bool {
+        self.dev == other.dev && self.ino == other.ino
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PublishError {
+    Clean(String),
+    Published { identity: FileIdentity, message: String },
+    Uncertain(String),
+    CrossDevice(String),
+}
+
+impl From<String> for PublishError {
+    fn from(message: String) -> Self {
+        Self::Clean(message)
+    }
+}
+
+pub(crate) type Publication = Result<FileIdentity, PublishError>;
+
+/// Capture the identity before publication, so a replacement at the output
+/// cannot be mistaken for the result of this operation.
+pub(crate) fn rename_exclusive(from: &Path, to: &Path) -> Publication {
+    let parent = fs::canonicalize(to.parent().ok_or_else(|| "Missing parent".to_string())?).map_err(|e| e.to_string())?;
+    revalidate_parent(to, &parent)?;
+    let meta = fs::symlink_metadata(from).map_err(|e| e.to_string())?;
+    let identity = FileIdentity::from_metadata(&meta);
+    if meta.is_dir() {
+        rename_no_replace(from, to).map_err(|error| rename_error(to, error))?;
+    } else if let Err(error) = fs::hard_link(from, to) {
+        rename_after_link_failure(from, to, error)?;
+    } else {
+        // A source replaced after publication must never be unlinked.
+        if !FileIdentity::read(from).is_ok_and(|current| current == identity)
+            || !FileIdentity::read(to).is_ok_and(|current| current == identity)
+        {
+            return Err(PublishError::Uncertain(format!(
+                "The source {} or published destination {} changed during the move.",
+                from.display(),
+                to.display()
+            )));
+        }
+        if let Err(e) = unlink_published_source(from) {
+            let message = format!("Published {}; couldn't remove source {}: {e}", to.display(), from.display());
+            return Err(
+                if FileIdentity::read(from).is_ok_and(|current| current == identity)
+                    && FileIdentity::read(to).is_ok_and(|current| current == identity)
+                {
+                    PublishError::Published { identity, message }
+                } else {
+                    PublishError::Uncertain(message)
+                },
+            );
         }
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = from;
-    Err(format!("Cannot claim {}: {error}", to.display()))
+    Ok(identity)
+}
+
+fn unlink_published_source(from: &Path) -> std::io::Result<()> {
+    #[cfg(test)]
+    if UNLINK_FAILURE.with(|failure| failure.get()) {
+        return Err(std::io::Error::other("Injected source cleanup failure"));
+    }
+    fs::remove_file(from)
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static UNLINK_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    pub(crate) static STAGE_CLEANUP_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn rename_error(to: &Path, error: std::io::Error) -> PublishError {
+    let message = format!("Cannot publish {}: {error}", to.display());
+    if error.raw_os_error() == Some(libc::EXDEV) { PublishError::CrossDevice(message) } else { PublishError::Clean(message) }
+}
+
+fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> Result<(), PublishError> {
+    if error.kind() == std::io::ErrorKind::Unsupported || matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK)) {
+        return rename_no_replace(from, to).map_err(|error| rename_error(to, error));
+    }
+    Err(rename_error(to, error))
+}
+
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let from = CString::new(from.as_os_str().as_bytes())?;
+    let to = CString::new(to.as_os_str().as_bytes())?;
+    // SAFETY: both C strings are live and NUL-terminated. The flags forbid replacement.
+    #[cfg(target_os = "macos")]
+    let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+    #[cfg(target_os = "linux")]
+    let result = unsafe { libc::renameat2(libc::AT_FDCWD, from.as_ptr(), libc::AT_FDCWD, to.as_ptr(), libc::RENAME_NOREPLACE) };
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let result = -1;
+    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
 }
 
 /// An exclusive mode-0700 directory in the output's parent. Writers may
@@ -314,7 +438,7 @@ impl Staging {
                     let parent_handle = fs::File::open(&parent).map_err(|e| e.to_string())?;
                     let dir_handle = fs::File::open(&dir).map_err(|e| e.to_string())?;
                     return Ok(Self { path: dir.join("payload"), dir, parent, parent_handle, dir_handle });
-                },
+                }
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(e.to_string()),
             }
@@ -322,33 +446,59 @@ impl Staging {
         Err("Cannot claim staging directory".into())
     }
     /// Remove only our private tree, reporting any evidence that could not be cleaned.
-    pub fn finish(&self, result: Result<(), String>) -> Result<(), String> {
+    pub(crate) fn finish(&self, result: Publication) -> Publication {
         let cleanup = (|| {
+            #[cfg(test)]
+            if STAGE_CLEANUP_FAILURE.with(|failure| failure.get()) {
+                return Err("Injected stage cleanup failure".into());
+            }
             let before = self.dir_handle.metadata().map_err(|e| e.to_string())?;
             let now = fs::symlink_metadata(&self.dir).map_err(|e| e.to_string())?;
-            if before.dev()!=now.dev() || before.ino()!=now.ino() { return Err("staging directory moved or replaced".into()); }
+            if before.dev() != now.dev() || before.ino() != now.ino() {
+                return Err("staging directory moved or replaced".into());
+            }
             fs::remove_dir_all(&self.dir).map_err(|e| e.to_string())
         })();
-        match (result, cleanup) {
-            (result, Ok(())) => result,
-            (result, Err(e)) => Err(format!("{}; staging cleanup failed at {}: {e}", result.err().unwrap_or_else(|| "Output published successfully".into()), self.dir.display())),
-        }
+        let Err(error) = cleanup else { return result };
+        let append = |message: &str| format!("{message}; staging cleanup failed at {}: {error}", self.dir.display());
+        Err(match result {
+            Ok(identity) => PublishError::Published { identity, message: append("Output published successfully") },
+            Err(PublishError::Published { identity, message }) => PublishError::Published { identity, message: append(&message) },
+            Err(PublishError::Uncertain(message)) => PublishError::Uncertain(append(&message)),
+            Err(PublishError::Clean(message) | PublishError::CrossDevice(message)) => PublishError::Clean(append(&message)),
+        })
     }
-    pub fn publish(&self, output: &Path) -> Result<(), String> {
+    pub(crate) fn publish(&self, output: &Path) -> Publication {
+        self.validate_parent(output)?;
+        rename_exclusive(&self.path, output)
+    }
+
+    pub(crate) fn replace(&self, output: &Path, expected: &FileIdentity) -> Publication {
+        self.validate_parent(output)?;
+        if !FileIdentity::read(output).is_ok_and(|current| current == *expected) {
+            return Err(format!("Stopped: {} changed while preparing the replacement.", output.display()).into());
+        }
+        let identity = FileIdentity::read(&self.path).map_err(|e| e.to_string())?;
+        fs::rename(&self.path, output).map_err(|e| format!("Cannot replace {}: {e}", output.display()))?;
+        Ok(identity)
+    }
+
+    fn validate_parent(&self, output: &Path) -> Result<(), String> {
         revalidate_parent(output, &self.parent)?;
         let before = self.parent_handle.metadata().map_err(|e| e.to_string())?;
         let now = fs::metadata(&self.parent).map_err(|e| e.to_string())?;
         if before.dev() != now.dev() || before.ino() != now.ino() {
             return Err("Stopped: output parent was replaced".into());
         }
-        rename_exclusive(&self.path, output)
+        Ok(())
     }
 }
 impl Drop for Staging {
     fn drop(&mut self) {
         // Never recursively remove a path that now names someone else's tree.
         if let (Ok(before), Ok(now)) = (self.dir_handle.metadata(), fs::symlink_metadata(&self.dir))
-            && before.dev() == now.dev() && before.ino() == now.ino()
+            && before.dev() == now.dev()
+            && before.ino() == now.ino()
         {
             let _ = fs::remove_dir_all(&self.dir);
         }
@@ -356,9 +506,9 @@ impl Drop for Staging {
 }
 
 /// Generate privately, then publish with a no-replace claim.
-pub fn staged_output(output: &Path, write: impl FnOnce(&Path) -> Result<(), String>) -> Result<(), String> {
+pub(crate) fn staged_output(output: &Path, write: impl FnOnce(&Path) -> Result<(), String>) -> Publication {
     let stage = Staging::new(output)?;
-    let result = write(&stage.path).and_then(|()| stage.publish(output));
+    let result = write(&stage.path).map_err(PublishError::Clean).and_then(|()| stage.publish(output));
     stage.finish(result)
 }
 
@@ -380,6 +530,64 @@ pub fn available_space(path: &Path) -> Result<u64, String> {
 mod tests {
     use super::*;
 
+    /// ~/Documents/Archive excluded, ~/Documents/Archive/Keep added back,
+    /// ~/Downloads excluded outright.
+    fn excluded_home() -> (tempfile::TempDir, PathBuf, Roots) {
+        let dir = tempfile::tempdir().unwrap();
+        let h = canonical(dir.path());
+        for d in ["Desktop", "Downloads", "Documents/Archive/Keep", "Documents/Archive/Old", "Pictures"] {
+            fs::create_dir_all(h.join(d)).unwrap();
+        }
+        let keep = h.join("Documents/Archive/Keep");
+        let roots = Roots::new(&h, None, std::slice::from_ref(&keep)).with_exclusions(&[
+            h.join("Documents/Archive"),
+            h.join("Downloads"),
+            h.join("Pictures/Missing"),
+        ]);
+        (dir, h, roots)
+    }
+
+    #[test]
+    fn the_deepest_include_or_exclude_rule_wins() {
+        let (_dir, h, roots) = excluded_home();
+        assert!(roots.is_allowed(&h.join("Documents/report.pdf")));
+        assert!(!roots.is_allowed(&h.join("Documents/Archive")));
+        assert!(!roots.is_allowed(&h.join("Documents/Archive/Old/a.pdf")));
+        assert!(roots.is_allowed(&h.join("Documents/Archive/Keep/b.pdf")));
+        assert!(!roots.is_allowed(&h.join("Downloads/c.dmg")));
+        // A missing excluded folder still applies if it is created later.
+        assert!(!roots.is_allowed(&h.join("Pictures/Missing/d.png")));
+        assert!(roots.is_allowed(&h.join("Pictures/e.png")));
+        let searched = roots.search_roots();
+        assert!(!searched.contains(&h.join("Downloads")), "{searched:?}");
+        assert!(searched.contains(&h.join("Documents/Archive/Keep")), "{searched:?}");
+        assert!(!roots.exclusions.prunes(&h.join("Documents/Archive")), "Keep inside it is allowed");
+        assert!(roots.exclusions.prunes(&h.join("Documents/Archive/Old")));
+    }
+
+    #[test]
+    fn a_folder_both_added_and_excluded_is_excluded() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = canonical(dir.path());
+        let extra = h.join("Projects");
+        fs::create_dir_all(&extra).unwrap();
+        let roots = Roots::new(&h, None, std::slice::from_ref(&extra)).with_exclusions(std::slice::from_ref(&extra));
+        assert!(!roots.is_allowed(&extra.join("a.txt")));
+    }
+
+    #[test]
+    fn folder_walks_leave_out_excluded_folders() {
+        let (_dir, h, roots) = excluded_home();
+        for f in ["Documents/a.pdf", "Documents/Archive/Old/b.pdf", "Documents/Archive/c.pdf", "Documents/Archive/Keep/d.pdf"] {
+            fs::write(h.join(f), b"x").unwrap();
+        }
+        let search = crate::search::Search::default().with_exclusions(roots.exclusions.clone());
+        let mut found: Vec<String> =
+            search.entries(&h.join("Documents")).iter().map(|e| e.path.strip_prefix(&h).unwrap().display().to_string()).collect();
+        found.sort();
+        assert_eq!(found, ["Documents/Archive/Keep", "Documents/Archive/Keep/d.pdf", "Documents/a.pdf"]);
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn unsupported_hard_links_fall_back_without_clobbering() {
@@ -389,12 +597,14 @@ mod tests {
         for code in [libc::ENOTSUP, libc::EPERM, libc::EMLINK] {
             fs::write(&from, b"source").unwrap();
             rename_after_link_failure(&from, &to, std::io::Error::from_raw_os_error(code)).unwrap();
-            assert!(!from.exists()); assert_eq!(fs::read(&to).unwrap(), b"source");
+            assert!(!from.exists());
+            assert_eq!(fs::read(&to).unwrap(), b"source");
             fs::write(&from, b"new source").unwrap();
             assert!(rename_after_link_failure(&from, &to, std::io::Error::from_raw_os_error(code)).is_err());
             assert_eq!(fs::read(&to).unwrap(), b"source");
             assert_eq!(fs::read(&from).unwrap(), b"new source");
-            fs::remove_file(&to).unwrap(); fs::remove_file(&from).unwrap();
+            fs::remove_file(&to).unwrap();
+            fs::remove_file(&from).unwrap();
         }
         fs::write(&from, b"source").unwrap();
         for code in [libc::EEXIST, libc::EXDEV, libc::EIO] {

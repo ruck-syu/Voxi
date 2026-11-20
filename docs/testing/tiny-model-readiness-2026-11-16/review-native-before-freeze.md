@@ -6,7 +6,7 @@ Reviewed the current native crate, CLI, GGUF exporter, lockfile, manifest, READM
 
 ### Medium: package identity is not checked by the native loader
 
-[`native/src/lib.rs:67`](/Users/vishalshekhar/Documents/dev/Voxi/docs/testing/tiny-model-readiness-2026-11-16/native/src/lib.rs:67) checks that config, GGUF and tokenizer files exist, then parses/loads them. It does not check their hashes or verify that the three files belong to the same package. The manifest records exact hashes in `native/candidate-manifest.json`, but those values are not consumed by `load`.
+[`native/src/lib.rs:67`](/Users/vishalshekhar/Documents/dev/Voxi/crates/voxi-tiny-native/src/lib.rs:67) checks that config, GGUF and tokenizer files exist, then parses/loads them. It does not check their hashes or verify that the three files belong to the same package. The manifest records exact hashes in `native/candidate-manifest.json`, but those values are not consumed by `load`.
 
 The current recorded package hashes match the external files, and the smoke test catches a missing directory and a GGUF with invalid magic. Those checks do not catch a valid GGUF paired with a different valid tokenizer/config, or a valid but replaced GGUF. Such a package may load and return rewrites under the wrong artifact identity. Before shipping package files through an integrity-unmanaged path, bind loading to a versioned package manifest/checksums (or enforce the same check in the packaging/installation layer) and add a valid-file mismatch failure case. If the app installer guarantees immutable, verified package contents, document that contract at the integration boundary.
 

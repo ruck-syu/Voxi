@@ -13,18 +13,14 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         OnceLock,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        mpsc::{self, SyncSender},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
+        mpsc::{self, Receiver, SyncSender},
     },
 };
 
 const CAP: u64 = 1024 * 1024;
-const NAMES: [&str; 3] = [
-    "diagnostics.0.log",
-    "diagnostics.1.log",
-    "diagnostics.2.log",
-];
-static SINK: OnceLock<SyncSender<Event>> = OnceLock::new();
+const NAMES: [&str; 3] = ["diagnostics.0.log", "diagnostics.1.log", "diagnostics.2.log"];
+static SINK: OnceLock<Sink> = OnceLock::new();
 static NOTE: AtomicBool = AtomicBool::new(false);
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -89,15 +85,7 @@ pub(crate) struct Event {
 }
 impl Event {
     pub(crate) fn new(code: Code, stage: Stage) -> Self {
-        Self {
-            code,
-            stage,
-            operation: SEQUENCE.fetch_add(1, Ordering::Relaxed),
-            store: None,
-            count: 0,
-            step: None,
-            io: None,
-        }
+        Self { code, stage, operation: SEQUENCE.fetch_add(1, Ordering::Relaxed), store: None, count: 0, step: None, io: None }
     }
     pub(crate) fn operation(mut self, id: u64) -> Self {
         self.operation = id;
@@ -120,14 +108,7 @@ impl Event {
         self
     }
     fn line(self) -> String {
-        let level = if matches!(
-            self.stage,
-            Stage::Begin | Stage::Preserved | Stage::Recovered
-        ) {
-            "INFO"
-        } else {
-            "WARN"
-        };
+        let level = if matches!(self.stage, Stage::Begin | Stage::Preserved | Stage::Recovered) { "INFO" } else { "WARN" };
         format!(
             "{} level={} code={} op={}-{}-{} stage={:?} store={:?} count={} step={:?} io={:?}\n",
             chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
@@ -150,37 +131,64 @@ fn unavailable() {
         eprintln!("Voxi diagnostics unavailable");
     }
 }
-pub(crate) fn emit(event: Event) {
-    if let Some(sink) = SINK.get() {
-        let _ = sink.try_send(event);
+#[repr(u8)]
+enum Health {
+    Live,
+    Failed,
+}
+
+struct Sink {
+    tx: SyncSender<Event>,
+    health: AtomicU8,
+}
+
+impl Sink {
+    fn new(tx: SyncSender<Event>) -> Self {
+        Self { tx, health: AtomicU8::new(Health::Live as u8) }
+    }
+
+    fn fail(&self) {
+        self.health.store(Health::Failed as u8, Ordering::Relaxed);
+        unavailable();
+    }
+
+    fn emit(&self, event: Event) {
+        if self.health.load(Ordering::Relaxed) == Health::Live as u8
+            && matches!(self.tx.try_send(event), Err(mpsc::TrySendError::Disconnected(_)))
+        {
+            self.fail();
+        }
+    }
+
+    fn consume(&self, dir: &Path, rx: &Receiver<Event>) {
+        let result = (|| -> io::Result<()> {
+            let mut writer = Writer::open(dir)?;
+            for event in rx {
+                writer.write(event)?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            self.fail();
+        }
     }
 }
+
+pub(crate) fn emit(event: Event) {
+    if let Some(sink) = SINK.get() {
+        sink.emit(event);
+    }
+}
+
 /// Start before loading stores. Directory creation and opening run on the worker.
 pub(crate) fn init(dir: PathBuf) {
-    if SINK.get().is_some() {
-        return;
-    }
     let (tx, rx) = mpsc::sync_channel(256);
-    if SINK.set(tx).is_err() {
+    if SINK.set(Sink::new(tx)).is_err() {
         return;
     }
-    if std::thread::Builder::new()
-        .name("voxi-diagnostics".into())
-        .spawn(move || {
-            let result = (|| -> io::Result<()> {
-                let mut writer = Writer::open(&dir)?;
-                for event in rx {
-                    writer.write(event)?;
-                }
-                Ok(())
-            })();
-            if result.is_err() {
-                unavailable();
-            }
-        })
-        .is_err()
-    {
-        unavailable();
+    let sink = SINK.get().expect("sink was registered");
+    if std::thread::Builder::new().name("voxi-diagnostics".into()).spawn(move || sink.consume(&dir, &rx)).is_err() {
+        sink.fail();
     }
 }
 
@@ -191,14 +199,8 @@ struct Writer {
 }
 impl Writer {
     fn open(path: &Path) -> io::Result<Self> {
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(path)?;
-        let dir = OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC)
-            .open(path)?;
+        fs::DirBuilder::new().recursive(true).mode(0o700).create(path)?;
+        let dir = OpenOptions::new().read(true).custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC).open(path)?;
         if dir.metadata()?.uid() != unsafe { libc::geteuid() } {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
@@ -216,10 +218,7 @@ impl Writer {
         for name in &NAMES[1..] {
             let meta = writer.at_metadata(name)?;
             if let Some(meta) = meta
-                && (!meta.is_file()
-                    || meta.nlink() != 1
-                    || meta.len() > CAP
-                    || meta.permissions().mode() & 0o777 != 0o600)
+                && (!meta.is_file() || meta.nlink() != 1 || meta.len() > CAP || meta.permissions().mode() & 0o777 != 0o600)
             {
                 return Err(io::ErrorKind::PermissionDenied.into());
             }
@@ -241,12 +240,7 @@ impl Writer {
         open_at(&self.dir, name, flags, mode)
     }
     fn file(dir: &File) -> io::Result<File> {
-        let file = open_at(
-            dir,
-            NAMES[0],
-            libc::O_WRONLY | libc::O_APPEND | libc::O_CREAT | libc::O_NONBLOCK,
-            0o600,
-        )?;
+        let file = open_at(dir, NAMES[0], libc::O_WRONLY | libc::O_APPEND | libc::O_CREAT | libc::O_NONBLOCK, 0o600)?;
         let meta = file.metadata()?;
         if !meta.is_file() || meta.nlink() != 1 || meta.uid() != unsafe { libc::geteuid() } {
             return Err(io::ErrorKind::PermissionDenied.into());
@@ -261,15 +255,7 @@ impl Writer {
             for (from, to) in [(NAMES[1], NAMES[2]), (NAMES[0], NAMES[1])] {
                 let from = CString::new(from).map_err(io::Error::other)?;
                 let to = CString::new(to).map_err(io::Error::other)?;
-                if unsafe {
-                    libc::renameat(
-                        self.dir.as_raw_fd(),
-                        from.as_ptr(),
-                        self.dir.as_raw_fd(),
-                        to.as_ptr(),
-                    )
-                } != 0
-                {
+                if unsafe { libc::renameat(self.dir.as_raw_fd(), from.as_ptr(), self.dir.as_raw_fd(), to.as_ptr()) } != 0 {
                     let e = io::Error::last_os_error();
                     if e.kind() != io::ErrorKind::NotFound {
                         return Err(e);
@@ -291,29 +277,15 @@ fn open_at(dir: &File, name: &str, flags: i32, mode: libc::mode_t) -> io::Result
         os::fd::{AsRawFd, FromRawFd},
     };
     let name = CString::new(name).map_err(io::Error::other)?;
-    let fd = unsafe {
-        libc::openat(
-            dir.as_raw_fd(),
-            name.as_ptr(),
-            flags | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-            mode as libc::c_uint,
-        )
-    };
-    if fd < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(unsafe { File::from_raw_fd(fd) })
-    }
+    let fd = unsafe { libc::openat(dir.as_raw_fd(), name.as_ptr(), flags | libc::O_NOFOLLOW | libc::O_CLOEXEC, mode as libc::c_uint) };
+    if fd < 0 { Err(io::Error::last_os_error()) } else { Ok(unsafe { File::from_raw_fd(fd) }) }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     fn contents(dir: &Path) -> String {
-        NAMES
-            .iter()
-            .filter_map(|name| fs::read_to_string(dir.join(name)).ok())
-            .collect()
+        NAMES.iter().filter_map(|name| fs::read_to_string(dir.join(name)).ok()).collect()
     }
 
     #[test]
@@ -327,10 +299,7 @@ mod tests {
             writer.write(event).unwrap();
         }
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 3);
-        assert_eq!(
-            fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
+        assert_eq!(fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
         for name in NAMES {
             let meta = fs::metadata(dir.join(name)).unwrap();
             assert!(meta.len() > 0 && meta.len() <= CAP);
@@ -355,31 +324,14 @@ mod tests {
             Code::LoginItem,
             Code::Update,
         ];
-        let stages = [
-            Stage::Begin,
-            Stage::Failed,
-            Stage::Preserved,
-            Stage::BackupFailed,
-            Stage::Interrupted,
-            Stage::Recovered,
-            Stage::Skipped,
-        ];
+        let stages =
+            [Stage::Begin, Stage::Failed, Stage::Preserved, Stage::BackupFailed, Stage::Interrupted, Stage::Recovered, Stage::Skipped];
         let mut writer = Writer::open(temp.path()).unwrap();
         for _ in 0..100 {
             for code in codes {
                 for stage in stages {
-                    for store in [
-                        Store::Settings,
-                        Store::History,
-                        Store::Schedules,
-                        Store::Journal,
-                    ] {
-                        let event = Event::new(code, stage)
-                            .io(&error)
-                            .store(store)
-                            .operation(42)
-                            .count(3)
-                            .step(Some(2));
+                    for store in [Store::Settings, Store::History, Store::Schedules, Store::Journal] {
+                        let event = Event::new(code, stage).io(&error).store(store).operation(42).count(3).step(Some(2));
                         // Exercise the same structured event at both producer and sink.
                         emit(event);
                         writer.write(event).unwrap();
@@ -389,14 +341,7 @@ mod tests {
         }
         assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 3);
         let logs = contents(temp.path());
-        for sentinel in [
-            secret,
-            "SECRET-command",
-            "/Users/",
-            "SECRET-filename.pdf",
-            "run my SECRET-shortcut",
-            "SECRET-model",
-        ] {
+        for sentinel in [secret, "SECRET-command", "/Users/", "SECRET-filename.pdf", "run my SECRET-shortcut", "SECRET-model"] {
             assert!(!logs.contains(sentinel));
         }
         assert!(logs.contains("io=Some((Other, None))"));
@@ -407,20 +352,9 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         {
             let mut writer = Writer::open(temp.path()).unwrap();
-            writer
-                .write(Event::new(Code::Startup, Stage::Begin).operation(1))
-                .unwrap();
-            writer
-                .write(Event::new(Code::Startup, Stage::Failed).operation(1))
-                .unwrap();
-            writer
-                .write(
-                    Event::new(Code::SchedulerRun, Stage::Failed)
-                        .operation(99)
-                        .count(4)
-                        .step(Some(2)),
-                )
-                .unwrap();
+            writer.write(Event::new(Code::Startup, Stage::Begin).operation(1)).unwrap();
+            writer.write(Event::new(Code::Startup, Stage::Failed).operation(1)).unwrap();
+            writer.write(Event::new(Code::SchedulerRun, Stage::Failed).operation(99).count(4).step(Some(2))).unwrap();
         }
         let logs = contents(temp.path());
         assert!(logs.contains("level=INFO code=E_STARTUP"));
@@ -445,6 +379,19 @@ mod tests {
         };
         assert_eq!(operation().unwrap(), 7);
         assert_eq!(fs::read(blocked).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn failed_worker_disables_sends() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocked = dir.path().join("file");
+        fs::write(&blocked, b"keep").unwrap();
+        let (tx, rx) = mpsc::sync_channel(1);
+        let sink = Sink::new(tx);
+        sink.consume(&blocked.join("logs"), &rx);
+        assert_eq!(sink.health.load(Ordering::Relaxed), Health::Failed as u8);
+        sink.emit(Event::new(Code::Startup, Stage::Failed));
+        assert!(matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
     }
 
     #[test]

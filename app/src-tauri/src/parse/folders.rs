@@ -1,6 +1,9 @@
 //! Creating folders and sorting a folder into subfolders.
 
-use super::{Pattern, cap, pat, phrase::{bad_destination, clean_name, split_arguments, unquoted_text}};
+use super::{
+    Pattern, cap, pat,
+    phrase::{bad_destination, clean_name, split_arguments, unquoted_text},
+};
 use crate::model::Intent;
 use regex::Regex;
 use std::sync::LazyLock;
@@ -15,10 +18,11 @@ fn list_name(text: &str) -> String {
 
 fn folder_names(text: &str) -> Option<Vec<String>> {
     let unquoted = unquoted_text(text)?;
-    static INSTRUCTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(
-        r"(?i)(?:,|\band)\s*(?:put|move|copy|goes|rename|delete)\b"
-    ).unwrap());
-    if INSTRUCTION.is_match(&unquoted) { return None; }
+    static INSTRUCTION: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)(?:,|\band)\s*(?:put|move|copy|goes|rename|delete)\b").unwrap());
+    if INSTRUCTION.is_match(&unquoted) {
+        return None;
+    }
     let mut start = 0;
     let mut names = Vec::new();
     for separator in LIST_SEP.find_iter(&unquoted) {
@@ -37,7 +41,9 @@ pub fn patterns() -> Vec<Pattern> {
             |c| {
                 let rest = cap(c, 1)?;
                 let (parent, names) = split_arguments(&rest, &["named", "called", "labeled", "labelled"])?;
-                if bad_destination(parent) { return None; }
+                if bad_destination(parent) {
+                    return None;
+                }
                 let parent = clean_name(parent);
                 let names = folder_names(names)?;
                 Some(Intent::CreateFolders { names, parent: Some(parent) })
@@ -53,7 +59,9 @@ pub fn patterns() -> Vec<Pattern> {
                 let has_location = outside.split_whitespace().any(|word| separators.iter().any(|p| word.eq_ignore_ascii_case(p)));
                 let (names, parent) = if has_location {
                     let (names, parent) = split_arguments(&raw, &separators)?;
-                    if bad_destination(parent) { return None; }
+                    if bad_destination(parent) {
+                        return None;
+                    }
                     (folder_names(names)?, Some(clean_name(parent)))
                 } else {
                     (folder_names(&raw)?, None)
@@ -66,7 +74,9 @@ pub fn patterns() -> Vec<Pattern> {
             r"^(?:sort|organize|organise|group|tidy\s+up|clean\s*up)\s+(.+?)\s+(?:by|into)\s+(type|types|kind|file\s+type|extension|month|months|date)(?:\s+folders?)?(?:\s+(?:including|with|and|plus)\s+(?:the\s+)?(?:sub-?folders?|nested\s+folders?|subdirectories|sub\s+folders))?$",
             |c| {
                 let raw = cap(c, 1)?;
-                if bad_destination(&raw) { return None; }
+                if bad_destination(&raw) {
+                    return None;
+                }
                 let folder = clean_name(&raw);
                 let by = cap(c, 2)?.to_ascii_lowercase();
                 let include_subfolders = c[0].to_ascii_lowercase().contains("subfolders")

@@ -40,7 +40,7 @@
     "under_limit": true
   },
   "native_runtime": {
-    "source": "docs/testing/tiny-model-readiness-2026-11-16/native",
+    "source": "crates/voxi-tiny-native",
     "api": "voxi_tiny_native::NativeRewriter::load_with_threads(model_dir, threads); NativeRewriter::rewrite(text)",
     "cli": "/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/target/release/voxi-tiny-native",
     "binary_bytes": 7595040,

@@ -9,7 +9,7 @@ find all PDFs => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs"}}}
 find all vids => {"intent":"list","src":{"kind":"set","filter":{"type":"videos"}}}
 find all docs => {"intent":"list","src":{"kind":"set","filter":{"type":"documents"}}}
 find all audio => {"intent":"list","src":{"kind":"set","filter":{"type":"audio"}}}
-show files modified yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","day":"yesterday"}}}
+show files modified yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","day":"yesterday","dateField":"modified"}}}
 find files from 2025 => {"intent":"list","src":{"kind":"set","filter":{"type":"files","since":"2025-01-01","before":"2026-01-01"}}}
 
 # 2. Opening an allowed root is a plain reveal (executor permits root opens).
@@ -74,3 +74,14 @@ how many videos are there? => {"intent":"count","src":{"kind":"set","filter":{"t
 info about report.pdf => {"intent":"list","src":{"kind":"item","name":"report.pdf"}}
 when was report.pdf modified => {"intent":"list","src":{"kind":"item","name":"report.pdf"}}
 details of report.pdf => {"intent":"list","src":{"kind":"item","name":"report.pdf"}}
+remove files in Downloads not modified in a year => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":365,"dateField":"modified"}}}
+remove files in Downloads not edited in 6 months => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":180,"dateField":"modified"}}}
+remove files in Downloads not opened in 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90,"dateField":"modified"}}}
+remove files in Downloads older than 90 days => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","olderThanDays":90}}}
+list PDFs last modified more than a year ago => {"intent":"list","src":{"kind":"set","filter":{"type":"pdfs","olderThanDays":365,"dateField":"modified"}}}
+list PDFs created in March 2026 and modified yesterday => !hard
+trash files in Last Modified older than 90 days => !hard
+trash files last modified in Downloads => !hard
+trash files in Downloads that I created this year and were modified today => !hard
+trash files downloaded this year and modified today => !hard
+trash November PDFs modified => {"intent":"trash","src":{"kind":"set","filter":{"type":"pdfs","month":11,"dateField":"modified"}}}

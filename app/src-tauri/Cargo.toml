@@ -1,6 +1,6 @@
 [package]
 name = "voxi"
-version = "0.1.0"
+version = "0.0.0"
 description = "Organize files from a typed or dictated command"
 authors = ["Voxi"]
 edition = "2024"
@@ -18,7 +18,7 @@ tiny-model = ["dep:voxi-tiny-native"]
 
 [dependencies]
 libc = "=0.2.191"
-voxi-tiny-native = { path = "../../docs/testing/tiny-model-readiness-2026-11-16/native", optional = true }
+voxi-tiny-native = { path = "../../crates/voxi-tiny-native", optional = true }
 tauri = { version = "2", features = ["tray-icon", "macos-private-api", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
@@ -34,8 +34,8 @@ tauri-plugin-dialog = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSString", "NSURL", "NSGeometry", "NSFileManager", "NSError"] }
-objc2-app-kit = { version = "0.3", features = ["NSImage", "NSWindow", "NSResponder", "NSTextCheckingClient", "NSAnimation", "NSAnimationContext", "NSEvent", "block2"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSString", "NSURL", "NSGeometry", "NSFileManager", "NSError"] }
+objc2-app-kit = { version = "0.3", features = ["NSImage", "NSWindow", "NSResponder", "NSTextCheckingClient", "NSAnimation", "NSAnimationContext", "NSEvent", "NSApplication", "NSPasteboard", "NSPasteboardItem", "block2"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "WKWebViewConfiguration"] }
 objc2-pdf-kit = { version = "0.3", features = ["PDFDocument", "PDFPage", "objc2-app-kit"] }
 

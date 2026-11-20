@@ -60,7 +60,10 @@ fn show<R: Runtime>(app: &AppHandle<R>, image: &Image<'static>) {
 /// Called on each change to the command box. Starts the animation if it
 /// isn't running, or keeps it going a little longer if it is.
 pub fn nudge<R: Runtime>(app: &AppHandle<R>) {
-    let Ok(mut last) = LAST_INPUT.lock() else { eprintln!("Tray state unavailable"); return; };
+    let Ok(mut last) = LAST_INPUT.lock() else {
+        eprintln!("Tray state unavailable");
+        return;
+    };
     *last = Some(Instant::now());
     drop(last);
     if RUNNING.swap(true, Ordering::SeqCst) {
@@ -71,7 +74,13 @@ pub fn nudge<R: Runtime>(app: &AppHandle<R>) {
         let (rest, frames) = images();
         let mut i = 0;
         loop {
-            let idle = match LAST_INPUT.lock() { Ok(last) => last.is_none_or(|t| t.elapsed() >= LINGER), Err(_) => { RUNNING.store(false, Ordering::SeqCst); return; } };
+            let idle = match LAST_INPUT.lock() {
+                Ok(last) => last.is_none_or(|t| t.elapsed() >= LINGER),
+                Err(_) => {
+                    RUNNING.store(false, Ordering::SeqCst);
+                    return;
+                }
+            };
             // Finish the sweep so the ripple comes to rest where the icon's does.
             if idle && i % frames.len() == 0 {
                 break;

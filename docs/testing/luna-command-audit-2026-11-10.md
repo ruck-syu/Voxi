@@ -23,7 +23,7 @@ Run from `app/src-tauri`:
 rtk cargo test --lib luna_command -- --ignored --nocapture
 ```
 
-The ignored test writes one JSONL row per case, with expected and actual full intent arguments, planner outcome, severity, and category, to [luna-command-audit-2026-11-10.jsonl](luna-command-audit-2026-11-10.jsonl). The harness is in `app/src-tauri/src/luna_command_audit.rs`; it is ignored so report mismatches do not fail the default suite.
+The ignored test writes one JSONL row per case, with expected and actual full intent arguments, planner outcome, severity, and category, to [luna-command-audit-2026-11-10.jsonl](luna-command-audit-2026-11-10.jsonl). The harness is in `app/src-tauri/src/audits/luna_command.rs`; it is ignored so report mismatches do not fail the default suite.
 
 Limitation: paths and file contents are temporary fixtures; no actual user folders, application automation, confirmation, or execution are involved. This audit makes no production changes.
 

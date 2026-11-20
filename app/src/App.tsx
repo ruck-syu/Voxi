@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorMessage, inTauri, tildify, type ScheduledTask, type FolderAccess, type Outcome, type Reports, type ResultScope, type RunResult, type Settings, type Shortcut } from "./api";
+import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type Settings } from "./api";
 import { readChoice } from "./choice";
 import examples from "./examples.json";
-import { appVersion, checkAndInstall, type UpdateState } from "./updates";
+import { AccessView } from "./access";
+import { SettingsView } from "./settings";
+import { MAX_COMMAND_BYTES, TOO_LONG, row, utf8Bytes } from "./ui";
 
 type View = "command" | "settings" | "welcome";
+
+/** Request ids for planning, unique across command sessions: a remounted
+ *  view must never reuse an id an older, cancelled request still holds. */
+let lastRequest = 0;
 type Phase =
   | { k: "ready" }
   | { k: "parsing" }
-  | { k: "outcome"; outcome: Outcome }
+  | { k: "outcome"; outcome: Outcome; refused?: string }
   | { k: "running"; title: string; canStop: boolean; stopping: boolean; stopError?: string }
   | { k: "done"; result: RunResult; wasUndo: boolean }
   | { k: "error"; message: string };
@@ -27,24 +33,6 @@ type Offer =
 /** How long a missed phrase stays teachable by the command that follows it. */
 const TEACH_WINDOW_MS = 3 * 60_000;
 
-/** Mirrors parse::MAX_COMMAND_BYTES (src-tauri/src/parse/mod.rs): the backend
- *  refuses raw UTF-8 input over this size before trimming or normalizing. */
-const MAX_COMMAND_BYTES = 16_384;
-/** Mirrors settings::check_shortcut_commands: at most eight commands, and one
- *  shared byte budget for the whole expansion. */
-const MAX_SHORTCUT_COMMANDS = 8;
-const TOO_LONG = "That command is too long.";
-/** UTF-8 byte length, not code points: a dictated emoji can be four bytes. */
-const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length;
-
-/** Which parts of a saved shortcut the backend would refuse for length. Raw
- *  values are checked (before trimming), matching check_shortcut_commands. */
-function shortcutLengthIssue(s: Shortcut): { phrase: boolean; commands: boolean; any: boolean } {
-  const phrase = utf8Bytes(s.phrase) > MAX_COMMAND_BYTES;
-  const total = s.commands.reduce((n, c) => n + utf8Bytes(c), 0);
-  const commands = s.commands.length > MAX_SHORTCUT_COMMANDS || total > MAX_COMMAND_BYTES;
-  return { phrase, commands, any: phrase || commands };
-}
 
 /** Example commands, one per kind of feature. A Rust test checks each parses. */
 const EXAMPLES: readonly string[] = examples;
@@ -71,15 +59,6 @@ function someExamples(count: number): string[] {
   return Array.from({ length: Math.min(count, EXAMPLES.length) }, (_, i) => EXAMPLES[(start + i) % EXAMPLES.length]);
 }
 
-function prettyHotkey(h: string): string {
-  const map: Record<string, string> = {
-    control: "⌃", ctrl: "⌃", alt: "⌥", option: "⌥", shift: "⇧", super: "⌘", cmd: "⌘", command: "⌘", commandorcontrol: "⌘",
-  };
-  return h
-    .split("+")
-    .map((p) => map[p.toLowerCase()] ?? p)
-    .join("");
-}
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const CLOSE_MS = 140;
@@ -87,6 +66,8 @@ const CLOSE_MS = 140;
 export default function App() {
   const [view, setView] = useState<View>("command");
   const [settings, setSettings] = useState<Settings | null>(null);
+  // Settings that failed to load must not hold the window back forever.
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const [open, setOpen] = useState(!inTauri);
   const [pendingShow, setPendingShow] = useState<number | null>(null);
   const [commandSession, setCommandSession] = useState(0);
@@ -135,11 +116,18 @@ export default function App() {
     busyRef.current = busy;
     executingRef.current = executing;
   }, []);
+  const auxiliaryOperations = useRef(new Set<symbol>());
+  const beginOperation = useCallback(() => {
+    const owner = Symbol();
+    auxiliaryOperations.current.add(owner);
+    return () => { auxiliaryOperations.current.delete(owner); };
+  }, []);
+  const isBusy = useCallback(() => busyRef.current || auxiliaryOperations.current.size > 0, []);
   const shownAt = useRef(0);
   useEffect(() => {
     if (!inTauri) return;
     const onBlur = () => {
-      if (busyRef.current) return;
+      if (isBusy()) return;
       cancelBlurClose();
       const requestId = showId.current;
       // WebKit can briefly blur during activation, paste, or text services.
@@ -148,7 +136,7 @@ export default function App() {
       const graceLeft = Math.max(0, 300 - (performance.now() - shownAt.current));
       blurTimer.current = setTimeout(() => {
         blurTimer.current = null;
-        if (document.hasFocus() || busyRef.current || requestId !== showId.current
+        if (document.hasFocus() || isBusy() || requestId !== showId.current
           || awaitingShow.current !== null || performance.now() - shownAt.current < 300) return;
         close();
       }, graceLeft + 150);
@@ -160,13 +148,13 @@ export default function App() {
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("focus", cancelBlurClose, true);
     };
-  }, [close, cancelBlurClose]);
+  }, [close, cancelBlurClose, isBusy]);
 
   useEffect(() => {
     api.getSettings().then((s) => {
       setSettings(s);
       if (!s.onboarded) setView("welcome");
-    });
+    }).catch((e) => setSettingsError(errorMessage(e)));
     if (!inTauri) return;
     let disposed = false;
     const unShown = listen<{ requestId: number; mode: View }>("voxi://shown", (e) => {
@@ -193,7 +181,7 @@ export default function App() {
     });
     const unHide = listen("voxi://hide", close);
     const unOutsideClick = listen<number>("voxi://outside-click", ({ payload: requestId }) => {
-      if (disposed || requestId !== showId.current || awaitingShow.current !== null || busyRef.current) return;
+      if (disposed || requestId !== showId.current || awaitingShow.current !== null || isBusy()) return;
       // A real click in another app is not the transient focus handoff that
       // blur's opening grace period protects against.
       close();
@@ -206,7 +194,7 @@ export default function App() {
       unHide.then((f) => f());
       unOutsideClick.then((f) => f());
     };
-  }, [close, cancelClose]);
+  }, [close, cancelClose, isBusy]);
 
   useEffect(() => {
     let disposed = false;
@@ -217,11 +205,11 @@ export default function App() {
   // Layout is measured after settings and fonts settle, while the native window
   // is still hidden. The acknowledgement resizes and reveals it in one operation.
   useLayoutEffect(() => {
-    if (!inTauri || pendingShow === null || !settings || !fontsReady || !innerRef.current) return;
+    if (!inTauri || pendingShow === null || (!settings && !settingsError) || !fontsReady || !innerRef.current) return;
     const requestId = pendingShow;
     const height = Math.ceil(innerRef.current.offsetHeight);
     void invoke("present_window", { requestId, height, animate: !reducedMotion() });
-  }, [pendingShow, settings, fontsReady, view]);
+  }, [pendingShow, settings, settingsError, fontsReady, view]);
 
   // The window is the frosted card, so it is sized to the content and macOS
   // animates the resize. In a browser preview the card glides instead.
@@ -249,19 +237,24 @@ export default function App() {
             onBusy={setBusy}
             onSettings={() => setView("settings")}
           />}
+        {view !== "command" && !settings && settingsError && (
+          <section className="body">
+            <p className="title warn" role="alert">Voxi couldn't load its settings. {settingsError}</p>
+          </section>
+        )}
         {view === "settings" && settings && (
           <SettingsView
             settings={settings}
             onSaved={setSettings}
             onClose={() => setView("command")}
-            setBusy={setBusy}
+            beginOperation={beginOperation}
           />
         )}
         {view === "welcome" && settings && (
           <AccessView
             settings={settings}
             firstRun
-            setBusy={setBusy}
+            beginOperation={beginOperation}
             onDone={async () => {
               const s = await api.saveSettings({ ...settings, onboarded: true });
               setSettings(s);
@@ -335,6 +328,34 @@ function CommandView({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ruleRef = useRef<HTMLSpanElement>(null);
   const planShownAt = useRef(0);
+  // Files sent from Finder ("Organize with Voxi") arrive as the results list.
+  const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
+  // The results list this view knows, so closing it clears only that list
+  // and never one that arrived after (a new Finder selection).
+  const scopeGeneration = useRef<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    let latest = 0;
+    const read = () => {
+      const ask = ++latest;
+      void api.openingContext().then((o) => {
+        // Only the newest read counts, and never one older than a list this
+        // view already knows: replies can arrive out of order.
+        if (!live || ask !== latest || (scopeGeneration.current !== null && o.generation < scopeGeneration.current)) return;
+        scopeGeneration.current = o.generation;
+        setResultScope(o.scope);
+        setSelectionNotice(o.notice);
+      }).catch(() => {});
+    };
+    read();
+    // A Finder selection can arrive while this view stays open.
+    const unlisten = inTauri ? listen("voxi://selection", read) : null;
+    return () => {
+      live = false;
+      void unlisten?.then((stop) => stop());
+    };
+  }, []);
+  const fromFinder = resultScope?.label === FINDER_LABEL;
   const activeRun = useRef<{ id: number; canStop: boolean; stopping: boolean } | null>(null);
   const requestId = useRef(0);
   const [searched, setSearched] = useState(0);
@@ -343,15 +364,22 @@ function CommandView({
   // The last phrase Voxi didn't understand, which the next run can teach.
   const missed = useRef<{ text: string; at: number } | null>(null);
   const [offer, setOffer] = useState<Offer | null>(null);
+  // Steps the user unticked, for the plan with this id only.
+  const [skip, setSkip] = useState<{ id: number; steps: number[] }>({ id: -1, steps: [] });
+  const skippedFor = (id: number) => skip.id === id ? skip.steps : [];
+  const toggleSkip = useCallback((id: number, step: number) => setSkip((prev) => {
+    const steps = prev.id === id ? prev.steps : [];
+    return { id, steps: steps.includes(step) ? steps.filter((s) => s !== step) : [...steps, step] };
+  }), []);
   // A folder picked for an ambiguous name, offered as a nickname after the plan.
   const pickedFolder = useRef<{ name: string; path: string } | null>(null);
   // Same bound the backend applies to every command; checked before trimming.
   const tooLong = utf8Bytes(text) > MAX_COMMAND_BYTES;
 
   useEffect(() => () => {
-    ++requestId.current;
+    (requestId.current = ++lastRequest);
     api.cancel();
-    void api.clearResultScope();
+    if (scopeGeneration.current !== null) void api.clearResultScope(scopeGeneration.current);
   }, []);
 
   useEffect(() => {
@@ -400,7 +428,7 @@ function CommandView({
   }, [text]);
 
   const submit = useCallback(
-    async (command: string, picked: Record<string, string> = {}) => {
+    async (command: string, picked: Record<string, string> = {}, undoEntryId?: number) => {
       if (!command.trim()) return;
       // Never send an oversized command, and never truncate one to fit: the
       // text stays in the box with an inline message until it is shortened.
@@ -413,13 +441,14 @@ function CommandView({
       setOffer(null);
       const folderPick = pickedFolder.current;
       pickedFolder.current = null;
-      const request = ++requestId.current;
+      const request = (requestId.current = ++lastRequest);
       setSearched(0);
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const { outcome, scope } = await api.plan(command, picked, request);
+        const { outcome, scope, generation } = await api.plan(command, picked, request, undoEntryId);
         if (request !== requestId.current) return;
+        scopeGeneration.current = generation;
         setResultScope(scope);
         setPhase({ k: "outcome", outcome });
         if (outcome.status === "plan") planShownAt.current = performance.now();
@@ -436,7 +465,10 @@ function CommandView({
         // the next thing dictated always lands there. Enter runs a preview.
         focusInput();
       } catch (e) {
-        if (request === requestId.current) setPhase({ k: "error", message: String(e) });
+        if (request !== requestId.current) return;
+        // The choice list is gone, so Enter and spoken numbers must stop picking from it.
+        setAsking(null);
+        setPhase({ k: "error", message: errorMessage(e) });
       }
     },
     [focusInput],
@@ -460,27 +492,36 @@ function CommandView({
   const confirm = useCallback(async () => {
     if (activeRun.current || phase.k !== "outcome" || phase.outcome.status !== "plan") return;
     const plan = phase.outcome;
-    const canStop = !plan.scheduledFor || !!plan.repeats?.startsWith("Runs now, then ");
+    const skipped = skip.id === plan.id ? skip.steps : [];
+    if (skipped.length >= plan.total) return;
+    const canStop = plan.firstRun === "immediate" || plan.firstRun === "runNowAndRepeat";
     activeRun.current = { id: plan.id, canStop, stopping: false };
     setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
-      const result = await api.confirm(plan.id);
-      setResultScope(await api.resultScope().catch(() => null));
+      const result = await api.confirm(plan.id, skipped);
+      const after = await api.openingContext().catch(() => null);
+      if (after) scopeGeneration.current = after.generation;
+      setResultScope(after?.scope ?? null);
+      setSelectionNotice(after?.notice ?? null);
       setPhase({ k: "done", result, wasUndo: plan.isUndo });
       // A phrase Voxi missed, followed soon by a command that worked, can
       // be taught: next time the phrase runs this command.
       const miss = missed.current;
       missed.current = null;
-      if (!result.error && !result.cancelled && !plan.isUndo && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
+      // Only a run that changed files teaches: scheduling one changes nothing yet.
+      if (!result.error && !result.cancelled && !plan.isUndo && result.done > 0 && miss && Date.now() - miss.at < TEACH_WINDOW_MS && miss.text !== lastCommand.current) {
         setOffer({ k: "phrase", phrase: miss.text, command: lastCommand.current });
       }
       focusInput();
     } catch (e) {
-      setPhase({ k: "error", message: String(e) });
+      // A refusal before anything ran (a file changed, a step can't be
+      // left out) keeps the preview, so it can be fixed or cancelled.
+      if (isConfirmError(e) && e.previewKept) setPhase({ k: "outcome", outcome: plan, refused: e.message });
+      else setPhase({ k: "error", message: errorMessage(e) });
     } finally {
       activeRun.current = null;
     }
-  }, [phase, focusInput]);
+  }, [phase, focusInput, skip]);
 
   const stop = useCallback(async () => {
     const run = activeRun.current;
@@ -488,7 +529,11 @@ function CommandView({
     run.stopping = true;
     setPhase((current) => current.k === "running" ? { ...current, stopping: true, stopError: undefined } : current);
     try {
-      await api.stopExecution(run.id);
+      // False: the run already finished; its result arrives on its own.
+      if (!(await api.stopExecution(run.id)) && activeRun.current === run) {
+        run.stopping = false;
+        setPhase((current) => current.k === "running" ? { ...current, stopping: false } : current);
+      }
     } catch (e) {
       if (activeRun.current !== run) return;
       run.stopping = false;
@@ -497,9 +542,11 @@ function CommandView({
   }, []);
 
   const reset = useCallback(() => {
-    const request = ++requestId.current;
-    void Promise.all([api.cancel(), api.clearResultScope()]).catch((e) => {
-      if (request === requestId.current) setPhase({ k: "error", message: String(e) });
+    const request = (requestId.current = ++lastRequest);
+    setSelectionNotice(null);
+    const known = scopeGeneration.current;
+    void Promise.all([api.cancel(), known === null ? undefined : api.clearResultScope(known)]).catch((e) => {
+      if (request === requestId.current) setPhase({ k: "error", message: errorMessage(e) });
     });
     stopAsking();
     setText("");
@@ -613,8 +660,10 @@ function CommandView({
   };
 
   const undo = () => {
-    setAsking(null);
-    submit("undo last", {});
+    if (phase.k === "done" && phase.result.entryId !== null) {
+      setAsking(null);
+      submit("undo last", {}, phase.result.entryId);
+    }
   };
 
   const executing = phase.k === "running";
@@ -653,12 +702,18 @@ function CommandView({
         </p>
       )}
       {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
-        <span>{resultScope.count} results from {resultScope.label}{resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
+        <span>{resultScope.count} {fromFinder ? (resultScope.count === 1 ? "file" : "files") : "results"} from {resultScope.label}{!fromFinder && resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
         <button className="link" disabled={phase.k === "running"} onClick={() => {
           reset();
-          void api.clearResultScope().then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: String(e) }));
+          void api.clearResultScope(scopeGeneration.current).then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: errorMessage(e) }));
         }}>Clear scope</button>
       </div>}
+      {phase.k === "ready" && (fromFinder || selectionNotice) && (
+        <p className="quiet selection-hint" role="status">
+          {selectionNotice && <span className="warn">{selectionNotice} </span>}
+          {fromFinder && "Say what to do with them, such as “move these to Receipts”."}
+        </p>
+      )}
       <Body
         searched={searched}
         key={`body-${phaseKey(phase)}`}
@@ -671,6 +726,8 @@ function CommandView({
         onPick={pick}
         onFill={fill}
         onUndo={undo}
+        skipped={phase.k === "outcome" && phase.outcome.status === "plan" ? skippedFor(phase.outcome.id) : []}
+        onToggleSkip={toggleSkip}
       />
       {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onDone={() => { setOffer(null); focusInput(); }} />}
       {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
@@ -700,14 +757,16 @@ function reportOutcome(p: Phase): unknown {
 /** "Wrong result?": saves the command and what Voxi did with it on this Mac,
  *  with an optional note on what it should have done. Nothing is sent. */
 function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; onDone: () => void }) {
-  const [state, setState] = useState<{ k: "idle" } | { k: "writing"; note: string } | { k: "saved"; count: number } | { k: "error"; message: string }>({ k: "idle" });
+  const [state, setState] = useState<{ k: "idle" } | { k: "writing"; note: string } | { k: "saving" } | { k: "saved"; count: number } | { k: "error"; message: string }>({ k: "idle" });
   if (!command) return null;
   const save = async (note: string) => {
+    if (state.k !== "writing") return;
+    setState({ k: "saving" });
     try {
       const r = await api.reportWrong(command, reportOutcome(phase), note);
       setState({ k: "saved", count: r.count });
     } catch (e) {
-      setState({ k: "error", message: String(e) });
+      setState({ k: "error", message: errorMessage(e) });
     }
     onDone();
   };
@@ -718,6 +777,7 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
   );
   if (state.k === "saved") return <div className="learn" role="status"><span>Saved on this Mac. Nothing is sent. {state.count} {state.count === 1 ? "report" : "reports"} so far.</span></div>;
   if (state.k === "error") return <div className="learn" role="alert"><span className="warn">{state.message}</span></div>;
+  if (state.k === "saving") return <div className="learn" role="status"><span>Saving…</span></div>;
   return (
     <div className="learn writing">
       <input
@@ -751,7 +811,7 @@ function OfferRow({ offer, onDone }: { offer: Offer; onDone: () => void }) {
         setState({ k: "saved", text: `Saved. “${offer.phrase}” now runs “${offer.command}”. Change it under Shortcuts.` });
       }
     } catch (e) {
-      setState({ k: "error", message: String(e) });
+      setState({ k: "error", message: errorMessage(e) });
     }
   };
   if (state.k === "saved") return <div className="learn offer" role="status"><span>{state.text}</span></div>;
@@ -776,8 +836,6 @@ function phaseKey(p: Phase): string {
   return `outcome-${o.status}-${o.status === "plan" ? o.id : o.status === "ambiguous" ? o.name : ""}`;
 }
 
-/** Row index for the staggered "inked onto the card" entrance. */
-const row = (i: number) => ({ "--i": Math.min(i, 12) }) as React.CSSProperties;
 
 function Tick() {
   return (
@@ -786,6 +844,114 @@ function Tick() {
     </svg>
   );
 }
+
+type PlanOutcome = Extract<Outcome, { status: "plan" }>;
+
+/** The preview's steps. The first page arrives with the plan; "Show more"
+ *  loads the rest of the same frozen plan, and the notes view lists only the
+ *  steps with a note (a name changed to avoid a clash, say). */
+/** The results label Voxi gives files sent from Finder; matches finder_selection::LABEL. */
+const FINDER_LABEL = "your Finder selection";
+
+const runLabel = (n: number) => `Run ${n} ${n === 1 ? "change" : "changes"}`;
+
+function PlanSteps({ plan, skipped, onToggle }: { plan: PlanOutcome; skipped: number[]; onToggle: (step: number) => void }) {
+  const first = { notes: false, before: 0, rows: plan.items.map((it, step): PreviewRow => ({ ...it, step })) };
+  // One page at a time, so a huge plan never mounts every row. `before` is
+  // how many rows of this view came on earlier pages; `back` holds them.
+  const [page, setPage] = useState<{ notes: boolean; before: number; rows: PreviewRow[] }>(first);
+  const [back, setBack] = useState<{ before: number; rows: PreviewRow[] }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const prevRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
+  const last = page.rows[page.rows.length - 1] as PreviewRow | undefined;
+  const seen = page.before + page.rows.length;
+  const hasNext = page.notes ? seen < plan.noted : (last ? last.step + 1 : 0) < plan.total;
+  const show = (next: { notes: boolean; before: number; rows: PreviewRow[] }) => {
+    const nextHadFocus = document.activeElement === nextRef.current;
+    setPage(next);
+    listRef.current?.scrollTo({ top: 0 });
+    // The Next button goes away on the last page: keep focus nearby.
+    if (nextHadFocus) requestAnimationFrame(() => (nextRef.current ?? prevRef.current)?.focus());
+  };
+  const load = (notes: boolean, offset: number, before: number, onDone?: () => void) => {
+    setLoading(true);
+    setError(null);
+    api.previewPage(plan.id, offset, notes)
+      .then((rows) => { onDone?.(); show({ notes, before, rows }); })
+      .catch((e) => setError(errorMessage(e)))
+      .finally(() => setLoading(false));
+  };
+  const next = () => load(page.notes, last ? last.step + 1 : 0, seen, () => setBack((b) => [...b, { before: page.before, rows: page.rows }]));
+  const previous = () => {
+    const prev = back[back.length - 1];
+    if (!prev) return;
+    setBack((b) => b.slice(0, -1));
+    show({ notes: page.notes, ...prev });
+  };
+  // Switching views starts a new page history, but only once the new page
+  // arrives: a failed load keeps the current page and its Previous.
+  const toggleNotes = () => {
+    if (page.notes) {
+      setBack([]);
+      show(first);
+    } else load(true, 0, 0, () => setBack([]));
+  };
+  const total = page.notes ? plan.noted : plan.total;
+  const paged = plan.total > plan.items.length || plan.noted > 0;
+  return (
+    <>
+      <ul ref={listRef} className={`ruled scroll${page.notes ? " numbered" : ""}`} aria-label={page.notes ? "Steps with notes" : "Steps"}>
+        {page.rows.map((it, i) => (
+          <li key={it.step} data-kind={it.kind} data-skipped={skipped.includes(it.step) || undefined} style={row(i)}>
+            {page.notes && <span className="num"><span className="sr-only">Step </span>{it.step + 1}</span>}
+            <span className="primary">
+              {it.skippable && (
+                <input
+                  type="checkbox"
+                  className="keep"
+                  checked={!skipped.includes(it.step)}
+                  onChange={() => onToggle(it.step)}
+                  aria-label={`Include ${it.primary}`}
+                />
+              )}
+              {it.primary}
+            </span>
+            <span className="detail">{it.detail}</span>
+            {it.note && <span className="note">{it.note}</span>}
+          </li>
+        ))}
+      </ul>
+      {paged && (
+        <p className="quiet pager">
+          {page.rows.length > 0 && (total > page.rows.length || back.length > 0) && (
+            <span>
+              {page.notes ? "With notes: " : "Steps "}
+              {page.before + 1}–{seen} of {total}
+            </span>
+          )}
+          {back.length > 0 && <button ref={prevRef} type="button" className="link" disabled={loading} onClick={previous}>Previous</button>}
+          {hasNext && (
+            <button ref={nextRef} type="button" className="link" disabled={loading} onClick={next}>
+              {loading ? "Loading…" : `Next ${Math.min(PREVIEW_PAGE, total - seen)}`}
+            </button>
+          )}
+          {plan.noted > 0 && (
+            <button type="button" className="link" disabled={loading} onClick={toggleNotes}>
+              {page.notes ? "All steps" : `Only the ${plan.noted} with notes`}
+            </button>
+          )}
+          {error && <span className="warn" role="alert">{error}</span>}
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Steps each later page holds; matches PREVIEW_PAGE in lib.rs. */
+const PREVIEW_PAGE = 200;
 
 function Body(props: {
   searched: number;
@@ -798,6 +964,8 @@ function Body(props: {
   onPick: (index: number) => void;
   onFill: (s: string) => void;
   onUndo: () => void;
+  skipped: number[];
+  onToggleSkip: (id: number, step: number) => void;
 }) {
   const { phase } = props;
   if (phase.k === "ready") return null;
@@ -912,33 +1080,26 @@ function Body(props: {
         </section>
       );
     case "plan": {
-      const more = o.total - o.items.length;
       return (
         <section className="body">
           <p className="title">{o.title}</p>
-          <ul className="ruled scroll">
-            {o.items.map((it, i) => (
-              <li key={i} data-kind={it.kind} style={row(i)}>
-                <span className="primary">{it.primary}</span>
-                <span className="detail">{it.detail}</span>
-                {it.note && <span className="note">{it.note}</span>}
-              </li>
-            ))}
-            {more > 0 && (
-              <li className="more" style={row(o.items.length)}>
-                and {more} more {more === 1 ? "step" : "steps"}
-              </li>
-            )}
-          </ul>
-          {o.repeats?.startsWith("Runs now, then ") && <p className="quiet">{o.repeats}</p>}
+          {phase.refused && <p className="note warn" role="alert">{phase.refused}</p>}
+          <PlanSteps plan={o} skipped={props.skipped} onToggle={(step) => props.onToggleSkip(o.id, step)} />
+          {props.skipped.length > 0 && (
+            <p className="quiet" role="status">
+              Leaving out {props.skipped.length} {props.skipped.length === 1 ? "step" : "steps"}.
+              {props.skipped.length >= o.total && " Tick at least one to run."}
+            </p>
+          )}
+          {o.firstRun === "runNowAndRepeat" && <p className="quiet">{o.repeats}</p>}
           {o.warnings.map((w) => (
             <p key={w} className="quiet">
               {w}
             </p>
           ))}
           <div className="actions">
-            <button className="primary-button" onClick={props.onConfirm}>
-              {o.repeats?.startsWith("Runs now, then ") ? "Run now and repeat" : o.repeats ? "Schedule repeating task" : o.scheduledFor ? "Schedule task" : o.isUndo ? "Undo" : `Run ${o.total} ${o.total === 1 ? "change" : "changes"}`}
+            <button className="primary-button" onClick={props.onConfirm} disabled={props.skipped.length >= o.total}>
+              {o.firstRun === "runNowAndRepeat" ? "Run now and repeat" : o.firstRun === "repeatLater" ? "Schedule repeating task" : o.firstRun === "oneTimeDeferred" ? "Schedule task" : o.isUndo ? "Undo" : runLabel(o.total - props.skipped.length)}
               <kbd>↩</kbd>
             </button>
             <button className="secondary" onClick={props.onCancel}>
@@ -959,7 +1120,12 @@ function Footer({ phase, asking, onSettings }: { phase: Phase; asking: boolean; 
       : phase.k === "ready"
         ? "Enter to preview. Shift-Enter for a new line."
         : phase.k === "outcome" && phase.outcome.status === "plan"
-          ? (phase.outcome.scheduledFor ? (phase.outcome.repeats?.startsWith("Runs now, then ") ? "Enter to run now and repeat. Later runs won't ask first. Esc to cancel." : phase.outcome.repeats ? "Enter to schedule. Later runs won't ask first. Esc to cancel." : "Enter to schedule. Esc to cancel.") : "Enter to run. Nothing changes until then.")
+          ? ({
+            runNowAndRepeat: "Enter to run now and repeat. Later runs won't ask first. Esc to cancel.",
+            repeatLater: "Enter to schedule. Later runs won't ask first. Esc to cancel.",
+            oneTimeDeferred: "Enter to schedule. Esc to cancel.",
+            immediate: "Enter to run. Nothing changes until then.",
+          }[phase.outcome.firstRun])
           : phase.k === "outcome" && phase.outcome.status === "ambiguous"
             ? "Esc to go back"
             : phase.k === "running" ? "" : "Say the next command. Esc to go back.";
@@ -977,951 +1143,5 @@ function Footer({ phase, asking, onSettings }: { phase: Phase; asking: boolean; 
 
 /** Every screen uses the command window's layout: a title on the red rule,
  *  the content, and a quiet footer line. */
-function Sheet(props: {
-  title: string;
-  aside?: React.ReactNode;
-  bodyClass?: string;
-  foot: React.ReactNode;
-  footRight?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <>
-      <div className="head sheet-head">
-        <span className="rule" aria-hidden="true" />
-        <h1 className="sheet-title">{props.title}</h1>
-        {props.aside}
-      </div>
-      <section className={props.bodyClass ? `body sheet-body ${props.bodyClass}` : "body sheet-body"}>{props.children}</section>
-      <footer className="foot">
-        <span>{props.foot}</span>
-        {props.footRight}
-      </footer>
-    </>
-  );
-}
 
 // ---- Settings ----------------------------------------------------------------
-
-const KEY_NAMES: Record<string, string> = { " ": "Space", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right" };
-
-function comboFromEvent(e: React.KeyboardEvent): string | null {
-  if (["Meta", "Control", "Alt", "Shift"].includes(e.key)) return null;
-  const mods = [e.ctrlKey && "Control", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"].filter(Boolean);
-  if (mods.length === 0) return null;
-  let key = e.code.startsWith("Key") ? e.code.slice(3) : e.code.startsWith("Digit") ? e.code.slice(5) : e.code;
-  key = KEY_NAMES[e.key] ?? key;
-  return [...mods, key].join("+");
-}
-
-/** Everything a Settings tab can use. */
-type TabContext = {
-  settings: Settings;
-  persist: (s: Settings) => Promise<boolean>;
-  setBusy: (b: boolean) => void;
-  activeTasks: number | null;
-};
-
-/** 16px line icons, drawn in the current text color. */
-const ICONS = {
-  general: <><circle cx="8" cy="8" r="2.2" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></>,
-  scheduled: <><circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.5 1.5" /></>,
-  shortcuts: <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />,
-  folders: <path d="M1.75 4.25c0-.7.55-1.25 1.25-1.25h3l1.5 1.5H13c.7 0 1.25.55 1.25 1.25v6c0 .7-.55 1.25-1.25 1.25H3c-.7 0-1.25-.55-1.25-1.25z" />,
-  keyboard: <><rect x="1.5" y="4" width="13" height="8" rx="1.5" /><path d="M4 7h.01M6.5 7h.01M9 7h.01M11.5 7h.01M5 9.5h6" /></>,
-  power: <><path d="M8 1.75V7.5" /><path d="M4.6 3.6a5.25 5.25 0 1 0 6.8 0" /></>,
-  mic: <><rect x="5.75" y="1.5" width="4.5" height="8" rx="2.25" /><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" /></>,
-  update: <><path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1" /><path d="M13.5 2v3h-3" /></>,
-  shield: <path d="M8 1.75 2.75 3.75V7.5c0 3.1 2.2 5.6 5.25 6.75 3.05-1.15 5.25-3.65 5.25-6.75V3.75z" />,
-  tag: <><path d="M1.75 8.4V2.75c0-.55.45-1 1-1H8.4l5.85 5.85-6.65 6.65z" /><circle cx="5" cy="5" r="1" /></>,
-} as const;
-
-function Icon({ name }: { name: keyof typeof ICONS }) {
-  return <svg className="icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICONS[name]}</svg>;
-}
-
-/** Settings sections, in sidebar order. Add a tab by adding an entry here. */
-const TABS = [
-  {
-    id: "general", label: "General", icon: "general",
-    badge: () => null,
-    render: (c: TabContext) => <GeneralTab settings={c.settings} persist={c.persist} />,
-  },
-  {
-    id: "scheduled", label: "Scheduled", icon: "scheduled",
-    badge: (c: TabContext) => c.activeTasks || null,
-    render: () => <ScheduledTab />,
-  },
-  {
-    id: "shortcuts", label: "Shortcuts", icon: "shortcuts",
-    badge: (c: TabContext) => c.settings.shortcuts.length || null,
-    render: (c: TabContext) => <ShortcutsTab settings={c.settings} persist={c.persist} />,
-  },
-  {
-    id: "folders", label: "Folders", icon: "folders",
-    badge: () => null,
-    render: (c: TabContext) => <FoldersTab settings={c.settings} persist={c.persist} setBusy={c.setBusy} />,
-  },
-] as const satisfies readonly {
-  id: string; label: string; icon: keyof typeof ICONS;
-  badge: (c: TabContext) => number | null; render: (c: TabContext) => React.ReactNode;
-}[];
-type Tab = (typeof TABS)[number]["id"];
-
-/** A titled group of rows on a soft card, like System Settings. */
-function Group({ title, action, foot, children }: { title: string; action?: React.ReactNode; foot?: React.ReactNode; children: React.ReactNode }) {
-  return <section className="group">
-    <div className="group-head">
-      <h3 className="group-title">{title}</h3>
-      {action}
-    </div>
-    <ul className="group-rows">{children}</ul>
-    {foot && <p className="group-foot">{foot}</p>}
-  </section>;
-}
-
-/** One setting: an optional icon, a label with a short description, and its control. */
-function Row({ icon, label, htmlFor, description, children, className }: {
-  icon?: keyof typeof ICONS; label?: React.ReactNode; htmlFor?: string; description?: React.ReactNode;
-  children?: React.ReactNode; className?: string;
-}) {
-  return <li className={className ? `row ${className}` : "row"}>
-    {icon && <span className="row-icon"><Icon name={icon} /></span>}
-    {label !== undefined && <div className="row-copy">
-      {htmlFor ? <label className="row-label" htmlFor={htmlFor}>{label}</label> : <span className="row-label">{label}</span>}
-      {description && <span className="row-desc">{description}</span>}
-    </div>}
-    {children}
-  </li>;
-}
-
-const ACTIVE_STATUSES: ScheduledTask["status"][] = ["pending", "running", "paused"];
-
-function RecoveryNotice() {
-  const [reviewed, setReviewed] = useState(false);
-  const [recovery, setRecovery] = useState<Awaited<ReturnType<typeof api.recoveryStatus>>>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [working, setWorking] = useState(false);
-  const actionRef = useRef<HTMLButtonElement>(null);
-  const messageRef = useRef<HTMLParagraphElement>(null);
-  const generation = useRef(0);
-  useEffect(() => {
-    let alive = true;
-    const refresh = () => {
-      const started = generation.current;
-      return api.recoveryStatus().then((next) => {
-        if (alive && started === generation.current) { setRecovery(next); setError(null); }
-      }).catch((e) => { if (alive && started === generation.current) setError(errorMessage(e)); });
-    };
-    void refresh();
-    const timer = window.setInterval(refresh, 2000);
-    return () => { alive = false; clearInterval(timer); };
-  }, []);
-  const review = async () => {
-    if (working) return;
-    setWorking(true);
-    try {
-      await api.acknowledgeRecovery();
-      ++generation.current; // ignore polls started before the acknowledgement
-      setRecovery(null); setError(null); setReviewed(true);
-      requestAnimationFrame(() => messageRef.current?.focus());
-    } catch (e) {
-      setError(errorMessage(e));
-      actionRef.current?.focus();
-    } finally { setWorking(false); }
-  };
-  return <div className="settings-note recovery-notice">
-    <p ref={messageRef} tabIndex={-1} role={recovery || error ? "alert" : "status"}>
-      {recovery ? `Interrupted operation “${recovery.command}”. ${recovery.acknowledged} steps acknowledged. Check the files below, then choose Mark as reviewed in Settings → Scheduled to allow new changes. No action was retried.` : error ? "Recovery status unavailable." : reviewed ? "Recovery evidence archived. New changes are allowed." : ""}
-      {error && ` ${error}`}
-    </p>
-    {recovery && <>
-      {recovery.inFlight && <pre>{JSON.stringify(recovery.inFlight, null, 2)}</pre>}
-      <button ref={actionRef} className="link" aria-disabled={working} onClick={() => void review()}>{working ? "Archiving…" : "Mark as reviewed"}</button>
-      <p className="hint">The recovery journal will be archived beside the original. Review does not retry or undo the interrupted step.</p>
-    </>}
-  </div>;
-}
-
-function ScheduledTab() {
-  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [working, setWorking] = useState<number | null>(null);
-  const [stoppingRun, setStoppingRun] = useState<string | null>(null);
-  const [showing, setShowing] = useState<"active" | "done">("active");
-  useEffect(() => {
-    let alive = true;
-    const refresh = () => Promise.all([api.scheduledTasks(), api.schedulerNotice()]).then(([next, message]) => {
-      if (alive) { setTasks(next); setNotice(message); setLoading(false); setError(null); }
-    }).catch((e) => { if (alive) { setError(String(e)); setLoading(false); } });
-    void refresh();
-    const timer = window.setInterval(refresh, 2000);
-    return () => { alive = false; clearInterval(timer); };
-  }, []);
-  const act = async (id: number, action: (id: number) => Promise<void>) => {
-    setWorking(id);
-    try { await action(id); setTasks(await api.scheduledTasks()); setError(null); }
-    catch (e) { setError(String(e)); }
-    finally { setWorking(null); }
-  };
-  const stopRun = async (task: ScheduledTask, run: string) => {
-    setStoppingRun(run);
-    try {
-      await api.stopExecution(task.id, task.due);
-    } catch (e) {
-      setStoppingRun((current) => current === run ? null : current);
-      setError(errorMessage(e));
-    }
-  };
-  const when = (task: ScheduledTask) => {
-    const at = new Date(task.due).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-    if (!task.repeat) return at;
-    const every = `${task.repeat[0].toUpperCase()}${task.repeat.slice(1)}`;
-    return task.status === "pending" ? `${every} · next ${at}` : every;
-  };
-  const STATUS: Record<ScheduledTask["status"], [string, string]> = {
-    pending: ["Scheduled", "ok"], running: ["Running", "ok"], paused: ["Paused", "muted"],
-    completed: ["Done", "muted"], cancelled: ["Stopped", "muted"], failed: ["Failed", "warn"],
-  };
-  const active = tasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).reverse();
-  const done = tasks.filter((t) => !ACTIVE_STATUSES.includes(t.status)).reverse();
-  const shown = showing === "active" ? active : done;
-  const button = (task: ScheduledTask, label: string, busy: string, action: (id: number) => Promise<void>) =>
-    <button className="link" disabled={working !== null} onClick={() => void act(task.id, action)}>{working === task.id ? busy : label}</button>;
-  return <>
-    <div className="segments" role="group" aria-label="Show tasks">
-      {([["active", "Active", active.length], ["done", "Done", done.length]] as const).map(([id, label, count]) =>
-        <button key={id} aria-pressed={showing === id} onClick={() => setShowing(id)}>{label} <span className="count">{count}</span></button>)}
-    </div>
-    <RecoveryNotice />
-    {notice && <p className="settings-note warn" role="status">{notice}</p>}
-    {error && <p className="settings-note warn" role="alert">{error}</p>}
-    {loading ? <p className="quiet">Loading scheduled tasks…</p> : shown.length === 0 ? <div className="empty">
-      <span className="empty-icon"><Icon name="scheduled" /></span>
-      {showing === "active" ? <>
-        <p className="empty-title">Nothing scheduled</p>
-        <p className="empty-desc">End a command with a time to run it later.</p>
-        <p className="empty-examples"><kbd>at 9 pm</kbd><kbd>in 3 hours</kbd><kbd>every 3 days</kbd></p>
-      </> : <>
-        <p className="empty-title">No finished tasks yet</p>
-        <p className="empty-desc">Tasks that ran or were stopped show up here.</p>
-      </>}
-    </div> :
-      <ul className="group-rows tasks-list">{shown.map((task) => {
-        const [status, tone] = STATUS[task.status];
-        const run = `${task.id}-${task.due}`;
-        return <li className="row task" key={task.id}>
-          <span className="row-icon"><Icon name={task.repeat ? "update" : "scheduled"} /></span>
-          <div className="row-copy">
-            <span className="row-label task-command">{task.command}</span>
-            <span className="row-desc">{when(task)}</span>
-            {task.summary && <span className="row-desc task-summary">{task.summary}</span>}
-            <span className="task-actions">
-              {task.status === "running" && <button type="button" className="link" disabled={stoppingRun === run} onClick={() => void stopRun(task, run)}>
-                {stoppingRun === run ? "Stopping…" : "Stop this run"}
-              </button>}
-              {task.repeat && task.status === "pending" && button(task, "Pause", "Pausing…", api.pauseScheduledTask)}
-              {task.status === "paused" && button(task, "Resume", "Resuming…", api.resumeScheduledTask)}
-              {(task.status === "pending" || task.status === "paused") && button(task, task.repeat ? "Stop repeating" : "Cancel task", "Stopping…", api.cancelScheduledTask)}
-              {task.repeat && (task.status === "cancelled" || task.status === "failed") && button(task, "Move to active", "Moving…", api.resumeScheduledTask)}
-            </span>
-          </div>
-          <span className={`pill ${tone}`}>{status}</span>
-        </li>;
-      })}</ul>}
-  </>;
-}
-
-/** The Settings tab bar, on the title row to the right of "Settings". */
-function SettingsTabs({ value, saving, context, onSelect }: { value: Tab; saving: boolean; context: TabContext; onSelect: (tab: Tab) => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
-  const [animate, setAnimate] = useState(false);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const measure = () => {
-      const selected = element.querySelector<HTMLButtonElement>('[aria-selected="true"]');
-      if (selected) setIndicator({ left: selected.offsetLeft, width: selected.offsetWidth });
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    const frame = requestAnimationFrame(() => setAnimate(true));
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
-  }, [value]);
-  return <div className="tabs" role="tablist" aria-label="Settings sections" ref={ref}>
-    {indicator && <span className="tab-highlight" data-animate={animate || undefined} aria-hidden="true" style={indicator} />}
-    {TABS.map((tab, index) => {
-      const badge = tab.badge(context);
-      return <button key={tab.id} role="tab" id={`settings-tab-${tab.id}`}
-        aria-selected={value === tab.id} aria-disabled={saving} aria-controls="settings-panel"
-        tabIndex={value === tab.id ? 0 : -1} onClick={() => onSelect(tab.id)}
-        onKeyDown={(event) => {
-          if (saving) return;
-          const next = event.key === "ArrowRight" ? (index + 1) % TABS.length
-            : event.key === "ArrowLeft" ? (index + TABS.length - 1) % TABS.length
-            : event.key === "Home" ? 0 : event.key === "End" ? TABS.length - 1 : null;
-          if (next === null) return;
-          event.preventDefault();
-          onSelect(TABS[next].id);
-          ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
-        }}>
-        <Icon name={tab.icon} />
-        <span className="tab-label">{tab.label}</span>
-        {badge !== null && <span className="tab-badge" aria-label={`${badge}`}>{badge}</span>}
-      </button>;
-    })}
-  </div>;
-}
-
-/** Settings save as they change: no Save button. */
-function SettingsView({
-  settings,
-  onSaved,
-  onClose,
-  setBusy,
-}: {
-  settings: Settings;
-  onSaved: (s: Settings) => void;
-  onClose: () => void;
-  setBusy: (b: boolean) => void;
-}) {
-  const [tab, setTab] = useState<Tab>("general");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [activeTasks, setActiveTasks] = useState<number | null>(null);
-  const savePending = useRef(false);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !savePending.current) {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  // The sidebar's count of active scheduled tasks.
-  useEffect(() => {
-    let alive = true;
-    const refresh = () => api.scheduledTasks()
-      .then((tasks) => { if (alive) setActiveTasks(tasks.filter((t) => ACTIVE_STATUSES.includes(t.status)).length); })
-      .catch(() => {});
-    void refresh();
-    const timer = window.setInterval(refresh, 4000);
-    return () => { alive = false; clearInterval(timer); };
-  }, []);
-
-  const persist = async (next: Settings): Promise<boolean> => {
-    if (savePending.current) return false;
-    savePending.current = true;
-    const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSaving(true);
-    try {
-      onSaved(await api.saveSettings(next));
-      setError(null);
-      return true;
-    } catch (e) {
-      setError(String(e));
-      return false;
-    } finally {
-      savePending.current = false;
-      setSaving(false);
-      requestAnimationFrame(() => {
-        if (focused?.isConnected && document.activeElement === document.body && !focused.matches(":disabled")) focused.focus();
-      });
-    }
-  };
-
-  const context: TabContext = { settings, persist, setBusy, activeTasks };
-  const current = TABS.find((t) => t.id === tab)!;
-
-  return (
-    <Sheet
-      title="Settings"
-      aside={<SettingsTabs value={tab} saving={saving} context={context} onSelect={(id) => { if (!savePending.current) setTab(id); }} />}
-      bodyClass="settings-body"
-      foot={error ? <span className="warn" role="alert">{error}</span> : "Esc to go back."}
-      footRight={
-        <button className="link" aria-disabled={saving} onClick={() => { if (!savePending.current) onClose(); }}>
-          Done
-        </button>
-      }
-    >
-      <fieldset key={tab} id="settings-panel" role="tabpanel" tabIndex={0} aria-labelledby={`settings-tab-${tab}`} className="tab-panel" disabled={saving} aria-busy={saving}>
-        {current.render(context)}
-      </fieldset>
-    </Sheet>
-  );
-}
-
-type TabProps = { settings: Settings; persist: (s: Settings) => Promise<boolean> };
-
-function GeneralTab({ settings, persist }: TabProps) {
-  const [recording, setRecording] = useState(false);
-  const [linkError, setLinkError] = useState<string | null>(null);
-  return <>
-    <Group title="Startup">
-      <Row icon="keyboard" label="Open Voxi" description={recording ? "Press the new keys, or Esc to keep the current ones." : "Press this anywhere to open the command box."}>
-        <button
-          className={recording ? "hotkey recording" : "hotkey"}
-          onClick={() => setRecording(true)}
-          onBlur={() => setRecording(false)}
-          title="Click, then press new keys. Avoid Fn, which Wispr Flow uses."
-          onKeyDown={(e) => {
-            if (!recording) return;
-            e.preventDefault();
-            e.stopPropagation(); // Esc here cancels recording, not Settings.
-            if (e.key === "Escape") return setRecording(false);
-            const combo = comboFromEvent(e);
-            if (combo) {
-              setRecording(false);
-              persist({ ...settings, hotkey: combo });
-            }
-          }}
-        >
-          {recording ? "Press new keys" : prettyHotkey(settings.hotkey)}
-        </button>
-      </Row>
-      <Row icon="power" label="Open at login" htmlFor="login" description="Start Voxi in the menu bar when you log in.">
-        <input
-          id="login"
-          className="switch"
-          type="checkbox"
-          checked={settings.startAtLogin}
-          onChange={(e) => persist({ ...settings, startAtLogin: e.target.checked })}
-        />
-      </Row>
-    </Group>
-    <Group title="Dictation" foot={linkError ? <span className="warn" role="alert">{linkError}</span> : "Requires Apple silicon and macOS 15 or later. Other dictation apps work too."}>
-      <Row icon="mic" label={<>Hex by Anomaly <span className="pill">Recommended</span></>} description="Free, open source dictation that runs on your Mac.">
-        <button className="secondary small" onClick={() => { setLinkError(null); api.openHex().catch((e) => setLinkError(String(e))); }}>Get Hex</button>
-      </Row>
-    </Group>
-    <Group title="Updates">
-      <UpdatesRow />
-    </Group>
-    <Group title="Privacy">
-      <ReportsRow />
-    </Group>
-  </>;
-}
-
-const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1);
-
-/** The installed version, and a button that fetches and installs the latest
- *  release, with a progress bar and its notes while it downloads. */
-function UpdatesRow() {
-  const [version, setVersion] = useState("");
-  const [state, setState] = useState<UpdateState>({ k: "idle" });
-
-  useEffect(() => {
-    appVersion().then(setVersion);
-  }, []);
-
-  const busy = state.k === "checking" || state.k === "downloading" || state.k === "restarting";
-  const status =
-    state.k === "checking"
-      ? "Checking…"
-      : state.k === "downloading"
-        ? state.total
-          ? `Downloading ${state.version}: ${mb(state.done)} of ${mb(state.total)} MB`
-          : `Downloading ${state.version}…`
-        : state.k === "restarting"
-          ? `Installed ${state.version}. Restarting…`
-          : state.k === "error"
-            ? state.message
-            : null;
-  const fraction = state.k === "downloading" && state.total ? Math.min(state.done / state.total, 1) : null;
-  const notes = state.k === "downloading" || state.k === "restarting" ? state.notes : [];
-
-  return (
-    <Row icon="update" className="updates" label={<>Voxi {version} {state.k === "latest" && <span className="pill ok">Up to date</span>}</>}
-      description={status ? <span className={state.k === "error" ? "warn" : undefined} role="status">{status}</span> : "Your settings carry over."}>
-      <button className="secondary small" disabled={busy} onClick={() => checkAndInstall(setState)}>
-        Check for updates
-      </button>
-      {(state.k === "downloading" || state.k === "restarting" || notes.length > 0) && (
-        <div className="update-status">
-          {(state.k === "downloading" || state.k === "restarting") && (
-            <div
-              className="progress"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}
-              data-indeterminate={fraction === null && state.k === "downloading" ? "" : undefined}
-            >
-              <span style={{ width: `${state.k === "restarting" ? 100 : (fraction ?? 0.3) * 100}%` }} />
-            </div>
-          )}
-          {notes.length > 0 && (
-            <ul className="notes">
-              {notes.map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </Row>
-  );
-}
-
-/** Wrong-result reports kept on this Mac, with ways to see or clear them. */
-function ReportsRow() {
-  const [reports, setReports] = useState<Reports | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.reportsSummary().then(setReports).catch(() => setReports(null));
-  }, []);
-
-  const reportAction = async (run: () => Promise<Reports | void>) => {
-    try {
-      const r = await run();
-      if (r) setReports(r);
-      setNote(null);
-    } catch (e) {
-      setNote(String(e));
-    }
-  };
-
-  const count = reports?.count ?? 0;
-  return (
-    <Row icon="shield" label="Wrong-result reports"
-      description={note ? <span className="warn" role="alert">{note}</span>
-        : `${count === 0 ? "None" : count} saved. Nothing leaves this Mac.`}>
-      <button className="secondary small" disabled={!count} onClick={() => reportAction(api.revealReports)}>Show in Finder</button>
-      <button className="link remove" disabled={!count} onClick={() => reportAction(api.clearReports)}>Clear</button>
-    </Row>
-  );
-}
-
-/** Saved phrases that run several commands at once, with one preview and one
- *  undo: "run my usuals" -> move today's screenshots, clear installers. Each
- *  shortcut stays folded to its phrase until opened; Done saves it. */
-function ShortcutsTab({ settings, persist }: TabProps) {
-  const [list, setList] = useState<Shortcut[]>(settings.shortcuts);
-  const [editing, setEditing] = useState<number | null>(null);
-  const [showLengthError, setShowLengthError] = useState(false);
-  const update = (i: number, s: Shortcut) => { setList((l) => l.map((x, j) => (j === i ? s : x))); setShowLengthError(false); };
-  const count = (s: Shortcut) => s.commands.filter((c) => c.trim()).length;
-
-  // Backend save_settings validates every shortcut: one oversized entry
-  // refuses the whole batch, so no save path may proceed while one is invalid.
-  const commit = async (next: Shortcut[]) => {
-    if (next.some((s) => shortcutLengthIssue(s).any)) { setShowLengthError(true); return; }
-    setShowLengthError(false);
-    // Leave the editor / drop the row only once the save actually succeeded.
-    if (await persist({ ...settings, shortcuts: next })) { setList(next); setEditing(null); }
-  };
-  const add = () => {
-    setList((l) => [...l, { phrase: "", commands: [] }]);
-    setEditing(list.length);
-  };
-  const foot = "When Voxi misses a phrase and you then run a command that works, it offers to learn the phrase. Learned phrases appear here too.";
-
-  if (list.length === 0) {
-    return <>
-      <div className="empty">
-        <span className="empty-icon"><Icon name="shortcuts" /></span>
-        <p className="empty-title">No shortcuts yet</p>
-        <p className="empty-desc">Say “run my usuals” to move today's screenshots and clear old installers, all in one preview.</p>
-        <button className="secondary small" onClick={add}>Add shortcut</button>
-      </div>
-      <p className="group-foot">{foot}</p>
-    </>;
-  }
-
-  return (
-    <Group title="Saved shortcuts" action={editing === null && <button className="link strong" onClick={add}>+ Add</button>} foot={foot}>
-      {list.map((s, i) =>
-        editing === i ? (
-          <ShortcutEditor
-            key={i}
-            shortcut={s}
-            errorId={`shortcut-length-${i}`}
-            canSave={!list.some((x) => shortcutLengthIssue(x).any)}
-            canRemove={!list.filter((_, j) => j !== i).some((x) => shortcutLengthIssue(x).any)}
-            onChange={(next) => update(i, next)}
-            showLengthError={showLengthError}
-            onDone={() => commit(list)}
-            onRemove={() => commit(list.filter((_, j) => j !== i))}
-          />
-        ) : (
-          <li className="row clickable" key={i}>
-            <button className="shortcut-row" onClick={() => {
-              // An over-limit row stays open so its error remains visible;
-              // collapsing it would hide why the next row's Done is disabled.
-              if (editing === null || !list[editing] || !shortcutLengthIssue(list[editing]).any) setEditing(i);
-            }}>
-              <span className="row-icon"><Icon name="shortcuts" /></span>
-              <span className="row-copy">
-                <span className="row-label">“{s.phrase || "Untitled"}”</span>
-                <span className="row-desc">{s.commands.filter((c) => c.trim()).slice(0, 2).join(" · ") || "No commands yet"}</span>
-              </span>
-              <span className="pill">{count(s)} {count(s) === 1 ? "command" : "commands"}</span>
-              <span className="chevron" aria-hidden="true">›</span>
-            </button>
-          </li>
-        ),
-      )}
-    </Group>
-  );
-}
-
-/** One expanded shortcut row. The message is the backend's exact refusal,
- *  linked to whichever field is over the bound; text is never truncated. */
-function ShortcutEditor({
-  shortcut, errorId, canSave, canRemove, showLengthError, onChange, onDone, onRemove,
-}: {
-  shortcut: Shortcut;
-  errorId: string;
-  canSave: boolean;
-  canRemove: boolean;
-  showLengthError: boolean;
-  onChange: (s: Shortcut) => void;
-  onDone: () => void;
-  onRemove: () => void;
-}) {
-  const issue = shortcutLengthIssue(shortcut);
-  return (
-    <li className="row shortcut">
-      <div className="shortcut-head">
-        <input
-          className="phrase"
-          value={shortcut.phrase}
-          placeholder="run my usuals"
-          aria-label="Phrase to say"
-          aria-invalid={issue.phrase || undefined}
-          aria-describedby={issue.phrase ? errorId : undefined}
-          autoFocus={!shortcut.phrase}
-          onChange={(e) => onChange({ ...shortcut, phrase: e.target.value })}
-        />
-        <button className="link strong" disabled={!canSave} onClick={onDone}>
-          Done
-        </button>
-      </div>
-      <textarea
-        writingsuggestions="false"
-        spellCheck={false}
-        autoCorrect="off"
-        className="plain commands"
-        rows={Math.max(2, shortcut.commands.length)}
-        placeholder={"move screenshots from today to Screenshots\nclean up Downloads older than 90 days"}
-        aria-label="Commands, one per line"
-        aria-invalid={issue.commands || undefined}
-        aria-describedby={issue.commands ? errorId : undefined}
-        value={shortcut.commands.join("\n")}
-        onChange={(e) => onChange({ ...shortcut, commands: e.target.value.split("\n") })}
-      />
-      <p className="shortcut-error hint warn" id={errorId} role="alert">{issue.any || showLengthError ? TOO_LONG : ""}</p>
-      <button className="link remove" disabled={!canRemove} onClick={onRemove}>
-        Remove shortcut
-      </button>
-    </li>
-  );
-}
-
-/** "~/Work" from "/Users/me/Work/", the form allowed_folders returns. */
-const shownFolder = (path: string) => path.replace(/^\/Users\/[^/]+/, "~").replace(/\/$/, "");
-
-/** The four standard folders are always allowed; more can be added. Below
- *  them, the nicknames Voxi knows folders by. */
-function FoldersTab({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
-  const [folders, setFolders] = useState<string[]>([]);
-  const [adding, setAdding] = useState("");
-  const [note, setNote] = useState<string | null>(null);
-  const extra = settings.extraFolders.filter((f) => f.trim());
-
-  useEffect(() => {
-    api.allowedFolders().then(setFolders);
-  }, [settings]);
-
-  const add = async (path: string) => {
-    if (!path) return;
-    const shown = shownFolder(path);
-    if (folders.includes(shown) || extra.some((x) => shownFolder(x) === shown)) {
-      setAdding("");
-      setNote(`“${shown}” is already allowed.`);
-      return;
-    }
-    if (await persist({ ...settings, extraFolders: [...extra, path] })) {
-      const now = await api.allowedFolders();
-      setFolders(now);
-      setAdding("");
-      setNote(now.includes(shown) ? null : `Couldn't find “${path}”. Check the path and try again.`);
-    }
-  };
-
-  // The picker takes focus, which would otherwise close the window.
-  const choose = async () => {
-    setBusy(true);
-    try {
-      const path = await api.pickFolder();
-      if (path) await add(path);
-    } catch (e) {
-      setNote(`Couldn't open the folder picker: ${e}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const builtIn = folders.filter((f) => !extra.some((x) => shownFolder(x) === f));
-
-  return <>
-    <Group title="Allowed folders" foot={note ? <span className="warn" role="status">{note}</span> : "Voxi only changes files inside these folders."}>
-      <Row className="add-row">
-        <input
-          className="path"
-          value={adding}
-          placeholder="Add a folder, like /Volumes/External"
-          aria-label="Folder path to add"
-          onChange={(e) => setAdding(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              add(adding.trim());
-            }
-          }}
-        />
-        {adding.trim()
-          ? <button className="secondary small" onClick={() => add(adding.trim())}>Add</button>
-          : <button className="secondary small" onClick={choose}>Choose…</button>}
-      </Row>
-      {builtIn.map((f) => (
-        <Row key={f} className="compact" icon="folders" label={<span className="pref-folder">{f}</span>}>
-          <span className="pill">Built-in</span>
-        </Row>
-      ))}
-      {extra.map((f) => (
-        <Row key={f} className="compact" icon="folders" label={<span className="pref-folder">{tildify(f)}</span>}>
-          <span className="pill ok">Added</span>
-          <button className="link remove" onClick={() => persist({ ...settings, extraFolders: extra.filter((x) => x !== f) })}>
-            Remove
-          </button>
-        </Row>
-      ))}
-    </Group>
-    <NicknamesGroup settings={settings} persist={persist} setBusy={setBusy} />
-  </>;
-}
-
-/** Your names for folders, so “move it to dev” finds the right one. */
-function NicknamesGroup({ settings, persist, setBusy }: TabProps & { setBusy: (b: boolean) => void }) {
-  const [name, setName] = useState("");
-  const [note, setNote] = useState<string | null>(null);
-
-  // The picker takes focus, which would otherwise close the window.
-  const choose = async () => {
-    const said = name.trim();
-    if (!said) return setNote("Type the name you'll say first, like “dev”.");
-    setBusy(true);
-    try {
-      const path = await api.pickFolder();
-      if (path && await persist({ ...settings, nicknames: [...settings.nicknames, { name: said, path }] })) {
-        setName("");
-        setNote(null);
-      }
-    } catch (e) {
-      setNote(`Couldn't open the folder picker: ${e}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Group title="Nicknames" foot={note ? <span className="warn" role="status">{note}</span> : "Say “move it to dev” and Voxi knows where. It also offers to remember a folder after you pick one."}>
-      <Row className="add-row">
-        <input
-          className="path"
-          value={name}
-          placeholder="Name to say, like dev"
-          aria-label="Nickname to say"
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); choose(); }
-          }}
-        />
-        <button className="secondary small" onClick={choose}>Choose folder…</button>
-      </Row>
-      {settings.nicknames.map((n) => (
-        <Row key={n.name} className="compact" icon="tag" label={`“${n.name}”`} description={tildify(n.path)}>
-          <button className="link remove" onClick={() => persist({ ...settings, nicknames: settings.nicknames.filter((x) => x.name !== n.name) })}>
-            Remove
-          </button>
-        </Row>
-      ))}
-    </Group>
-  );
-}
-
-// ---- Folder access ---------------------------------------------------------------
-
-/** Asks macOS for every folder up front, so commands never stop to ask. On
- *  first launch this is the welcome page. */
-function AccessView({
-  settings,
-  firstRun,
-  onDone,
-  setBusy,
-}: {
-  settings: Settings;
-  firstRun: boolean;
-  onDone: () => void;
-  setBusy: (b: boolean) => void;
-}) {
-  const [folders, setFolders] = useState<FolderAccess[] | null>(null);
-  const [asking, setAsking] = useState(false);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [openingSettings, setOpeningSettings] = useState(false);
-  const actionRef = useRef<HTMLButtonElement>(null);
-  const settingsErrorRef = useRef<HTMLParagraphElement>(null);
-
-  useEffect(() => {
-    if (firstRun) return;
-    // From Settings: check right away. Granted folders don't prompt again.
-    request();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !firstRun) {
-        e.preventDefault();
-        onDone();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [firstRun, onDone]);
-
-  // Keep keyboard focus on a recovery control when a call fails, instead of
-  // leaving it on a button whose label (or whole row) just changed.
-  useEffect(() => {
-    if (requestError) actionRef.current?.focus();
-  }, [requestError]);
-  useEffect(() => {
-    if (settingsError) settingsErrorRef.current?.focus();
-  }, [settingsError]);
-
-  async function request() {
-    setAsking(true);
-    setRequestError(null);
-    setSettingsError(null);
-    // macOS's prompts take focus; don't let that close the window.
-    setBusy(true);
-    try {
-      setFolders(await api.requestFolderAccess());
-    } catch (e) {
-      setRequestError(`Couldn't check folder access: ${errorMessage(e)}`);
-    } finally {
-      setBusy(false);
-      setAsking(false);
-    }
-  }
-
-  async function openSettings() {
-    setSettingsError(null);
-    setRequestError(null);
-    setOpeningSettings(true);
-    setBusy(true);
-    try {
-      await api.openPrivacySettings();
-    } catch (e) {
-      setSettingsError(`Couldn't open System Settings: ${errorMessage(e)}`);
-    } finally {
-      setBusy(false);
-      setOpeningSettings(false);
-    }
-  }
-
-  const missing = folders?.filter((f) => !f.allowed) ?? [];
-  const allSet = folders !== null && missing.length === 0;
-
-  return (
-    <Sheet
-      title={firstRun ? "Welcome to Voxi" : "Folder access"}
-      foot={firstRun ? `Press ${prettyHotkey(settings.hotkey)} anywhere to open Voxi.` : "Esc to go back."}
-      footRight={
-        <button className="link" onClick={onDone}>
-          {firstRun && !allSet ? "Skip for now" : "Done"}
-        </button>
-      }
-    >
-      <p className="access-lead">
-        {firstRun
-          ? "Voxi moves, renames, and tidies files when you tell it to. macOS asks once for each folder; allow them now and commands won't stop to ask."
-          : "macOS asks once for each folder. Voxi never touches anything outside them."}
-      </p>
-      <ul className="prefs">
-        {(folders ?? DEFAULT_FOLDERS).map((f, i) => (
-          <li className="pref access-row" key={f.path} style={row(i)}>
-            <span>
-              <span className="pref-label">{f.name}</span> <span className="pref-path">{f.path}</span>
-            </span>
-            <span className={folders === null ? "pref-summary" : f.allowed ? "pref-summary ok" : "pref-summary warn"}>
-              {folders === null ? "Not asked yet" : f.allowed ? "Allowed" : "Not allowed"}
-            </span>
-          </li>
-        ))}
-      </ul>
-      <div className="access-error" role="alert" aria-live="assertive">
-        {requestError && <p className="hint warn">{requestError} Choose “Retry” to try again.</p>}
-      </div>
-      <div className="access-error" role="alert" aria-live="assertive">
-        {settingsError && (
-          <p ref={settingsErrorRef} tabIndex={-1} className="hint warn">
-            {settingsError} Open System Settings yourself from the Apple menu, then go to Privacy &amp; Security → Files and Folders and turn on Voxi.
-          </p>
-        )}
-      </div>
-      {missing.length > 0 && (
-        <div className="access-help">
-          <p className="hint warn">
-            Turn on Voxi for {missing.map((f) => f.name).join(", ")} in System Settings → Privacy &amp; Security → Files and Folders → Voxi, then choose “Check again”.
-          </p>
-          <p className="hint">
-            That per-folder grant is all Voxi needs for Desktop, Documents, Downloads and Pictures. Voxi does not need Full Disk Access by default; don't grant it just to get started. Only if you ask Voxi to work in protected locations outside Desktop, Documents or Downloads — such as another app's container — and the folder grant isn't enough, enable Full Disk Access for Voxi under Privacy &amp; Security. Grant it only for those locations, then come back and check again.
-          </p>
-        </div>
-      )}
-      <div className="actions">
-        {allSet ? (
-          <button className="primary-button" autoFocus onClick={onDone}>
-            {firstRun ? "Start using Voxi" : "Done"}
-          </button>
-        ) : (
-          <button
-            ref={actionRef}
-            className="primary-button"
-            autoFocus={firstRun && folders === null && !requestError}
-            disabled={asking}
-            onClick={request}
-            aria-label={requestError ? "Retry folder access request" : asking ? "Waiting for macOS" : folders === null ? "Allow folder access" : "Check folder access again"}
-          >
-            {asking ? "Waiting for macOS…" : requestError ? "Retry" : folders === null ? "Allow access" : "Check again"}
-          </button>
-        )}
-        {missing.length > 0 && (
-          <button className="secondary" disabled={openingSettings} onClick={openSettings}>
-            {openingSettings ? "Opening System Settings…" : "Open System Settings"}
-          </button>
-        )}
-      </div>
-    </Sheet>
-  );
-}
-
-const DEFAULT_FOLDERS: FolderAccess[] = ["Desktop", "Downloads", "Documents", "Pictures"].map((name) => ({
-  name,
-  path: `~/${name}`,
-  allowed: false,
-}));

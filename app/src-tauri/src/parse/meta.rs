@@ -12,8 +12,16 @@ pub fn patterns() -> Vec<Pattern> {
             r"^(?:undo|revert|take\s+back|take\s+(?:that|it|this)\s+back)(?:\s+(?:that|it|this|the|last|previous|thing|one|change|action|command|step|what|you|just|did|i))*$",
             |_| Some(Intent::Undo),
         ),
-        pat("history_done", r"^(?:show|display|list)\s+(?:me\s+)?(?:(?:log|record)\s+of\s+)?(?:what\s+(?:i've|i\s+have|i|you've|you\s+have|you)\s+(?:done|did)(?:\s+(?:so\s+far|up\s+till(?:\s+now)?|up\s+to\s+now))?|commands\s+i\s+used)$", |_| Some(Intent::RecentActions)),
-        pat("history_phrases", r"^(?:show|display|list)\s+(?:me\s+)?(?:log\s+history(?:\s+to\s+me)?|history\s+of\s+what\s+(?:i|you)\s+did|everything\s+(?:i've|i\s+have|you've|you\s+have)\s+done(?:\s+so\s+far)?)$", |_| Some(Intent::RecentActions)),
+        pat(
+            "history_done",
+            r"^(?:show|display|list)\s+(?:me\s+)?(?:(?:log|record)\s+of\s+)?(?:what\s+(?:i've|i\s+have|i|you've|you\s+have|you)\s+(?:done|did)(?:\s+(?:so\s+far|up\s+till(?:\s+now)?|up\s+to\s+now))?|commands\s+i\s+used)$",
+            |_| Some(Intent::RecentActions),
+        ),
+        pat(
+            "history_phrases",
+            r"^(?:show|display|list)\s+(?:me\s+)?(?:log\s+history(?:\s+to\s+me)?|history\s+of\s+what\s+(?:i|you)\s+did|everything\s+(?:i've|i\s+have|you've|you\s+have)\s+done(?:\s+so\s+far)?)$",
+            |_| Some(Intent::RecentActions),
+        ),
         pat(
             "recent_actions",
             r"^(?:(?:show|list|view|see)\s+(?:me\s+)?(?:(?:recent|last|previous|past)\s+)?(?:actions|changes|commands|history)|history|recent\s+actions|what\s+changed(?:\s+(?:recently|lately))?|(?:show|display|view|list|open|see|pull\s+up|check)\s+(?:(?:to\s+)?me,?\s+)?(?:an?\s+)?(?:(?:(?:past|recent|earlier|previous|last)\s+)?(?:actions|changes|commands|operations)(?:\s+(?:history|log))?|history(?:\s+log)?|(?:list|log|record|history|rundown|timeline|summary)\s+of\s+(?:what\s+(?:i'?ve|i\s+have|you'?ve|you\s+have)\s+(?:been\s+)?(?:doing|done)|(?:(?:earlier|recent|past|previous|last)\s+)?(?:actions|changes|commands|operations|files?\s+operations))|(?:actions?|activity|command|operations?)\s+(?:history|log)))$",

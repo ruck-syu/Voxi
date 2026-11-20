@@ -1,34 +1,70 @@
 //! A hidden window is revealed only after the page acknowledges its final layout.
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ShowRequest { pub request_id: u64, pub mode: String }
+pub struct ShowRequest {
+    pub request_id: u64,
+    pub mode: String,
+}
+
+/// Where the window is in its show/close cycle.
+#[derive(Clone, Default, PartialEq)]
+pub enum Phase {
+    #[default]
+    Hidden,
+    /// Shown on request; revealed once the page acknowledges this layout.
+    AwaitingLayout(ShowRequest),
+    Visible,
+    /// The page is playing its close animation and will call back to hide.
+    Closing,
+}
 
 #[derive(Default)]
 pub struct Presentation {
+    /// The page has loaded and can answer show requests.
     pub ready: bool,
-    pub closing: bool,
+    phase: Phase,
     next: u64,
-    pub pending: Option<ShowRequest>,
 }
 impl Presentation {
     pub fn request(&mut self, mode: &str) -> ShowRequest {
-        self.closing = false;
         self.next += 1;
         let request = ShowRequest { request_id: self.next, mode: mode.into() };
-        self.pending = Some(request.clone());
+        self.phase = Phase::AwaitingLayout(request.clone());
         request
     }
     pub fn acknowledge(&mut self, id: u64) -> bool {
-        if !self.ready || self.pending.as_ref().is_none_or(|p| p.request_id != id) { return false; }
-        self.pending = None;
-        true
+        match &self.phase {
+            Phase::AwaitingLayout(p) if self.ready && p.request_id == id => {
+                self.phase = Phase::Visible;
+                true
+            }
+            _ => false,
+        }
     }
-    pub fn cancel(&mut self) { self.pending = None; self.closing = true; }
-    pub fn is_current(&self, id: u64) -> bool { self.next == id }
+    /// Starts closing: the window fades out, then `hidden` is called.
+    pub fn cancel(&mut self) {
+        self.phase = Phase::Closing;
+    }
+    /// The window is off screen.
+    pub fn hidden(&mut self) {
+        self.phase = Phase::Hidden;
+    }
+    pub fn pending(&self) -> Option<&ShowRequest> {
+        match &self.phase {
+            Phase::AwaitingLayout(p) => Some(p),
+            _ => None,
+        }
+    }
+    pub fn closing(&self) -> bool {
+        self.phase == Phase::Closing
+    }
+    pub fn is_current(&self, id: u64) -> bool {
+        self.next == id
+    }
     /// A click in another app is meaningful even if this window never gained
     /// focus. Pending layouts, hidden windows and an existing close are ignored.
     pub fn outside_click_request(&self, visible: bool) -> Option<u64> {
-        (visible && self.next > 0 && self.pending.is_none() && !self.closing).then_some(self.next)
+        (visible && self.phase == Phase::Visible).then_some(self.next)
     }
 }
 
@@ -58,7 +94,7 @@ mod tests {
         let request = p.request("welcome");
         assert!(!p.acknowledge(request.request_id));
         p.ready = true;
-        assert_eq!(p.pending.as_ref().unwrap().mode, "welcome");
+        assert_eq!(p.pending().unwrap().mode, "welcome");
         assert!(p.acknowledge(request.request_id));
         assert!(!p.acknowledge(request.request_id));
     }
@@ -77,12 +113,21 @@ mod tests {
         let old = p.request("command");
         assert!(p.acknowledge(old.request_id));
         p.cancel();
-        assert!(p.closing);
+        assert!(p.closing());
         let new = p.request("command");
-        assert!(!p.closing);
+        assert!(!p.closing());
         assert!(!p.is_current(old.request_id));
         assert!(p.is_current(new.request_id));
         assert!(p.acknowledge(new.request_id));
         assert!(!p.is_current(old.request_id));
+    }
+    #[test]
+    fn hiding_ends_the_close() {
+        let mut p = Presentation { ready: true, ..Default::default() };
+        let shown = p.request("command");
+        assert!(p.acknowledge(shown.request_id));
+        p.cancel();
+        p.hidden();
+        assert!(!p.closing() && p.pending().is_none() && p.outside_click_request(true).is_none());
     }
 }

@@ -18,10 +18,10 @@ under `/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness
 ```sh
 rtk python3 -m venv /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/export-venv
 rtk /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/export-venv/bin/python -m pip install gguf==0.19.0 safetensors==0.8.0 numpy==2.5.5
-rtk /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/export-venv/bin/python docs/testing/tiny-model-readiness-2026-11-16/native/export_gguf.py \
+rtk /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/export-venv/bin/python crates/voxi-tiny-native/export_gguf.py \
   --source /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-2026-11-15/legacy/out-v3/model_t5-efficient-tiny-v3 \
   --output /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/model
-rtk env CARGO_TARGET_DIR=/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/target cargo build --release --locked --manifest-path docs/testing/tiny-model-readiness-2026-11-16/native/Cargo.toml
+rtk env CARGO_TARGET_DIR=/Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/target cargo build --release --locked --manifest-path crates/voxi-tiny-native/Cargo.toml
 ```
 
 Exporter uses GGUF `Q8_0` for every 2D tensor whose row dimension is a multiple
@@ -99,7 +99,7 @@ specified known-development sample, not a worst-case 64-token output guarantee.
 Re-run parity and latency with:
 
 ```sh
-rtk python3 docs/testing/tiny-model-readiness-2026-11-16/native/run_parity.py \
+rtk python3 crates/voxi-tiny-native/run_parity.py \
   --reference /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-2026-11-15/v3-local-fp32/predictions.jsonl \
   --binary /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/target/release/voxi-tiny-native \
   --model-dir /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/model \
@@ -109,7 +109,7 @@ rtk python3 docs/testing/tiny-model-readiness-2026-11-16/native/run_parity.py \
 Re-run the failure cases and save their raw evidence with:
 
 ```sh
-rtk python3 docs/testing/tiny-model-readiness-2026-11-16/native/failure_smoke.py \
+rtk python3 crates/voxi-tiny-native/failure_smoke.py \
   --binary /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/target/release/voxi-tiny-native \
   --model-dir /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/model \
   --output /Users/vishalshekhar/.local/share/voxi/experiments/parser-model-readiness-2026-11-16/native/failure-path-results.json

@@ -1,6 +1,10 @@
 //! Renaming: single files and batch rules (prefix, replace, number, lowercase).
 
-use super::{Pattern, cap, pat, phrase::{bad_destination, clean_name, parse_source, split_arguments}, typed_src};
+use super::{
+    Pattern, cap, pat,
+    phrase::{bad_destination, clean_name, parse_source, split_arguments},
+    typed_src,
+};
 use crate::model::{FileType, Intent, Source};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -14,9 +18,13 @@ fn number_template(target: &str) -> Option<(String, usize)> {
     let mut first = clean_name(target.split(',').next()?.trim());
     first = first.trim_end_matches(|c: char| c.is_ascii_whitespace() || matches!(c, '.' | '!' | '?')).to_string();
     for suffix in [" onwards", " onward"] {
-        if let Some(stem) = first.strip_suffix(suffix) { first = stem.trim().to_string(); }
+        if let Some(stem) = first.strip_suffix(suffix) {
+            first = stem.trim().to_string();
+        }
     }
-    if first.is_empty() { return None; }
+    if first.is_empty() {
+        return None;
+    }
     let stem = match first.rsplit_once('.') {
         Some((stem, ext)) if ext.chars().all(|ch| ch.is_ascii_alphabetic()) => stem.to_string(),
         _ => first.to_string(),
@@ -33,7 +41,9 @@ fn number_template(target: &str) -> Option<(String, usize)> {
 /// "spaces" -> " ", "dashes" -> "-", anything else unchanged.
 fn spoken_chars(s: &str) -> String {
     let s = s.trim();
-    if s.starts_with(['"', '\'']) { return clean_name(s); }
+    if s.starts_with(['"', '\'']) {
+        return clean_name(s);
+    }
     let s = if s.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("word ")) { &s[5..] } else { s };
     match s.to_ascii_lowercase().as_str() {
         "space" | "spaces" | "space characters" => " ".into(),
@@ -63,15 +73,16 @@ fn name_source(text: &str) -> Option<Source> {
     if let Some(c) = NAMES_CONTEXT.captures(text) {
         return if c.get(1).is_some_and(|m| m.as_str().eq_ignore_ascii_case("in")) {
             parse_source(&format!("files in {}", &c[2]))
-        } else { parse_source(&c[2]) };
+        } else {
+            parse_source(&c[2])
+        };
     }
     if ["name", "names", "file name", "file names"].iter().any(|n| text.eq_ignore_ascii_case(n)) {
         return parse_source("files");
     }
     // "PDF names in Pictures" is a batch source, not an item named "PDF names".
-    static TYPE_NAMES: LazyLock<Regex> = LazyLock::new(|| Regex::new(
-        r"(?i)^(.+?)(?:'s|s')?\s+names?(\s+(?:in|from|on|inside|within|under)\s+.+)?$"
-    ).unwrap());
+    static TYPE_NAMES: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"(?i)^(.+?)(?:'s|s')?\s+names?(\s+(?:in|from|on|inside|within|under)\s+.+)?$").unwrap());
     if let Some(c) = TYPE_NAMES.captures(text)
         && super::phrase::type_word(&c[1]).is_some()
     {
@@ -91,7 +102,11 @@ pub fn patterns() -> Vec<Pattern> {
             Some(Intent::AddPrefix { src: name_source(&cap(c, 2)?)?, prefix: spoken_suffix(&cap(c, 1)?) })
         }),
         pat("replace_in_names", r"^replace\s+(.+?)\s+with\s+(.+?)\s+in\s+(.+)$", |c| {
-            Some(Intent::ReplaceInNames { src: name_source(&cap(c, 3)?)?, find: spoken_chars(&cap(c, 1)?), replace: spoken_chars(&cap(c, 2)?) })
+            Some(Intent::ReplaceInNames {
+                src: name_source(&cap(c, 3)?)?,
+                find: spoken_chars(&cap(c, 1)?),
+                replace: spoken_chars(&cap(c, 2)?),
+            })
         }),
         pat("remove_from_names", r"^(?:remove|strip)\s+(spaces|dashes|underscores|dots)\s+(?:from|in)\s+(.+)$", |c| {
             Some(Intent::ReplaceInNames { src: name_source(&cap(c, 2)?)?, find: spoken_chars(&cap(c, 1)?), replace: String::new() })
@@ -109,10 +124,14 @@ pub fn patterns() -> Vec<Pattern> {
             let src = super::phrase::set_source(&cap(c, 1)?)?;
             // "the photo named sunset" is one file, not a set to renumber;
             // a single numbered example ("to Shot-1") stays ambiguous.
-            if matches!(&src, Source::Set { filter, .. } if filter.name_contains.is_some() || filter.name_starts_with.is_some()) { return None; }
+            if matches!(&src, Source::Set { filter, .. } if filter.name_contains.is_some() || filter.name_starts_with.is_some()) {
+                return None;
+            }
             let target = cap(c, 2)?;
             let first = clean_name(target.split(',').next()?.trim());
-            if !target.contains(',') && NUMBERED.is_match(first.trim()) { return None; }
+            if !target.contains(',') && NUMBERED.is_match(first.trim()) {
+                return None;
+            }
             let (base, width) = number_template(&target)?;
             Some(Intent::Number { src, base, width })
         }),
@@ -129,38 +148,50 @@ pub fn patterns() -> Vec<Pattern> {
             if !matches!(src, Source::Item { .. }) {
                 return None;
             }
-            if bad_destination(target) { return None; }
+            if bad_destination(target) {
+                return None;
+            }
             Some(Intent::Rename { src, new_name: clean_name(target) })
         }),
         pat("give_name", r"^give\s+(.+?)\s+name\s+(.+)$", |c| {
             let src = parse_source(&cap(c, 1)?)?;
             let target = cap(c, 2)?;
-            if !matches!(src, Source::Item { .. }) || bad_destination(&target) { return None; }
+            if !matches!(src, Source::Item { .. }) || bad_destination(&target) {
+                return None;
+            }
             Some(Intent::Rename { src, new_name: clean_name(&target) })
         }),
         pat("set_to_name", r"^set\s+(.+?)\s+to\s+name\s+(.+)$", |c| {
             let src = parse_source(&cap(c, 1)?)?;
             let target = cap(c, 2)?;
-            if !matches!(src, Source::Item { .. }) || bad_destination(&target) { return None; }
+            if !matches!(src, Source::Item { .. }) || bad_destination(&target) {
+                return None;
+            }
             Some(Intent::Rename { src, new_name: clean_name(&target) })
         }),
         pat("make_called", r"^make\s+(.+?)\s+called\s+(.+)$", |c| {
             let src = parse_source(&cap(c, 1)?)?;
             let target = cap(c, 2)?;
-            if !matches!(src, Source::Item { .. }) || bad_destination(&target) { return None; }
+            if !matches!(src, Source::Item { .. }) || bad_destination(&target) {
+                return None;
+            }
             Some(Intent::Rename { src, new_name: clean_name(&target) })
         }),
         pat("change_possessive_name", r"^(?:change|set)\s+(.+?)'s\s+name\s+to\s+(.+)$", |c| {
             let source = parse_source(&cap(c, 1)?)?;
             let target = cap(c, 2)?;
-            if !matches!(source, Source::Item { .. }) || bad_destination(&target) { return None; }
+            if !matches!(source, Source::Item { .. }) || bad_destination(&target) {
+                return None;
+            }
             Some(Intent::Rename { src: source, new_name: clean_name(&target) })
         }),
         pat("change_name", r"^change\s+(.+)$", |c| {
             let text = cap(c, 1)?;
             let (source, target) = split_arguments(&text, &["to"])?;
             let src = parse_source(source)?;
-            if !matches!(src, Source::Item { .. }) || bad_destination(target) || !super::phrase::has_extension(target) { return None; }
+            if !matches!(src, Source::Item { .. }) || bad_destination(target) || !super::phrase::has_extension(target) {
+                return None;
+            }
             Some(Intent::Rename { src, new_name: clean_name(target) })
         }),
         pat("rename", r"^rename\s+(.+)$", |c| {
@@ -170,7 +201,9 @@ pub fn patterns() -> Vec<Pattern> {
             if !matches!(src, Source::Item { .. }) {
                 return None;
             }
-            if bad_destination(target) { return None; }
+            if bad_destination(target) {
+                return None;
+            }
             Some(Intent::Rename { src, new_name: clean_name(target) })
         }),
     ]

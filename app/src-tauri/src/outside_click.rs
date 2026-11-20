@@ -10,8 +10,7 @@ use tauri::{AppHandle, Emitter, Manager};
 /// coordinates or physical pixels). Negative origins on secondary displays
 /// need no conversion. Treat the entire border as inside too.
 fn point_in_frame(point: (f64, f64), origin: (f64, f64), size: (f64, f64)) -> bool {
-    point.0 >= origin.0 && point.0 <= origin.0 + size.0
-        && point.1 >= origin.1 && point.1 <= origin.1 + size.1
+    point.0 >= origin.0 && point.0 <= origin.0 + size.0 && point.1 >= origin.1 && point.1 <= origin.1 + size.1
 }
 
 // AppKit installation, callbacks and removal all run on the main thread.
@@ -31,13 +30,14 @@ pub fn install(app: &AppHandle) -> Result<(), &'static str> {
         let ns: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
         let frame = ns.frame();
         let point = NSEvent::mouseLocation();
-        if point_in_frame(
-            (point.x, point.y),
-            (frame.origin.x, frame.origin.y),
-            (frame.size.width, frame.size.height),
-        ) { return; }
+        if point_in_frame((point.x, point.y), (frame.origin.x, frame.origin.y), (frame.size.width, frame.size.height)) {
+            return;
+        }
         let state = handle.state::<crate::AppState>();
-        let Ok(presentation) = state.presentation.lock() else { eprintln!("Presentation unavailable; restart Voxi"); return; };
+        let Ok(presentation) = state.presentation.lock() else {
+            eprintln!("Presentation unavailable; restart Voxi");
+            return;
+        };
         let request_id = presentation.outside_click_request(window.is_visible().unwrap_or(false));
         if let Some(request_id) = request_id {
             // Only a request ID crosses into the page. It applies its existing
@@ -48,8 +48,11 @@ pub fn install(app: &AppHandle) -> Result<(), &'static str> {
     let monitor = NSEvent::addGlobalMonitorForEventsMatchingMask_handler(
         NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown,
         &handler,
-    ).ok_or("Couldn't install outside-click dismissal")?;
-    MONITOR.with(|slot| { *slot.borrow_mut() = Some(monitor); });
+    )
+    .ok_or("Couldn't install outside-click dismissal")?;
+    MONITOR.with(|slot| {
+        *slot.borrow_mut() = Some(monitor);
+    });
     Ok(())
 }
 
@@ -57,7 +60,9 @@ pub fn uninstall() {
     MONITOR.with(|slot| {
         if let Some(monitor) = slot.borrow_mut().take() {
             // SAFETY: this exact token came from AppKit's monitor installer.
-            unsafe { NSEvent::removeMonitor(&monitor); }
+            unsafe {
+                NSEvent::removeMonitor(&monitor);
+            }
         }
     });
 }
@@ -68,9 +73,17 @@ mod tests {
 
     #[test]
     fn inside_and_all_edges_are_not_outside_clicks() {
-        for point in [(15.0, 30.0), (10.0, 20.0), (110.0, 20.0),
-            (10.0, 70.0), (110.0, 70.0), (10.0, 30.0), (110.0, 30.0),
-            (15.0, 20.0), (15.0, 70.0)] {
+        for point in [
+            (15.0, 30.0),
+            (10.0, 20.0),
+            (110.0, 20.0),
+            (10.0, 70.0),
+            (110.0, 70.0),
+            (10.0, 30.0),
+            (110.0, 30.0),
+            (15.0, 20.0),
+            (15.0, 70.0),
+        ] {
             assert!(point_in_frame(point, (10.0, 20.0), (100.0, 50.0)), "{point:?}");
         }
         for point in [(9.9, 30.0), (110.1, 30.0), (15.0, 19.9), (15.0, 70.1)] {

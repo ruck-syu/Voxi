@@ -74,7 +74,7 @@ Planner refusals for traversal-like names, dot-prefixed names, absolute folder n
 
 ## Artifacts and limitations
 
-- Harness: [luna_folder_audit.rs](../../app/src-tauri/src/luna_folder_audit.rs)
+- Harness: [audits/luna_folder.rs](../../app/src-tauri/src/audits/luna_folder.rs)
 - Full row data: [luna-folder-audit-2026-11-10.jsonl](luna-folder-audit-2026-11-10.jsonl)
 
 The fixture objects used for rename, move, copy, and trash are empty, so the audited preview checks folder target resolution and action paths without involving child-file behavior. The audit is report-only and does not assert that discovered mismatches are fixed. No production code was changed.

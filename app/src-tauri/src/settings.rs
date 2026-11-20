@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 // use the same sink without requiring another crate-root module.
 #[path = "diagnostics.rs"]
 pub(crate) mod diagnostics;
-use diagnostics::{Event, Code, Stage, Store};
+use diagnostics::{Code, Event, Stage, Store};
 use std::fs;
 use std::path::{Path, PathBuf};
 /// Version shared by the three independent JSON stores.
@@ -34,7 +34,12 @@ fn unique_file(path: &Path, tag: &str) -> std::io::Result<(PathBuf, fs::File)> {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     loop {
         let mut name = path.file_name().ok_or_else(|| std::io::Error::other("Missing store filename"))?.to_os_string();
-        name.push(format!(".{tag}-{}-{}-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default(), std::process::id(), SEQUENCE.fetch_add(1, Ordering::Relaxed)));
+        name.push(format!(
+            ".{tag}-{}-{}-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default(),
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
         let candidate = parent_dir(path).join(name);
         match exclusive_file(&candidate) {
             Ok(file) => return Ok((candidate, file)),
@@ -47,7 +52,9 @@ fn unique_file(path: &Path, tag: &str) -> std::io::Result<(PathBuf, fs::File)> {
 pub(crate) fn preserve_store(path: &Path, bytes: &[u8]) -> Result<PathBuf, String> {
     use std::io::Write;
     let (backup, mut file) = unique_file(path, "corrupt").map_err(|e| e.to_string())?;
-    let result = write_checkpoint(5).and_then(|_| file.write_all(bytes)).and_then(|_| file.sync_all())
+    let result = write_checkpoint(5)
+        .and_then(|_| file.write_all(bytes))
+        .and_then(|_| file.sync_all())
         .and_then(|_| fs::File::open(parent_dir(path))?.sync_all());
     if let Err(error) = result {
         // A partial backup must never be mistaken for a successful preservation.
@@ -73,16 +80,26 @@ pub(crate) fn load_store<T: serde::de::DeserializeOwned + Default>(path: &Path, 
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (T::default(), None),
-        Err(e) => { diagnostics::emit(Event::new(Code::StoreLoad, Stage::Failed).store(store).io(&e)); return (T::default(), Some(StorageWarning { message: format!("Couldn't read store: {e}. Original kept."), backup: None, write_blocked: true })); },
+        Err(e) => {
+            diagnostics::emit(Event::new(Code::StoreLoad, Stage::Failed).store(store).io(&e));
+            return (
+                T::default(),
+                Some(StorageWarning { message: format!("Couldn't read store: {e}. Original kept."), backup: None, write_blocked: true }),
+            );
+        }
     };
     match decode_store(&bytes) {
         Ok(data) => (data, None),
         Err(error) => {
             diagnostics::emit(Event::new(Code::StoreLoad, Stage::Failed).store(store));
             let backup = preserve_store(path, &bytes);
-            diagnostics::emit(Event::new(Code::StoreBackup, if backup.is_ok() { Stage::Preserved } else { Stage::BackupFailed }).store(store));
-            let blocked = backup.is_err() || serde_json::from_slice::<serde_json::Value>(&bytes).ok()
-                .is_some_and(|v| v.get("version").is_some() && v.get("version").and_then(|n| n.as_u64()) != Some(STORE_VERSION));
+            diagnostics::emit(
+                Event::new(Code::StoreBackup, if backup.is_ok() { Stage::Preserved } else { Stage::BackupFailed }).store(store),
+            );
+            let blocked = backup.is_err()
+                || serde_json::from_slice::<serde_json::Value>(&bytes)
+                    .ok()
+                    .is_some_and(|v| v.get("version").is_some() && v.get("version").and_then(|n| n.as_u64()) != Some(STORE_VERSION));
             let message = match &backup {
                 Ok(p) => format!("Store is unreadable ({error}); preserved at {}.", p.display()),
                 Err(e) => format!("Store is unreadable ({error}); couldn't preserve it ({e}). Original kept."),
@@ -94,10 +111,25 @@ pub(crate) fn load_store<T: serde::de::DeserializeOwned + Default>(path: &Path, 
 
 #[cfg(test)]
 thread_local! { pub(crate) static WRITE_FAILURE: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; }
+// How many writes reach the `WRITE_FAILURE` stage unharmed before one fails.
+#[cfg(test)]
+thread_local! { pub(crate) static WRITE_FAILURE_AFTER: std::cell::Cell<u8> = const { std::cell::Cell::new(0) }; }
+// Fail only one write, then let the rest through.
+#[cfg(test)]
+thread_local! { pub(crate) static WRITE_FAILURE_ONCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
 
 fn write_checkpoint(stage: u8) -> std::io::Result<()> {
     #[cfg(test)]
-    if WRITE_FAILURE.with(|f| f.get() == stage) { return Err(std::io::Error::other("Injected storage failure")); }
+    if WRITE_FAILURE.with(|f| f.get() == stage) {
+        if WRITE_FAILURE_AFTER.with(|n| n.get()) > 0 {
+            WRITE_FAILURE_AFTER.with(|n| n.set(n.get() - 1));
+        } else {
+            if WRITE_FAILURE_ONCE.with(|o| o.replace(false)) {
+                WRITE_FAILURE.with(|f| f.set(0));
+            }
+            return Err(std::io::Error::other("Injected storage failure"));
+        }
+    }
     let _ = stage;
     Ok(())
 }
@@ -118,14 +150,29 @@ fn fullfsync(file: &fs::File) -> std::io::Result<()> {
     Ok(())
 }
 
-/// On a directory-sync failure the rename has already happened: report the
-/// failure, but never attempt a second rename that could destroy newer data.
-pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+/// Errors mean the replacement was never published. After rename, callers
+/// must retain their new state even when the directory cannot be synced.
+#[derive(Debug)]
+pub(crate) enum Durability {
+    Durable,
+    Uncertain(String),
+}
+
+impl Durability {
+    pub(crate) fn require_durable(self) -> Result<(), String> {
+        match self {
+            Self::Durable => Ok(()),
+            Self::Uncertain(warning) => Err(warning),
+        }
+    }
+}
+
+pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<Durability, String> {
     use std::io::Write;
     let dir = parent_dir(path);
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let (tmp, mut file) = unique_file(path, "tmp").map_err(|e| e.to_string())?;
-    let result = (|| -> std::io::Result<()> {
+    let publish = (|| -> std::io::Result<()> {
         write_checkpoint(1)?;
         file.write_all(bytes)?;
         write_checkpoint(2)?;
@@ -133,12 +180,19 @@ pub(crate) fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         fullfsync(&file)?;
         write_checkpoint(3)?;
-        fs::rename(&tmp, path)?;
-        write_checkpoint(4)?;
-        fs::File::open(dir)?.sync_all()
+        fs::rename(&tmp, path)
     })();
-    if result.is_err() { let _ = fs::remove_file(tmp); }
-    result.map_err(|e| format!("Couldn't durably save store: {e}"))
+    if let Err(error) = publish {
+        let _ = fs::remove_file(tmp);
+        return Err(format!("Couldn't save store: {error}"));
+    }
+    // The rename is visible; syncing the folder makes it survive power loss.
+    // A transient failure gets a couple of retries before being reported.
+    let sync_dir = || write_checkpoint(4).and_then(|()| fs::File::open(dir)?.sync_all());
+    Ok(match sync_dir().or_else(|_| sync_dir()).or_else(|_| sync_dir()) {
+        Ok(()) => Durability::Durable,
+        Err(error) => Durability::Uncertain(format!("Store was saved, but its durability could not be confirmed: {error}")),
+    })
 }
 
 /// Inspect the version without deserializing the complete store. Corrupt JSON
@@ -162,49 +216,153 @@ fn save_blocked_by_version(path: &Path, store: Store) -> Option<String> {
     }
 }
 
-pub(crate) fn save_store<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<(), String> {
+pub(crate) fn save_store<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<Durability, String> {
     let result = save_store_inner(path, data, store);
-    if result.is_err() { diagnostics::emit(Event::new(Code::StoreSave, Stage::Failed).store(store)); }
+    if !matches!(result, Ok(Durability::Durable)) {
+        diagnostics::emit(Event::new(Code::StoreSave, Stage::Failed).store(store));
+    }
     result
 }
 
-fn save_store_inner<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<(), String> {
+fn save_store_inner<T: Serialize>(path: &Path, data: &T, store: Store) -> Result<Durability, String> {
     // Recheck the on-disk schema even when the caller loaded defaults or is
     // saving an object received from the frontend rather than a loaded object.
     // A cheap peek replaces the full load here: history saves on every command.
-    if let Some(reason) = save_blocked_by_version(path, store) { return Err(reason); }
+    if let Some(reason) = save_blocked_by_version(path, store) {
+        return Err(reason);
+    }
     #[derive(Serialize)]
-    struct Envelope<'a, T> { version: u64, data: &'a T }
+    struct Envelope<'a, T> {
+        version: u64,
+        data: &'a T,
+    }
     let bytes = serde_json::to_vec_pretty(&Envelope { version: STORE_VERSION, data }).map_err(|e| e.to_string())?;
     atomic_write(path, &bytes)
 }
 
-/// Roll back both sides on save failure, including failures after atomic rename.
-pub(crate) fn login_transaction(settings: &Settings, path: &Path, os_before: bool,
-    mut set_os: impl FnMut(bool) -> Result<(), String>) -> Result<(), String> {
+pub(crate) fn set_hotkey(app: &tauri::AppHandle, installed: &mut String, requested: &str) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+
+    if *installed == requested {
+        return Ok(());
+    }
+    let parse = |hotkey: &str| -> Result<Option<Shortcut>, String> {
+        if hotkey.is_empty() {
+            return Ok(None);
+        }
+        hotkey.parse().map(Some).map_err(|e| format!("“{hotkey}” isn't a valid shortcut: {e}"))
+    };
+    // Parse before uninstalling the previous binding, and clear the tracked
+    // binding only once the plugin confirms its removal.
+    let new = parse(requested)?;
+    let old = parse(installed)?;
+    if new == old {
+        *installed = requested.into();
+        return Ok(());
+    }
+    let gs = app.global_shortcut();
+    if let Some(old) = old {
+        gs.unregister(old).map_err(|e| format!("Couldn't unregister {installed}: {e}"))?;
+        installed.clear();
+    }
+    if let Some(new) = new {
+        gs.register(new).map_err(|e| format!("Couldn't register {requested}: {e}. Another app may be using it."))?;
+        *installed = requested.into();
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum SaveStage {
+    ApplyHotkey,
+    ApplyLoginItem,
+    Persist,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SaveError {
+    pub message: String,
+    /// Empty when Voxi has no registered shortcut. None means it was not queried.
+    pub installed_hotkey: Option<String>,
+}
+
+impl From<String> for SaveError {
+    fn from(message: String) -> Self {
+        Self { message, installed_hotkey: None }
+    }
+}
+
+impl From<&str> for SaveError {
+    fn from(message: &str) -> Self {
+        message.to_string().into()
+    }
+}
+
+/// Apply OS changes before persisting. The caller commits its in-memory
+/// settings only on success. A failed atomic save may already have renamed
+/// the file, so compensate for disk changes as well as OS changes.
+pub(crate) fn save_transaction(
+    settings: &Settings,
+    path: &Path,
+    installed_hotkey: &mut String,
+    requested_hotkey: &str,
+    login_before: bool,
+    mut set_hotkey: impl FnMut(&mut String, &str) -> Result<(), String>,
+    mut set_login: impl FnMut(bool) -> Result<(), String>,
+) -> Result<Durability, SaveError> {
     let original = match fs::read(path) {
         Ok(bytes) => Some(bytes),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(format!("Cannot read settings before changing login registration: {e}")),
+        Err(e) => return Err(format!("Cannot read settings before saving: {e}").into()),
     };
-    if settings.start_at_login != os_before
-        && let Err(e) = set_os(settings.start_at_login) {
-            let rollback = set_os(os_before);
-            return Err(format!("{e}; login rollback: {rollback:?}"));
+    let hotkey_before = installed_hotkey.clone();
+    let login_changed = settings.start_at_login != login_before;
+    let change = (|| {
+        if requested_hotkey != hotkey_before {
+            set_hotkey(installed_hotkey, requested_hotkey).map_err(|e| (SaveStage::ApplyHotkey, e))?;
         }
-    if let Err(e) = settings.save(path) {
-        let os_rollback = set_os(os_before);
-        let disk_rollback = match original {
-            Some(bytes) => atomic_write(path, &bytes),
+        if login_changed {
+            set_login(settings.start_at_login).map_err(|e| (SaveStage::ApplyLoginItem, e))?;
+        }
+        settings.save(path).map_err(|e| (SaveStage::Persist, e))
+    })();
+    let (stage, mut message) = match change {
+        // Published; a durability warning is the caller's to show.
+        Ok(durability) => return Ok(durability),
+        Err(failure) => failure,
+    };
+
+    if matches!(stage, SaveStage::Persist) {
+        let rollback = match original {
+            Some(bytes) => atomic_write(path, &bytes).map(|_| ()),
             None => match fs::remove_file(path) {
                 Ok(()) => fs::File::open(parent_dir(path)).and_then(|f| f.sync_all()).map_err(|e| e.to_string()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 Err(e) => Err(e.to_string()),
             },
         };
-        return Err(format!("{e}; login rollback: {os_rollback:?}; preference rollback: {disk_rollback:?}. Review Login Items in System Settings."));
+        if let Err(e) = rollback {
+            message.push_str(&format!(" Could not restore the saved preferences: {e}."));
+        }
     }
-    Ok(())
+    if login_changed
+        && matches!(stage, SaveStage::ApplyLoginItem | SaveStage::Persist)
+        && let Err(e) = set_login(login_before)
+    {
+        message.push_str(&format!(" Could not restore Start at Login: {e}. Check Login Items in System Settings."));
+    }
+    if *installed_hotkey != hotkey_before
+        && let Err(e) = set_hotkey(installed_hotkey, &hotkey_before)
+    {
+        message.push_str(&format!(" Could not restore the previous hotkey: {e}"));
+        if installed_hotkey.is_empty() {
+            message.push_str(" Voxi has no hotkey installed.");
+        } else {
+            message.push_str(&format!(" Voxi is using {installed_hotkey}."));
+        }
+    }
+    Err(SaveError { message, installed_hotkey: Some(installed_hotkey.clone()) })
 }
 
 /// Clear of Wispr Flow's defaults (Fn, Fn+Space) and of Spotlight (Cmd+Space).
@@ -216,6 +374,9 @@ pub struct Settings {
     pub hotkey: String,
     /// Folders allowed beyond Desktop, Downloads, Documents, and Pictures.
     pub extra_folders: Vec<String>,
+    /// Folders inside the allowed ones that Voxi must not touch. An added
+    /// folder inside an excluded one is allowed again (deepest wins).
+    pub excluded_folders: Vec<String>,
     pub start_at_login: bool,
     pub onboarded: bool,
     /// Saved phrases that run several commands at once ("run my usuals").
@@ -233,7 +394,23 @@ pub struct Nickname {
 }
 
 /// Names Voxi already gives the standard folders; a nickname can't take them.
-const RESERVED_NAMES: &[&str] = &["desktop", "downloads", "download", "documents", "document", "docs", "doc", "pictures", "picture", "photos", "photo", "screenshots", "screenshot", "home", "trash"];
+const RESERVED_NAMES: &[&str] = &[
+    "desktop",
+    "downloads",
+    "download",
+    "documents",
+    "document",
+    "docs",
+    "doc",
+    "pictures",
+    "picture",
+    "photos",
+    "photo",
+    "screenshots",
+    "screenshot",
+    "home",
+    "trash",
+];
 
 /// The part of a spoken folder name that identifies it: "the Dev folder" and
 /// "my dev directory" both become "dev".
@@ -258,11 +435,14 @@ pub struct Shortcut {
 
 /// Bound raw expansion before allocating normalized commands or building a preview.
 pub(crate) fn check_shortcut_commands(commands: &[String]) -> Result<(), String> {
-    if commands.len() > 8 || commands.iter().try_fold(0usize, |n, c| n.checked_add(c.len()))
-        .is_none_or(|n| n > crate::parse::MAX_COMMAND_BYTES) {
+    if commands.len() > 8
+        || commands.iter().try_fold(0usize, |n, c| n.checked_add(c.len())).is_none_or(|n| n > crate::parse::MAX_COMMAND_BYTES)
+    {
         return Err("That command is too long.".into());
     }
-    for command in commands { crate::parse::check_length(command).map_err(|_| "That command is too long.".to_string())?; }
+    for command in commands {
+        crate::parse::check_length(command).map_err(|_| "That command is too long.".to_string())?;
+    }
     Ok(())
 }
 
@@ -279,7 +459,9 @@ pub fn shortcut_read_only(intent: &crate::model::Intent) -> bool {
 }
 
 pub fn shortcut_key(text: &str) -> String {
-    if crate::parse::check_length(text).is_err() { return String::new(); }
+    if crate::parse::check_length(text).is_err() {
+        return String::new();
+    }
     let normalized = crate::parse::phrase::normalize(text).to_lowercase();
     let mut words: Vec<&str> = normalized.split_whitespace().collect();
     while words.first().is_some_and(|w| SHORTCUT_VERBS.contains(w)) {
@@ -325,7 +507,15 @@ fn edit_distance(a: &str, b: &str) -> usize {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { hotkey: DEFAULT_HOTKEY.into(), extra_folders: Vec::new(), start_at_login: false, onboarded: false, shortcuts: Vec::new(), nicknames: Vec::new() }
+        Settings {
+            hotkey: DEFAULT_HOTKEY.into(),
+            extra_folders: Vec::new(),
+            excluded_folders: Vec::new(),
+            start_at_login: false,
+            onboarded: false,
+            shortcuts: Vec::new(),
+            nicknames: Vec::new(),
+        }
     }
 }
 
@@ -333,7 +523,9 @@ impl Settings {
     #[cfg(test)]
     pub fn load(path: &Path) -> Self {
         let (data, warning) = Self::load_with_warning(path);
-        if let Some(warning) = warning { eprintln!("{}", warning.message); }
+        if let Some(warning) = warning {
+            eprintln!("{}", warning.message);
+        }
         data
     }
 
@@ -341,12 +533,14 @@ impl Settings {
         load_store(path, Store::Settings)
     }
 
-    pub fn save(&self, path: &Path) -> Result<(), String> {
+    pub(crate) fn save(&self, path: &Path) -> Result<Durability, String> {
         save_store(path, self, Store::Settings)
     }
 
     pub fn find_shortcut(&self, text: &str) -> Option<&Shortcut> {
-        if crate::parse::check_length(text).is_err() { return None; }
+        if crate::parse::check_length(text).is_err() {
+            return None;
+        }
         let key = shortcut_key(text);
         (!key.is_empty()).then(|| self.shortcuts.iter().find(|s| shortcut_key(&s.phrase) == key)).flatten()
     }
@@ -355,15 +549,13 @@ impl Settings {
     /// for "run my usuals"): a couple of letters off at most, and only one
     /// shortcut that close. Used only when the text isn't a command.
     pub fn find_close_shortcut(&self, text: &str) -> Option<&Shortcut> {
-        if crate::parse::check_length(text).is_err() { return None; }
+        if crate::parse::check_length(text).is_err() {
+            return None;
+        }
         let key = shortcut_key(text);
         let allowed = (key.chars().count() / 3).clamp(1, 3);
-        let mut close: Vec<(usize, &Shortcut)> = self
-            .shortcuts
-            .iter()
-            .map(|s| (edit_distance(&key, &shortcut_key(&s.phrase)), s))
-            .filter(|(d, _)| *d <= allowed)
-            .collect();
+        let mut close: Vec<(usize, &Shortcut)> =
+            self.shortcuts.iter().map(|s| (edit_distance(&key, &shortcut_key(&s.phrase)), s)).filter(|(d, _)| *d <= allowed).collect();
         close.sort_by_key(|(d, _)| *d);
         match close.as_slice() {
             [(_, only)] => Some(*only),
@@ -401,8 +593,11 @@ impl Settings {
                     Ok(Intent::RecentActions | Intent::Undo) => return Err(format!("In “{phrase}”, “{c}” can't be part of a shortcut.")),
                     // A lone read-only command runs as if typed. Mixed with
                     // others it can't join the single preview a shortcut makes.
-                    Ok(ref intent) if shortcut_read_only(intent) && commands.len() > 1 => return Err(format!(
-                        "In “{phrase}”, “{c}” only shows information. A shortcut can show information with one command on its own, or hold commands that change files.")),
+                    Ok(ref intent) if shortcut_read_only(intent) && commands.len() > 1 => {
+                        return Err(format!(
+                            "In “{phrase}”, “{c}” only shows information. A shortcut can show information with one command on its own, or hold commands that change files."
+                        ));
+                    }
                     Ok(_) => {}
                 }
             }
@@ -451,6 +646,16 @@ impl Settings {
             .iter()
             .map(|n| (nickname_key(&n.name), crate::fsx::expand_tilde(n.path.trim(), home)))
             .filter(|(name, p)| !name.is_empty() && p.is_absolute() && p.is_dir() && !crate::fsx::has_parent_ref(p))
+            .collect()
+    }
+
+    /// Excluded folders, kept even while missing: an exclusion only narrows
+    /// what Voxi may touch, and still applies if the folder comes back.
+    pub fn excluded_paths(&self, home: &Path) -> Vec<PathBuf> {
+        self.excluded_folders
+            .iter()
+            .map(|f| crate::fsx::expand_tilde(f.trim(), home))
+            .filter(|p| p.is_absolute() && !crate::fsx::has_parent_ref(p) && p.parent().is_some())
             .collect()
     }
 
@@ -531,8 +736,8 @@ mod tests {
         Settings::default().save(&path).unwrap();
         let json: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(json["version"], STORE_VERSION);
-        let backup = fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().path())
-            .find(|p| p.to_string_lossy().contains(".corrupt-")).unwrap();
+        let backup =
+            fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().path()).find(|p| p.to_string_lossy().contains(".corrupt-")).unwrap();
         assert_eq!(fs::read(backup).unwrap(), b"invalid JSON");
     }
 
@@ -574,7 +779,7 @@ mod tests {
         WRITE_FAILURE.with(|f| f.set(4));
         let result = changed.save(&path);
         WRITE_FAILURE.with(|f| f.set(0));
-        assert!(result.is_err(), "directory sync failure must reach caller even after rename");
+        assert!(matches!(result, Ok(Durability::Uncertain(_))));
         assert_eq!(Settings::load(&path).hotkey, "new");
         // Actual rename failure: a target directory cannot be replaced by a file.
         let destination = dir.path().join("directory");
@@ -680,12 +885,54 @@ mod login_tests {
             let original = fs::read(&path).unwrap();
             let mut os_enabled = false;
             WRITE_FAILURE.with(|f| f.set(stage));
-            let result = login_transaction(&Settings { start_at_login: true, ..Settings::default() }, &path, false, |enabled| { os_enabled = enabled; Ok(()) });
+            let mut hotkey = DEFAULT_HOTKEY.into();
+            let result = save_transaction(
+                &Settings { start_at_login: true, ..Settings::default() },
+                &path,
+                &mut hotkey,
+                DEFAULT_HOTKEY,
+                false,
+                |_, _| panic!("hotkey did not change"),
+                |enabled| {
+                    os_enabled = enabled;
+                    Ok(())
+                },
+            );
             WRITE_FAILURE.with(|f| f.set(0));
-            assert!(result.is_err());
-            assert!(!os_enabled);
-            assert_eq!(fs::read(path).unwrap(), original);
+            if stage == 4 {
+                assert!(matches!(result, Ok(Durability::Uncertain(_))));
+                assert!(os_enabled && Settings::load(&path).start_at_login);
+            } else {
+                assert!(result.is_err());
+                assert!(!os_enabled);
+                assert_eq!(fs::read(path).unwrap(), original);
+            }
         }
+    }
+    #[test]
+    fn hotkey_rollback_failure_reports_the_installed_shortcut() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut registered = DEFAULT_HOTKEY.into();
+        let error = save_transaction(
+            &Settings { start_at_login: true, ..Settings::default() },
+            &dir.path().join("settings.json"),
+            &mut registered,
+            "Control+Shift+V",
+            false,
+            |installed, wanted| {
+                if wanted == DEFAULT_HOTKEY {
+                    return Err("old shortcut is busy".into());
+                }
+                *installed = wanted.into();
+                Ok(())
+            },
+            |enabled| if enabled { Err("login registration failed".into()) } else { Ok(()) },
+        )
+        .unwrap_err();
+        assert!(error.message.contains("login registration failed"));
+        assert!(error.message.contains("Could not restore the previous hotkey: old shortcut is busy"));
+        assert_eq!(error.installed_hotkey.as_deref(), Some("Control+Shift+V"));
+        assert_eq!(registered, "Control+Shift+V");
     }
 }
 

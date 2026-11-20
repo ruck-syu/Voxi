@@ -30,14 +30,17 @@ static TRAIL: LazyLock<Regex> = re!(
 static SIGN_OFF: LazyLock<Regex> = re!(
     r"(?i),\s*(?:ta|cheers(?:\s+mate)?|sweet\s+as|mate|ja|eh|lah|leh|lor|na|yaar|innit|chur|bro|boss|no\s+worries|for\s+us|thanks\s+(?:a\s+lot|mate)|nice\s+one|yeah|yep|yes|ok|okay|sound|pl[sz]|please|plese|ty|thx|lol|k|kk|rn|asap|dude|buddy|sir|(?:my\s+)?friend|if\s+possible|when\s+you\s+(?:can|get\s+a\s+sec)|much\s+appreciated|(?:would|will)\s+(?:ya|you)|thanks\s+po|po|sawa|grand|anyhow|can|quick\s+count|thanks|right)\s*$"
 );
-static SEE: LazyLock<Regex> = re!(r"(?i)^(?:i\s+(?:need|want|wanna|would\s+like)\s+to\s+see|(?:let\s+me|lemme)\s+see|i'?d\s+like\s+to\s+see|gimme)\s+");
+static SEE: LazyLock<Regex> =
+    re!(r"(?i)^(?:i\s+(?:need|want|wanna|would\s+like)\s+to\s+see|(?:let\s+me|lemme)\s+see|i'?d\s+like\s+to\s+see|gimme)\s+");
 static SPACES: LazyLock<Regex> = re!(r"\s+");
 static JUST_NOW: LazyLock<Regex> = re!(r"(?i)\bjust\s+now$");
 
 /// Words that ask for something Voxi never does: deleting past the Trash.
 /// These are *phrases*: a filename token such as "Permanent Resident Card.pdf"
 /// must stay a literal name, so the caller removes filename tokens first.
-static PERMANENT_PHRASE: LazyLock<Regex> = re!(r"(?i)(?:\bpermanently\b|\bfor\s+(?:good|ever|real)\b|\bforever\b|\birreversibly\b|\birrecoverably\b|\bsecurely\s+erase\b|\b(?:shred|wipe)\s+|\bpermanent\s+(?:delete|deletion|removal|erase|wipe|trash)\b|\b(?:delete|deletion|remove|removal|trash)\b[^.?!]{0,80}\bpermanent\b|\b(?:empty|emty|erase|clear(?:\s+out)?)\s+(?:the\s+|my\s+)?(?:trash|bin|recycle\s+bin)\b|\bwithout\s+(?:the\s+|using\s+(?:the\s+)?)?(?:trash|bin|recycle\s+bin)\b|\b(?:so\s+(?:it|they)\s+(?:can't|cannot|can\s+not|won't|will\s+not)\s+be\s+recovered|can't\s+be\s+recovered)\b)");
+static PERMANENT_PHRASE: LazyLock<Regex> = re!(
+    r"(?i)(?:\bpermanently\b|\bfor\s+(?:good|ever|real)\b|\bforever\b|\birreversibly\b|\birrecoverably\b|\bsecurely\s+erase\b|\b(?:shred|wipe)\s+|\bpermanent\s+(?:delete|deletion|removal|erase|wipe|trash)\b|\b(?:delete|deletion|remove|removal|trash)\b[^.?!]{0,80}\bpermanent\b|\b(?:empty|emty|erase|clear(?:\s+out)?)\s+(?:the\s+|my\s+)?(?:trash|bin|recycle\s+bin)\b|\bwithout\s+(?:the\s+|using\s+(?:the\s+)?)?(?:trash|bin|recycle\s+bin)\b|\b(?:so\s+(?:it|they)\s+(?:can't|cannot|can\s+not|won't|will\s+not)\s+be\s+recovered|can't\s+be\s+recovered)\b)"
+);
 /// "erase notes.pdf" is a permanent-delete request, but "erase everything in
 /// Documents" is a supported bulk Trash request (see the corpus). Only an
 /// explicit named item after "erase" is refused here.
@@ -55,7 +58,8 @@ fn unsupported_question(outside: &str) -> bool {
 /// Drops literal filename tokens so a permanence phrase is never found inside
 /// a name such as "Permanent Resident Card.pdf" or "for real.pdf".
 pub(super) fn without_filenames(outside: &str) -> String {
-    outside.split_whitespace()
+    outside
+        .split_whitespace()
         .filter(|tok| {
             let core = tok.trim_matches(|c: char| matches!(c, ',' | ';' | ':' | '!' | '\'' | '"'));
             !super::phrase::has_extension(core)
@@ -66,13 +70,18 @@ pub(super) fn without_filenames(outside: &str) -> String {
 
 /// Requests that explicitly bypass the Trash or confirmation cannot be
 /// honored by silently treating their extra words as a file or folder name.
-static BYPASS: LazyLock<Regex> = re!(r"(?i)\b(?:no\s+(?:trash|bin|questions|confirmation)|(?:skip|bypass|avoid)\s+(?:trash|bin|confirmation)|(?:do\s+not|don't|dont)\s+(?:move|send|put)\s+(?:it\s+|them\s+)?(?:to|in|into)\s+(?:trash|bin))\b");
+static BYPASS: LazyLock<Regex> = re!(
+    r"(?i)\b(?:no\s+(?:trash|bin|questions|confirmation)|(?:skip|bypass|avoid)\s+(?:trash|bin|confirmation)|(?:do\s+not|don't|dont)\s+(?:move|send|put)\s+(?:it\s+|them\s+)?(?:to|in|into)\s+(?:trash|bin))\b"
+);
 /// A second action is never part of an archive output name. Names containing
 /// these words can still be written literally inside quotes.
-static CHAINED_ACTION: LazyLock<Regex> = re!(r"(?i)\b(?:and\s+then|then|and)\s+(?:delete|trash|remove|email|mail|upload|send|move|copy|rename|sort|encrypt|open|zip|unzip)\b");
+static CHAINED_ACTION: LazyLock<Regex> =
+    re!(r"(?i)\b(?:and\s+then|then|and)\s+(?:delete|trash|remove|email|mail|upload|send|move|copy|rename|sort|encrypt|open|zip|unzip)\b");
 
 /// Removing content from a file is not deleting the file itself.
-static CONTENT_EDIT: LazyLock<Regex> = re!(r"(?i)^(?:remove|delete|strip)\s+(?:background\s+from|(?:(?:first|second|third|fourth|last)|\d+(?:st|nd|rd|th)?)\s+(?:line|paragraph|word)\s+from)\b");
+static CONTENT_EDIT: LazyLock<Regex> = re!(
+    r"(?i)^(?:remove|delete|strip)\s+(?:background\s+from|(?:(?:first|second|third|fourth|last)|\d+(?:st|nd|rd|th)?)\s+(?:line|paragraph|word)\s+from)\b"
+);
 
 static KEEP_ORIGINALS: LazyLock<Regex> = re!(r"(?i)\b(?:leaving|keeping)\s+originals\s+(?:alone|intact|untouched)\b");
 static COPY_COMMAND: LazyLock<Regex> = re!(r"(?i)^(?:copy|duplicate|copying)\s+");
@@ -80,14 +89,16 @@ static COPY_COMMAND: LazyLock<Regex> = re!(r"(?i)^(?:copy|duplicate|copying)\s+"
 /// Character-class ranges request pattern expansion. Quoted filenames remain
 /// literal, and ordinary bracketed names such as "Report [final].pdf" are valid.
 static REGEX_RANGE: LazyLock<Regex> = re!(r"\[[^\]]*(?:[0-9]-[0-9]|a-z|A-Z|\\d)[^\]]*\]");
-static TRASH_CONTENTS: LazyLock<Regex> = re!(r"(?i)^(?:delete|remove|trash|bin)\s+(?:(?:everything|all\s+files|(?:all\s+)?contents)\s+(?:in|from)\s+)?(?:trash|bin)$");
+static TRASH_CONTENTS: LazyLock<Regex> =
+    re!(r"(?i)^(?:delete|remove|trash|bin)\s+(?:(?:everything|all\s+files|(?:all\s+)?contents)\s+(?:in|from)\s+)?(?:trash|bin)$");
 
 static DESTINATION_NEEDS: LazyLock<Regex> = re!(r"^([A-Z][^\s,]*)\s+(?i)needs\s+(.+)$");
 static NEEDS_COPY: LazyLock<Regex> = re!(r"(?i)^(?:a\s+)?cop(?:y|ies)\s+of\s+");
 // These ask for unsupported selection/compression semantics. Quoted names
 // remain literal; naming a file "hidden files" is not a hidden-file query.
 static HIDDEN_SELECTION: LazyLock<Regex> = re!(r"(?i)\bhidden\s+(?:files|folders)\b");
-static IMAGE_COMPRESSION: LazyLock<Regex> = re!(r"(?i)^compress\s+.+\s+(?:to\s+make\s+(?:them|it)\s+smaller|without\s+losing\s+quality|to\s+reduce\s+(?:their|its)\s+size)$");
+static IMAGE_COMPRESSION: LazyLock<Regex> =
+    re!(r"(?i)^compress\s+.+\s+(?:to\s+make\s+(?:them|it)\s+smaller|without\s+losing\s+quality|to\s+reduce\s+(?:their|its)\s+size)$");
 
 /// True when the command must be refused regardless of its matching pattern.
 pub fn refused(normalized: &str) -> bool {
@@ -101,8 +112,10 @@ pub fn refused(normalized: &str) -> bool {
         // "sorting". Only an explicit filtered set supports this shorthand.
         return true;
     }
-    outside.contains('*') || unsupported_question(&outside)
-        || PERMANENT_PHRASE.is_match(&without_filenames(&outside)) || NAMED_ERASE.is_match(&outside)
+    outside.contains('*')
+        || unsupported_question(&outside)
+        || PERMANENT_PHRASE.is_match(&without_filenames(&outside))
+        || NAMED_ERASE.is_match(&outside)
         || REGEX_RANGE.is_match(&outside)
         || TRASH_CONTENTS.is_match(outside.trim())
         || BYPASS.is_match(&outside)
@@ -236,24 +249,77 @@ static RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
 /// Verbs whose misspelling Voxi corrects. Destructive verbs are left out on
 /// purpose: a misspelled "delete" is refused rather than guessed.
 const VERBS: &[&str] = &[
-    "move", "copy", "rename", "list", "show", "find", "count", "create", "make", "convert", "sort", "organize",
-    "tidy", "send", "add", "number", "replace", "extract", "merge", "combine", "join", "split", "pull", "shrink",
-    "scale", "resize", "zip", "compress", "unzip", "expand", "open", "reveal", "check", "lowercase", "strip",
-    "how", "what", "where", "undo", "display", "search", "locate", "change", "duplicate", "transfer", "relocate",
-    "please", "help", "give", "group", "arrange", "archive",
+    "move",
+    "copy",
+    "rename",
+    "list",
+    "show",
+    "find",
+    "count",
+    "create",
+    "make",
+    "convert",
+    "sort",
+    "organize",
+    "tidy",
+    "send",
+    "add",
+    "number",
+    "replace",
+    "extract",
+    "merge",
+    "combine",
+    "join",
+    "split",
+    "pull",
+    "shrink",
+    "scale",
+    "resize",
+    "zip",
+    "compress",
+    "unzip",
+    "expand",
+    "open",
+    "reveal",
+    "check",
+    "lowercase",
+    "strip",
+    "how",
+    "what",
+    "where",
+    "undo",
+    "display",
+    "search",
+    "locate",
+    "change",
+    "duplicate",
+    "transfer",
+    "relocate",
+    "please",
+    "help",
+    "give",
+    "group",
+    "arrange",
+    "archive",
 ];
 /// Words a correction must never produce from, or turn into, because they
 /// destroy or are too short to tell apart.
-const NEVER: &[&str] = &["delete", "remove", "trash", "erase", "bin", "clean", "wipe", "toss", "nuke", "discard", "purge", "zap",
+const NEVER: &[&str] = &[
+    "delete", "remove", "trash", "erase", "bin", "clean", "wipe", "toss", "nuke", "discard", "purge", "zap",
     // Casual deletes: "chuck" is one letter from "check", but means bin it.
-    "chuck", "ditch", "dump", "throw"];
+    "chuck", "ditch", "dump", "throw",
+];
 
 /// Optimal string alignment distance: edits plus adjacent swaps ("mvoe").
 fn osa(a: &str, b: &str) -> usize {
     let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
     let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
-    for (i, row) in d.iter_mut().enumerate() { row[0] = i; }
-    for (j, cell) in d[0].iter_mut().enumerate() { *cell = j; }
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
     for i in 1..=a.len() {
         for j in 1..=b.len() {
             let cost = usize::from(a[i - 1] != b[j - 1]);
@@ -294,7 +360,9 @@ pub(super) fn strip_fillers(s: &str, fix_typos: bool) -> String {
     loop {
         let before = s.clone();
         s = LEAD.replace(&s, "").to_string();
-        if !JUST_NOW.is_match(&s) { s = TRAIL.replace(&s, "").to_string(); }
+        if !JUST_NOW.is_match(&s) {
+            s = TRAIL.replace(&s, "").to_string();
+        }
         s = SIGN_OFF.replace(&s, "").to_string();
         if fix_typos
             && let Some((first, rest)) = s.split_once(' ')
@@ -302,7 +370,9 @@ pub(super) fn strip_fillers(s: &str, fix_typos: bool) -> String {
         {
             s = format!("{verb} {rest}");
         }
-        if s == before { return s; }
+        if s == before {
+            return s;
+        }
     }
 }
 
@@ -330,7 +400,16 @@ mod tests {
 
     #[test]
     fn misspelled_verbs_are_corrected_but_destructive_ones_are_not() {
-        for (typo, verb) in [("mvoe", "move"), ("coppy", "copy"), ("renmae", "rename"), ("lsit", "list"), ("sned", "send"), ("creat", "create"), ("cuont", "count"), ("orgainze", "organize")] {
+        for (typo, verb) in [
+            ("mvoe", "move"),
+            ("coppy", "copy"),
+            ("renmae", "rename"),
+            ("lsit", "list"),
+            ("sned", "send"),
+            ("creat", "create"),
+            ("cuont", "count"),
+            ("orgainze", "organize"),
+        ] {
             assert_eq!(correct_verb(typo), Some(verb), "{typo}");
         }
         for typo in ["delte", "delet", "remvoe", "dleete", "trsah", "claen", "ad", "pt", "move", "zap", "chuck"] {

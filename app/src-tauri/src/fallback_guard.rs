@@ -44,9 +44,7 @@ pub(crate) fn certify_bound(original: &str, candidate: &str) -> Result<Intent, R
     if has_unquoted_unsupported_clause(candidate) {
         return Err(Rejection::UnsupportedCandidateSemantics);
     }
-    let contract = folder_creation(original)
-        .or_else(|| resize(original))
-        .or_else(|| bounded_transfer(original));
+    let contract = folder_creation(original).or_else(|| resize(original)).or_else(|| bounded_transfer(original));
     let Some(contract) = contract else {
         return Err(Rejection::UnsupportedOriginalSemantics);
     };
@@ -69,10 +67,7 @@ fn bounded_transfer(text: &str) -> Option<Intent> {
     let operation = caps.get(1)?.as_str().to_ascii_lowercase();
     let source_name = literal(caps.get(2)?.as_str())?;
     let destination = literal(caps.get(3)?.as_str())?;
-    if [source_name.as_str(), destination.as_str()]
-        .iter()
-        .any(|name| name.contains('/') || name.contains('\\'))
-    {
+    if [source_name.as_str(), destination.as_str()].iter().any(|name| name.contains('/') || name.contains('\\')) {
         return None;
     }
     let lower = caps.get(4)?.as_str().parse::<f64>().ok()?;
@@ -89,17 +84,7 @@ fn bounded_transfer(text: &str) -> Option<Intent> {
             ..Default::default()
         },
     };
-    Some(if operation == "move" {
-        Intent::Move {
-            src,
-            to: destination,
-        }
-    } else {
-        Intent::Copy {
-            src,
-            to: destination,
-        }
-    })
+    Some(if operation == "move" { Intent::Move { src, to: destination } } else { Intent::Copy { src, to: destination } })
 }
 
 static CREATE: LazyLock<Regex> = LazyLock::new(|| {
@@ -126,16 +111,10 @@ pub(crate) fn folder_creation(text: &str) -> Option<Intent> {
         return None;
     }
     let parent = literal(parent_text)?;
-    if names
-        .iter()
-        .any(|n| n.is_empty() || n.contains('/') || n.contains('\\'))
-    {
+    if names.iter().any(|n| n.is_empty() || n.contains('/') || n.contains('\\')) {
         return None;
     }
-    Some(Intent::CreateFolders {
-        names,
-        parent: Some(parent),
-    })
+    Some(Intent::CreateFolders { names, parent: Some(parent) })
 }
 
 fn starts_with_quote(value: &str) -> bool {
@@ -143,10 +122,7 @@ fn starts_with_quote(value: &str) -> bool {
 }
 
 fn starts_with_article(value: &str) -> bool {
-    value
-        .split_whitespace()
-        .next()
-        .is_some_and(|word| matches!(word.to_ascii_lowercase().as_str(), "a" | "an" | "the"))
+    value.split_whitespace().next().is_some_and(|word| matches!(word.to_ascii_lowercase().as_str(), "a" | "an" | "the"))
 }
 
 fn split_names(value: &str) -> Option<Vec<String>> {
@@ -175,10 +151,7 @@ fn split_names(value: &str) -> Option<Vec<String>> {
             }
         } else if ch == '"' || ch == '\'' || ch == '“' || ch == '‘' {
             quote = Some(ch);
-        } else if value[byte..]
-            .get(..5)
-            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(" and "))
-        {
+        } else if value[byte..].get(..5).is_some_and(|suffix| suffix.eq_ignore_ascii_case(" and ")) {
             spans.push(&value[start..byte]);
             start = byte + 5;
         } else if ch == ',' {
@@ -221,10 +194,7 @@ fn literal(value: &str) -> Option<String> {
             return None;
         }
         let inner = &v[delimiter.len_utf8()..v.len() - closing.len_utf8()];
-        if inner.is_empty()
-            || inner.contains(delimiter)
-            || (closing != delimiter && inner.contains(closing))
-        {
+        if inner.is_empty() || inner.contains(delimiter) || (closing != delimiter && inner.contains(closing)) {
             return None;
         }
         return Some(inner.to_string());
@@ -235,14 +205,59 @@ fn literal(value: &str) -> Option<String> {
     let lower = v.to_ascii_lowercase();
     if matches!(
         lower.as_str(),
-        "a" | "an" | "the" | "another" | "more" | "many" | "few" | "some"
-            | "other" | "others" | "couple" | "rest" | "stuff" | "extra"
-            | "latest" | "recent" | "junk" | "file" | "files" | "folder"
-            | "folders" | "without" | "never" | "also" | "new" | "it" | "them"
-            | "this" | "that" | "these" | "those" | "not" | "no" | "none"
-            | "here" | "there" | "several" | "multiple" | "any" | "all"
-            | "everything" | "one" | "two" | "three" | "four" | "five" | "six"
-            | "seven" | "eight" | "nine" | "ten" | "first" | "last" | "next"
+        "a" | "an"
+            | "the"
+            | "another"
+            | "more"
+            | "many"
+            | "few"
+            | "some"
+            | "other"
+            | "others"
+            | "couple"
+            | "rest"
+            | "stuff"
+            | "extra"
+            | "latest"
+            | "recent"
+            | "junk"
+            | "file"
+            | "files"
+            | "folder"
+            | "folders"
+            | "without"
+            | "never"
+            | "also"
+            | "new"
+            | "it"
+            | "them"
+            | "this"
+            | "that"
+            | "these"
+            | "those"
+            | "not"
+            | "no"
+            | "none"
+            | "here"
+            | "there"
+            | "several"
+            | "multiple"
+            | "any"
+            | "all"
+            | "everything"
+            | "one"
+            | "two"
+            | "three"
+            | "four"
+            | "five"
+            | "six"
+            | "seven"
+            | "eight"
+            | "nine"
+            | "ten"
+            | "first"
+            | "last"
+            | "next"
             | "previous"
     ) || v.chars().all(|ch| ch.is_ascii_digit())
     {
@@ -250,24 +265,14 @@ fn literal(value: &str) -> Option<String> {
     }
     // Ambiguous unquoted prose cannot be silently treated as a literal name.
     // Do not strip punctuation from values to force agreement with a rewrite.
-    if !v
-        .chars()
-        .all(|ch| ch.is_alphanumeric() || "_-./~".contains(ch))
-        || matches!(v, "." | "..")
-    {
+    if !v.chars().all(|ch| ch.is_alphanumeric() || "_-./~".contains(ch)) || matches!(v, "." | "..") {
         return None;
     }
     Some(v.to_string())
 }
 
 fn is_quoted_literal(value: &str) -> bool {
-    literal(value).is_some_and(|_| {
-        value
-            .trim()
-            .chars()
-            .next()
-            .is_some_and(|c| matches!(c, '"' | '\'' | '“' | '‘'))
-    })
+    literal(value).is_some_and(|_| value.trim().chars().next().is_some_and(|c| matches!(c, '"' | '\'' | '“' | '‘')))
 }
 
 static RESIZE: LazyLock<Regex> = LazyLock::new(|| {
@@ -279,13 +284,7 @@ static RESIZE: LazyLock<Regex> = LazyLock::new(|| {
 fn resize(text: &str) -> Option<Intent> {
     let caps = RESIZE.captures(text)?;
     let subject = caps.get(1).or_else(|| caps.get(3))?.as_str().trim();
-    let width = caps
-        .get(2)
-        .or_else(|| caps.get(4))?
-        .as_str()
-        .parse::<u32>()
-        .ok()
-        .filter(|w| *w > 0)?;
+    let width = caps.get(2).or_else(|| caps.get(4))?.as_str().parse::<u32>().ok().filter(|w| *w > 0)?;
     let exact_subject = literal(subject)?;
     let src = if subject.starts_with('"') || subject.starts_with('\'') {
         Source::item(&exact_subject)
@@ -293,20 +292,12 @@ fn resize(text: &str) -> Option<Intent> {
         let source = parse::phrase::parse_source(subject)?;
         match &source {
             Source::Item { name, folder: None } if name == &exact_subject => {}
-            Source::Set { filter, .. }
-                if *filter
-                    == (crate::model::Filter {
-                        file_type: filter.file_type,
-                        ..Default::default()
-                    }) => {}
+            Source::Set { filter, .. } if *filter == (crate::model::Filter { file_type: filter.file_type, ..Default::default() }) => {}
             _ => return None,
         }
         source
     };
-    Some(Intent::ResizeImage {
-        src: image_source(src)?,
-        width,
-    })
+    Some(Intent::ResizeImage { src: image_source(src)?, width })
 }
 
 fn image_source(source: Source) -> Option<Source> {
@@ -348,9 +339,7 @@ pub(crate) fn has_unquoted_unsupported_clause(text: &str) -> bool {
     });
     quote.is_some()
         || UNSUPPORTED.is_match(&clean)
-        || clean.contains(" and ")
-            && !has_name_list_separator(text)
-            && BOUNDED_TRANSFER.captures(text).is_none()
+        || clean.contains(" and ") && !has_name_list_separator(text) && BOUNDED_TRANSFER.captures(text).is_none()
 }
 
 /// Whether the " and " in a command separates folder names inside a
@@ -375,45 +364,21 @@ mod tests {
     fn create_folder_paraphrase_certifies_exact_names_and_parent() {
         let candidate = "create folders named Archive and Backup in Desktop";
         let actual = certify("Make Archive and Backup folders on Desktop", candidate).unwrap();
-        assert_eq!(
-            actual,
-            Intent::CreateFolders {
-                names: vec!["Archive".into(), "Backup".into()],
-                parent: Some("Desktop".into())
-            }
-        );
+        assert_eq!(actual, Intent::CreateFolders { names: vec!["Archive".into(), "Backup".into()], parent: Some("Desktop".into()) });
     }
 
     #[test]
     fn resize_requires_same_actual_pixel_width_and_source() {
-        assert!(
-            certify(
-                "Make photo.jpg 1200 pixels wide",
-                "resize photo.jpg to 1200 px"
-            )
-            .is_ok()
-        );
+        assert!(certify("Make photo.jpg 1200 pixels wide", "resize photo.jpg to 1200 px").is_ok());
         assert_eq!(
-            certify(
-                "Resize Pictures to 50 percent quality",
-                "resize Pictures to 50 px"
-            ),
+            certify("Resize Pictures to 50 percent quality", "resize Pictures to 50 px"),
             Err(Rejection::UnsupportedOriginalSemantics)
         );
         assert_eq!(
-            certify(
-                "Resize photo.jpg to 1200 pixels wide and sharpen it",
-                "resize photo.jpg to 1200 px"
-            ),
+            certify("Resize photo.jpg to 1200 pixels wide and sharpen it", "resize photo.jpg to 1200 px"),
             Err(Rejection::UnsupportedOriginalSemantics)
         );
-        assert_eq!(
-            certify(
-                "Make photo.jpg 1200 pixels wide",
-                "resize photo.jpg to 1024 px"
-            ),
-            Err(Rejection::MeaningChanged)
-        );
+        assert_eq!(certify("Make photo.jpg 1200 pixels wide", "resize photo.jpg to 1024 px"), Err(Rejection::MeaningChanged));
     }
 
     #[test]
@@ -421,20 +386,12 @@ mod tests {
         let original = "move files from Downloads to Desktop between 10 and 50 MB";
         assert!(parse::parse_classified(original).is_ok());
         assert_eq!(
-            certify(
-                original,
-                "move files larger than 10 MB smaller than 50 MB in Downloads to Desktop"
-            ),
+            certify(original, "move files larger than 10 MB smaller than 50 MB in Downloads to Desktop"),
             Err(Rejection::OriginalAccepted)
         );
-        assert!(
-            bounded_transfer("move files from Downloads to Desktop between 10 and 50").is_none()
-        );
+        assert!(bounded_transfer("move files from Downloads to Desktop between 10 and 50").is_none());
         assert_eq!(
-            certify_bound(
-                original,
-                "move files larger than 10 MB smaller than 50 MB in Downloads to Desktop"
-            ),
+            certify_bound(original, "move files larger than 10 MB smaller than 50 MB in Downloads to Desktop"),
             Ok(Intent::Move {
                 src: Source::Set {
                     folder: Some("Downloads".into()),
@@ -455,27 +412,18 @@ mod tests {
             )
             .is_ok()
         );
-        assert!(certify_bound(
-            "copy files from \"Folder and Then\" to \"Archive\" between 2 and 9 MB",
-            "copy files larger than 2 MB smaller than 9 MB in \"Folder and Then\" to \"Archive\""
-        ).is_ok());
+        assert!(
+            certify_bound(
+                "copy files from \"Folder and Then\" to \"Archive\" between 2 and 9 MB",
+                "copy files larger than 2 MB smaller than 9 MB in \"Folder and Then\" to \"Archive\""
+            )
+            .is_ok()
+        );
         for (input, output) in [
-            (
-                original,
-                "copy files larger than 10 MB smaller than 50 MB in Downloads to Desktop",
-            ),
-            (
-                original,
-                "move files larger than 10 MB in Downloads to Desktop",
-            ),
-            (
-                original,
-                "move files larger than 10 MB smaller than 49 MB in Downloads to Desktop",
-            ),
-            (
-                original,
-                "move files larger than 10 MB smaller than 50 MB in Desktop to Downloads",
-            ),
+            (original, "copy files larger than 10 MB smaller than 50 MB in Downloads to Desktop"),
+            (original, "move files larger than 10 MB in Downloads to Desktop"),
+            (original, "move files larger than 10 MB smaller than 49 MB in Downloads to Desktop"),
+            (original, "move files larger than 10 MB smaller than 50 MB in Desktop to Downloads"),
             (
                 "move files from Downloads to Desktop between 50 and 10 MB",
                 "move files larger than 10 MB smaller than 50 MB in Downloads to Desktop",
@@ -496,43 +444,19 @@ mod tests {
     #[test]
     fn known_dangerous_additions_are_rejected() {
         for (input, output) in [
-            (
-                "Rename the file named \"Archive\" to Archive-old",
-                "rename \"Archive\" to Archive",
-            ),
-            (
-                "Remove the word draft from file names in Documents",
-                "delete files named \"draft\" in Documents",
-            ),
-            (
-                "Sort Downloads by type and then by month",
-                "sort Downloads by month",
-            ),
-            (
-                "Convert photo.jpg to png and replace it",
-                "convert \"photo.jpg\" to png",
-            ),
-            (
-                "Zip Downloads and overwrite Downloads.zip",
-                "zip Downloads into Downloads.zip",
-            ),
-            (
-                "Unzip Backup.zip over existing files in Documents",
-                "unzip Backup.zip into Documents",
-            ),
-            (
-                "Sort Pictures by type every month",
-                "sort Pictures by month",
-            ),
+            ("Rename the file named \"Archive\" to Archive-old", "rename \"Archive\" to Archive"),
+            ("Remove the word draft from file names in Documents", "delete files named \"draft\" in Documents"),
+            ("Sort Downloads by type and then by month", "sort Downloads by month"),
+            ("Convert photo.jpg to png and replace it", "convert \"photo.jpg\" to png"),
+            ("Zip Downloads and overwrite Downloads.zip", "zip Downloads into Downloads.zip"),
+            ("Unzip Backup.zip over existing files in Documents", "unzip Backup.zip into Documents"),
+            ("Sort Pictures by type every month", "sort Pictures by month"),
             ("Delete that file", "delete files"),
         ] {
             assert!(certify(input, output).is_err(), "{input}");
         }
         assert_eq!(
-            certify(
-                "Create a nested folder Archive/2026 in Documents",
-                "create a folder named Archive/2026 in Documents"
-            ),
+            certify("Create a nested folder Archive/2026 in Documents", "create a folder named Archive/2026 in Documents"),
             Err(Rejection::UnsupportedOriginalSemantics)
         );
     }
@@ -540,61 +464,17 @@ mod tests {
     #[test]
     fn all_twelve_reviewed_additions_have_expected_certificate_outcome() {
         let rows = [
-            (
-                "Rename the file named \"Archive\" to Archive-old",
-                "rename \"Archive\" to Archive",
-                false,
-            ),
-            (
-                "Remove the word draft from file names in Documents",
-                "delete files named \"draft\" in Documents",
-                false,
-            ),
-            (
-                "Make Archive and Backup folders on Desktop",
-                "create folders named Archive and Backup in Desktop",
-                true,
-            ),
-            (
-                "Create a nested folder Archive/2026 in Documents",
-                "create a folder named Archive/2026 in Documents",
-                false,
-            ),
-            (
-                "Sort Downloads by type and then by month",
-                "sort Downloads by month",
-                false,
-            ),
-            (
-                "Resize Pictures to 50 percent quality",
-                "resize Pictures to 50 px",
-                false,
-            ),
-            (
-                "Convert photo.jpg to png and replace it",
-                "convert \"photo.jpg\" to png",
-                false,
-            ),
-            (
-                "Zip Downloads and overwrite Downloads.zip",
-                "zip Downloads into Downloads.zip",
-                false,
-            ),
-            (
-                "Unzip Backup.zip over existing files in Documents",
-                "unzip Backup.zip into Documents",
-                false,
-            ),
-            (
-                "Resize photo.jpg to 1200 pixels wide and sharpen it",
-                "resize \"photo.jpg\" to 1200 px",
-                false,
-            ),
-            (
-                "Sort Pictures by type every month",
-                "sort Pictures by month",
-                false,
-            ),
+            ("Rename the file named \"Archive\" to Archive-old", "rename \"Archive\" to Archive", false),
+            ("Remove the word draft from file names in Documents", "delete files named \"draft\" in Documents", false),
+            ("Make Archive and Backup folders on Desktop", "create folders named Archive and Backup in Desktop", true),
+            ("Create a nested folder Archive/2026 in Documents", "create a folder named Archive/2026 in Documents", false),
+            ("Sort Downloads by type and then by month", "sort Downloads by month", false),
+            ("Resize Pictures to 50 percent quality", "resize Pictures to 50 px", false),
+            ("Convert photo.jpg to png and replace it", "convert \"photo.jpg\" to png", false),
+            ("Zip Downloads and overwrite Downloads.zip", "zip Downloads into Downloads.zip", false),
+            ("Unzip Backup.zip over existing files in Documents", "unzip Backup.zip into Documents", false),
+            ("Resize photo.jpg to 1200 pixels wide and sharpen it", "resize \"photo.jpg\" to 1200 px", false),
+            ("Sort Pictures by type every month", "sort Pictures by month", false),
             ("Delete that file", "delete files", false),
         ];
         for (input, output, accepted) in rows {
@@ -612,12 +492,7 @@ mod tests {
         ] {
             assert!(bounded_transfer(text).is_none(), "{text}");
         }
-        assert!(
-            bounded_transfer(
-                "copy files from \"Folder and Then\" to \"Archive\" between 2 and 9 MB"
-            )
-            .is_some()
-        );
+        assert!(bounded_transfer("copy files from \"Folder and Then\" to \"Archive\" between 2 and 9 MB").is_some());
     }
 
     #[test]
@@ -635,22 +510,13 @@ mod tests {
         assert!(resize("Make images older than 30 days 1200 pixels wide").is_none());
         assert_eq!(
             folder_creation("Make \"Report and Delete\" and \"Résumé.\" folders on Desktop"),
-            Some(Intent::CreateFolders {
-                names: vec!["Report and Delete".into(), "Résumé.".into()],
-                parent: Some("Desktop".into()),
-            })
+            Some(Intent::CreateFolders { names: vec!["Report and Delete".into(), "Résumé.".into()], parent: Some("Desktop".into()) })
         );
     }
 
     #[test]
     fn unspecified_names_and_references_are_not_literal_certificates() {
-        assert!(
-            certify(
-                "Make some folders on Desktop",
-                "create folders named some in Desktop"
-            )
-            .is_err()
-        );
+        assert!(certify("Make some folders on Desktop", "create folders named some in Desktop").is_err());
         for value in ["some", "two", "that", "there", "2"] {
             assert!(literal(value).is_none());
             assert_eq!(literal(&format!("\"{value}\"")), Some(value.to_string()));
@@ -659,46 +525,25 @@ mod tests {
 
     #[test]
     fn range_unit_inheritance_matches_documented_shorthand() {
-        let shared =
-            bounded_transfer("move files from Downloads to Desktop between 10 and 50 MB").unwrap();
-        let repeated =
-            bounded_transfer("move files from Downloads to Desktop between 10 MB and 50 MB")
-                .unwrap();
+        let shared = bounded_transfer("move files from Downloads to Desktop between 10 and 50 MB").unwrap();
+        let repeated = bounded_transfer("move files from Downloads to Desktop between 10 MB and 50 MB").unwrap();
         assert_eq!(shared, repeated);
-        assert!(
-            bounded_transfer("move files from Downloads to Desktop between 10 and 50").is_none()
-        );
-        assert!(
-            bounded_transfer("move files from Downloads to Desktop between 10 GB and 50 MB")
-                .is_none()
-        );
-        assert!(
-            bounded_transfer("move files from Downloads to Desktop between 10 MB and 50 GB")
-                .is_none()
-        );
+        assert!(bounded_transfer("move files from Downloads to Desktop between 10 and 50").is_none());
+        assert!(bounded_transfer("move files from Downloads to Desktop between 10 GB and 50 MB").is_none());
+        assert!(bounded_transfer("move files from Downloads to Desktop between 10 MB and 50 GB").is_none());
     }
 
     #[test]
     fn routing_preserves_parser_priority() {
-        assert_eq!(
-            certify(
-                "move report.pdf to Documents",
-                "move report.pdf to Documents"
-            ),
-            Err(Rejection::OriginalAccepted)
-        );
-        assert_eq!(
-            certify("delete everything permanently", "delete files"),
-            Err(Rejection::OriginalHardRefusal)
-        );
+        assert_eq!(certify("move report.pdf to Documents", "move report.pdf to Documents"), Err(Rejection::OriginalAccepted));
+        assert_eq!(certify("delete everything permanently", "delete files"), Err(Rejection::OriginalHardRefusal));
     }
 
     #[test]
     fn articles_and_vague_words_are_not_unquoted_folder_names() {
         for reserved in [
-            "a", "an", "the", "another", "more", "many", "few", "some", "other",
-            "others", "couple", "rest", "stuff", "extra", "latest", "recent",
-            "junk", "file", "files", "folder", "folders", "without", "never", "also",
+            "a", "an", "the", "another", "more", "many", "few", "some", "other", "others", "couple", "rest", "stuff", "extra", "latest",
+            "recent", "junk", "file", "files", "folder", "folders", "without", "never", "also",
         ] {
             let command = format!("create folder named {reserved} in Documents");
             assert!(folder_creation(&command).is_none(), "{command}");
@@ -706,16 +551,12 @@ mod tests {
             assert!(folder_creation(&quoted).is_some(), "{quoted}");
         }
         assert!(folder_creation("Make the Archive folder on Desktop").is_none());
-        assert!(
-            certify("Create a folder in Documents", "create folder named a in Documents").is_err()
-        );
+        assert!(certify("Create a folder in Documents", "create folder named a in Documents").is_err());
     }
 
     #[test]
     fn bad_destinations_are_not_certified_as_parents() {
-        for parent in [
-            "folder", "latest", "newest", "recently", "duplicates", "into", "size", "before",
-        ] {
+        for parent in ["folder", "latest", "newest", "recently", "duplicates", "into", "size", "before"] {
             let command = format!("create folder named Archive in {parent}");
             assert!(folder_creation(&command).is_none(), "{command}");
         }
@@ -725,25 +566,13 @@ mod tests {
     #[test]
     fn singular_folder_with_a_name_list_is_certified_consistently() {
         let original = "Make \"Atlas\" and \"Birch\" folder in Desktop";
-        assert!(matches!(
-            parse::parse_classified(original),
-            Err(ParseFailure::GrammarMiss)
-        ));
+        assert!(matches!(parse::parse_classified(original), Err(ParseFailure::GrammarMiss)));
         assert_eq!(
             certify(original, "create folder named Atlas and Birch in Desktop").unwrap(),
-            Intent::CreateFolders {
-                names: vec!["Atlas".into(), "Birch".into()],
-                parent: Some("Desktop".into())
-            }
+            Intent::CreateFolders { names: vec!["Atlas".into(), "Birch".into()], parent: Some("Desktop".into()) }
         );
-        assert!(certify(
-            "Make \"Atlas\" and \"Birch\" folders in Desktop",
-            "create folders named Atlas and Birch in Desktop"
-        )
-        .is_ok());
-        assert!(has_unquoted_unsupported_clause(
-            "Make \"Atlas\" and \"Birch\" folder in Desktop and then delete files"
-        ));
+        assert!(certify("Make \"Atlas\" and \"Birch\" folders in Desktop", "create folders named Atlas and Birch in Desktop").is_ok());
+        assert!(has_unquoted_unsupported_clause("Make \"Atlas\" and \"Birch\" folder in Desktop and then delete files"));
         assert_eq!(
             certify_bound(
                 "Make \"Atlas\" and \"Birch\" folder in Desktop and then delete files",
@@ -757,9 +586,7 @@ mod tests {
     fn long_and_separated_name_lists_parse_correctly() {
         let names: Vec<String> = (0..500).map(|i| format!("Folder{i}")).collect();
         let text = format!("create folders named {} in Documents", names.join(" and "));
-        let Intent::CreateFolders { names: got, parent } = folder_creation(&text).unwrap() else {
-            panic!()
-        };
+        let Intent::CreateFolders { names: got, parent } = folder_creation(&text).unwrap() else { panic!() };
         assert_eq!(got, names);
         assert_eq!(parent.as_deref(), Some("Documents"));
     }

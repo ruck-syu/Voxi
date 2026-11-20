@@ -307,6 +307,20 @@ html:not([data-native]) .card[data-glide] {
   white-space: nowrap;
 }
 
+/* Unticking a step leaves it out of the run. */
+.ruled .keep {
+  margin: 0 7px 0 0;
+  vertical-align: -1px;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+.ruled li[data-skipped] .primary,
+.ruled li[data-skipped] .detail {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
 .ruled .detail {
   color: var(--muted);
   overflow: hidden;
@@ -614,6 +628,9 @@ kbd {
   padding-top: 4px;
 }
 .result-scope { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 0; color: var(--muted); font-size: 13px; }
+.pager { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 4px 0 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.selection-hint { margin: 0; padding: 6px 22px 0; font-size: 13px; }
 .result-scope .link { flex-shrink: 0; }
 
 /* ---- Settings: one ruled row per setting; big ones fold away ---- */
@@ -1189,6 +1206,12 @@ fieldset.tab-panel {
 .row.compact + .row.compact::before { left: 48px; }
 .row.compact .row-label { font-weight: 600; }
 .row.add-row + .row::before { left: 12px; }
+/* The allowed-folders tree: nested rows step in, excluded ones fade. */
+.row.folder-rule { padding-left: calc(12px + var(--depth, 0) * 22px); }
+.row.folder-rule.excluded .row-icon { opacity: 0.55; }
+.row.folder-rule.excluded .pref-folder { color: var(--muted); }
+.secondary.small.step { justify-content: center; flex-shrink: 0; width: 30px; padding: 0; }
+.secondary.small.step .icon { display: block; }
 
 .recovery-notice pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .recovery-notice p:empty { display: none; }

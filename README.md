@@ -18,7 +18,7 @@
 ---
 
 Press <kbd>⌃⌥Space</kbd> anywhere. A small window opens with the cursor ready.
-Type a command or dictate with an app such as [Hex by Anomaly](https://anoma.ly/hex/) or [Wispr Flow](https://wisprflow.ai):
+Type a command or dictate with an app such as [Wispr Flow](https://wisprflow.ai) or [Hex by Anomaly](https://anoma.ly/hex/):
 
 > move all PDFs from Downloads to Documents
 
@@ -54,9 +54,14 @@ The full list is on the [Commands page](website/commands.html).
 File commands search the folder you name and its subfolders, up to 12 levels
 deep. This applies to groups of files and to individual file or folder names;
 multiple matching names prompt you to choose. Hidden folders, app bundles,
-symlinked folders, and `_to_delete` are skipped. Moves and copies are the
-exception: they take only the files directly in the folder you name, so files
-kept in its subfolders stay put. Renames and image edits keep files in their folders.
+symlinked folders, and `_to_delete` are skipped. Moves, copies, and deletes are
+the exception: they take only the files directly in the folder you name, so
+files kept in its subfolders stay put. End the command with “including
+subfolders” to reach them too, as in “delete PDFs in Downloads including
+subfolders”, or list the files first and then say “delete them”. Elsewhere in a
+command those words are refused rather than read as part of a name; quote a
+name that contains them. Renames and image edits keep files in their
+folders.
 
 Searches reuse one folder scan per command. The window shows progress, and you
 can cancel with Esc or Cancel. If a scan reaches its depth, entry, or time limit,
@@ -94,13 +99,24 @@ contradictory or repeated bounds are refused rather than silently discarded.
 Use “undo last” for the newest change; selecting an earlier move or delete by
 its operation type isn't supported.
 
+## From Finder
+
+Select files in Finder, right-click, and choose **Organize with Voxi** (under
+Quick Actions or Services). Voxi opens with those files as the ones “these”
+and “them” refer to, so you can say “move these to Receipts”. Folders,
+symbolic links, and anything outside the folders Voxi may use are left out,
+and Voxi says which. The files are checked again before anything runs. If the
+item is missing, turn it on in System Settings → Keyboard → Keyboard
+Shortcuts → Services (on macOS 12, System Preferences → Keyboard → Shortcuts →
+Services).
+
 ## Dictation
 
-Use an external dictation app such as [Hex by Anomaly](https://anoma.ly/hex/) or [Wispr Flow](https://wisprflow.ai).
+Use an external dictation app such as [Wispr Flow](https://wisprflow.ai) or [Hex by Anomaly](https://anoma.ly/hex/).
 Hex downloads a speech model once, then transcribes locally and pastes into the
 focused app. Its Mac download requires Apple silicon and macOS 15 or later.
 
-Open Voxi, focus the command bar, dictate with Hex, then press Enter to review
+Open Voxi, focus the command bar, dictate with Wispr Flow or Hex, then press Enter to review
 the command. Other dictation apps work too. Voxi has no built-in recording or
 speech recognition and doesn't request microphone or speech permissions.
 
@@ -371,7 +387,9 @@ entitlements and both CPU slices, and only then publishes:
 
 Versions are `0.2.N`: each release is one past the newest published
 `v0.2.N` tag, so pull request runs and failed runs never use up a number.
-Change `SERIES` in the workflow to start a new line.
+Change `SERIES` in the workflow to start a new line. The manifests in the
+repository stay at `0.0.0`, so a local build is never mistaken for a release;
+only the release job writes the real version.
 
 Signing has two modes, chosen by which secrets exist:
 

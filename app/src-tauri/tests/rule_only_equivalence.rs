@@ -1,14 +1,21 @@
 //! Compare actual application planning/execution in independently built binaries.
-use std::{fs, process::Command};
 use serde_json::Value;
+use std::{fs, process::Command};
 
 fn normalize(value: &mut Value) {
     match value {
         Value::Object(fields) => {
+            // The probe validates each recorded identity against its own
+            // fixture. Re-creating that fixture allocates fresh inodes and times.
+            let file_identity = ["dev", "ino", "size", "mtime", "mtime_nsec"].iter().all(|field| fields.contains_key(*field));
             for (key, value) in fields {
-                if ["id", "time", "scheduledFor", "due"].contains(&key.as_str()) && !value.is_null() {
+                if file_identity && ["ino", "mtime", "mtime_nsec"].contains(&key.as_str()) {
+                    *value = Value::String("<fixture-specific>".into());
+                } else if ["id", "time", "scheduledFor", "due"].contains(&key.as_str()) && !value.is_null() {
                     *value = Value::String("<timestamp-or-id>".into());
-                } else { normalize(value); }
+                } else {
+                    normalize(value);
+                }
             }
         }
         Value::Array(items) => items.iter_mut().for_each(normalize),
@@ -23,7 +30,9 @@ fn serialized_public_outcomes_match_without_models() {
     let home = dir.path().join("fixture");
     let mut results = Vec::new();
     for tiny in [false, true] {
-        if home.exists() { fs::remove_dir_all(&home).unwrap(); }
+        if home.exists() {
+            fs::remove_dir_all(&home).unwrap();
+        }
         fs::create_dir(&home).unwrap();
         // Cargo holds its target lock while this test runs. Execute the two
         // library test artifacts directly rather than recursively invoking Cargo.
@@ -35,9 +44,11 @@ fn serialized_public_outcomes_match_without_models() {
         let variant = if tiny { "tiny-model" } else { "default" };
         let binary = registered_binary(&deps, variant).unwrap_or_else(|e| panic!("{e}"));
         let mut command = Command::new(binary);
-        command.args(["--exact", "result_context_tests::rule_only_probe"])
+        command
+            .args(["--exact", "result_context_tests::rule_only_probe"])
             .env("VOXI_EQUIVALENCE_HOME", &home)
-            .env_remove("VOXI_PLAN_MODEL_DIR").env_remove("VOXI_TINY_MODEL_DIR");
+            .env_remove("VOXI_PLAN_MODEL_DIR")
+            .env_remove("VOXI_TINY_MODEL_DIR");
         let output = command.output().unwrap();
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
         let mut value: Value = serde_json::from_slice(&fs::read(home.join("outcomes.json")).unwrap()).unwrap();
@@ -53,7 +64,8 @@ fn serialized_public_outcomes_match_without_models() {
 /// The profile folder (e.g. `target/debug`) above a test binary, in both the
 /// `debug/deps/<bin>` and `debug/build/<pkg>/<hash>/out/<bin>` layouts.
 fn profile_dir(exe: &std::path::Path) -> std::path::PathBuf {
-    exe.ancestors().skip(1)
+    exe.ancestors()
+        .skip(1)
         .find(|dir| matches!(dir.file_name().and_then(|n| n.to_str()), Some("deps" | "build")))
         .and_then(std::path::Path::parent)
         .unwrap_or_else(|| exe.parent().expect("test binary folder"))
@@ -61,18 +73,22 @@ fn profile_dir(exe: &std::path::Path) -> std::path::PathBuf {
 }
 
 fn registered_binary(deps: &std::path::Path, variant: &str) -> Result<std::path::PathBuf, String> {
-    let instruction = format!("Run cargo test --locked --lib{} first, with the same target directory and profile.",
-        if variant == "tiny-model" { " --features tiny-model" } else { "" });
+    let instruction = format!(
+        "Run cargo test --locked --lib{} first, with the same target directory and profile.",
+        if variant == "tiny-model" { " --features tiny-model" } else { "" }
+    );
     let manifest = deps.join(format!("voxi-equivalence-{variant}.json"));
-    let binary: std::path::PathBuf = serde_json::from_slice(&fs::read(&manifest)
-        .map_err(|e| format!("Missing {variant} library test registration: {e}. {instruction}"))?)
-        .map_err(|e| format!("Invalid {variant} registration: {e}. {instruction}"))?;
-    let built = fs::metadata(&binary).and_then(|m| m.modified())
-        .map_err(|e| format!("Missing {variant} binary: {e}. {instruction}"))?;
+    let binary: std::path::PathBuf = serde_json::from_slice(
+        &fs::read(&manifest).map_err(|e| format!("Missing {variant} library test registration: {e}. {instruction}"))?,
+    )
+    .map_err(|e| format!("Invalid {variant} registration: {e}. {instruction}"))?;
+    let built = fs::metadata(&binary).and_then(|m| m.modified()).map_err(|e| format!("Missing {variant} binary: {e}. {instruction}"))?;
     fn newest(path: &std::path::Path) -> std::io::Result<std::time::SystemTime> {
         let mut time = fs::metadata(path)?.modified()?;
         if path.is_dir() {
-            for entry in fs::read_dir(path)? { time = time.max(newest(&entry?.path())?); }
+            for entry in fs::read_dir(path)? {
+                time = time.max(newest(&entry?.path())?);
+            }
         }
         Ok(time)
     }
@@ -109,7 +125,11 @@ fn registration_selects_exact_artifact_and_rejects_stale_binary() {
     fs::write(dir.path().join("voxi_lib-newer-unregistered"), "unrelated").unwrap();
     fs::write(dir.path().join("voxi-equivalence-default.json"), serde_json::to_vec(&binary).unwrap()).unwrap();
     assert_eq!(registered_binary(dir.path(), "default").unwrap(), binary);
-    fs::File::options().write(true).open(&binary).unwrap()
-        .set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::UNIX_EPOCH)).unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&binary)
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_modified(std::time::SystemTime::UNIX_EPOCH))
+        .unwrap();
     assert!(registered_binary(dir.path(), "default").unwrap_err().contains("Stale default library binary"));
 }

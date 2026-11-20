@@ -5,10 +5,10 @@
 //! delete, or choose to send, and `scripts/feedback-to-corpus.mjs` turns them
 //! into regression-corpus candidates.
 
-use crate::settings::{nickname_key, Nickname, Settings, Shortcut};
+use crate::settings::{Nickname, Settings, Shortcut, nickname_key};
 use chrono::Local;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};

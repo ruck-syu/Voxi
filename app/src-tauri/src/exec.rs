@@ -1343,4 +1343,29 @@ mod tests {
         assert!(guard_open(&roots, &inside).is_ok());
         assert!(guard_open(&roots, Path::new("/etc/passwd")).is_err());
     }
+
+    #[test]
+    fn case_only_rename_step_and_undo_preserve_exact_case() {
+        let (_dir, roots) = setup();
+        let docs = roots.home.join("Documents");
+        let upper = docs.join("Report.pdf");
+        fs::write(&upper, b"report").unwrap();
+        let entry_names = || -> Vec<String> {
+            let mut names: Vec<String> =
+                fs::read_dir(&docs).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+            names.sort();
+            names
+        };
+
+        let out = run(&[Action::Rename { path: upper.clone(), new_name: "report.pdf".into() }], &roots);
+        assert!(out.terminal.error().is_none(), "{:?}", out.terminal);
+        assert_eq!(entry_names(), vec!["report.pdf"]);
+        assert_eq!(out.inverse.len(), 1);
+        out.inverse[0].validate().unwrap();
+
+        let undo = run(&[out.inverse[0].action.clone()], &roots);
+        assert!(undo.terminal.error().is_none(), "{:?}", undo.terminal);
+        assert_eq!(entry_names(), vec!["Report.pdf"]);
+        assert_eq!(fs::read(&upper).unwrap(), b"report");
+    }
 }

@@ -345,7 +345,7 @@ pub(crate) fn rename_exclusive(from: &Path, to: &Path) -> Publication {
     revalidate_parent(to, &parent)?;
     let meta = fs::symlink_metadata(from).map_err(|e| e.to_string())?;
     let identity = FileIdentity::from_metadata(&meta);
-    if meta.is_dir() {
+    if meta.is_dir() || same_entry_rename(from, to) {
         rename_no_replace(from, to).map_err(|error| rename_error(to, error))?;
     } else if let Err(error) = fs::hard_link(from, to) {
         rename_after_link_failure(from, to, error)?;
@@ -395,8 +395,28 @@ fn rename_error(to: &Path, error: std::io::Error) -> PublishError {
     if error.raw_os_error() == Some(libc::EXDEV) { PublishError::CrossDevice(message) } else { PublishError::Clean(message) }
 }
 
+fn same_entry_rename(from: &Path, to: &Path) -> bool {
+    let (Some(from_parent), Some(to_parent)) = (from.parent(), to.parent()) else { return false };
+    let (Some(from_name), Some(to_name)) = (from.file_name(), to.file_name()) else { return false };
+    if from_name == to_name {
+        return false;
+    }
+    let Ok(fp) = fs::canonicalize(from_parent) else { return false };
+    let Ok(tp) = fs::canonicalize(to_parent) else { return false };
+    if fp != tp {
+        return false;
+    }
+    match (FileIdentity::read(from), FileIdentity::read(to)) {
+        (Ok(a), Ok(b)) => a.same_object(&b),
+        _ => false,
+    }
+}
+
 fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> Result<(), PublishError> {
-    if error.kind() == std::io::ErrorKind::Unsupported || matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK)) {
+    if error.kind() == std::io::ErrorKind::Unsupported
+        || matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK))
+        || (error.kind() == std::io::ErrorKind::AlreadyExists && same_entry_rename(from, to))
+    {
         return rename_no_replace(from, to).map_err(|error| rename_error(to, error));
     }
     Err(rename_error(to, error))
@@ -650,5 +670,34 @@ mod tests {
         assert!(!roots.is_allowed(&home.path().join("Downloads/../secret.txt")));
         assert!(!roots.is_allowed(&home.path().join("Library/a.txt")));
         assert!(!roots.is_allowed(Path::new("/etc/hosts")));
+    }
+
+    #[test]
+    fn case_only_rename_succeeds_without_clobbering_distinct_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let upper = dir.path().join("Report.pdf");
+        let lower = dir.path().join("report.pdf");
+        fs::write(&upper, b"report").unwrap();
+        rename_exclusive(&upper, &lower).unwrap();
+        let names = || -> Vec<String> {
+            let mut v: Vec<String> = fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(names(), vec!["report.pdf"]);
+        assert_eq!(fs::read(&lower).unwrap(), b"report");
+
+        // Must still refuse clobbering a genuinely different existing file.
+        let other = dir.path().join("other.pdf");
+        fs::write(&other, b"keep").unwrap();
+        assert!(rename_exclusive(&lower, &other).is_err());
+        assert_eq!(fs::read(&lower).unwrap(), b"report");
+        assert_eq!(fs::read(&other).unwrap(), b"keep");
+
+        // Must still refuse renaming one hard link onto a distinct hard link of the same inode.
+        let alias = dir.path().join("alias.pdf");
+        fs::hard_link(&lower, &alias).unwrap();
+        assert!(rename_exclusive(&lower, &alias).is_err());
+        assert!(lower.exists() && alias.exists());
     }
 }

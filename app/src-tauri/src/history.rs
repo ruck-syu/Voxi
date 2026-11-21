@@ -5,11 +5,12 @@ use crate::model::Action;
 use crate::settings::{StorageWarning, load_store, save_store};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 const MAX_ENTRIES: usize = 200;
+const MAX_SNAPSHOT_DESCENDANTS: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Inverse {
@@ -21,6 +22,10 @@ pub(crate) struct Inverse {
 struct IdentityCheck {
     root: FileIdentity,
     descendants: BTreeMap<PathBuf, FileIdentity>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    opaque: BTreeSet<PathBuf>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    truncated: bool,
 }
 
 impl IdentityCheck {
@@ -37,7 +42,8 @@ impl IdentityCheck {
                 (!child.as_os_str().is_empty()).then(|| (child.to_path_buf(), identity.clone()))
             })
             .collect();
-        Some(Self { root, descendants })
+        let opaque = self.opaque.iter().filter_map(|path| path.strip_prefix(relative).ok().map(Path::to_path_buf)).collect();
+        Some(Self { root, descendants, opaque, truncated: false })
     }
 
     fn contains(&self, relative: &Path) -> bool {
@@ -81,18 +87,55 @@ impl IdentityUpdates {
     }
 }
 
-fn snapshot(path: &Path, expected: &FileIdentity, empty_folder_only: bool) -> Result<IdentityCheck, String> {
-    fn descendants(root: &Path, directory: &Path, found: &mut BTreeMap<PathBuf, FileIdentity>) -> std::io::Result<()> {
-        for child in fs::read_dir(directory)? {
-            let path = child?.path();
-            let meta = fs::symlink_metadata(&path)?;
+fn snapshot(path: &Path, expected: &FileIdentity, empty_folder_only: bool, top_level_only: bool) -> Result<IdentityCheck, String> {
+    enum Walk {
+        Complete,
+        Truncated,
+    }
+    fn descendants(
+        root: &Path,
+        directory: &Path,
+        found: &mut BTreeMap<PathBuf, FileIdentity>,
+        opaque: &mut BTreeSet<PathBuf>,
+    ) -> std::io::Result<Walk> {
+        let entries = match fs::read_dir(directory) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                let relative = directory.strip_prefix(root).expect("directory is at or below root");
+                opaque.insert(relative.to_path_buf());
+                return Ok(Walk::Complete);
+            }
+            Err(e) => return Err(e),
+        };
+        for child in entries {
+            let path = match child {
+                Ok(entry) => entry.path(),
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    let relative = directory.strip_prefix(root).expect("directory is at or below root");
+                    opaque.insert(relative.to_path_buf());
+                    return Ok(Walk::Complete);
+                }
+                Err(e) => return Err(e),
+            };
+            let meta = match fs::symlink_metadata(&path) {
+                Ok(meta) => meta,
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                    let relative = directory.strip_prefix(root).expect("directory is at or below root");
+                    opaque.insert(relative.to_path_buf());
+                    return Ok(Walk::Complete);
+                }
+                Err(e) => return Err(e),
+            };
+            if found.len() >= MAX_SNAPSHOT_DESCENDANTS {
+                return Ok(Walk::Truncated);
+            }
             let relative = path.strip_prefix(root).expect("read_dir yields paths below the root");
             found.insert(relative.to_path_buf(), FileIdentity::from_metadata(&meta));
-            if meta.is_dir() {
-                descendants(root, &path, found)?;
+            if meta.is_dir() && matches!(descendants(root, &path, found, opaque)?, Walk::Truncated) {
+                return Ok(Walk::Truncated);
             }
         }
-        Ok(())
+        Ok(Walk::Complete)
     }
 
     let changed = || format!("Voxi can't undo this change because {} is missing, was replaced, or has changed.", path.display());
@@ -103,10 +146,18 @@ fn snapshot(path: &Path, expected: &FileIdentity, empty_folder_only: bool) -> Re
         return Err(changed());
     }
     let mut children = BTreeMap::new();
-    if meta.is_dir() && !empty_folder_only {
-        descendants(path, path, &mut children).map_err(|_| changed())?;
+    let mut opaque = BTreeSet::new();
+    let mut truncated = top_level_only && !empty_folder_only;
+    if meta.is_dir()
+        && !empty_folder_only
+        && !top_level_only
+        && matches!(descendants(path, path, &mut children, &mut opaque).map_err(|_| changed())?, Walk::Truncated)
+    {
+        children.clear();
+        opaque.clear();
+        truncated = true;
     }
-    Ok(IdentityCheck { root, descendants: children })
+    Ok(IdentityCheck { root, descendants: children, opaque, truncated })
 }
 
 impl Inverse {
@@ -125,8 +176,11 @@ impl Inverse {
             return Err("Undo identities are incomplete.".into());
         }
         let empty_folder_only = matches!(action, Action::RemoveEmptyFolder { .. });
-        let identities =
-            paths.into_iter().zip(expected).map(|(path, id)| snapshot(path, id, empty_folder_only)).collect::<Result<_, _>>()?;
+        let identities = paths
+            .into_iter()
+            .zip(expected)
+            .map(|(path, id)| snapshot(path, id, empty_folder_only, false))
+            .collect::<Result<_, _>>()?;
         Ok(Self { action, identities })
     }
 
@@ -156,7 +210,7 @@ impl Inverse {
             if supplied_by_earlier_step(path) {
                 continue;
             }
-            let actual = snapshot(path, &expected.root, empty_folder_only)?;
+            let actual = snapshot(path, &expected.root, empty_folder_only, expected.truncated)?;
             // Our own steps can put files in a created folder and take them
             // back out. Its inverse uses rmdir, which only removes it empty.
             if !empty_folder_only && actual != *expected {
@@ -478,5 +532,54 @@ mod tests {
             assert!(history.entries.iter().any(|entry| entry.id == 8));
             assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
         }
+    }
+
+    #[test]
+    fn snapshot_tolerates_unreadable_subfolder_as_opaque_and_validates_undo() {
+        use std::os::unix::fs::PermissionsExt;
+        struct RestoreMode(PathBuf);
+        impl Drop for RestoreMode {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("folder");
+        let secret = folder.join("secret");
+        fs::create_dir_all(&secret).unwrap();
+        fs::write(secret.join("inside.txt"), b"hidden").unwrap();
+        fs::write(folder.join("visible.txt"), b"visible").unwrap();
+        fs::set_permissions(&secret, fs::Permissions::from_mode(0o000)).unwrap();
+        let _restore = RestoreMode(secret.clone());
+
+        let action = Action::Move { from: folder.clone(), to: dir.path().join("dest") };
+        let id = FileIdentity::read(&folder).unwrap();
+        let inverse = Inverse::capture(action, &[id]).expect("unreadable subfolder must not break snapshot capture");
+        inverse.validate().expect("unchanged folder with unreadable subfolder must validate for undo");
+
+        // Modifying a visible child still invalidates undo.
+        fs::write(folder.join("visible.txt"), b"edited").unwrap();
+        assert!(inverse.validate().is_err());
+    }
+
+    #[test]
+    fn snapshot_degrades_to_top_level_identity_beyond_descendant_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("huge");
+        fs::create_dir(&folder).unwrap();
+        for i in 0..=MAX_SNAPSHOT_DESCENDANTS {
+            fs::write(folder.join(format!("f{i}.txt")), b"x").unwrap();
+        }
+        let action = Action::Move { from: folder.clone(), to: dir.path().join("dest") };
+        let id = FileIdentity::read(&folder).unwrap();
+        let inverse = Inverse::capture(action, &[id]).unwrap();
+        assert!(inverse.identities[0].truncated);
+        assert!(inverse.identities[0].descendants.is_empty());
+        let encoded = serde_json::to_vec(&inverse).unwrap();
+        assert!(encoded.len() < 1024, "truncated inverse should stay compact, got {} bytes", encoded.len());
+        inverse.validate().unwrap();
+        // Top-level changes still invalidate undo.
+        fs::write(folder.join("added.txt"), b"new").unwrap();
+        assert!(inverse.validate().is_err());
     }
 }

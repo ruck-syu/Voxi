@@ -877,4 +877,52 @@ mod tests {
             .collect();
         assert!(backups.is_empty(), "future version must not be treated as corruption: {backups:?}");
     }
+
+    #[test]
+    fn moving_and_trashing_folder_with_unreadable_subfolder_preserves_undo() {
+        use std::os::unix::fs::PermissionsExt;
+        struct RestoreModes(Vec<std::path::PathBuf>);
+        impl Drop for RestoreModes {
+            fn drop(&mut self) {
+                for p in &self.0 {
+                    let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755));
+                }
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        for folder in ["Downloads", "Documents"] {
+            std::fs::create_dir(dir.path().join(folder)).unwrap();
+        }
+        let roots = Roots::new(dir.path(), None, &[]);
+        let history_path = dir.path().join("history.json");
+        let mut history = History::load(history_path);
+        let path = history.journal_path();
+
+        let src = dir.path().join("Downloads/Box");
+        let dst = dir.path().join("Documents/Box");
+        let trashed = dir.path().join(".Trash/Box");
+        std::fs::create_dir_all(src.join("locked")).unwrap();
+        std::fs::write(src.join("locked/secret.txt"), b"secret").unwrap();
+        std::fs::write(src.join("a.txt"), b"a").unwrap();
+        std::fs::set_permissions(src.join("locked"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let _guard = RestoreModes(vec![src.join("locked"), dst.join("locked"), trashed.join("locked")]);
+
+        // Move succeeds cleanly, journal stays clear, and undo restores the folder.
+        let out = run(&path, &[Action::Move { from: src.clone(), to: dst.clone() }], &roots, entry(), &mut history).unwrap();
+        assert!(matches!(out.terminal, RunOutcome::Completed), "{:?}", out.terminal);
+        assert!(status(&path).unwrap().is_none());
+        let undo = undo_actions(history.last_undoable().unwrap());
+        let out = run(&path, &undo, &roots, Entry::new(2, "undo move".into(), Some(1)), &mut history).unwrap();
+        assert!(matches!(out.terminal, RunOutcome::Completed), "{:?}", out.terminal);
+        assert!(src.exists() && !dst.exists());
+
+        // Trash also succeeds cleanly, journal stays clear, and undo restores the folder.
+        let out = run(&path, &[Action::Trash { path: src.clone() }], &roots, Entry::new(3, "trash box".into(), None), &mut history).unwrap();
+        assert!(matches!(out.terminal, RunOutcome::Completed), "{:?}", out.terminal);
+        assert!(status(&path).unwrap().is_none());
+        let undo = undo_actions(history.last_undoable().unwrap());
+        let out = run(&path, &undo, &roots, Entry::new(4, "undo trash".into(), Some(3)), &mut history).unwrap();
+        assert!(matches!(out.terminal, RunOutcome::Completed), "{:?}", out.terminal);
+        assert!(src.exists());
+    }
 }

@@ -477,3 +477,33 @@ impl SourceFixtureExt for Source {
         }
     }
 }
+
+#[test]
+fn from_subfolders_targets_only_a_named_folders_subfolders() {
+    for command in [
+        "delete the pdfs in downloads from subfolders",
+        "delete PDFs in Downloads from its subfolders",
+        "delete PDFs in Downloads from all subfolders",
+        "delete PDFs in Downloads only in subfolders",
+        "delete PDFs in Downloads in subfolders only",
+    ] {
+        match parse(command) {
+            Ok(Intent::Trash { src: Source::Set { folder: Some(folder), filter } }) => {
+                assert!(folder.eq_ignore_ascii_case("downloads"), "{command}: {folder}");
+                assert!(filter.include_subfolders && filter.only_subfolders, "{command}: {filter:?}");
+                assert_eq!(filter.file_type, Some(FileType::Pdfs), "{command}");
+            }
+            other => panic!("{command}: {other:?}"),
+        }
+    }
+    // "including subfolders" still reaches the folder's own files too.
+    match parse("delete PDFs in Downloads including subfolders") {
+        Ok(Intent::Trash { src: Source::Set { filter, .. } }) => assert!(filter.include_subfolders && !filter.only_subfolders),
+        other => panic!("{other:?}"),
+    }
+    // Without a named folder there is nothing to take subfolders of; lists
+    // and counts can't yet separate a folder's own files.
+    for command in ["delete PDFs from subfolders", "trash PDFs from its subfolders", "list PDFs in Downloads from subfolders"] {
+        assert!(parse(command).is_err(), "{command}: {:?}", parse(command));
+    }
+}

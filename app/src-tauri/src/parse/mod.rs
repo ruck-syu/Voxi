@@ -144,6 +144,10 @@ pub(crate) enum Subfolders {
     /// "in its subfolders", "and its subfolders", "in subfolders" (normalized
     /// from "in all/the subfolders"): requires an explicit named folder.
     NeedsFolder,
+    /// "from subfolders", "only in subfolders", "in subfolders only": only the
+    /// named folder's subfolders, not the files directly in it. Requires a
+    /// named folder.
+    Only,
 }
 
 /// "Including subfolders", "and its subfolders", "recursively": opts a move,
@@ -151,7 +155,7 @@ pub(crate) enum Subfolders {
 /// words of a command; anywhere else the words are refused (`mentions_subfolders`).
 static SUBFOLDERS_TAIL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)(?:\s*,)?\s+(?:(?:including|incl\.?|and|with|plus)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:(?P<pronoun>its|their)\s+|the\s+)?sub-?folders(?:\s+too)?|(?P<in_branch>in\s+(?:all\s+(?:of\s+)?(?:its\s+|their\s+|the\s+)?|(?:its|their|the)\s+)?sub-?folders(?:\s+too)?)|recursively)\s*$",
+        r"(?i)(?:\s*,)?\s+(?:(?:including|incl\.?|and|with|plus)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:(?P<pronoun>its|their)\s+|the\s+)?sub-?folders(?:\s+too)?|(?P<in_branch>in\s+(?:all\s+(?:of\s+)?(?:its\s+|their\s+|the\s+)?|(?:its|their|the)\s+)?sub-?folders(?:\s+too)?)|(?P<only_branch>(?:from|only\s+(?:in|from))\s+(?:its\s+|their\s+)?sub-?folders(?:\s+only)?|in\s+(?:its\s+|their\s+)?sub-?folders\s+only)|recursively)\s*$",
     )
     .unwrap()
 });
@@ -163,7 +167,13 @@ pub(crate) fn split_subfolders(normalized: &str) -> (String, Subfolders) {
     match SUBFOLDERS_TAIL.captures(normalized) {
         Some(c) => {
             let m = c.get(0).unwrap();
-            let kind = if c.name("pronoun").is_some() || c.name("in_branch").is_some() { Subfolders::NeedsFolder } else { Subfolders::Any };
+            let kind = if c.name("only_branch").is_some() {
+                Subfolders::Only
+            } else if c.name("pronoun").is_some() || c.name("in_branch").is_some() {
+                Subfolders::NeedsFolder
+            } else {
+                Subfolders::Any
+            };
             (normalized[..m.start()].to_string(), kind)
         }
         None => (normalized.to_string(), Subfolders::None),
@@ -211,14 +221,20 @@ fn parse_single_classified(text: &str) -> Result<Intent, ParseFailure> {
         Intent::Move { src: Source::Set { folder, filter }, .. }
         | Intent::Copy { src: Source::Set { folder, filter }, .. }
         | Intent::Trash { src: Source::Set { folder, filter } } => {
-            if opt_in == Subfolders::NeedsFolder && folder.is_none() {
+            if matches!(opt_in, Subfolders::NeedsFolder | Subfolders::Only) && folder.is_none() {
                 return Err(ParseFailure::HardRefusal(RefusalReason::UnresolvedReference));
             }
             filter.include_subfolders = true;
+            filter.only_subfolders = opt_in == Subfolders::Only;
             Ok(intent)
         }
         // Lists and counts already look in subfolders.
         Intent::List { src: Source::Set { folder, .. } } | Intent::Count { src: Source::Set { folder, .. } } => {
+            // Lists and counts don't separate a folder's own files from its
+            // subfolders' yet: refuse rather than show both.
+            if opt_in == Subfolders::Only {
+                return Err(ParseFailure::HardRefusal(RefusalReason::UnsupportedFilter));
+            }
             if opt_in == Subfolders::NeedsFolder && folder.is_none() {
                 return Err(ParseFailure::HardRefusal(RefusalReason::UnresolvedReference));
             }

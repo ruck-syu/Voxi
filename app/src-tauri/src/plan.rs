@@ -602,6 +602,14 @@ impl<'a> Planner<'a> {
                     ));
                 }
             }
+            if filter.only_subfolders {
+                if self.scope.is_some() {
+                    return problem("“From subfolders” works on a named folder, not on the current list.");
+                }
+                let (dirs, _) = self.set_folders(folder.as_deref(), filter)?;
+                paths.retain(|p| !p.parent().is_some_and(|d| dirs.iter().any(|dir| fsx::same_file(d, dir))));
+                return Ok(0);
+            }
             if self.scope.is_none() && !anywhere && !filter.include_subfolders {
                 let (dirs, _) = self.set_folders(folder.as_deref(), filter)?;
                 let before = paths.len();

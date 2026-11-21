@@ -96,6 +96,10 @@ pub struct Filter {
     /// the named folder's subfolders, instead of only those directly in it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub include_subfolders: bool,
+    /// "From subfolders": with `include_subfolders`, reach only files in the
+    /// named folder's subfolders, leaving those directly in it alone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub only_subfolders: bool,
     /// The date the date filters read. None reads the creation date, like
     /// `Created`, but records that the command didn't say which.
     #[serde(skip_serializing_if = "Option::is_none")]

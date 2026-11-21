@@ -132,6 +132,7 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
                 super::Subfolders::None => rewritten,
                 super::Subfolders::Any => format!("{rewritten} including subfolders"),
                 super::Subfolders::NeedsFolder => format!("{rewritten} in its subfolders"),
+                super::Subfolders::Only => format!("{rewritten} from subfolders"),
             };
             let mut intent = parse_single_classified(&rewritten).map_err(|failure| match failure {
                 ParseFailure::HardRefusal(reason) => ParseFailure::HardRefusal(reason),

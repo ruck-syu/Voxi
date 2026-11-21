@@ -48,6 +48,7 @@ fn only_file_type(filter: &Filter) -> bool {
         && filter.name_starts_with.is_none()
         && filter.date_field.is_none()
         && !filter.include_subfolders
+        && !filter.only_subfolders
 }
 
 fn model_can_express(intent: &Intent) -> bool {

@@ -1414,3 +1414,36 @@ fn batch_rename_refuses_allowed_root_folder() {
         assert!(matches!(&result, Err(Stop::Problem(m)) if m.contains("rename an allowed root")), "{command}: {:?}", result.err());
     }
 }
+
+#[test]
+fn from_subfolders_reaches_only_files_in_them() {
+    let h = home();
+    let dl = h.roots.downloads();
+    fs::create_dir_all(dl.join("Project/docs")).unwrap();
+    fs::write(dl.join("bill.pdf"), b"a").unwrap();
+    fs::write(dl.join("Project/docs/spec.pdf"), b"b").unwrap();
+    fs::write(dl.join("Project/report.pdf"), b"c").unwrap();
+    fs::write(dl.join("Project/notes.txt"), b"d").unwrap();
+    for command in ["delete the pdfs in downloads from subfolders", "delete PDFs in Downloads only in subfolders"] {
+        let mut trashed: Vec<PathBuf> = steps(&h, command)
+            .into_iter()
+            .map(|a| match a {
+                Action::Trash { path } => path,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        trashed.sort();
+        assert_eq!(trashed, [dl.join("Project/docs/spec.pdf"), dl.join("Project/report.pdf")], "{command}");
+    }
+    let moved = steps(&h, "move PDFs from Downloads to Documents from subfolders");
+    assert_eq!(moved.iter().filter(|a| matches!(a, Action::Move { .. })).count(), 2, "{moved:?}");
+    assert!(dl.join("bill.pdf").exists());
+}
+
+#[test]
+fn from_subfolders_with_nothing_nested_says_so() {
+    let h = home();
+    let dl = h.roots.downloads();
+    fs::write(dl.join("bill.pdf"), b"a").unwrap();
+    assert!(matches!(plan(&h, "delete PDFs in Downloads from subfolders"), Err(Stop::Problem(_))));
+}

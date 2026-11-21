@@ -257,25 +257,36 @@ fn literal_in_text(needle: &str, text: &str) -> bool {
 /// semantic disagreement, so a repeating plan both paths understood was
 /// refused. Whole-word matching keeps the integrity check intact.
 fn original_spelling(value: &str, original: &str) -> Option<String> {
-    let needle: Vec<char> = value.chars().collect();
-    if needle.is_empty() {
+    let folded = value.to_lowercase();
+    if folded.is_empty() {
         return None;
     }
-    let folded = value.to_lowercase();
-    let chars: Vec<char> = original.chars().collect();
-    let boundary = |c: Option<&char>| c.is_none_or(|c| !c.is_alphanumeric() && *c != '_');
-    for start in 0..=chars.len().saturating_sub(needle.len()) {
-        let candidate: String = chars[start..start + needle.len()].iter().collect();
-        if candidate.to_lowercase() != folded {
-            continue;
+    let mut lower = String::with_capacity(original.len());
+    let mut orig_at: Vec<Option<usize>> = Vec::with_capacity(original.len() + 1);
+    for (orig_byte, ch) in original.char_indices() {
+        orig_at.push(Some(orig_byte));
+        let before = lower.len();
+        for lc in ch.to_lowercase() {
+            lower.push(lc);
         }
-        if !boundary(start.checked_sub(1).and_then(|i| chars.get(i))) {
-            continue;
+        for _ in 1..(lower.len() - before) {
+            orig_at.push(None);
         }
-        if !boundary(chars.get(start + needle.len())) {
-            continue;
+    }
+    orig_at.push(Some(original.len()));
+
+    let boundary = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+    let mut from = 0;
+    while let Some(offset) = lower[from..].find(&folded) {
+        let start = from + offset;
+        let end = start + folded.len();
+        if let (Some(orig_start), Some(orig_end)) = (orig_at[start], orig_at[end])
+            && boundary(original[..orig_start].chars().next_back())
+            && boundary(original[orig_end..].chars().next())
+        {
+            return Some(original[orig_start..orig_end].to_string());
         }
-        return Some(candidate);
+        from = start + lower[start..].chars().next().map_or(1, char::len_utf8);
     }
     None
 }
@@ -599,6 +610,12 @@ mod tests {
         }
         assert!(literal_in_text("archive", text));
         assert!(!literal_in_text("archives", text));
+    }
+    #[test]
+    fn original_spelling_handles_unicode_expansion_and_longer_needles() {
+        assert_eq!(original_spelling("i\u{307}", "İ").as_deref(), Some("İ"));
+        assert_eq!(original_spelling("longer", "hi"), None);
+        assert_eq!(original_spelling("i", "İ"), None);
     }
     #[test]
     fn single_quotes_bind_through_inner_apostrophes() {

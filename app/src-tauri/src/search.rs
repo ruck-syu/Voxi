@@ -42,6 +42,36 @@ mod tests {
     }
 
     #[test]
+    fn ancestor_cache_matches_differently_cased_and_symlinked_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let nested = dir.path().join("Nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("a.txt"), b"a").unwrap();
+        let link_parent = tempfile::tempdir().unwrap();
+        let link = link_parent.path().join("NestedLink");
+        std::os::unix::fs::symlink(&nested, &link).unwrap();
+
+        let search = Search::default();
+        assert_eq!(search.entries(dir.path()).len(), 2);
+        let visits = search.control.visited.load(Ordering::Relaxed);
+
+        let via_link = search.entries(&link);
+        assert_eq!(via_link.len(), 1);
+        assert_eq!(search.control.visited.load(Ordering::Relaxed), visits);
+
+        // On case-insensitive macOS filesystems, querying with different casing
+        // must hit the ancestor cache rather than returning [].
+        let lower_nested = dir.path().join("nested");
+        if fsx::same_file(&nested, &lower_nested) {
+            let search2 = Search::default();
+            assert_eq!(search2.entries(dir.path()).len(), 2);
+            let visits2 = search2.control.visited.load(Ordering::Relaxed);
+            assert_eq!(search2.entries(&lower_nested).len(), 1);
+            assert_eq!(search2.control.visited.load(Ordering::Relaxed), visits2);
+        }
+    }
+
+    #[test]
     fn limits_and_cancellation_are_explicit() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("nested")).unwrap();
@@ -98,6 +128,7 @@ impl Control {
 pub struct Entry {
     pub path: PathBuf,
     pub is_dir: bool,
+    canon: PathBuf,
 }
 
 /// Whether a command's scans saw everything they were asked to.
@@ -216,7 +247,7 @@ impl Search {
         // Folder resolution may already have scanned an ancestor.
         let ancestor = self.cache.borrow().iter().find(|(root, _)| key.starts_with(root)).map(|(_, entries)| entries.clone());
         let entries = if let Some(ancestor) = ancestor {
-            ancestor.iter().filter(|e| e.path != dir && e.path.starts_with(dir)).cloned().collect()
+            ancestor.iter().filter(|e| e.canon != key && e.canon.starts_with(&key)).cloned().collect()
         } else {
             let mut out = Vec::new();
             let mut remaining = self.limit;
@@ -281,7 +312,7 @@ impl Search {
             let hidden = !self.exclusions.is_empty() && self.exclusions.hides(&canon_path);
             if !is_dir {
                 if !hidden {
-                    out.push(Entry { path, is_dir });
+                    out.push(Entry { path, is_dir, canon: canon_path });
                 }
                 continue;
             }
@@ -289,7 +320,7 @@ impl Search {
                 continue;
             }
             if !hidden {
-                out.push(Entry { path: path.clone(), is_dir });
+                out.push(Entry { path: path.clone(), is_dir, canon: canon_path.clone() });
             }
             let bundle = path.extension().is_some_and(|e| matches!(e.to_str(), Some("app" | "photoslibrary" | "bundle" | "framework")));
             if is_dir && !bundle {

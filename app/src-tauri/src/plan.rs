@@ -767,6 +767,9 @@ impl<'a> Planner<'a> {
         let mut unchanged = 0;
         for p in &paths {
             self.check(p)?;
+            if self.roots.is_root(p) {
+                return problem("Voxi won't rename an allowed root folder itself. Name a folder inside it.");
+            }
             let old = file_name(p);
             match f(&old, p) {
                 Some(new) if new != old && !new.is_empty() && !new.contains('/') => self.push_rename(p, &new),
@@ -784,6 +787,9 @@ impl<'a> Planner<'a> {
         paths.sort_by_key(|p| (created(p), file_name(p)));
         for (i, p) in paths.iter().enumerate() {
             self.check(p)?;
+            if self.roots.is_root(p) {
+                return problem("Voxi won't rename an allowed root folder itself. Name a folder inside it.");
+            }
             let ext = split_name(&file_name(p)).1.map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
             let new = format!("{base}{:0width$}{ext}", i + 1);
             if new != file_name(p) {
@@ -1658,20 +1664,53 @@ fn replace_in_stem(name: &str, find: &str, rep: &str) -> Option<String> {
         return None;
     }
     let (stem, ext) = split_name(name);
-    let lower = stem.to_lowercase();
     let needle = find.to_lowercase();
-    if !lower.contains(&needle) {
+    if needle.is_empty() {
         return None;
     }
+    // Map each lowercased byte offset back to an original `stem` byte offset at
+    // original char boundaries so chars whose lowercase changes byte length
+    // (e.g. 'İ' -> "i\u{307}") never panic or slice mid-character.
+    let mut lower = String::with_capacity(stem.len());
+    let mut orig_at: Vec<Option<usize>> = Vec::with_capacity(stem.len() + 1);
+    for (orig_byte, ch) in stem.char_indices() {
+        orig_at.push(Some(orig_byte));
+        let before = lower.len();
+        for lc in ch.to_lowercase() {
+            lower.push(lc);
+        }
+        for _ in 1..(lower.len() - before) {
+            orig_at.push(None);
+        }
+    }
+    orig_at.push(Some(stem.len()));
+
     // Case-insensitive replace that keeps the rest of the name's casing.
     let mut out = String::new();
-    let mut i = 0;
-    while let Some(pos) = lower[i..].find(&needle) {
-        out.push_str(&stem[i..i + pos]);
-        out.push_str(rep);
-        i += pos + needle.len();
+    let mut orig_cursor = 0;
+    let mut lower_cursor = 0;
+    let mut matched = false;
+    while lower_cursor <= lower.len() {
+        let Some(rel) = lower[lower_cursor..].find(&needle) else {
+            break;
+        };
+        let match_start = lower_cursor + rel;
+        let match_end = match_start + needle.len();
+        if let (Some(orig_start), Some(orig_end)) = (orig_at[match_start], orig_at[match_end]) {
+            out.push_str(&stem[orig_cursor..orig_start]);
+            out.push_str(rep);
+            orig_cursor = orig_end;
+            lower_cursor = match_end;
+            matched = true;
+        } else {
+            let next_char_len = lower[match_start..].chars().next().map_or(1, char::len_utf8);
+            lower_cursor = match_start + next_char_len;
+        }
     }
-    out.push_str(&stem[i..]);
+    if !matched {
+        return None;
+    }
+    out.push_str(&stem[orig_cursor..]);
     Some(match ext {
         Some(e) => format!("{out}.{e}"),
         None => out,

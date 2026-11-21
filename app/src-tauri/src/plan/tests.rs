@@ -1384,3 +1384,33 @@ fn including_subfolders_reaches_files_in_them() {
     let moved = steps(&h, "move PDFs from Downloads to Documents including subfolders");
     assert_eq!(moved.iter().filter(|a| matches!(a, Action::Move { .. })).count(), 2, "{moved:?}");
 }
+
+#[test]
+fn replace_in_stem_handles_unicode_case_length_changes() {
+    assert_eq!(replace_in_stem("İ_draft.pdf", "draft", "final").as_deref(), Some("İ_final.pdf"));
+    assert_eq!(replace_in_stem("İ_draft.pdf", "İ", "I").as_deref(), Some("I_draft.pdf"));
+    assert_eq!(replace_in_stem("İ_draft.pdf", "i", "X"), None);
+    assert_eq!(replace_in_stem("İ_draft_i.pdf", "i", "X").as_deref(), Some("İ_draft_X.pdf"));
+}
+
+#[test]
+fn batch_rename_refuses_allowed_root_folder() {
+    let h = home();
+    let shots = h.roots.desktop().join("Screenshots");
+    fs::create_dir_all(&shots).unwrap();
+    let roots = Roots::new(&h.roots.home, Some(shots.clone()), &[]);
+    let h = Home { _dir: h._dir, roots };
+    assert!(h.roots.is_root(&shots));
+    // Unquoted "Screenshots" names the files inside it, which may be renamed.
+    for command in [
+        "add prefix old- to \"Screenshots\"",
+        "add prefix old- to Desktop/Screenshots",
+        "add date prefix to \"Screenshots\"",
+        "replace Screen with Old in \"Screenshots\"",
+        "lowercase names of \"Screenshots\"",
+        "add prefix old- to \"Downloads\"",
+    ] {
+        let result = plan(&h, command);
+        assert!(matches!(&result, Err(Stop::Problem(m)) if m.contains("rename an allowed root")), "{command}: {:?}", result.err());
+    }
+}

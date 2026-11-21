@@ -655,6 +655,7 @@ struct RecordedResult {
 pub enum Completion {
     OneTime { series: SeriesState, summary: String },
     Recurring(String),
+    Stopped(String),
     NeedsReview(String),
 }
 
@@ -1143,7 +1144,25 @@ impl Store {
         let (series, summary) = match completion {
             Completion::OneTime { series, summary } => (series, summary),
             Completion::NeedsReview(summary) => (SeriesState::NeedsReview, summary),
-            Completion::Recurring(summary) if first => (SeriesState::Active, summary),
+            Completion::Stopped(summary) => (SeriesState::Stopped, summary),
+            Completion::Recurring(mut summary) if first => {
+                let series = if due <= now {
+                    let rule = job.repeat.as_ref().ok_or("That task doesn't repeat.")?;
+                    match rule.next_after(due, now) {
+                        Some(next) => {
+                            due = next;
+                            SeriesState::Active
+                        }
+                        None => {
+                            summary.push_str(" The next run is too far away.");
+                            SeriesState::Failed
+                        }
+                    }
+                } else {
+                    SeriesState::Active
+                };
+                (series, summary)
+            }
             Completion::Recurring(summary) => {
                 let rule = job.repeat.as_ref().ok_or("That task doesn't repeat.")?;
                 let mut summary = format!("Last run {}: {summary}", display(now));
@@ -1659,5 +1678,31 @@ mod tests {
             Action::Move { from: dir.path().join("Empty/missing.txt"), to: dir.path().join("dest.txt") },
         ];
         assert!(Job::new("bad chain".into(), now(), bad).is_err());
+    }
+
+    #[test]
+    fn first_run_recurring_advances_due_when_run_overruns_interval() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("schedules.json");
+        let mut store = Store::load(path);
+        let t0 = now();
+        let (_, when) = extract_schedule("move PDFs to Documents every 30 minutes", t0).unwrap();
+        let when = when.unwrap();
+        let rule = when.rule.clone().unwrap();
+        let mut job = Job::recurring("move PDFs to Documents every 30 minutes".into(), &when, rule);
+        job.anchor_first_run(t0).unwrap();
+        let initial_due = job.due;
+        assert_eq!(initial_due, t0 + Duration::minutes(30));
+        let id = store.add(job).unwrap();
+
+        // First run took 45 minutes (> 30 minute interval), so due <= finished_at.
+        let finished_at = t0 + Duration::minutes(45);
+        store.finish(id, Completion::Recurring("Done.".into()), finished_at).unwrap();
+        let saved = &store.jobs[0];
+        assert_eq!(saved.series, SeriesState::Active);
+        assert_eq!(saved.occurrence, OccurrenceState::Waiting);
+        assert!(saved.due > finished_at, "due {} must advance past finished_at {}", saved.due, finished_at);
+        assert_eq!(saved.due, t0 + Duration::minutes(60));
+        assert!(store.claim(finished_at).unwrap().is_none(), "must not immediately fire again");
     }
 }

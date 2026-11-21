@@ -1029,24 +1029,39 @@ fn confirm_trimmed(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResul
             drop(store);
             let mut result = execute_pending(state, p, &is_cancelled);
             let run_summary = result.error.as_ref().map_or_else(|| result.summary.clone(), |error| format!("{} {error}", result.summary));
-            // As with later recurring runs, execution failures retain the series:
-            // missing files and collisions may be transient. Structural errors
-            // have already been rejected by validation above.
-            if let Err(error) = checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into())).finish(
-                job_id,
-                scheduler::Completion::Recurring(run_summary),
-                chrono::Local::now(),
-            ) {
-                let error = format!("Couldn't save the first run's result. Voxi will retry saving it. {error}");
-                result.error = Some(result.error.map_or(error.clone(), |first| format!("{first} {error}")));
-                return Ok(result);
+            // Uncertain outcomes require review and cancelled first runs stay stopped
+            // instead of activating the series. Ordinary execution failures still
+            // retain the series because missing files and collisions may be transient.
+            let completion = match result.status {
+                model::RunStatus::NeedsReview => scheduler::Completion::NeedsReview(run_summary),
+                model::RunStatus::Cancelled => scheduler::Completion::Stopped(run_summary),
+                _ => scheduler::Completion::Recurring(run_summary),
+            };
+            let finished = {
+                let mut store = checked_state!(state.schedules.lock(), Err("Voxi state is unavailable. Restart the app.".into()));
+                store
+                    .finish(job_id, completion, chrono::Local::now())
+                    .map(|()| store.jobs.iter().find(|j| j.id == job_id).map(|j| (j.series, j.due)))
+            };
+            let finished = match finished {
+                Ok(finished) => finished,
+                Err(error) => {
+                    let error = format!("Couldn't save the first run's result. Voxi will retry saving it. {error}");
+                    result.error = Some(result.error.map_or(error.clone(), |first| format!("{first} {error}")));
+                    if matches!(result.status, model::RunStatus::Completed) {
+                        result.status = if result.done > 0 { model::RunStatus::PartiallyFailed } else { model::RunStatus::Failed };
+                    }
+                    return Ok(result);
+                }
+            };
+            if let Some((scheduler::SeriesState::Active, next_due)) = finished {
+                let rule = job.repeat.as_ref().ok_or("That task doesn't repeat.")?;
+                result.summary.push_str(&format!(
+                    " Repeats {}; next run {}. Manage tasks in Settings → Scheduled.",
+                    rule.describe(next_due),
+                    scheduler::display(next_due)
+                ));
             }
-            let rule = job.repeat.as_ref().ok_or("That task doesn't repeat.")?;
-            result.summary.push_str(&format!(
-                " Repeats {}; next run {}. Manage tasks in Settings → Scheduled.",
-                rule.describe(job.due),
-                scheduler::display(job.due)
-            ));
             return Ok(result);
         }
         if job.due <= chrono::Local::now() {
@@ -1278,17 +1293,23 @@ fn run_recurring(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule,
         sched_skip(job);
         return scheduler::Completion::NeedsReview(message);
     }
-    scheduler::Completion::Recurring(execute_recurring_rule(state, job, rule, is_cancelled))
+    execute_recurring_rule(state, job, rule, is_cancelled)
 }
 
-fn execute_recurring_rule(state: &AppState, job: &scheduler::Job, rule: &scheduler::Rule, is_cancelled: &dyn Fn() -> bool) -> String {
-    let roots = checked_state!(state.roots.read(), "Voxi state is unavailable. Restart the app.".into()).clone();
+fn execute_recurring_rule(
+    state: &AppState,
+    job: &scheduler::Job,
+    rule: &scheduler::Rule,
+    is_cancelled: &dyn Fn() -> bool,
+) -> scheduler::Completion {
+    use scheduler::Completion;
+    let roots = checked_state!(state.roots.read(), Completion::Recurring("Voxi state is unavailable. Restart the app.".into())).clone();
     if let Err(e) = parse::check_length(&rule.command).map_err(|_| "That command is too long.".to_string()) {
         sched_skip(job);
-        return e;
+        return Completion::Recurring(e);
     }
     let planned = {
-        let history = checked_state!(state.history.lock(), "Voxi state is unavailable. Restart the app.".into());
+        let history = checked_state!(state.history.lock(), Completion::Recurring("Voxi state is unavailable. Restart the app.".into()));
         let planner = Planner::new(&roots, &rule.choices).with_control(search::Control::default());
         // Legacy model intent is ignored. Use the approved shortcut snapshot
         // or parse the approved standalone command against the current files.
@@ -1296,13 +1317,13 @@ fn execute_recurring_rule(state: &AppState, job: &scheduler::Job, rule: &schedul
             Some(scheduler::RuleSource::Shortcut { phrase, commands }) => {
                 if let Err(message) = settings::check_shortcut_commands(commands) {
                     sched_skip(job);
-                    return message;
+                    return Completion::Recurring(message);
                 }
                 match commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect::<Result<Vec<_>, _>>() {
                     Ok(commands) => planner.plan_shortcut(phrase, &commands, &history),
                     Err(bad) => {
                         sched_skip(job);
-                        return format!("Skipped: Voxi doesn't understand “{bad}” in “{phrase}”.");
+                        return Completion::Recurring(format!("Skipped: Voxi doesn't understand “{bad}” in “{phrase}”."));
                     }
                 }
             }
@@ -1310,7 +1331,7 @@ fn execute_recurring_rule(state: &AppState, job: &scheduler::Job, rule: &schedul
                 Ok(intent) => planner.plan(&intent, &history),
                 Err(_) => {
                     sched_skip(job);
-                    return format!("Skipped: Voxi doesn't understand “{}”.", rule.command);
+                    return Completion::Recurring(format!("Skipped: Voxi doesn't understand “{}”.", rule.command));
                 }
             },
         }
@@ -1318,12 +1339,12 @@ fn execute_recurring_rule(state: &AppState, job: &scheduler::Job, rule: &schedul
     match planned {
         Ok(Planned::Steps { actions, undo_of: None, .. }) if actions.is_empty() => {
             sched_skip(job);
-            "Nothing to change.".into()
+            Completion::Recurring("Nothing to change.".into())
         }
         Ok(Planned::Steps { actions, undo_of: None, .. }) => {
             if let Err(message) = scheduler::check_actions(&actions) {
                 sched_skip(job);
-                return format!("Skipped: {message}");
+                return Completion::Recurring(format!("Skipped: {message}"));
             }
             let result = execute_pending(
                 state,
@@ -1340,25 +1361,30 @@ fn execute_recurring_rule(state: &AppState, job: &scheduler::Job, rule: &schedul
                 },
                 is_cancelled,
             );
-            match result.error {
+            let summary = match result.error {
                 Some(error) => {
                     diagnostics::emit(Event::new(Code::SchedulerRun, Stage::Failed).operation(job.id));
                     format!("{} {error}", result.summary)
                 }
                 None => result.summary,
+            };
+            if matches!(result.status, model::RunStatus::NeedsReview) {
+                Completion::NeedsReview(summary)
+            } else {
+                Completion::Recurring(summary)
             }
         }
         Ok(_) => {
             sched_skip(job);
-            "Skipped: this command no longer changes files.".into()
+            Completion::Recurring("Skipped: this command no longer changes files.".into())
         }
         Err(Stop::Problem(message)) => {
             sched_skip(job);
-            format!("Nothing to change. {message}")
+            Completion::Recurring(format!("Nothing to change. {message}"))
         }
         Err(Stop::Ambiguous { name, .. }) => {
             sched_skip(job);
-            format!("Skipped: “{name}” matches more than one item. Schedule it again and pick one.")
+            Completion::Recurring(format!("Skipped: “{name}” matches more than one item. Schedule it again and pick one."))
         }
     }
 }
@@ -1421,7 +1447,9 @@ fn run_due_tasks_inner(state: &AppState) -> Result<(), String> {
                 &is_cancelled,
             );
             (
-                if result.error.is_some() {
+                if matches!(result.status, model::RunStatus::NeedsReview) {
+                    SeriesState::NeedsReview
+                } else if result.error.is_some() {
                     SeriesState::Failed
                 } else if result.cancelled {
                     SeriesState::Stopped

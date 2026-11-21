@@ -1799,3 +1799,85 @@ fn settings_write_blocked_refuses_save_and_surfaces_warning() {
     assert_eq!(err, warning.message);
     assert_eq!(fs::read(&f.state.settings_path).unwrap(), bad);
 }
+
+#[test]
+fn run_now_and_repeat_first_run_needs_review_cancelled_and_finish_failure() {
+    // NeedsReview on first run must mark the series NeedsReview, not Active.
+    {
+        let f = Fixture::new();
+        f.write("Downloads/a.dmg");
+        let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RunNowAndRepeat, .. } =
+            f.command("delete dmg files from downloads every day")
+        else {
+            panic!("expected RunNowAndRepeat plan")
+        };
+        fs::write(f.home.join(".Trash"), b"blocked").unwrap();
+        let result = confirm_input(&f.state, id).unwrap();
+        assert!(matches!(result.status, model::RunStatus::NeedsReview), "{:?}", result.status);
+        assert!(!result.summary.contains("Repeats "), "{}", result.summary);
+        let store = scheduler::Store::load(f.home.join("schedules.json"));
+        assert_eq!(store.jobs[0].series, scheduler::SeriesState::NeedsReview);
+        assert_eq!(store.jobs[0].occurrence, scheduler::OccurrenceState::Finished);
+    }
+
+    // Cancelled first run must not activate the series.
+    {
+        let f = Fixture::new();
+        let source = f.write("Downloads/a.pdf");
+        let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RunNowAndRepeat, .. } =
+            f.command("move PDFs from Downloads to Documents every day")
+        else {
+            panic!("expected RunNowAndRepeat plan")
+        };
+        request_stop(&f.state, RunKey::Plan(id)).unwrap();
+        let result = confirm_input(&f.state, id).unwrap();
+        assert!(matches!(result.status, model::RunStatus::Cancelled), "{:?}", result.status);
+        assert!(result.cancelled);
+        assert!(!result.summary.contains("Repeats "), "{}", result.summary);
+        assert!(source.exists());
+        let mut store = scheduler::Store::load(f.home.join("schedules.json"));
+        assert_eq!(store.jobs[0].series, scheduler::SeriesState::Stopped);
+        assert_eq!(store.jobs[0].occurrence, scheduler::OccurrenceState::Finished);
+        assert!(store.claim(chrono::Local::now() + chrono::Duration::days(10)).unwrap().is_none());
+    }
+
+    // finish() failure on a completed first run must produce a non-Completed status.
+    {
+        let f = Fixture::new();
+        f.write("Downloads/a.pdf");
+        let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RunNowAndRepeat, .. } =
+            f.command("move PDFs from Downloads to Documents every day")
+        else {
+            panic!("expected RunNowAndRepeat plan")
+        };
+        // Writes: store.add (1) + journal Prepared/InFlight/Ack/History/HistorySaved/Finished (6) = 7; fail write #8 (store.finish).
+        settings::WRITE_FAILURE.with(|w| w.set(2));
+        settings::WRITE_FAILURE_AFTER.with(|n| n.set(7));
+        settings::WRITE_FAILURE_ONCE.with(|o| o.set(true));
+        let result = confirm_input(&f.state, id).unwrap();
+        settings::WRITE_FAILURE.with(|w| w.set(0));
+        settings::WRITE_FAILURE_AFTER.with(|n| n.set(0));
+        settings::WRITE_FAILURE_ONCE.with(|o| o.set(false));
+        assert!(result.error.as_deref().is_some_and(|e| e.contains("Couldn't save the first run's result")), "{result:?}");
+        assert!(!matches!(result.status, model::RunStatus::Completed), "{:?}", result.status);
+    }
+}
+
+#[test]
+fn recurring_later_run_needs_review_marks_series_needs_review() {
+    let f = Fixture::new();
+    f.write("Downloads/a.dmg");
+    let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RepeatLater, .. } =
+        f.command("delete dmg files from downloads every day at 9 pm")
+    else {
+        panic!("expected RepeatLater plan")
+    };
+    confirm_input(&f.state, id).unwrap();
+    fs::write(f.home.join(".Trash"), b"blocked").unwrap();
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(1);
+    run_due_tasks(&f.state).unwrap();
+    let mut store = scheduler::Store::load(f.home.join("schedules.json"));
+    assert_eq!(store.jobs[0].series, scheduler::SeriesState::NeedsReview);
+    assert_eq!(store.jobs[0].occurrence, scheduler::OccurrenceState::Finished);
+    assert!(store.claim(chrono::Local::now() + chrono::Duration::days(10)).unwrap().is_none());
+}

@@ -178,36 +178,69 @@ function RecoveryNotice() {
 
 function ScheduledTab() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<number | null>(null);
   const [stoppingRun, setStoppingRun] = useState<string | null>(null);
   const [showing, setShowing] = useState<"active" | "done">("active");
+  const generation = useRef(0);
+  const aliveRef = useRef(true);
   useEffect(() => {
-    let alive = true;
-    const refresh = () => Promise.all([api.scheduledTasks(), api.schedulerNotice()]).then(([next, message]) => {
-      if (alive) { setTasks(next); setNotice(message); setLoading(false); setError(null); }
-    }).catch((e) => { if (alive) { setError(errorMessage(e)); setLoading(false); } });
+    aliveRef.current = true;
+    const refresh = () => {
+      const started = ++generation.current;
+      return Promise.all([api.scheduledTasks(), api.schedulerNotice()]).then(([next, message]) => {
+        if (aliveRef.current && started === generation.current) {
+          setTasks(next);
+          setNotice(message);
+          setLoading(false);
+          setPollError(null);
+        }
+      }).catch((e) => {
+        if (aliveRef.current && started === generation.current) {
+          setPollError(errorMessage(e));
+          setLoading(false);
+        }
+      });
+    };
     void refresh();
     const timer = window.setInterval(refresh, 2000);
-    return () => { alive = false; clearInterval(timer); };
+    return () => { aliveRef.current = false; clearInterval(timer); };
   }, []);
   const act = async (id: number, action: (id: number) => Promise<void>) => {
     setWorking(id);
-    try { await action(id); setTasks(await api.scheduledTasks()); setError(null); }
-    catch (e) { setError(errorMessage(e)); }
-    finally { setWorking(null); }
+    setActionError(null);
+    try {
+      await action(id);
+      const started = ++generation.current;
+      const next = await api.scheduledTasks();
+      if (aliveRef.current && started === generation.current) {
+        setTasks(next);
+        setLoading(false);
+        setPollError(null);
+      }
+    } catch (e) {
+      if (aliveRef.current) setActionError(errorMessage(e));
+    } finally {
+      if (aliveRef.current) setWorking(null);
+    }
   };
   const stopRun = async (task: ScheduledTask, run: string) => {
     setStoppingRun(run);
+    setActionError(null);
     try {
       await api.stopExecution(task.id, task.due);
+      ++generation.current;
     } catch (e) {
-      setStoppingRun((current) => current === run ? null : current);
-      setError(errorMessage(e));
+      if (aliveRef.current) {
+        setStoppingRun((current) => current === run ? null : current);
+        setActionError(errorMessage(e));
+      }
     }
   };
+  const error = actionError ?? pollError;
   const when = (task: ScheduledTask) => {
     const at = new Date(task.due).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
     if (!task.repeat) return at;
@@ -683,7 +716,14 @@ function ShortcutEditor({
 }
 
 /** "~/Work" from "/Users/me/Work/", the form allowed_folders returns. */
-const shownFolder = (path: string) => path.replace(/^\/Users\/[^/]+/, "~").replace(/\/$/, "");
+function shownFolder(path: string, home: string): string {
+  const clean = path.replace(/\/+$/, "") || "/";
+  if (!home) return clean;
+  const h = home.replace(/\/+$/, "");
+  if (clean === h) return "~";
+  if (clean.startsWith(`${h}/`)) return `~${clean.slice(h.length)}`;
+  return clean;
+}
 
 /** The four standard folders are always allowed; more can be added. Below
  *  them, the nicknames Voxi knows folders by. */
@@ -695,7 +735,7 @@ const isInside = (child: string, parent: string) => child.startsWith(`${parent}/
 function FoldersTab({ settings, persist, pickFolder }: TabProps & { pickFolder: FolderPicker }) {
   const [roots, setRoots] = useState<{ settings: Settings; folders: string[]; error?: string } | null>(null);
   const [addedPath, setAddedPath] = useState<string | null>(null);
-  const [home, setHome] = useState("");
+  const [home, setHome] = useState<string | null>(null);
   const [adding, setAdding] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const extra = settings.extraFolders.filter((f) => f.trim());
@@ -712,16 +752,20 @@ function FoldersTab({ settings, persist, pickFolder }: TabProps & { pickFolder: 
     return () => { current = false; };
   }, [settings]);
   useEffect(() => {
-    api.homeDir().then(setHome).catch(() => {});
+    let alive = true;
+    api.homeDir().then((h) => { if (alive) setHome(h); }).catch(() => { if (alive) setHome(""); });
+    return () => { alive = false; };
   }, []);
 
+  const resolvedHome = home ?? "";
+  const shownOf = (p: string) => shownFolder(p, resolvedHome);
   const currentRoots = roots?.settings === settings ? roots : null;
   const folders = currentRoots?.folders ?? [];
-  const missingAddedFolder = addedPath && extra.includes(addedPath) && currentRoots && !currentRoots.error
-    && !folders.includes(shownFolder(addedPath)) ? `Couldn't find “${addedPath}”. Check the path and try again.` : null;
+  const missingAddedFolder = addedPath && extra.includes(addedPath) && currentRoots && !currentRoots.error && home !== null
+    && !folders.includes(shownOf(addedPath)) ? `Couldn't find “${addedPath}”. Check the path and try again.` : null;
   const folderNote = note ?? currentRoots?.error ?? missingAddedFolder;
-  const absolute = (p: string) => (home && (p === "~" || p.startsWith("~/")) ? home + p.slice(1) : p).replace(/\/$/, "");
-  const builtIn = folders.filter((f) => !extra.some((x) => shownFolder(x) === f));
+  const absolute = (p: string) => (resolvedHome && (p === "~" || p.startsWith("~/")) ? resolvedHome + p.slice(1) : p).replace(/\/$/, "");
+  const builtIn = folders.filter((f) => !extra.some((x) => shownOf(x) === f));
   const rules: FolderRule[] = [
     ...builtIn.map((f) => ({ path: absolute(f), kind: "builtin" as const })),
     ...extra.map((f) => ({ path: absolute(f), kind: "added" as const })),
@@ -734,8 +778,9 @@ function FoldersTab({ settings, persist, pickFolder }: TabProps & { pickFolder: 
   const add = async (path: string) => {
     if (!path) return;
     setAddedPath(null);
-    const shown = shownFolder(path);
-    if (folders.includes(shown) || extra.some((x) => shownFolder(x) === shown)) {
+    const activeHome = home ?? (await api.homeDir().catch(() => ""));
+    const shown = shownFolder(path, activeHome);
+    if (folders.includes(shown) || extra.some((x) => shownFolder(x, activeHome) === shown)) {
       setAdding("");
       setNote(`“${shown}” is already allowed.`);
       return;
@@ -764,7 +809,7 @@ function FoldersTab({ settings, persist, pickFolder }: TabProps & { pickFolder: 
 
   /** − keeps Voxi out of a folder inside `rule`; + lets it back into one. */
   const pickInside = async (rule: FolderRule, mode: "exclude" | "include") => {
-    const shown = shownFolder(rule.path);
+    const shown = shownOf(rule.path);
     const picked = await pick({
       title: mode === "exclude" ? `Choose a folder in ${shown} for Voxi to leave alone` : `Choose a folder in ${shown} for Voxi to use again`,
       defaultPath: rule.path,
@@ -776,7 +821,7 @@ function FoldersTab({ settings, persist, pickFolder }: TabProps & { pickFolder: 
       return;
     }
     if (rules.some((o) => o.path === path)) {
-      setNote(`“${shownFolder(path)}” is already listed.`);
+      setNote(`“${shownOf(path)}” is already listed.`);
       return;
     }
     const next = mode === "exclude" ? { ...settings, excludedFolders: [...excluded, path] } : { ...settings, extraFolders: [...extra, path] };
@@ -799,8 +844,8 @@ function FoldersTab({ settings, persist, pickFolder }: TabProps & { pickFolder: 
   };
 
   const renderRule = (rule: FolderRule, depth: number): React.ReactNode[] => {
-    const shown = shownFolder(rule.path);
-    const label = depth > 0 && parentOf(rule) ? shownFolder(rule.path).slice(shownFolder(parentOf(rule)!.path).length + 1) : shown;
+    const shown = shownOf(rule.path);
+    const label = depth > 0 && parentOf(rule) ? shownOf(rule.path).slice(shownOf(parentOf(rule)!.path).length + 1) : shown;
     const isExcluded = rule.kind === "excluded";
     const row = (
       <Row

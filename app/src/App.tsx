@@ -162,8 +162,9 @@ export default function App() {
       cancelClose();
       showId.current = requestId;
       awaitingShow.current = requestId;
-      // Keep the confirmation and Stop control if the window is reopened mid-run.
-      if (!executingRef.current) {
+      // Keep the confirmation and Stop control if the window is reopened mid-run,
+      // and don't unmount Settings/Access while a folder picker or save is pending.
+      if (!executingRef.current && auxiliaryOperations.current.size === 0) {
         setCommandSession(requestId);
         setView((v) => (mode === "command" && v === "welcome" ? v : mode));
       }
@@ -236,6 +237,7 @@ export default function App() {
             onClose={close}
             onBusy={setBusy}
             onSettings={() => setView("settings")}
+            onSettingsChanged={setSettings}
           />}
         {view !== "command" && !settings && settingsError && (
           <section className="body">
@@ -312,11 +314,13 @@ function CommandView({
   onClose,
   onBusy,
   onSettings,
+  onSettingsChanged,
 }: {
   open: boolean;
   onClose: () => void;
   onBusy: (busy: boolean, executing?: boolean) => void;
   onSettings: () => void;
+  onSettingsChanged: (s: Settings) => void;
 }) {
   const [text, setText] = useState("");
   const [phase, setPhase] = useState<Phase>({ k: "ready" });
@@ -703,10 +707,7 @@ function CommandView({
       )}
       {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
         <span>{resultScope.count} {fromFinder ? (resultScope.count === 1 ? "file" : "files") : "results"} from {resultScope.label}{!fromFinder && resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
-        <button className="link" disabled={phase.k === "running"} onClick={() => {
-          reset();
-          void api.clearResultScope(scopeGeneration.current).then(() => setResultScope(null)).catch((e) => setPhase({ k: "error", message: errorMessage(e) }));
-        }}>Clear scope</button>
+        <button className="link" disabled={phase.k === "running"} onClick={reset}>Clear scope</button>
       </div>}
       {phase.k === "ready" && (fromFinder || selectionNotice) && (
         <p className="quiet selection-hint" role="status">
@@ -729,7 +730,7 @@ function CommandView({
         skipped={phase.k === "outcome" && phase.outcome.status === "plan" ? skippedFor(phase.outcome.id) : []}
         onToggleSkip={toggleSkip}
       />
-      {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onDone={() => { setOffer(null); focusInput(); }} />}
+      {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={onSettingsChanged} onDone={() => { setOffer(null); focusInput(); }} />}
       {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
       <Footer phase={phase} asking={!!asking} onSettings={onSettings} />
     </>
@@ -799,15 +800,15 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
 
 /** One offer to learn from what just happened: a folder's nickname, or a
  *  phrase that should run the command that worked. */
-function OfferRow({ offer, onDone }: { offer: Offer; onDone: () => void }) {
+function OfferRow({ offer, onSaved, onDone }: { offer: Offer; onSaved: (s: Settings) => void; onDone: () => void }) {
   const [state, setState] = useState<{ k: "asking" } | { k: "saved"; text: string } | { k: "error"; message: string }>({ k: "asking" });
   const accept = async () => {
     try {
       if (offer.k === "folder") {
-        await api.rememberFolder(offer.name, offer.path);
+        onSaved(await api.rememberFolder(offer.name, offer.path));
         setState({ k: "saved", text: `Saved. “${offer.name}” now means ${tildify(offer.path)}.` });
       } else {
-        await api.teachPhrase(offer.phrase, offer.command);
+        onSaved(await api.teachPhrase(offer.phrase, offer.command));
         setState({ k: "saved", text: `Saved. “${offer.phrase}” now runs “${offer.command}”. Change it under Shortcuts.` });
       }
     } catch (e) {

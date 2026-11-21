@@ -298,6 +298,174 @@ fn filters_after_move_destination_cannot_become_folder_names() {
     );
 }
 
+#[test]
+fn bare_modified_and_folder_named_modified_are_refused() {
+    use crate::model::{DateField, DayRef};
+    for command in [
+        "delete PDFs modified in Downloads",
+        "delete PDFs in Downloads that were modified",
+        "trash PDFs modified",
+        "delete PDFs in Downloads Modified",
+        "delete PDFs in Modified older than 30 days",
+        "trash files in Modified",
+    ] {
+        assert!(matches!(parse_classified(command), Err(ParseFailure::HardRefusal(_))), "{command}");
+    }
+    assert_eq!(
+        parse("delete PDFs in Downloads modified yesterday").unwrap(),
+        Intent::Trash {
+            src: Source::Set {
+                folder: Some("Downloads".into()),
+                filter: Filter {
+                    file_type: Some(FileType::Pdfs),
+                    day: Some(DayRef::Yesterday),
+                    date_field: Some(DateField::Modified),
+                    ..Default::default()
+                },
+            }
+        }
+    );
+    assert_eq!(
+        parse("trash November PDFs modified").unwrap(),
+        Intent::Trash {
+            src: Source::Set {
+                folder: None,
+                filter: Filter {
+                    file_type: Some(FileType::Pdfs),
+                    month: Some(11),
+                    date_field: Some(DateField::Modified),
+                    ..Default::default()
+                },
+            }
+        }
+    );
+}
+
+#[test]
+fn unscoped_subfolder_pronouns_and_in_subfolders_are_refused() {
+    for command in [
+        "delete PDFs in its subfolders",
+        "delete PDFs in their subfolders",
+        "delete PDFs and its subfolders",
+        "delete PDFs including its subfolders",
+        "delete PDFs in subfolders",
+        "delete PDFs in all subfolders",
+        "delete PDFs in the subfolders",
+        "list PDFs in its subfolders",
+        "create a folder named Archive in Downloads and delete PDFs in its subfolders",
+        "create a folder named Archive in Downloads and move PDFs into it in its subfolders",
+    ] {
+        assert!(matches!(parse_classified(command), Err(ParseFailure::HardRefusal(_))), "{command}");
+    }
+}
+
+#[test]
+fn named_folder_in_all_or_the_subfolders_opts_in() {
+    for command in [
+        "delete PDFs in Downloads in all subfolders",
+        "delete PDFs in Downloads in the subfolders",
+        "delete PDFs in Downloads in its subfolders",
+    ] {
+        assert_eq!(
+            parse(command).unwrap(),
+            Intent::Trash {
+                src: Source::Set {
+                    folder: Some("Downloads".into()),
+                    filter: Filter { file_type: Some(FileType::Pdfs), include_subfolders: true, ..Default::default() },
+                }
+            },
+            "{command}"
+        );
+    }
+    assert_eq!(
+        parse("move PDFs from Downloads to Archive in all subfolders").unwrap(),
+        Intent::Move {
+            src: Source::Set {
+                folder: Some("Downloads".into()),
+                filter: Filter { file_type: Some(FileType::Pdfs), include_subfolders: true, ..Default::default() },
+            },
+            to: "Archive".into(),
+        }
+    );
+    let Intent::Chain { commands } = parse("create a folder named Backup and copy PDFs from Downloads into it in all subfolders").unwrap()
+    else {
+        panic!("expected chain")
+    };
+    assert!(matches!(
+        &commands[1],
+        Intent::Copy {
+            src: Source::Set { folder: Some(folder), filter },
+            to,
+        } if folder == "Downloads" && filter.include_subfolders && to == "Desktop/Backup"
+    ));
+}
+
+#[test]
+fn post_destination_date_verb_filters_carry_date_field_or_refuse() {
+    use crate::model::{DateField, DayRef};
+    assert_eq!(
+        parse("move PDFs from Downloads to Archive modified yesterday").unwrap(),
+        Intent::Move {
+            src: Source::Set {
+                folder: Some("Downloads".into()),
+                filter: Filter {
+                    file_type: Some(FileType::Pdfs),
+                    day: Some(DayRef::Yesterday),
+                    date_field: Some(DateField::Modified),
+                    ..Default::default()
+                },
+            },
+            to: "Archive".into(),
+        }
+    );
+    assert_eq!(
+        parse("move PDFs from Downloads to Archive modified more than 30 days ago").unwrap(),
+        Intent::Move {
+            src: Source::Set {
+                folder: Some("Downloads".into()),
+                filter: Filter {
+                    file_type: Some(FileType::Pdfs),
+                    older_than_days: Some(30),
+                    date_field: Some(DateField::Modified),
+                    ..Default::default()
+                },
+            },
+            to: "Archive".into(),
+        }
+    );
+    assert_eq!(
+        parse("move PDFs from Downloads to Archive created yesterday").unwrap(),
+        Intent::Move {
+            src: Source::Set {
+                folder: Some("Downloads".into()),
+                filter: Filter { file_type: Some(FileType::Pdfs), day: Some(DayRef::Yesterday), date_field: None, ..Default::default() },
+            },
+            to: "Archive".into(),
+        }
+    );
+    assert_eq!(
+        parse("move photos from Downloads to Archive taken in March").unwrap(),
+        Intent::Move {
+            src: Source::Set {
+                folder: Some("Downloads".into()),
+                filter: Filter { file_type: Some(FileType::Images), month: Some(3), date_field: None, ..Default::default() },
+            },
+            to: "Archive".into(),
+        }
+    );
+    for command in [
+        "move PDFs from Downloads to Archive modified on February 30 2026",
+        "move PDFs from Downloads to Archive modified after 3 days",
+        "move report.pdf to Archive modified yesterday",
+    ] {
+        assert_eq!(parse_classified(command), Err(ParseFailure::HardRefusal(RefusalReason::InvalidConstraints)), "{command}");
+    }
+    assert_eq!(
+        parse("move PDFs from Downloads to \"Archive modified yesterday\"").unwrap(),
+        Intent::Move { src: set("Downloads", FileType::Pdfs, None), to: "Archive modified yesterday".into() }
+    );
+}
+
 trait SourceFixtureExt {
     fn pipe_folder(self, folder: &str) -> Self;
 }

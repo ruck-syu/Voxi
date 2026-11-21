@@ -136,23 +136,37 @@ pub fn parse_classified(text: &str) -> Result<Intent, ParseFailure> {
     parse_single_classified(text)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Subfolders {
+    None,
+    /// "including subfolders", "recursively", "and subfolders": valid on any set.
+    Any,
+    /// "in its subfolders", "and its subfolders", "in subfolders" (normalized
+    /// from "in all/the subfolders"): requires an explicit named folder.
+    NeedsFolder,
+}
+
 /// "Including subfolders", "and its subfolders", "recursively": opts a move,
 /// copy or delete into the named folder's subfolders. Read only as the last
 /// words of a command; anywhere else the words are refused (`mentions_subfolders`).
 static SUBFOLDERS_TAIL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)(?:\s*,)?\s+(?:(?:including|incl\.?|and|with|plus)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:its\s+|their\s+|the\s+)?sub-?folders(?:\s+too)?|in\s+(?:all\s+(?:of\s+)?(?:its\s+|their\s+|the\s+)?|its\s+|their\s+|the\s+)sub-?folders(?:\s+too)?|recursively)\s*$",
+        r"(?i)(?:\s*,)?\s+(?:(?:including|incl\.?|and|with|plus)\s+(?:all\s+|any\s+)?(?:of\s+)?(?:(?P<pronoun>its|their)\s+|the\s+)?sub-?folders(?:\s+too)?|(?P<in_branch>in\s+(?:all\s+(?:of\s+)?(?:its\s+|their\s+|the\s+)?|(?:its|their|the)\s+)?sub-?folders(?:\s+too)?)|recursively)\s*$",
     )
     .unwrap()
 });
 static SUBFOLDER_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bsub-?folders?\b|\brecursive(?:ly)?\b").unwrap());
 
 /// Splits a trailing subfolder opt-in off normalized text: the rest, and
-/// whether it was there.
-pub(crate) fn split_subfolders(normalized: &str) -> (String, bool) {
-    match SUBFOLDERS_TAIL.find(normalized) {
-        Some(m) => (normalized[..m.start()].to_string(), true),
-        None => (normalized.to_string(), false),
+/// whether (and how) it was there.
+pub(crate) fn split_subfolders(normalized: &str) -> (String, Subfolders) {
+    match SUBFOLDERS_TAIL.captures(normalized) {
+        Some(c) => {
+            let m = c.get(0).unwrap();
+            let kind = if c.name("pronoun").is_some() || c.name("in_branch").is_some() { Subfolders::NeedsFolder } else { Subfolders::Any };
+            (normalized[..m.start()].to_string(), kind)
+        }
+        None => (normalized.to_string(), Subfolders::None),
     }
 }
 
@@ -172,7 +186,7 @@ fn parse_single_classified(text: &str) -> Result<Intent, ParseFailure> {
     check_length(text)?;
     let cleaned = phrase::normalize(text);
     let (core, opt_in) = split_subfolders(&cleaned);
-    if !opt_in && !mentions_subfolders(&core) {
+    if opt_in == Subfolders::None && !mentions_subfolders(&core) {
         return parse_plain(text);
     }
     // Sorting reads "including subfolders" itself.
@@ -194,14 +208,22 @@ fn parse_single_classified(text: &str) -> Result<Intent, ParseFailure> {
         Err(e) => return Err(e),
     };
     match &mut intent {
-        Intent::Move { src: Source::Set { filter, .. }, .. }
-        | Intent::Copy { src: Source::Set { filter, .. }, .. }
-        | Intent::Trash { src: Source::Set { filter, .. } } => {
+        Intent::Move { src: Source::Set { folder, filter }, .. }
+        | Intent::Copy { src: Source::Set { folder, filter }, .. }
+        | Intent::Trash { src: Source::Set { folder, filter } } => {
+            if opt_in == Subfolders::NeedsFolder && folder.is_none() {
+                return Err(ParseFailure::HardRefusal(RefusalReason::UnresolvedReference));
+            }
             filter.include_subfolders = true;
             Ok(intent)
         }
         // Lists and counts already look in subfolders.
-        Intent::List { src: Source::Set { .. } } | Intent::Count { src: Source::Set { .. } } => Ok(intent),
+        Intent::List { src: Source::Set { folder, .. } } | Intent::Count { src: Source::Set { folder, .. } } => {
+            if opt_in == Subfolders::NeedsFolder && folder.is_none() {
+                return Err(ParseFailure::HardRefusal(RefusalReason::UnresolvedReference));
+            }
+            Ok(intent)
+        }
         _ => Err(ParseFailure::HardRefusal(RefusalReason::UnsupportedFilter)),
     }
 }

@@ -314,7 +314,7 @@ static MONTH: LazyLock<Regex> = re!(
 /// "taken", "downloaded", "that were saved": how files came to be says
 /// nothing about which ones, once the dates are read.
 static PARTICIPLE: LazyLock<Regex> = re!(
-    r"(?i)\b(?:(?:that|which)\s+were\s+|were\s+)?(?P<verb>taken|created|made|downloaded|saved|captured|added|modified|recorded|grabbed|snapped|received|arrived)\b"
+    r"(?i)(?P<prep>\b(?:in|from|to|into|inside|within|on|at)\s+)?\b(?:(?:that|which)\s+were\s+|were\s+)?(?P<verb>taken|created|made|downloaded|saved|captured|added|modified|recorded|grabbed|snapped|received|arrived)\b"
 );
 /// "named", "containing", "that start with": the keyword before a name.
 static NAME_KEYWORD: LazyLock<Regex> = re!(
@@ -704,6 +704,10 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         Some(())
     })?;
     take(&mut s, &PARTICIPLE, |c| {
+        // "in Modified" names a folder, not a date: refuse rather than drop it.
+        if c.name("prep").is_some() {
+            return None;
+        }
         other_verb |= other_date_verb(&c["verb"]);
         note_date_field(&mut f.date_field, verb_field(&c["verb"]))
     })?;
@@ -730,13 +734,23 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         let clauses = date_clauses(&f);
         // One filter reads one date, so "created this year and modified
         // today" or "downloaded in March and modified last week" is refused
-        // rather than read entirely by the modified date. "Last modified"
-        // must come with a date: "files last modified in Downloads" has none.
-        if other_verb || clauses > 1 || (last_verb && clauses == 0) {
+        // rather than read entirely by the modified date. "Modified" must
+        // come with a date: "PDFs modified in Downloads" has none (except a
+        // bare leading month like "November PDFs modified", which
+        // `parse_source` fills in after `extract_filters`).
+        if other_verb || clauses > 1 || (clauses == 0 && (last_verb || !has_bare_month_type(&s))) {
             return None;
         }
     }
     filters_consistent(&f).then_some((f, s))
+}
+
+/// True when unquoted `s` has a bare full month directly before a type word
+/// ("November PDFs"), which `parse_source` turns into a month filter.
+fn has_bare_month_type(s: &str) -> bool {
+    let Some(unquoted) = unquoted_text(s) else { return false };
+    let words: Vec<&str> = unquoted.split_whitespace().collect();
+    words.windows(2).any(|w| full_month(w[0]).is_some() && type_word(w[1]).is_some())
 }
 
 /// How many separate date clauses a filter holds. A range ("since March",
@@ -950,6 +964,17 @@ pub fn known_folder(name: &str) -> Option<&'static str> {
 
 /// Parses a subject phrase into a single named item or a filtered set.
 pub fn parse_source(phrase: &str) -> Option<Source> {
+    let parsed = parse_source_inner(phrase)?;
+    if let Source::Set { filter, .. } = &parsed
+        && filter.date_field == Some(DateField::Modified)
+        && date_clauses(filter) == 0
+    {
+        return None;
+    }
+    Some(parsed)
+}
+
+fn parse_source_inner(phrase: &str) -> Option<Source> {
     static LOCATED: LazyLock<Regex> = re!(
         r"(?i)\s+(?:(?:that|which)\s+)?(?:(?:are|is)\s+)?(?:located|sitting|stored|kept|lying|living|knocking\s+about)\s+(?:around\s+)?(in|inside|within|under|on)\s+"
     );
@@ -1476,21 +1501,23 @@ pub fn bad_destination(to: &str) -> bool {
         || destination_has_filter_tail(to)
 }
 
+static POST_DEST_FILTER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b(?:(?:(?:that|which)\s+were\s+)?(?:last\s+)?(?:modified|created|taken|edited|changed|updated|downloaded|saved|added)\s+(?:(?:after|before|prior\s+to|earlier\s+than|later\s+than|on\s+or\s+before|on\s+or\s+after|since|until|till|through|thru|up\s+to|within|from|in|on|during|older\s+than|newer\s+than|more\s+than|less\s+than|over|under|between)\s+)?(?:\d|a\b|an\b|last\b|past\b|this\b|today\b|yesterday\b|(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b|(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b)|not\s+(?:opened|modified|touched|used|edited|changed|updated)\s+in\s+(?:\d|a\b|an\b)|(?:after|before|since|until|within|from|older\s+than|newer\s+than|larger\s+than|smaller\s+than|bigger\s+than|less\s+than|more\s+than|over|under|above|below|at\s+least|at\s+most|up\s+to|between)\s+(?:\d|a\b|an\b|last\b|past\b|today\b|yesterday\b|[a-z]+\s+\d))",
+    )
+    .unwrap()
+});
+
 /// A filter left after a move/copy destination must never become part of a
 /// folder name. Quoted destinations remain literal by construction.
 pub(super) fn destination_has_filter_tail(to: &str) -> bool {
-    static FILTER_TAIL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(
-        r"(?i)\b(?:after|before|since|until|within|from|older\s+than|newer\s+than|larger\s+than|smaller\s+than|bigger\s+than|less\s+than|more\s+than|over|under|above|below|at\s+least|at\s+most|up\s+to|between)\s+(?:\d|a\b|an\b|last\b|past\b|today\b|yesterday\b|[a-z]+\s+\d)"
-    ).unwrap()
-    });
     let Some(unquoted) = unquoted_text(to) else { return true };
-    FILTER_TAIL.is_match(&unquoted)
+    POST_DEST_FILTER.is_match(&unquoted)
 }
 
 pub(super) fn has_filter_after_destination(command: &str) -> bool {
     let Some((verb, rest)) = command.split_once(char::is_whitespace) else { return false };
-    if !["move", "copy", "put", "send", "drop", "transfer", "shift", "relocate", "stash", "store", "file"]
+    if !["move", "copy", "duplicate", "put", "send", "drop", "transfer", "shift", "relocate", "stash", "store", "file"]
         .iter()
         .any(|v| verb.eq_ignore_ascii_case(v))
     {
@@ -1500,13 +1527,8 @@ pub(super) fn has_filter_after_destination(command: &str) -> bool {
 }
 
 pub(super) fn split_destination_filter(destination: &str) -> Option<(&str, &str)> {
-    static FILTER_START: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(
-        r"(?i)\b(?:after|before|since|until|within|from|older\s+than|newer\s+than|larger\s+than|smaller\s+than|bigger\s+than|less\s+than|more\s+than|over|under|above|below|at\s+least|at\s+most|up\s+to|between)\s+(?:\d|a\b|an\b|last\b|past\b|today\b|yesterday\b|[a-z]+\s+\d)"
-    ).unwrap()
-    });
     let unquoted = unquoted_text(destination)?;
-    let m = FILTER_START.find(&unquoted)?;
+    let m = POST_DEST_FILTER.find(&unquoted)?;
     let split = m.start();
     if split == 0 || !destination.is_char_boundary(split) {
         return None;

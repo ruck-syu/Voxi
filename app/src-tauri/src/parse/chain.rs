@@ -128,7 +128,11 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
             } else {
                 rewritten
             };
-            let rewritten = if opt_in { format!("{rewritten} including subfolders") } else { rewritten };
+            let rewritten = match opt_in {
+                super::Subfolders::None => rewritten,
+                super::Subfolders::Any => format!("{rewritten} including subfolders"),
+                super::Subfolders::NeedsFolder => format!("{rewritten} in its subfolders"),
+            };
             let mut intent = parse_single_classified(&rewritten).map_err(|failure| match failure {
                 ParseFailure::HardRefusal(reason) => ParseFailure::HardRefusal(reason),
                 // An unresolved "it"/"the original"/"the copy" in a clause is

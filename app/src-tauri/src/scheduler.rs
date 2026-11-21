@@ -818,19 +818,56 @@ impl Job {
             Ok(())
         };
         let mut paths = Vec::new();
+        // Track outputs created by earlier actions in the plan so later steps
+        // that consume them are not stamped before they exist on disk.
+        let mut produced: Vec<(PathBuf, bool)> = Vec::new();
+        let is_produced = |path: &Path, produced: &[(PathBuf, bool)]| {
+            let key = crate::fsx::canonical(path);
+            produced.iter().any(|(out, includes_descendants)| key == *out || (*includes_descendants && key.starts_with(out)))
+        };
+        let mut push_input = |path: &Path, produced: &[(PathBuf, bool)]| {
+            if !is_produced(path, produced) {
+                paths.push(path.to_path_buf());
+            }
+        };
         for a in &actions {
             match a {
-                Action::Move { from, .. } | Action::Copy { from, .. } => paths.push(from.clone()),
-                Action::Rename { path, .. }
-                | Action::Trash { path }
-                | Action::ConvertImage { path, .. }
-                | Action::ResizeImage { path, .. }
-                | Action::SplitPdf { path, .. }
-                | Action::ExtractPages { path, .. }
-                | Action::Zip { path, .. }
-                | Action::Unzip { path, .. } => paths.push(path.clone()),
-                Action::ImagesToPdf { paths: inputs, .. } | Action::MergePdf { paths: inputs, .. } => paths.extend(inputs.clone()),
-                Action::CreateFolder { .. } => {}
+                Action::Move { from, to } | Action::Copy { from, to } => {
+                    push_input(from, &produced);
+                    produced.push((crate::fsx::canonical(to), true));
+                }
+                Action::Rename { path, new_name } => {
+                    push_input(path, &produced);
+                    produced.push((crate::fsx::canonical(&path.with_file_name(new_name)), true));
+                }
+                Action::Trash { path } => push_input(path, &produced),
+                Action::ConvertImage { path, output, .. } | Action::ExtractPages { path, output, .. } | Action::Zip { path, output } => {
+                    push_input(path, &produced);
+                    produced.push((crate::fsx::canonical(output), false));
+                }
+                Action::ResizeImage { path, backup, .. } => {
+                    push_input(path, &produced);
+                    produced.push((crate::fsx::canonical(backup), false));
+                }
+                Action::SplitPdf { path, output_dir } => {
+                    push_input(path, &produced);
+                    produced.push((crate::fsx::canonical(output_dir), true));
+                }
+                Action::Unzip { path, destination } => {
+                    push_input(path, &produced);
+                    produced.push((crate::fsx::canonical(destination), true));
+                }
+                Action::ImagesToPdf { paths: inputs, output } | Action::MergePdf { paths: inputs, output } => {
+                    for input in inputs {
+                        push_input(input, &produced);
+                    }
+                    produced.push((crate::fsx::canonical(output), false));
+                }
+                Action::CreateFolder { path } => {
+                    if path.symlink_metadata().is_err() {
+                        produced.push((crate::fsx::canonical(path), false));
+                    }
+                }
                 _ => return Err("Undo and Finder commands cannot be scheduled.".into()),
             }
         }
@@ -1582,5 +1619,45 @@ mod tests {
         // A nickname the command doesn't use can change freely.
         assert!(rule("trash PDFs from Downloads").check_approval(&with("~/Desktop/Other"), "x").is_ok());
         assert!(rule("trash PDFs from ReceiptsArchive").check_approval(&with("~/Desktop/Other"), "x").is_ok());
+    }
+
+    #[test]
+    fn scheduled_chain_skips_stamping_paths_produced_by_earlier_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("photo.png");
+        let converted = dir.path().join("photo.jpg");
+        let moved = dir.path().join("Pictures/photo.jpg");
+        fs::write(&photo, b"png").unwrap();
+
+        let actions = vec![
+            Action::ConvertImage { path: photo.clone(), format: crate::model::ImageFormat::Jpg, output: converted.clone() },
+            Action::Move { from: converted.clone(), to: moved },
+        ];
+        let job = Job::new("convert photo.png to jpg then move it to Pictures at 9 pm".into(), now(), actions).unwrap();
+        assert_eq!(job.stamps.len(), 1);
+        assert_eq!(job.stamps[0].path, photo);
+        job.validate().unwrap();
+        fs::write(&photo, b"edited").unwrap();
+        assert!(job.validate().is_err());
+
+        // Chained folder creation + move + zip skips stamping the newly created folder.
+        let note = dir.path().join("note.txt");
+        let box_dir = dir.path().join("Box");
+        fs::write(&note, b"hi").unwrap();
+        let chain = vec![
+            Action::CreateFolder { path: box_dir.clone() },
+            Action::Move { from: note.clone(), to: box_dir.join("note.txt") },
+            Action::Zip { path: box_dir.clone(), output: dir.path().join("Box.zip") },
+        ];
+        let job = Job::new("move note into Box then zip Box at 9 pm".into(), now(), chain).unwrap();
+        assert_eq!(job.stamps.len(), 1);
+        assert_eq!(job.stamps[0].path, note);
+
+        // A missing source NOT produced by any earlier step still fails.
+        let bad = vec![
+            Action::CreateFolder { path: dir.path().join("Empty") },
+            Action::Move { from: dir.path().join("Empty/missing.txt"), to: dir.path().join("dest.txt") },
+        ];
+        assert!(Job::new("bad chain".into(), now(), bad).is_err());
     }
 }

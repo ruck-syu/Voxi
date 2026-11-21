@@ -496,12 +496,36 @@ fn extract_archive(path: &Path, destination: &Path, limits: ArchiveLimits, is_ca
 /// The fallback tool may have copied or removed files before returning an
 /// error. Its output must be reviewed whenever success cannot be confirmed.
 fn mv_no_clobber(from: &Path, to: &Path) -> Publication {
+    mv_no_clobber_with(from, to, || {})
+}
+
+fn mv_no_clobber_with(from: &Path, to: &Path, before_mv: impl FnOnce()) -> Publication {
     fresh(to)?;
+    let source_meta = fs::symlink_metadata(from).map_err(|e| PublishError::Clean(io_err("move", from)(e)))?;
+    let source_had_nested = source_meta.is_dir() && from.join(file_name(from)).symlink_metadata().is_ok();
+    before_mv();
     tool("/bin/mv", &["-n".as_ref(), from.as_os_str(), to.as_os_str()]).map_err(PublishError::Uncertain)?;
     if !matches!(fs::symlink_metadata(from), Err(e) if e.kind() == io::ErrorKind::NotFound) {
         return Err(PublishError::Uncertain(format!("Couldn't confirm that {} moved to {}.", from.display(), to.display())));
     }
-    FileIdentity::read(to).map_err(|e| PublishError::Uncertain(io_err("check moved output", to)(e)))
+    let dest_meta = fs::symlink_metadata(to).map_err(|e| PublishError::Uncertain(io_err("check moved output", to)(e)))?;
+    let matches_source = if source_meta.is_file() {
+        dest_meta.is_file() && dest_meta.len() == source_meta.len()
+    } else if source_meta.file_type().is_symlink() {
+        dest_meta.file_type().is_symlink() && dest_meta.len() == source_meta.len()
+    } else if source_meta.is_dir() {
+        dest_meta.is_dir() && (source_had_nested || to.join(file_name(from)).symlink_metadata().is_err())
+    } else {
+        dest_meta.file_type() == source_meta.file_type()
+    };
+    if !matches_source {
+        return Err(PublishError::Uncertain(format!(
+            "Couldn't confirm that {} landed directly at {} rather than inside another directory.",
+            from.display(),
+            to.display()
+        )));
+    }
+    Ok(FileIdentity::from_metadata(&dest_meta))
 }
 
 fn move_path(from: &Path, to: &Path) -> Publication {
@@ -1367,5 +1391,41 @@ mod tests {
         assert!(undo.terminal.error().is_none(), "{:?}", undo.terminal);
         assert_eq!(entry_names(), vec!["Report.pdf"]);
         assert_eq!(fs::read(&upper).unwrap(), b"report");
+    }
+
+    #[test]
+    fn mv_no_clobber_returns_uncertain_when_directory_appears_at_destination() {
+        let (_d, roots) = setup();
+        let h = &roots.home;
+
+        // File source: racing directory at `to` causes `/bin/mv -n` to move the file inside it.
+        let from = h.join("Downloads/report.txt");
+        let to = h.join("Documents/report.txt");
+        fs::write(&from, b"important").unwrap();
+        let result = mv_no_clobber_with(&from, &to, || {
+            fs::create_dir(&to).unwrap();
+            fs::write(to.join("existing.txt"), b"unrelated").unwrap();
+        });
+        assert!(matches!(result, Err(PublishError::Uncertain(_))), "expected Uncertain, got {result:?}");
+        // Ensure published_effect turns Uncertain into StepError::Uncertain without recording an inverse.
+        let action = Action::Move { from: from.clone(), to: to.clone() };
+        let step_err = published_effect(
+            result,
+            |id| Effect::reversible(action.clone(), Action::Move { from: to.clone(), to: from.clone() }, &[id]),
+            |_| unreachable!(),
+        )
+        .unwrap_err();
+        assert!(matches!(step_err, StepError::Uncertain(_)), "{step_err:?}");
+
+        // Directory source: racing directory at `to` moves `from` into `to/<name>`.
+        let dir_from = h.join("Downloads/proj");
+        let dir_to = h.join("Documents/proj");
+        fs::create_dir(&dir_from).unwrap();
+        fs::write(dir_from.join("a.txt"), b"a").unwrap();
+        let dir_result = mv_no_clobber_with(&dir_from, &dir_to, || {
+            fs::create_dir(&dir_to).unwrap();
+            fs::write(dir_to.join("keep.txt"), b"keep").unwrap();
+        });
+        assert!(matches!(dir_result, Err(PublishError::Uncertain(_))), "expected Uncertain for dir race, got {dir_result:?}");
     }
 }

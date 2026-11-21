@@ -176,11 +176,8 @@ impl Inverse {
             return Err("Undo identities are incomplete.".into());
         }
         let empty_folder_only = matches!(action, Action::RemoveEmptyFolder { .. });
-        let identities = paths
-            .into_iter()
-            .zip(expected)
-            .map(|(path, id)| snapshot(path, id, empty_folder_only, false))
-            .collect::<Result<_, _>>()?;
+        let identities =
+            paths.into_iter().zip(expected).map(|(path, id)| snapshot(path, id, empty_folder_only, false)).collect::<Result<_, _>>()?;
         Ok(Self { action, identities })
     }
 

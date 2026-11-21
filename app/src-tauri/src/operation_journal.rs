@@ -917,7 +917,8 @@ mod tests {
         assert!(src.exists() && !dst.exists());
 
         // Trash also succeeds cleanly, journal stays clear, and undo restores the folder.
-        let out = run(&path, &[Action::Trash { path: src.clone() }], &roots, Entry::new(3, "trash box".into(), None), &mut history).unwrap();
+        let out =
+            run(&path, &[Action::Trash { path: src.clone() }], &roots, Entry::new(3, "trash box".into(), None), &mut history).unwrap();
         assert!(matches!(out.terminal, RunOutcome::Completed), "{:?}", out.terminal);
         assert!(status(&path).unwrap().is_none());
         let undo = undo_actions(history.last_undoable().unwrap());

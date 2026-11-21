@@ -680,7 +680,8 @@ mod tests {
         fs::write(&upper, b"report").unwrap();
         rename_exclusive(&upper, &lower).unwrap();
         let names = || -> Vec<String> {
-            let mut v: Vec<String> = fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+            let mut v: Vec<String> =
+                fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
             v.sort();
             v
         };

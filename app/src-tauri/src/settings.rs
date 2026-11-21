@@ -1020,10 +1020,7 @@ mod raw_budget_tests {
 
     #[test]
     fn valid_json_v1_schema_error_requires_backup_before_overwrite() {
-        for bad in [
-            br#"{"version":1,"data":{"hotkey":12345}}"#.as_slice(),
-            br#"{"hotkey":12345}"#.as_slice(),
-        ] {
+        for bad in [br#"{"version":1,"data":{"hotkey":12345}}"#.as_slice(), br#"{"hotkey":12345}"#.as_slice()] {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("settings.json");
             fs::write(&path, bad).unwrap();

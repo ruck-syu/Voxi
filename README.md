@@ -53,8 +53,15 @@ The full list is on the [Commands page](website/commands.html).
 
 File commands search the folder you name and its subfolders, up to 12 levels
 deep. This applies to groups of files and to individual file or folder names;
-multiple matching names prompt you to choose. Hidden folders, app bundles,
-symlinked folders, and `_to_delete` are skipped. Moves, copies, and deletes are
+multiple matching names prompt you to choose. A folder name finds the nearest
+match first, so “create a folder in dev named test” works even when `dev` holds
+large projects; a same-named folder elsewhere at the same depth still asks.
+Hidden folders, symlinked folders, `_to_delete`, macOS packages (apps, Xcode
+projects, iWork and Photos libraries, and similar), and dependency or build
+folders (`node_modules`, `Pods`, `DerivedData`, `__pycache__`, virtual
+environments, and `target`, `build`, `dist`, or `vendor` next to their
+project file) are skipped; previews that reach into subfolders name any they skipped. Name one
+directly to work inside it. Moves, copies, and deletes are
 the exception: they take only the files directly in the folder you name, so
 files kept in its subfolders stay put. End the command with “including
 subfolders” to reach them too, as in “delete PDFs in Downloads including
@@ -65,8 +72,11 @@ folders.
 
 Searches reuse one folder scan per command. The window shows progress, and you
 can cancel with Esc or Cancel. If a scan reaches its depth, entry, or time limit,
-or cannot read a folder, commands that change files stop with an explanation;
-read-only results are marked as partial. Searches are limited to 50,000 entries
+or cannot read a folder, commands that change files stop with a message naming
+the folder that caused it and how to fix it (name a smaller folder, or exclude a
+subfolder with − in Settings → Folders); read-only results are marked as partial.
+When a single name was found before the limit, Voxi asks you to confirm it
+instead of failing. Searches are limited to 50,000 entries
 per folder tree and 10 seconds; the Spotlight fallback has a separate 2-second
 limit within that search deadline.
 
@@ -126,7 +136,7 @@ speech recognition and doesn't request microphone or speech permissions.
 - **Nothing is erased.** "Delete" and "clean up" move files to the Trash.
 - **Nothing is overwritten.** A clashing name becomes `report 2.pdf`, and the preview says so. Destinations are claimed atomically, so a file created after the preview cannot be clobbered.
 - **Everything can be undone.** "Undo last" reverses the newest change as one step, after its own preview. If a chain or shortcut fails partway, the steps that completed stay undoable when their history entry was saved, and Voxi reports the failure.
-- **Voxi stays in its lane.** It only touches Desktop, Downloads, Documents, Pictures, and folders you add in Settings.
+- **Voxi stays in its lane.** It only touches Desktop, Downloads, Documents, Pictures, and folders you add in Settings. A folder that is a symlink (say, Downloads on an external drive) works under either path, but other links pointing at it are refused, and if it moves or is remounted Voxi stops and asks you to restart or update Settings → Folders.
 - **No guessing.** When a name matches several files, Voxi lists them and asks which one; say a number to answer.
 - **Commands are bounded.** A command may be at most 16 KiB of UTF-8 text. A saved shortcut holds at most 8 commands whose combined text is at most 16 KiB. Larger input is refused before Voxi plans anything.
 
@@ -164,7 +174,8 @@ Or by hand:
    macOS remembers this, so you only do it once.
 3. Voxi opens a welcome page. Click **Allow access** and approve Desktop, Downloads, Documents, and Pictures so commands never stop to ask. These are ordinary **Files and Folders** grants; that is all Voxi needs by default. If you ask Voxi to work in a protected location outside those folders — such as another app's container — and the folder grant is not enough, enable **Full Disk Access** for Voxi under System Settings → Privacy & Security, and only for those locations. Voxi does not need Full Disk Access by default. If a grant is missing later, the folder-access page offers **Check again** and **Open System Settings**; a failed request offers **Retry**.
 
-Voxi lives in the menu bar as a small face. Click it or press <kbd>⌃⌥Space</kbd>.
+Voxi lives in the menu bar as a small face. Click it or press <kbd>⌃⌥Space</kbd>;
+click it again to close Voxi.
 
 ## Updates
 
@@ -181,7 +192,10 @@ asks for one confirmation, and records it as one change for **undo last**:
 > create a folder in Downloads called PDFS and move PDFs into it
 
 Here, `it` means the single folder created earlier in the chain. `that folder`
-and `the new folder` also work. If the move or copy doesn't name a source,
+and `the new folder` also work, and `its contents`, `everything in it`, or
+`the files in it` mean the files inside that folder, as in “create a folder in
+Downloads named test1 and move its content to Pictures every week”. While the
+folder is new it is empty, so the first run only creates it. If the move or copy doesn't name a source,
 it uses the parent of the created folder, Downloads in this example. An explicit
 source always wins. Multiple created folders require an explicit destination.
 Quotes keep command words and separators inside names literal.
@@ -225,6 +239,9 @@ and act on whatever matches then, without a new preview. A repeating task can't
 use a previous list as its scope; name the files or folder instead.
 
 Settings → Scheduled lists tasks, their results, and a cancellation button.
+A run with nothing to do says “Nothing to change”. A run that can't plan, for
+example because a folder is missing or a search couldn't finish, changes nothing
+and says “Skipped:” with the reason.
 Tasks survive restarting Voxi. Keep Voxi running for on-time execution; if it is
 closed or your Mac is asleep, an overdue task runs once when Voxi next runs or
 your Mac wakes. No task wakes the Mac or launches Voxi.
@@ -247,7 +264,10 @@ Save a phrase and a list of commands in Settings → Shortcuts. Saying the
 phrase runs them all as one preview with one undo. "Run my usual" and
 "run my usuals" both work. A shortcut can also hold a single read-only
 command, like "list downloads", which runs as if you typed it; read-only
-commands can't be mixed with commands that change files.
+commands can't be mixed with commands that change files. A command in a
+shortcut that has nothing to do is skipped and the preview says so (“1 of 2
+commands”); any other failure stops the whole shortcut before anything
+changes.
 
 ## Learning on your Mac
 
@@ -260,8 +280,10 @@ sending anything anywhere:
 - **Folder nicknames.** When a name matches several folders and you pick one,
   Voxi offers to remember that choice.
 - **Wrong-result reports.** Mark a result as wrong and Voxi saves a readable
-  JSON line on this Mac. Show or clear them from Settings. Developers can turn
-  them into parser test candidates with `scripts/feedback-to-corpus.mjs`.
+  JSON line on this Mac, with search counts (no file names). Show or clear
+  them from Settings. Developers can turn them into parser test candidates with
+  `scripts/feedback-to-corpus.mjs`, which also flags reports that parsed but
+  failed in planning.
 
 ## Privacy and diagnostics
 
@@ -279,6 +301,8 @@ files are `0600`, readable only by your macOS account.
 > events. IO failure disables this session's sink with at most one fixed stderr
 > note. Queued events may be lost on crash/exit; this is not a recovery journal.
 
+Commands that fail to plan are logged as a code (for example a search limit,
+an unreadable folder, or a timeout) with an entry count and a time bucket.
 Each line contains only a stable error code, a stage, an operation ID, counts,
 and (for storage failures) an I/O error kind and OS number. No command text,
 folder names, filenames, paths, notes, or model text are ever written, and

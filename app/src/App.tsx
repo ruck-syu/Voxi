@@ -1039,7 +1039,8 @@ function Body(props: {
     case "ambiguous":
       return (
         <section className="body">
-          <p className="title">Choose a match for “{o.name}”</p>
+          <p className="title">{o.candidates.length === 1 ? "Confirm the match" : "Choose a match"} for “{o.name}”</p>
+          {o.reason === "incomplete_search" && <p className="quiet">Deeper folders weren’t fully checked.</p>}
           <p className="quiet">Say a number, or click one.</p>
           <ol className="ruled choices">
             {o.candidates.map((c, i) => (

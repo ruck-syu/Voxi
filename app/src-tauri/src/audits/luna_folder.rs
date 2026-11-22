@@ -53,7 +53,7 @@ fn planner(home: &Path, roots: &Roots, i: &Intent) -> (String, Vec<String>) {
         Ok(Planned::Info { total, .. }) => (format!("info:{total}"), vec![]),
         Ok(Planned::Direct { .. }) => ("direct_preview_not_executed".into(), vec![]),
         Err(Stop::Problem(m)) => (format!("problem:{m}"), vec![]),
-        Err(Stop::Ambiguous { name, candidates }) => (format!("ambiguous:{name}:{}", candidates.len()), vec![]),
+        Err(Stop::Ambiguous { name, candidates, .. }) => (format!("ambiguous:{name}:{}", candidates.len()), vec![]),
     }
 }
 

@@ -354,7 +354,7 @@ fn luna_command_audit_report() {
                     Ok(Planned::Info { total, .. }) => format!("info:{total}"),
                     Ok(Planned::Direct { .. }) => "direct_preview_not_executed".into(),
                     Err(Stop::Problem(m)) => format!("problem:{m}"),
-                    Err(Stop::Ambiguous { name, candidates }) => format!("ambiguous:{name}:{}", candidates.len()),
+                    Err(Stop::Ambiguous { name, candidates, .. }) => format!("ambiguous:{name}:{}", candidates.len()),
                 };
                 (a, p, true)
             }
@@ -426,7 +426,7 @@ fn luna_command_audit_report() {
                     Ok(Planned::Info { total, .. }) => format!("info:{total}"),
                     Ok(Planned::Direct { .. }) => "direct_preview_not_executed".into(),
                     Err(Stop::Problem(m)) => format!("problem:{m}"),
-                    Err(Stop::Ambiguous { name, candidates }) => format!("ambiguous:{name}:{}", candidates.len()),
+                    Err(Stop::Ambiguous { name, candidates, .. }) => format!("ambiguous:{name}:{}", candidates.len()),
                 };
                 (v, p, true)
             }

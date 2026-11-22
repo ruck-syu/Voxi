@@ -451,6 +451,14 @@ pub struct InfoRow {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AmbiguityReason {
+    MultipleMatches,
+    SuggestedMatch,
+    IncompleteSearch,
+}
+
 /// What the window gets back after Enter.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case", rename_all_fields = "camelCase")]
@@ -471,14 +479,14 @@ pub enum Outcome {
         /// How often a repeating task runs, such as “every 3 days”.
         repeats: Option<String>,
     },
-    /// A name matched more than one file. The user picks one and the
-    /// command is planned again with that choice.
+    /// A name needs a choice before the command can be planned again.
     /// `folders` is true when every candidate is a folder, so the pick can be
     /// remembered as the user's name for it.
     Ambiguous {
         name: String,
         candidates: Vec<String>,
         folders: bool,
+        reason: AmbiguityReason,
     },
     /// Read-only result; nothing changed.
     Info {

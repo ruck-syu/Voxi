@@ -99,7 +99,7 @@ fn guard(roots: &Roots, paths: &[&Path]) -> Result<(), String> {
 /// this read-only action gets the exemption; moves, renames and trash still
 /// use `guard`, whose parent check keeps roots out of destructive actions.
 fn guard_open(roots: &Roots, path: &Path) -> Result<(), String> {
-    if !roots.is_allowed(path) || (!roots.is_root(path) && path.parent().is_some_and(|parent| !roots.is_allowed(parent))) {
+    if !roots.is_allowed(path) || (!roots.is_configured_root(path) && path.parent().is_some_and(|parent| !roots.is_allowed(parent))) {
         return Err(format!("Stopped: {} is outside the allowed folders.", roots.display(path)));
     }
     Ok(())

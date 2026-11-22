@@ -142,6 +142,13 @@ impl Roots {
         self.allowed.contains(&c) || self.screenshots.as_ref().is_some_and(|s| canonical(s) == c)
     }
 
+    pub fn is_configured_root(&self, p: &Path) -> bool {
+        (self.allowed.iter().any(|root| root == p) || self.named.iter().any(|(_, root)| root == p))
+            && p.parent()
+                .zip(p.file_name())
+                .is_some_and(|(parent, name)| !fs::symlink_metadata(parent.join(name)).is_ok_and(|meta| meta.is_symlink()))
+    }
+
     /// The `_to_delete/` folder for the root that holds `p`.
     pub fn trash_dir_for(&self, p: &Path) -> PathBuf {
         let c = canonical(p);
@@ -601,7 +608,7 @@ mod tests {
         for f in ["Documents/a.pdf", "Documents/Archive/Old/b.pdf", "Documents/Archive/c.pdf", "Documents/Archive/Keep/d.pdf"] {
             fs::write(h.join(f), b"x").unwrap();
         }
-        let search = crate::search::Search::default().with_exclusions(roots.exclusions.clone());
+        let search = crate::search::Search::default().with_roots(&roots);
         let mut found: Vec<String> =
             search.entries(&h.join("Documents")).iter().map(|e| e.path.strip_prefix(&h).unwrap().display().to_string()).collect();
         found.sort();

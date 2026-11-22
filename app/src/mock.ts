@@ -74,7 +74,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("claude"))
     return {
-      status: "ambiguous", name: "claude", folders: false,
+      status: "ambiguous", name: "claude", folders: false, reason: "multiple_matches",
       candidates: ["/Users/me/Downloads/Claude.dmg", "/Users/me/Downloads/Claude Setup.dmg", "/Users/me/Documents/claude-notes.txt"],
     };
   if (t.includes("size"))

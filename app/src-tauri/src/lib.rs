@@ -843,10 +843,11 @@ fn plan_input_for(
     }
     match planned {
         Err(Stop::Problem(message)) => Outcome::Problem { message },
-        Err(Stop::Ambiguous { name, candidates }) => Outcome::Ambiguous {
+        Err(Stop::Ambiguous { name, candidates, reason }) => Outcome::Ambiguous {
             name,
             folders: !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
+            reason,
         },
         Ok(Planned::Info { .. } | Planned::Direct { .. }) if scheduled_for.is_some() => Outcome::Problem {
             message:
@@ -1382,9 +1383,14 @@ fn execute_recurring_rule(
             sched_skip(job);
             Completion::Recurring(format!("Nothing to change. {message}"))
         }
-        Err(Stop::Ambiguous { name, .. }) => {
+        Err(Stop::Ambiguous { name, reason, .. }) => {
             sched_skip(job);
-            Completion::Recurring(format!("Skipped: “{name}” matches more than one item. Schedule it again and pick one."))
+            let explanation = match reason {
+                model::AmbiguityReason::MultipleMatches => format!("“{name}” matches more than one item."),
+                model::AmbiguityReason::SuggestedMatch => format!("A possible match for “{name}” needs confirmation."),
+                model::AmbiguityReason::IncompleteSearch => format!("Deeper folders weren’t fully checked for “{name}”."),
+            };
+            Completion::Recurring(format!("Skipped: {explanation} Schedule it again and pick a match."))
         }
     }
 }

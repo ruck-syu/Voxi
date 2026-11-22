@@ -259,6 +259,12 @@ fn hide(app: &AppHandle) {
 
 /// Asks the page to play its close animation; the page then calls
 /// `hide_window`.
+/// Shown and not already fading out.
+fn window_open(app: &AppHandle) -> bool {
+    let closing = checked_state!(app.state::<AppState>().presentation.lock(), false).closing();
+    app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false)) && !closing
+}
+
 fn request_hide(app: &AppHandle) {
     checked_state!(app.state::<AppState>().presentation.lock(), ()).cancel();
     match app.get_webview_window("main") {
@@ -2152,16 +2158,22 @@ pub fn run() {
                 // Left click opens the window; the menu is on right click.
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                        let app = tray.app_handle();
-                        // Clicking the menu bar takes focus from the window,
-                        // so go by visibility alone here. A click while it
-                        // fades out reopens it, as the hotkey does.
-                        let closing = checked_state!(app.state::<AppState>().presentation.lock(), ()).closing();
-                        match app.get_webview_window("main") {
-                            Some(w) if w.is_visible().unwrap_or(false) && !closing => request_hide(app),
-                            _ => show_window(app, "command"),
-                        }
+                    // Decide on press, not release: pressing the icon takes
+                    // focus from the window, which starts its close-on-blur
+                    // fade before the release arrives. A window that was open
+                    // at the press closes; otherwise the click opens it. A
+                    // click while it was already fading out still reopens it.
+                    static OPEN_AT_PRESS: AtomicBool = AtomicBool::new(false);
+                    let TrayIconEvent::Click { button: MouseButton::Left, button_state, .. } = event else { return };
+                    let app = tray.app_handle();
+                    if button_state == MouseButtonState::Down {
+                        OPEN_AT_PRESS.store(window_open(app), Ordering::SeqCst);
+                        return;
+                    }
+                    if OPEN_AT_PRESS.swap(false, Ordering::SeqCst) {
+                        request_hide(app);
+                    } else {
+                        show_window(app, "command");
                     }
                 })
                 .on_menu_event(|app, event| match event.id().as_ref() {

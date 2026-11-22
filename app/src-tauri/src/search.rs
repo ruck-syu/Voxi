@@ -807,7 +807,7 @@ impl Search {
     /// The skipped dependency and build roots found in the last name lookup.
     pub fn probe_roots(&self) -> Vec<PathBuf> {
         let mut roots: Vec<_> = self.skipped_folders.borrow().iter().cloned().collect();
-        roots.retain(|p| (!fsx::is_hidden_or_internal(p) || is_virtual_env(p)) && !p.ancestors().any(is_bundle));
+        roots.retain(|p| !fsx::is_hidden_or_internal(p) || is_virtual_env(p));
         roots.sort_unstable();
         roots.dedup();
         roots
@@ -1193,7 +1193,8 @@ impl Search {
             self.control.visited.fetch_add(1, Ordering::Relaxed);
             let path = e.path();
             let hidden_entry = fsx::is_hidden_or_internal(&path);
-            if hidden_entry && depth.is_none() {
+            // Only recursive scans consider hidden virtual environment dirs.
+            if hidden_entry && (depth.is_none() || !is_virtual_env(&path)) {
                 continue;
             }
             let ft = match e.file_type() {
@@ -1213,11 +1214,6 @@ impl Search {
                 continue;
             }
             if hidden && self.exclusions.prunes(&canon_path) {
-                continue;
-            }
-            // Hidden and internal folders (.git, Voxi's trash) are never part
-            // of a command, so they aren't reported as skipped either.
-            if hidden_entry && !is_virtual_env(&path) {
                 continue;
             }
             if !hidden {

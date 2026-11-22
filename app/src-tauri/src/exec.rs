@@ -99,7 +99,7 @@ fn guard(roots: &Roots, paths: &[&Path]) -> Result<(), String> {
 /// this read-only action gets the exemption; moves, renames and trash still
 /// use `guard`, whose parent check keeps roots out of destructive actions.
 fn guard_open(roots: &Roots, path: &Path) -> Result<(), String> {
-    if !roots.is_allowed(path) || (path.parent().is_some_and(|parent| !roots.is_allowed(parent)) && !roots.is_configured_root(path)) {
+    if !roots.is_allowed_entry(path) {
         return Err(format!("Stopped: {} is outside the allowed folders.", roots.display(path)));
     }
     Ok(())
@@ -1385,7 +1385,7 @@ mod tests {
             assert!(roots.is_configured_root(&lower_documents));
             assert!(matches!(open, Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. })
                 if path == lower_documents && guard_open(&roots, &path).is_ok()));
-            assert!(matches!(size, Ok(Planned::Info { total: 1, .. })));
+            assert!(matches!(size, Ok(Planned::Info { total: 1, title, .. }) if title == "DOCUMENTS uses 4 B"));
             let out = plan_and_run(&roots, &history, create);
             assert!(out.terminal.error().is_none(), "{:?}", out.terminal);
             assert!(roots.home.join("Downloads/X").is_dir());
@@ -1393,8 +1393,11 @@ mod tests {
             // Even a distinct on-disk directory whose name differs only in case
             // must remain outside the configured roots.
             fs::create_dir(&lower_documents).unwrap();
+            let upper_documents = roots.home.join("DOCUMENTS");
+            fs::create_dir(&upper_documents).unwrap();
             fs::create_dir(roots.home.join("downloads")).unwrap();
             assert!(!roots.is_configured_root(&lower_documents));
+            assert!(!roots.is_configured_root(&upper_documents));
             for cmd in ["open ~/documents", "size of ~/DOCUMENTS", create] {
                 assert!(matches!(plan(cmd), Err(crate::plan::Stop::Problem(m)) if m.contains("outside the folders")), "{cmd}");
             }
@@ -1405,11 +1408,77 @@ mod tests {
     }
 
     #[test]
+    fn configured_symlinks_can_be_opened_and_commands_can_change_their_contents() {
+        let (_dir, roots) = setup();
+        let external = tempfile::tempdir().unwrap();
+        let downloads = roots.downloads();
+        let projects = roots.home.join("Projects");
+        let screenshots = roots.home.join("Screenshots");
+        fs::remove_dir(&downloads).unwrap();
+        for (name, link) in [("Downloads", &downloads), ("Projects", &projects), ("Screenshots", &screenshots)] {
+            let target = external.path().join(name);
+            fs::create_dir(&target).unwrap();
+            std::os::unix::fs::symlink(target, link).unwrap();
+        }
+        let roots = Roots::new(&roots.home, Some(screenshots.clone()), std::slice::from_ref(&projects));
+        let history = History::load(roots.home.join("history.json"));
+        let choices = HashMap::new();
+        for (name, root) in [("Downloads", &downloads), ("Projects", &projects), ("Screenshots", &screenshots)] {
+            let cmd = format!("open {name}");
+            assert!(matches!(Planner::new(&roots, &choices).plan(&parse(&cmd).unwrap(), &history),
+                Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. })
+                    if path == *root && guard_open(&roots, &path).is_ok()));
+            assert!(guard(&roots, &[root]).is_err());
+            let lower = roots.home.join(name.to_lowercase());
+            if lower.exists() {
+                assert!(guard_open(&roots, &lower).is_ok());
+            }
+        }
+
+        for (name, root) in [("Downloads", &downloads), ("Projects", &projects)] {
+            let target = external.path().join(name);
+            let bill = format!("{name}.pdf");
+            fs::write(target.join(&bill), b"bill").unwrap();
+            for cmd in [format!("list files in {name}"), format!("size of {name}")] {
+                assert!(
+                    matches!(Planner::new(&roots, &choices).plan(&parse(&cmd).unwrap(), &history), Ok(Planned::Info { total: 1, .. })),
+                    "{cmd}"
+                );
+            }
+            for cmd in [format!("create a folder in {name} named X"), format!("sort {name} by type")] {
+                let out = plan_and_run(&roots, &history, &cmd);
+                assert!(out.terminal.error().is_none(), "{cmd}: {:?}", out.terminal);
+            }
+            assert!(target.join("X").is_dir());
+            let sorted = target.join("PDFs").join(&bill);
+            assert_eq!(fs::read(&sorted).unwrap(), b"bill");
+            fs::rename(sorted, target.join(&bill)).unwrap();
+            let out = plan_and_run(&roots, &history, &format!("move PDFs from {name} to Desktop"));
+            assert!(out.terminal.error().is_none(), "{:?}", out.terminal);
+            assert_eq!(fs::read(roots.desktop().join(&bill)).unwrap(), b"bill");
+            assert!(!root.join(&bill).exists());
+        }
+
+        // Changing a symlink's target through another link preserves its
+        // original inode. The recorded target must still match.
+        let target = external.path().join("Downloads");
+        fs::rename(&target, external.path().join("Old Downloads")).unwrap();
+        std::os::unix::fs::symlink(roots.desktop(), target).unwrap();
+        assert!(roots.is_allowed(&downloads));
+        assert!(!roots.is_configured_root(&downloads));
+        assert!(guard_open(&roots, &downloads).is_err());
+        assert!(matches!(Planner::new(&roots, &choices).plan(&parse("open Downloads").unwrap(), &history),
+            Err(crate::plan::Stop::Problem(message)) if message.contains("outside the folders")));
+    }
+
+    #[test]
     fn a_symlink_to_a_root_outside_allowed_folders_has_no_root_exemption() {
         let (_dir, roots) = setup();
-        let outside = roots.home.join("Outside");
-        fs::create_dir(&outside).unwrap();
-        for link in [outside.join("documents"), roots.home.join("Documents Alias")] {
+        let outside = tempfile::tempdir().unwrap();
+        let private = roots.home.join("Documents/Private");
+        fs::create_dir(&private).unwrap();
+        let roots = roots.with_exclusions(std::slice::from_ref(&private));
+        for link in [outside.path().join("docs-link"), private.join("docs-link"), roots.home.join("Documents Alias")] {
             std::os::unix::fs::symlink(roots.home.join("Documents"), &link).unwrap();
             assert!(roots.is_allowed(&link));
             assert!(!roots.is_configured_root(&link));
@@ -1419,7 +1488,7 @@ mod tests {
 
         let history = History::load(roots.home.join("history.json"));
         let choices = HashMap::new();
-        for cmd in ["open ~/Outside/documents", "size of ~/Outside/documents"] {
+        for cmd in ["open ~/Documents/Private/docs-link", "size of ~/Documents/Private/docs-link"] {
             let result = Planner::new(&roots, &choices).plan(&parse(cmd).unwrap(), &history);
             assert!(matches!(result, Err(crate::plan::Stop::Problem(m)) if m.contains("outside the folders")), "{cmd}");
         }

@@ -322,7 +322,7 @@ impl<'a> Planner<'a> {
     }
 
     fn check(&self, p: &Path) -> Result<(), Stop> {
-        if self.roots.is_allowed(p) && (p.parent().is_none_or(|parent| self.roots.is_allowed(parent)) || self.roots.is_configured_root(p)) {
+        if self.roots.is_allowed_entry(p) {
             Ok(())
         } else {
             problem(format!("{} is outside the folders Voxi may change.", self.roots.display(p)))
@@ -428,14 +428,17 @@ impl<'a> Planner<'a> {
     }
 
     fn confirm_skipped_folder(&self, disk: &search::Search, name: &str, dirs: &[PathBuf]) -> Result<(), Stop> {
-        let roots = disk.probe_roots();
+        let mut roots = disk.probe_roots();
+        roots.retain(|p| !self.in_package(p));
         if roots.is_empty() {
             return Ok(());
         }
         let mut candidates = disk.lookup_inside_skipped(&roots, name);
         // A package found inside a skipped tree may match itself; nothing
         // inside a package ever does.
-        let outside_packages = |p: &PathBuf| p.parent().is_none_or(|parent| !Self::in_package(parent));
+        let outside_packages = |p: &PathBuf| {
+            [p.as_path(), &fsx::canonical(p)].into_iter().all(|path| path.parent().is_none_or(|parent| !self.in_package(parent)))
+        };
         candidates.retain(|p| p.is_dir() && outside_packages(p) && self.check(p).is_ok());
         if candidates.is_empty() {
             // This probe can suggest a folder, and every suggestion already
@@ -619,9 +622,11 @@ impl<'a> Planner<'a> {
 
     /// A file, or a folder by its spoken name (for "open Downloads").
     fn resolve_any(&self, name: &str) -> Result<PathBuf, Stop> {
-        if !name.starts_with(['/', '~'])
-            && let Some(p) = self.roots.named(name)
-        {
+        let typed = name.trim_start();
+        if typed.starts_with(['/', '~']) {
+            return self.resolve_named_item(typed, None, search::LookupKind::ReadOnly);
+        }
+        if let Some(p) = self.roots.named(name) {
             self.check(p)?;
             return Ok(p.clone());
         }
@@ -721,7 +726,7 @@ impl<'a> Planner<'a> {
                     for path in scope.paths() {
                         self.check(&path)?;
                         if matches(&path, filter, self.now) {
-                            if !read_only && path.parent().is_some_and(Self::in_package) {
+                            if !read_only && path.parent().is_some_and(|parent| self.in_package(parent)) {
                                 return problem("File sets can't change items inside a macOS package.");
                             }
                             paths.push(path);
@@ -734,7 +739,7 @@ impl<'a> Planner<'a> {
                 let direct = direct_by_default && !Self::includes_nested_files(folder.as_deref(), filter);
                 if !read_only
                     && !direct
-                    && let Some(d) = dirs.iter().find(|d| self.in_hidden_tree(d) || Self::in_package(d))
+                    && let Some(d) = dirs.iter().find(|d| self.in_hidden_tree(d) || self.in_package(d))
                 {
                     return problem(format!(
                         "“Including subfolders” can't reach inside {}. Recursive changes are blocked in hidden folders, Voxi's {} folder, and macOS packages.",
@@ -820,8 +825,18 @@ impl<'a> Planner<'a> {
         })
     }
 
-    fn in_package(dir: &Path) -> bool {
-        dir.ancestors().any(search::is_bundle) || fsx::canonical(dir).ancestors().any(search::is_bundle)
+    /// A configured root can start inside a package, so only inspect the
+    /// deepest matching root and the path below it.
+    fn in_package(&self, dir: &Path) -> bool {
+        [dir, &fsx::canonical(dir)].into_iter().any(|path| {
+            self.roots
+                .allowed
+                .iter()
+                .chain(self.roots.named.iter().map(|(_, root)| root))
+                .filter_map(|root| path.strip_prefix(root).ok().map(|rest| (root, rest)))
+                .max_by_key(|(root, _)| root.as_os_str().len())
+                .is_some_and(|(root, rest)| search::is_bundle(root) || rest.ancestors().any(search::is_bundle))
+        })
     }
 
     fn skipped_trees_note(&self, skipped: &[PathBuf]) -> String {
@@ -874,7 +889,7 @@ impl<'a> Planner<'a> {
         let parent_for_new = src_dir.unwrap_or_else(|| self.roots.desktop());
         let dest = self.resolve_folder(to, Some(&parent_for_new))?;
         if matches!(src, Source::Set { folder, filter } if Self::includes_nested_files(folder.as_deref(), filter))
-            && (Self::in_package(&dest) || self.in_hidden_tree(&dest))
+            && (self.in_package(&dest) || self.in_hidden_tree(&dest))
         {
             return problem("Recursive transfers can't put files inside a macOS package or a hidden folder.");
         }
@@ -902,12 +917,12 @@ impl<'a> Planner<'a> {
         }
         self.ensure_dir(&dest)?;
         // A destination inside the source may already hold previous results.
+        let canonical_dest = fsx::canonical(&dest);
         let destination_in_source = match src {
-            Source::Set { folder, filter } => self
-                .set_folders(folder.as_deref(), filter, false)?
-                .0
-                .iter()
-                .any(|dir| dest != *dir && fsx::canonical(&dest).starts_with(fsx::canonical(dir))),
+            Source::Set { folder, filter } => self.set_folders(folder.as_deref(), filter, false)?.0.iter().any(|dir| {
+                let canonical_dir = fsx::canonical(dir);
+                canonical_dest != canonical_dir && canonical_dest.starts_with(canonical_dir)
+            }),
             _ => false,
         };
         let mut already = 0;
@@ -919,13 +934,14 @@ impl<'a> Planner<'a> {
             if !copy && self.roots.is_root(p) {
                 return problem("Voxi won't move an allowed root folder itself. Name a folder inside it.");
             }
-            if (destination_in_source && fsx::canonical(p).starts_with(fsx::canonical(&dest)))
+            let canonical_source = fsx::canonical(p);
+            if (destination_in_source && canonical_source.starts_with(&canonical_dest))
                 || (!copy && p.parent().is_some_and(|d| fsx::same_file(d, &dest)))
             {
                 already += 1;
                 continue;
             }
-            if fsx::canonical(&dest).starts_with(fsx::canonical(p)) {
+            if canonical_dest.starts_with(&canonical_source) {
                 return problem(format!("Can't put {} inside itself.", file_name(p)));
             }
             let (to, note) = self.target(&dest, &file_name(p));
@@ -1147,10 +1163,9 @@ impl<'a> Planner<'a> {
                 created_targets.extend(names.iter().map(|name| parent.join(name)));
             } else {
                 match self.step(&bound, history) {
-                    // With nothing drafted yet (an idle first step, or only a
-                    // folder that already exists), the whole chain is idle. Once
-                    // a step drafted changes, a later idle step aborts planning
-                    // and discards the draft.
+                    // An idle step makes the whole chain idle if nothing has
+                    // been drafted. Otherwise it aborts planning and discards
+                    // the draft.
                     Err(stop @ Stop::NothingToChange(_)) if self.actions.is_empty() => return Err(stop),
                     Err(Stop::NothingToChange(message)) => return problem(message),
                     Err(stop) => return Err(stop),
@@ -1258,7 +1273,7 @@ impl<'a> Planner<'a> {
             let dest = dir.join(&sub);
             // A category folder must never lead (say, through a symlink) into
             // Voxi's trash, a hidden folder or a macOS package.
-            if self.in_hidden_tree(&dest) || Self::in_package(&dest) {
+            if self.in_hidden_tree(&dest) || self.in_package(&dest) {
                 return problem(format!(
                     "“{sub}” in {} leads into a hidden folder or a macOS package, so Voxi won't sort into it.",
                     file_name(&dir)

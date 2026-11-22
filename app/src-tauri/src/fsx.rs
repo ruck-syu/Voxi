@@ -35,6 +35,27 @@ impl Exclusions {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ConfiguredRoot {
+    parent: PathBuf,
+    dev: u64,
+    ino: u64,
+    target: PathBuf,
+}
+
+impl ConfiguredRoot {
+    fn read(path: &Path) -> Option<Self> {
+        let parent = fs::canonicalize(path.parent()?).ok()?;
+        let path = parent.join(path.file_name()?);
+        let entry = fs::symlink_metadata(&path).ok()?;
+        if entry.ino() == 0 {
+            return None;
+        }
+        let target = fs::canonicalize(&path).ok()?;
+        Some(Self { parent, dev: entry.dev(), ino: entry.ino(), target })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Roots {
     pub home: PathBuf,
@@ -43,6 +64,7 @@ pub struct Roots {
     pub named: Vec<(String, PathBuf)>,
     /// Canonical allowed roots. Nothing outside these is ever touched.
     pub allowed: Vec<PathBuf>,
+    configured: Vec<ConfiguredRoot>,
     pub screenshots: Option<PathBuf>,
     /// The user's own folder names, looked up before the standard ones but
     /// never searched as extra roots (they already sit inside one).
@@ -56,10 +78,16 @@ impl Roots {
         let std_dirs = [("desktop", "Desktop"), ("downloads", "Downloads"), ("documents", "Documents"), ("pictures", "Pictures")];
         let mut named = Vec::new();
         let mut allowed = Vec::new();
+        let mut configured = Vec::new();
+        let mut allow_root = |path: &Path| {
+            let entry = ConfiguredRoot::read(path);
+            allowed.push(entry.as_ref().map_or_else(|| canonical(path), |entry| entry.target.clone()));
+            configured.extend(entry);
+        };
         for (key, dir) in std_dirs {
             let p = home.join(dir);
-            named.push((key.to_string(), p.clone()));
-            allowed.push(canonical(&p));
+            allow_root(&p);
+            named.push((key.to_string(), p));
         }
         named.push(("docs".into(), home.join("Documents")));
         named.push(("photos".into(), home.join("Pictures")));
@@ -67,10 +95,17 @@ impl Roots {
             if let Some(name) = p.file_name() {
                 named.push((name.to_string_lossy().to_lowercase(), p.clone()));
             }
-            allowed.push(canonical(p));
+            allow_root(p);
         }
-        let mut roots =
-            Roots { home: home.to_path_buf(), named, allowed, screenshots: None, nicknames: Vec::new(), exclusions: Exclusions::default() };
+        let mut roots = Roots {
+            home: home.to_path_buf(),
+            named,
+            allowed,
+            configured,
+            screenshots: None,
+            nicknames: Vec::new(),
+            exclusions: Exclusions::default(),
+        };
         // Where screenshots land: the system setting if there is one, else
         // the usual Screenshots folders. A custom location inside the home
         // folder is allowed even outside the four standard folders.
@@ -81,6 +116,7 @@ impl Roots {
             if !roots.is_allowed(s) {
                 roots.allowed.push(canonical(s));
             }
+            roots.configured.extend(ConfiguredRoot::read(s));
             roots.named.push(("screenshots".into(), s.clone()));
         }
         roots.screenshots = screenshots;
@@ -142,27 +178,16 @@ impl Roots {
         self.allowed.contains(&c) || self.screenshots.as_ref().is_some_and(|s| canonical(s) == c)
     }
 
-    pub fn is_configured_root(&self, p: &Path) -> bool {
-        let Some((parent, name)) = p.parent().zip(p.file_name()) else { return false };
-        let entry = fs::symlink_metadata(parent.join(name));
-        if entry.as_ref().is_ok_and(|meta| meta.is_symlink()) {
-            return false;
-        }
-        if self.allowed.iter().any(|root| root == p) || self.named.iter().any(|(_, root)| root == p) {
-            return true;
-        }
+    /// Resolves a path for planning or Finder, including configured roots
+    /// whose parent is outside the allowed folders.
+    pub(crate) fn is_allowed_entry(&self, p: &Path) -> bool {
+        self.is_allowed(p) && (p.parent().is_none_or(|parent| self.is_allowed(parent)) || self.is_configured_root(p))
+    }
 
-        // Let the filesystem resolve alternate spellings. Only a real
-        // directory entry matching a configured root in the same parent qualifies.
-        let Ok(entry) = entry else { return false };
-        if !entry.is_dir() {
-            return false;
-        }
-        let Ok(parent) = fs::canonicalize(parent) else { return false };
-        self.allowed.iter().any(|root| {
-            root.parent() == Some(parent.as_path())
-                && fs::symlink_metadata(root).is_ok_and(|meta| meta.is_dir() && meta.dev() == entry.dev() && meta.ino() == entry.ino())
-        })
+    /// Match the original directory entry, resolving case via the filesystem
+    /// and checking that a configured symlink still resolves to its original target.
+    pub fn is_configured_root(&self, p: &Path) -> bool {
+        ConfiguredRoot::read(p).is_some_and(|entry| self.configured.contains(&entry))
     }
 
     /// The `_to_delete/` folder for the root that holds `p`.

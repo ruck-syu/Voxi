@@ -69,6 +69,98 @@ fn opening_an_allowed_root_folder_plans_a_finder_reveal() {
 }
 
 #[test]
+fn symlinked_configured_roots_plan_like_other_folders() {
+    let mut h = home();
+    let external = tempfile::tempdir().unwrap();
+    let downloads = h.roots.downloads();
+    let projects = h.roots.home.join("Projects");
+    fs::remove_dir(&downloads).unwrap();
+    for (name, link) in [("Downloads", &downloads), ("Projects", &projects)] {
+        let target = external.path().join(name);
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("bill.pdf"), b"data").unwrap();
+        std::os::unix::fs::symlink(&target, link).unwrap();
+    }
+    h.roots = Roots::new(&h.roots.home, None, std::slice::from_ref(&projects));
+
+    for (name, root) in [("Downloads", downloads), ("Projects", projects)] {
+        assert!(matches!(plan(&h, &format!("open {name}")),
+            Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. }) if path == root));
+        let list = if name == "Downloads" { "list Downloads" } else { "list files in Projects" };
+        assert!(matches!(plan(&h, list),
+            Ok(Planned::Info { total: 1, rows, .. }) if rows[0].name == "bill.pdf"));
+        assert!(matches!(plan(&h, &format!("size of {name}")),
+            Ok(Planned::Info { total: 1, title, .. }) if title == format!("{name} uses 4 B")));
+        assert_eq!(
+            steps(&h, &format!("sort {name} by type")),
+            [
+                Action::CreateFolder { path: root.join("PDFs") },
+                Action::Move { from: root.join("bill.pdf"), to: root.join("PDFs/bill.pdf") },
+            ]
+        );
+        assert_eq!(steps(&h, &format!("create a folder in {name} named X")), [Action::CreateFolder { path: root.join("X") }]);
+        assert_eq!(
+            steps(&h, &format!("move PDFs from {name} to Desktop")),
+            [Action::Move { from: root.join("bill.pdf"), to: h.roots.desktop().join("bill.pdf") }]
+        );
+    }
+}
+
+#[test]
+fn unconfigured_links_to_a_root_do_not_work_as_folder_arguments() {
+    let mut h = home();
+    let documents = h.roots.home.join("Documents");
+    let private = documents.join("Private");
+    let outside = tempfile::tempdir().unwrap();
+    fs::create_dir(&private).unwrap();
+    h.roots = h.roots.with_exclusions(std::slice::from_ref(&private));
+
+    for parent in [&private, outside.path()] {
+        let link = parent.join("docs-link");
+        std::os::unix::fs::symlink(&documents, &link).unwrap();
+        let folder = link.display();
+        for cmd in [
+            format!("open \"{folder}\""),
+            format!("list files in \"{folder}\""),
+            format!("sort \"{folder}\" by type"),
+            format!("size of \"{folder}\""),
+            format!("create a folder in \"{folder}\" named X"),
+            format!("move PDFs from \"{folder}\" to Desktop"),
+        ] {
+            assert!(matches!(plan(&h, &cmd), Err(Stop::Problem(message)) if message.contains("outside the folders")), "{cmd}");
+        }
+    }
+}
+
+#[test]
+fn quoted_paths_with_leading_spaces_do_not_use_spoken_folder_aliases() {
+    let h = home();
+    for cmd in [r#"open " /documents""#, r#"size of " /documents""#] {
+        assert!(matches!(plan(&h, cmd), Err(Stop::Problem(message)) if message.contains("outside the folders")), "{cmd}");
+    }
+    assert!(matches!(plan(&h, r#"open " ~/Documents""#),
+        Ok(Planned::Direct { action: Action::OpenInFinder { path, .. }, .. }) if path == h.roots.home.join("Documents")));
+}
+
+#[test]
+fn copying_to_another_spelling_of_the_source_folder_plans_a_duplicate() {
+    let h = home();
+    let docs = h.roots.home.join("Documents");
+    let alias = docs.join("Alias");
+    std::os::unix::fs::symlink(&docs, &alias).unwrap();
+    let bill = docs.join("bill.pdf");
+    fs::write(&bill, b"x").unwrap();
+    assert_eq!(
+        steps(&h, "copy PDFs from Documents to ~/Documents/Alias"),
+        [Action::Copy { from: bill.clone(), to: alias.join("bill 2.pdf") }]
+    );
+    let typed = h.roots.home.join("documents");
+    if typed.is_dir() {
+        assert_eq!(steps(&h, "copy PDFs from Documents to ~/documents"), [Action::Copy { from: bill, to: typed.join("bill 2.pdf") }]);
+    }
+}
+
+#[test]
 fn quoted_number_template_produces_the_requested_preview_names() {
     let h = home();
     fs::write(h.roots.home.join("Pictures/one.png"), b"1").unwrap();
@@ -1706,6 +1798,27 @@ fn recursive_changes_cannot_start_inside_hidden_trash_or_package_folders() {
 }
 
 #[test]
+fn package_checks_stop_at_the_configured_root() {
+    let mut h = home();
+    let workspace = h.roots.desktop().join("Tool.app/Contents/Workspace");
+    let package = h.roots.home.join("Library.pages");
+    for folder in [&workspace, &package] {
+        fs::create_dir_all(folder.join("nested")).unwrap();
+        fs::write(folder.join("nested/report.pdf"), b"x").unwrap();
+    }
+    h.roots = Roots::new(&h.roots.home, None, &[workspace.clone(), package]);
+
+    assert_eq!(trash_paths(&steps(&h, "delete PDFs in Workspace including subfolders")), [workspace.join("nested/report.pdf")]);
+    assert!(matches!(plan(&h, "delete PDFs in Library.pages including subfolders"),
+        Err(Stop::Problem(message)) if message.contains("Recursive changes are blocked")));
+
+    let skipped = workspace.join("node_modules/LibraryDocs");
+    fs::create_dir_all(&skipped).unwrap();
+    assert!(matches!(plan(&h, "list files in LibraryDocs"),
+        Err(Stop::Ambiguous { candidates, .. }) if candidates == vec![skipped]));
+}
+
+#[test]
 fn flat_files_do_not_use_the_nested_hint_budget() {
     let h = home();
     let dl = h.roots.downloads();
@@ -1802,11 +1915,13 @@ fn shortcut_with_other_commands_aborts_when_a_chain_drafts_no_actions() {
     fs::create_dir(h.roots.home.join("Desktop/Backup")).unwrap();
     fs::create_dir(h.roots.home.join("Desktop/Archive")).unwrap();
     let chain = "create a folder in Desktop named Backup then create a folder in Desktop named Archive";
-    let commands = [chain, "create a folder in Desktop named Completed"].map(|cmd| (cmd.into(), parse(cmd).unwrap()));
     let choices = HashMap::new();
     let history = History::load(h.roots.home.join("history.json"));
-    let result = Planner::new(&h.roots, &choices).plan_shortcut("prepare folders", &commands, &history);
-    assert!(matches!(result, Err(Stop::Problem(message)) if message == "Backup already exists in Desktop."));
+    for commands in [[chain, "create a folder in Desktop named Completed"], ["delete PDFs in Pictures", chain]] {
+        let commands = commands.map(|cmd| (cmd.into(), parse(cmd).unwrap()));
+        let result = Planner::new(&h.roots, &choices).plan_shortcut("prepare folders", &commands, &history);
+        assert!(matches!(result, Err(Stop::Problem(message)) if message == "Backup already exists in Desktop."));
+    }
 }
 
 #[test]
@@ -1912,6 +2027,36 @@ fn skipped_folder_spotlight_fallback_requires_confirmation_and_verifies_hits() {
             "{cmd}"
         );
     }
+}
+
+#[test]
+fn skipped_folder_spotlight_fallback_rejects_symlink_targets_inside_packages() {
+    fn hits(_: &str, dirs: &[PathBuf], _: &search::Search) -> Vec<PathBuf> {
+        let docs = dirs.iter().find(|d| file_name(d) == "Documents").unwrap();
+        vec![docs.join("node_modules/pkg/Tool.app")]
+    }
+
+    let h = home();
+    let skipped = h.roots.home.join("Documents/node_modules/pkg");
+    let link = skipped.join("Tool.app");
+    let package = h.roots.desktop().join("Preview.app");
+    let inside_package = package.join("Contents/Resources");
+    fs::create_dir_all(&skipped).unwrap();
+    fs::create_dir_all(&inside_package).unwrap();
+
+    let choices = HashMap::new();
+    let history = History::load(h.roots.home.join("history.json"));
+    let plan_with_hits = || {
+        let mut planner = Planner::new(&h.roots, &choices);
+        planner.index_hits = Some(hits);
+        planner.plan(&parse("list files in Tool.app").unwrap(), &history)
+    };
+    std::os::unix::fs::symlink(inside_package, &link).unwrap();
+    assert!(matches!(plan_with_hits(), Err(Stop::Problem(message)) if message.contains("Couldn't find")));
+
+    fs::remove_file(&link).unwrap();
+    std::os::unix::fs::symlink(package, &link).unwrap();
+    assert!(matches!(plan_with_hits(), Err(Stop::Ambiguous { candidates, .. }) if candidates == vec![link]));
 }
 
 #[test]

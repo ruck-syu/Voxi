@@ -27,8 +27,8 @@ type Asking = { command: string; choices: Record<string, string>; name: string; 
 
 /** Something Voxi can learn from what just happened, offered once. */
 type Offer =
-  | { k: "folder"; name: string; path: string }
-  | { k: "phrase"; phrase: string; command: string };
+  | { k: "folder"; name: string; path: string; saved?: string }
+  | { k: "phrase"; phrase: string; command: string; saved?: string };
 
 /** How long a missed phrase stays teachable by the command that follows it. */
 const TEACH_WINDOW_MS = 3 * 60_000;
@@ -500,6 +500,8 @@ function CommandView({
     if (skipped.length >= plan.total) return;
     const canStop = plan.firstRun === "immediate" || plan.firstRun === "runNowAndRepeat";
     activeRun.current = { id: plan.id, canStop, stopping: false };
+    // An offer already answered is done; one still open stays for after the run.
+    setOffer((current) => (current?.saved ? null : current));
     setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
       const result = await api.confirm(plan.id, skipped);
@@ -730,7 +732,7 @@ function CommandView({
         skipped={phase.k === "outcome" && phase.outcome.status === "plan" ? skippedFor(phase.outcome.id) : []}
         onToggleSkip={toggleSkip}
       />
-      {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={onSettingsChanged} onDone={() => { setOffer(null); focusInput(); }} />}
+      {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={(settings, text) => { onSettingsChanged(settings); setOffer((current) => (current === offer ? { ...offer, saved: text } : current)); }} onDone={() => { setOffer(null); focusInput(); }} />}
       {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
       <Footer phase={phase} asking={!!asking} onSettings={onSettings} />
     </>
@@ -801,22 +803,22 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
 
 /** One offer to learn from what just happened: a folder's nickname, or a
  *  phrase that should run the command that worked. */
-function OfferRow({ offer, onSaved, onDone }: { offer: Offer; onSaved: (s: Settings) => void; onDone: () => void }) {
-  const [state, setState] = useState<{ k: "asking" } | { k: "saved"; text: string } | { k: "error"; message: string }>({ k: "asking" });
+// The answer lives in the parent's offer, not here: the row unmounts while a
+// command runs, and an answered offer must not ask again when it comes back.
+function OfferRow({ offer, onSaved, onDone }: { offer: Offer; onSaved: (s: Settings, text: string) => void; onDone: () => void }) {
+  const [state, setState] = useState<{ k: "asking" } | { k: "error"; message: string }>({ k: "asking" });
   const accept = async () => {
     try {
       if (offer.k === "folder") {
-        onSaved(await api.rememberFolder(offer.name, offer.path));
-        setState({ k: "saved", text: `Saved. “${offer.name}” now means ${tildify(offer.path)}.` });
+        onSaved(await api.rememberFolder(offer.name, offer.path), `Saved. “${offer.name}” now means ${tildify(offer.path)}.`);
       } else {
-        onSaved(await api.teachPhrase(offer.phrase, offer.command));
-        setState({ k: "saved", text: `Saved. “${offer.phrase}” now runs “${offer.command}”. Change it under Shortcuts.` });
+        onSaved(await api.teachPhrase(offer.phrase, offer.command), `Saved. “${offer.phrase}” now runs “${offer.command}”. Change it under Shortcuts.`);
       }
     } catch (e) {
       setState({ k: "error", message: errorMessage(e) });
     }
   };
-  if (state.k === "saved") return <div className="learn offer" role="status"><span>{state.text}</span></div>;
+  if (offer.saved) return <div className="learn offer" role="status"><span>{offer.saved}</span></div>;
   if (state.k === "error") return <div className="learn offer" role="alert"><span className="warn">{state.message}</span></div>;
   const question = offer.k === "folder"
     ? <>Always use <strong>{tildify(offer.path)}</strong> for “{offer.name}”?</>

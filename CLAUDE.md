@@ -17,3 +17,7 @@ Key routing rules:
 - Save progress → invoke /context-save
 - Resume context → invoke /context-restore
 - Author a backlog-ready spec/issue → invoke /spec
+
+## Bug fixes
+
+For every user-reported failure, add a planner test in `app/src-tauri/src/plan/messy_tests.rs` that reproduces the folder layout. If grammar was involved, also add a parser corpus case.

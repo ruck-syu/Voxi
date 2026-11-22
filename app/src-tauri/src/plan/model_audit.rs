@@ -92,7 +92,9 @@ fn model_audit_all_flagged_planner_cases() {
         let result = match crate::parse::parse(row["text"].as_str().unwrap()) {
             Err(_) => json!({"status":"parser_refused"}),
             Ok(intent) => match Planner::new(&roots, &choices).plan(&intent, &history) {
-                Err(Stop::Problem(message)) => json!({"status":"planner_refused", "message":message}),
+                Err(Stop::Problem(message) | Stop::SearchIncomplete(message) | Stop::NothingToChange(message)) => {
+                    json!({"status":"planner_refused", "message":message})
+                }
                 Err(Stop::Ambiguous { name, candidates, .. }) => {
                     json!({"status":"planner_ambiguous", "name":name, "candidates":candidates})
                 }

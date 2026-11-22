@@ -38,8 +38,8 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
   const t = text.toLowerCase();
   if (t.includes("usuals"))
     return {
-      status: "plan", firstRun: "immediate", id: 4, title: "Run my usuals: 2 commands", total: 3, noted: 0, isUndo: false,
-      warnings: ["“delete installers from Downloads”: No files match in Downloads."],
+      status: "plan", firstRun: "immediate", id: 4, title: "Run my usuals: 1 of 2 commands", total: 3, noted: 0, isUndo: false,
+      warnings: ["Skipped “delete installers from Downloads”: No files match in Downloads."],
       items: [
         { kind: "create_folder", primary: "Screenshots", detail: "new folder in ~/Desktop" },
         { kind: "move", primary: "Screenshot 2026-10-28 at 09.14.02.png", detail: "→ ~/Desktop/Screenshots" },

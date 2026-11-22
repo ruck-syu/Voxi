@@ -468,21 +468,23 @@ fn plan_command(
     request_id: u64,
     undo_entry_id: Option<u64>,
 ) -> CommandReply {
-    let outcome = plan_input_for(&state, text, choices, request_id, undo_entry_id);
+    let (outcome, search_stats) = plan_with_stats(&state, text, choices, request_id, undo_entry_id);
     let context = checked_state!(
         state.result_scope.lock(),
         CommandReply {
             outcome: Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() },
             scope: None,
-            generation: 0
+            generation: 0,
+            search_stats,
         }
     );
-    CommandReply { outcome, scope: context.summary(), generation: context.generation }
+    CommandReply { outcome, scope: context.summary(), generation: context.generation, search_stats }
 }
 
 #[derive(serde::Serialize)]
 struct CommandReply {
     outcome: Outcome,
+    search_stats: search::Stats,
     scope: Option<scope::Summary>,
     /// The results-list generation after this command.
     generation: u64,
@@ -577,12 +579,72 @@ fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, 
     plan_input_for(state, text, choices, request_id, None)
 }
 
+#[cfg(test)]
 fn plan_input_for(
     state: &AppState,
     text: String,
     choices: HashMap<String, String>,
     request_id: u64,
     undo_entry_id: Option<u64>,
+) -> Outcome {
+    plan_with_stats(state, text, choices, request_id, undo_entry_id).0
+}
+
+fn plan_with_stats(
+    state: &AppState,
+    text: String,
+    choices: HashMap<String, String>,
+    request_id: u64,
+    undo_entry_id: Option<u64>,
+) -> (Outcome, search::Stats) {
+    let start = std::time::Instant::now();
+    let control = search::Control::default();
+    let outcome = plan_input_with_control(state, text, choices, request_id, undo_entry_id, &control);
+    let stats = control.stats(start.elapsed());
+    match &outcome {
+        Outcome::NotUnderstood { .. } => emit_planning_failure(Code::ParseMiss, &control, stats),
+        Outcome::Problem { .. } => emit_planning_failure(Code::PlanningFailed, &control, stats),
+        Outcome::Ambiguous { .. } => emit_planning_failure(Code::Ambiguous, &control, stats),
+        _ => {}
+    }
+    (outcome, stats)
+}
+
+fn emit_planning_failure(code: Code, control: &search::Control, stats: search::Stats) {
+    use search::Failure;
+    if control.is_cancelled() {
+        return;
+    }
+    let emit = |code| diagnostics::emit(Event::new(code, Stage::Failed).search(stats.visited, stats.elapsed_ms_bucket));
+    let mut specific = false;
+    for (failure, code) in [
+        (Failure::Limit, Code::SearchLimit),
+        (Failure::Depth, Code::SearchDepth),
+        (Failure::Timeout, Code::SearchTimeout),
+        (Failure::Unreadable, Code::SearchUnreadable),
+        (Failure::SpotlightTimeout, Code::SpotlightTimeout),
+    ] {
+        if control.failed_with(failure) {
+            emit(code);
+            specific = true;
+        }
+    }
+    if !specific && control.failed_with(Failure::Incomplete) {
+        emit(Code::SearchIncomplete);
+        specific = true;
+    }
+    if !specific || matches!(code, Code::Ambiguous) {
+        emit(code);
+    }
+}
+
+fn plan_input_with_control(
+    state: &AppState,
+    text: String,
+    choices: HashMap<String, String>,
+    request_id: u64,
+    undo_entry_id: Option<u64>,
+    control: &search::Control,
 ) -> Outcome {
     let text = if undo_entry_id.is_some() { "undo last".into() } else { text };
     if parse::check_length(&text).is_err() {
@@ -596,7 +658,6 @@ fn plan_input_for(
         return Outcome::Problem { message };
     }
     let now = chrono::Local::now();
-    let control = search::Control::default();
     {
         let mut active =
             checked_state!(state.active_search.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() });
@@ -831,7 +892,7 @@ fn plan_input_for(
                 })
             }
         } else {
-            scheduler::Job::new_with_control(original_text.clone(), when.due, actions.clone(), &control)
+            scheduler::Job::new_with_control(original_text.clone(), when.due, actions.clone(), control)
         }),
         _ => None,
     };
@@ -842,8 +903,9 @@ fn plan_input_for(
         return Outcome::Problem { message: "Search cancelled.".into() };
     }
     match planned {
-        Err(Stop::Problem(message)) => Outcome::Problem { message },
-        Err(Stop::Ambiguous { name, candidates, reason }) => Outcome::Ambiguous {
+        Err(Stop::Problem(message) | Stop::SearchIncomplete(message) | Stop::NothingToChange(message)) => Outcome::Problem { message },
+        Err(Stop::Ambiguous { name, candidates, reason, note }) => Outcome::Ambiguous {
+            note,
             name,
             folders: !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
@@ -1309,9 +1371,12 @@ fn execute_recurring_rule(
         sched_skip(job);
         return Completion::Recurring(e);
     }
+    let start = std::time::Instant::now();
+    let control = search::Control::default();
+    let parsed_miss = || emit_planning_failure(Code::ParseMiss, &control, control.stats(start.elapsed()));
     let planned = {
         let history = checked_state!(state.history.lock(), Completion::Recurring("Voxi state is unavailable. Restart the app.".into()));
-        let planner = Planner::new(&roots, &rule.choices).with_control(search::Control::default());
+        let planner = Planner::new(&roots, &rule.choices).with_control(control.clone());
         // Legacy model intent is ignored. Use the approved shortcut snapshot
         // or parse the approved standalone command against the current files.
         match &rule.approved_source {
@@ -1323,6 +1388,7 @@ fn execute_recurring_rule(
                 match commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect::<Result<Vec<_>, _>>() {
                     Ok(commands) => planner.plan_shortcut(phrase, &commands, &history),
                     Err(bad) => {
+                        parsed_miss();
                         sched_skip(job);
                         return Completion::Recurring(format!("Skipped: Voxi doesn't understand “{bad}” in “{phrase}”."));
                     }
@@ -1331,12 +1397,24 @@ fn execute_recurring_rule(
             _ => match parse::parse(&rule.command) {
                 Ok(intent) => planner.plan(&intent, &history),
                 Err(_) => {
+                    parsed_miss();
                     sched_skip(job);
                     return Completion::Recurring(format!("Skipped: Voxi doesn't understand “{}”.", rule.command));
                 }
             },
         }
     };
+    if let Err(stop) = &planned {
+        let code = match stop {
+            Stop::Problem(_) => Some(Code::PlanningFailed),
+            Stop::SearchIncomplete(_) => Some(Code::SearchIncomplete),
+            Stop::Ambiguous { .. } => Some(Code::Ambiguous),
+            Stop::NothingToChange(_) => None,
+        };
+        if let Some(code) = code {
+            emit_planning_failure(code, &control, control.stats(start.elapsed()));
+        }
+    }
     match planned {
         Ok(Planned::Steps { actions, undo_of: None, .. }) if actions.is_empty() => {
             sched_skip(job);
@@ -1379,16 +1457,23 @@ fn execute_recurring_rule(
             sched_skip(job);
             Completion::Recurring("Skipped: this command no longer changes files.".into())
         }
-        Err(Stop::Problem(message)) => {
+        Err(Stop::NothingToChange(message)) => {
             sched_skip(job);
-            Completion::Recurring(format!("Nothing to change. {message}"))
+            let summary = if message.starts_with("Nothing to change") { message } else { format!("Nothing to change. {message}") };
+            Completion::Recurring(summary)
         }
-        Err(Stop::Ambiguous { name, reason, .. }) => {
+        Err(Stop::Problem(message) | Stop::SearchIncomplete(message)) => {
+            sched_skip(job);
+            Completion::Recurring(format!("Skipped: {message}"))
+        }
+        Err(Stop::Ambiguous { name, reason, note, .. }) => {
             sched_skip(job);
             let explanation = match reason {
                 model::AmbiguityReason::MultipleMatches => format!("“{name}” matches more than one item."),
                 model::AmbiguityReason::SuggestedMatch => format!("A possible match for “{name}” needs confirmation."),
-                model::AmbiguityReason::IncompleteSearch => format!("Deeper folders weren’t fully checked for “{name}”."),
+                model::AmbiguityReason::IncompleteSearch => {
+                    note.unwrap_or_else(|| format!("Deeper folders weren’t fully checked for “{name}”."))
+                }
             };
             Completion::Recurring(format!("Skipped: {explanation} Schedule it again and pick a match."))
         }
@@ -1698,8 +1783,14 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
 
 /// Saves a "this was wrong" report on this Mac. Nothing is sent anywhere.
 #[tauri::command]
-fn report_wrong(state: State<AppState>, command: String, outcome: serde_json::Value, note: String) -> Result<learn::Reports, String> {
-    learn::record(&state.reports_path, &command, outcome, &note)
+fn report_wrong(
+    state: State<AppState>,
+    command: String,
+    outcome: serde_json::Value,
+    note: String,
+    search_stats: Option<search::Stats>,
+) -> Result<learn::Reports, String> {
+    learn::record(&state.reports_path, &command, outcome, &note, search_stats)
 }
 
 #[tauri::command]

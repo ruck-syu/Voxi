@@ -117,12 +117,14 @@ fn index_timeout_failure_and_cancellation_are_reported() {
     let search = search::Search::default();
     let child = Command::new("/bin/sleep").arg("5").stdout(Stdio::piped()).spawn().unwrap();
     assert!(collect_spotlight(child, Some(&search), Duration::from_millis(5)).is_empty());
+    search.record_failure();
+    assert!(search.control.failed_with(search::Failure::SpotlightTimeout));
     assert!(search.status().unwrap().contains("Spotlight timed out"));
     let mut search = search::Search::default();
     search.timeout = Duration::ZERO;
     let child = Command::new("/bin/sleep").arg("5").stdout(Stdio::piped()).spawn().unwrap();
     assert!(collect_spotlight(child, Some(&search), Duration::from_secs(2)).is_empty());
-    assert!(search.status().unwrap().contains("search time limit"));
+    assert!(search.status().unwrap().contains("Search time limit"));
     let search = search::Search::default();
     search.control.cancel();
     let child = Command::new("/bin/sleep").arg("5").stdout(Stdio::piped()).spawn().unwrap();
@@ -146,7 +148,7 @@ fn incomplete_search_blocks_changes_and_marks_read_only_results() {
     let choices = HashMap::new();
     let history = History::load(h.roots.home.join("history.json"));
     assert!(matches!(plan_with_limit(&h, "delete Aeroguard files from Downloads", 1),
-        Err(Stop::Problem(message)) if message.contains("Search incomplete") && message.contains("entry limit")));
+        Err(Stop::SearchIncomplete(message)) if message.contains("Search incomplete") && message.contains("Entry limit")));
     assert!(matches!(plan_with_limit(&h, "rename AEROGUARD_1.pdf to final.pdf", 1),
         Err(Stop::Ambiguous { candidates, reason: AmbiguityReason::IncompleteSearch, .. }) if candidates == vec![dl.join("AEROGUARD_1.pdf")]));
     for command in ["list PDFs in Downloads", "count PDFs in Downloads", "show size of Downloads"] {
@@ -159,7 +161,7 @@ fn incomplete_search_blocks_changes_and_marks_read_only_results() {
     planner.search.limit = 1;
     let commands = vec![("delete Aeroguard files from Downloads".into(), parse("delete Aeroguard files from Downloads").unwrap())];
     assert!(matches!(planner.plan_shortcut("tidy", &commands, &history),
-        Err(Stop::Problem(message)) if message.contains("Search incomplete")));
+        Err(Stop::SearchIncomplete(message)) if message.contains("Search incomplete")));
     assert!(dl.join("AEROGUARD_1.pdf").exists());
 }
 
@@ -203,7 +205,7 @@ fn unreadable_lookup_does_not_rescan_or_create_folders() {
         if candidates == vec![report.clone()]));
     assert!(matches!(shortcut, Err(Stop::Ambiguous { reason: AmbiguityReason::IncompleteSearch, candidates, .. })
         if candidates == vec![report]));
-    assert!(matches!(folder, Err(Stop::Problem(message)) if message.contains("couldn't read 1 item")));
+    assert!(matches!(folder, Err(Stop::SearchIncomplete(message)) if message.contains("Couldn't read “~/Downloads/Blocked”")));
     for planner in [item_planner, folder_planner] {
         assert_eq!(planner.search.control.visited.load(std::sync::atomic::Ordering::Relaxed), 2);
     }
@@ -229,7 +231,9 @@ fn exact_miss_with_a_partial_fuzzy_snapshot_refuses_to_resolve_an_item() {
     let choices = HashMap::new();
     let mut planner = Planner::new(&h.roots, &choices);
     planner.search.limit = 1;
-    assert!(matches!(planner.resolve_item("resume", Some("Downloads")), Err(Stop::Problem(message)) if message.contains("entry limit")));
+    assert!(
+        matches!(planner.resolve_item("resume", Some("Downloads")), Err(Stop::SearchIncomplete(message)) if message.contains("Entry limit"))
+    );
     assert_eq!(planner.search.control.visited.load(std::sync::atomic::Ordering::Relaxed), 2);
     assert_eq!(planner.resolve_item("Resume.pdf", Some("Downloads")).unwrap(), downloads.join("Resume.pdf"));
 }
@@ -591,7 +595,7 @@ fn sorting_subfolders_leaves_correctly_grouped_files_alone() {
     fs::write(dl.join("PDFs/report.pdf"), b"b").unwrap();
     // By default a sort touches only top-level files, so the two files in
     // subfolders stay put and there is nothing to change.
-    assert!(matches!(plan(&h, "sort Downloads by type"), Err(Stop::Problem(message)) if message.starts_with("Nothing to change.")));
+    assert!(matches!(plan(&h, "sort Downloads by type"), Err(Stop::NothingToChange(message)) if message.starts_with("Nothing to change.")));
     // The explicit opt-in keeps the historical recursive behaviour.
     let actions = steps(&h, "sort Downloads by type including subfolders");
     assert_eq!(actions, vec![Action::Move { from: dl.join("nested/report.pdf"), to: dl.join("PDFs/report 2.pdf") }]);
@@ -599,7 +603,9 @@ fn sorting_subfolders_leaves_correctly_grouped_files_alone() {
     fs::create_dir(dl.join(&month)).unwrap();
     fs::rename(dl.join("nested/report.pdf"), dl.join(&month).join("report.pdf")).unwrap();
     fs::remove_file(dl.join("PDFs/report.pdf")).unwrap();
-    assert!(matches!(plan(&h, "sort Downloads by month"), Err(Stop::Problem(message)) if message.starts_with("Nothing to change.")));
+    assert!(
+        matches!(plan(&h, "sort Downloads by month"), Err(Stop::NothingToChange(message)) if message.starts_with("Nothing to change."))
+    );
 }
 
 #[test]
@@ -732,7 +738,7 @@ fn spotlight_hits_are_checked_against_the_disk() {
 
 #[test]
 fn cross_root_spotlight_rescues_partial_name_lookup_and_requires_confirmation() {
-    fn indexed_report(_: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
+    fn indexed_report(_: &str, dirs: &[PathBuf], _: &search::Search) -> Vec<PathBuf> {
         let docs = dirs.iter().find(|d| file_name(d) == "Documents").unwrap();
         vec![
             docs.join("Deep/report.pdf"),
@@ -766,9 +772,12 @@ fn cross_root_spotlight_rescues_partial_name_lookup_and_requires_confirmation() 
         planner.index_hits = indexed.then_some(indexed_report as IndexLookup);
         planner.plan(&intent, &history)
     };
-    assert!(matches!(plan(&choices, false), Err(Stop::Problem(message)) if message.contains("nested too deeply")));
-    assert!(matches!(plan(&choices, true), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::IncompleteSearch })
-        if name == "report.pdf" && candidates == vec![candidate.clone()]));
+    assert!(matches!(plan(&choices, false), Err(Stop::SearchIncomplete(message)) if message.contains("nested too deeply")));
+    assert!(
+        matches!(plan(&choices, true), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note) })
+        if name == "report.pdf" && candidates == vec![candidate.clone()]
+            && note.contains("~/Documents/Deep") && note.contains("Settings → Folders"))
+    );
 
     fs::write(&shallow, b"x").unwrap();
     assert!(matches!(plan(&choices, true), Err(Stop::Ambiguous { candidates, reason: AmbiguityReason::IncompleteSearch, .. })
@@ -831,11 +840,11 @@ fn shortcut_plans_all_commands_and_notes_the_idle_ones() {
     else {
         panic!("expected one combined plan")
     };
-    assert_eq!(title, "Run my usuals: 2 commands");
+    assert_eq!(title, "Run my usuals: 1 of 2 commands");
     assert!(
         actions.iter().any(|a| matches!(a, Action::Move { to, .. } if to.ends_with("Screenshots/Screenshot 2026-10-28 at 10.00.00.png")))
     );
-    assert!(warnings.iter().any(|w| w.starts_with("“delete installers from Downloads”")), "{warnings:?}");
+    assert!(warnings.iter().any(|w| w.starts_with("Skipped “delete installers from Downloads”: ")), "{warnings:?}");
 }
 
 #[test]
@@ -1490,7 +1499,7 @@ fn modified_filters_read_the_last_change_not_the_creation_date() {
 
     for cmd in ["remove files in Downloads not modified in a year", "remove files in Downloads not edited in a year"] {
         match plan(&h, cmd) {
-            Err(Stop::Problem(m)) => assert!(m.starts_with("No files match"), "{cmd}: {m}"),
+            Err(Stop::NothingToChange(m)) => assert!(m.starts_with("No files match"), "{cmd}: {m}"),
             Err(e) => panic!("{cmd}: {e:?}"),
             Ok(_) => panic!("{cmd}: a file edited today must not match"),
         }
@@ -1561,7 +1570,10 @@ fn direct_commands_stay_within_budget_when_a_subfolder_is_large() {
         "move PDFs in Documents to Archive including subfolders",
         "sort Documents by type including subfolders",
     ] {
-        assert!(matches!(plan_with_limit(&h, command, 3), Err(Stop::Problem(message)) if message.contains("entry limit")), "{command}");
+        assert!(
+            matches!(plan_with_limit(&h, command, 3), Err(Stop::SearchIncomplete(message)) if message.contains("Entry limit")),
+            "{command}"
+        );
     }
     assert_eq!(trash_paths(&steps(&h, "delete PDFs in Documents including subfolders")).len(), 33);
     assert_eq!(trash_paths(&steps(&h, "delete PDFs in Documents from subfolders")).len(), 32);
@@ -1763,14 +1775,72 @@ fn skipped_tree_notes_belong_to_the_step_that_skipped_them() {
     let history = History::load(h.roots.home.join("history.json"));
     let cmds = [first, second].map(|cmd| (cmd.into(), parse(cmd).unwrap()));
     let result = Planner::new(&h.roots, &choices).plan_shortcut("tidy", &cmds, &history);
-    assert!(matches!(result, Ok(Planned::Steps { warnings, .. })
-        if warnings.len() == 2 && warnings[0].contains(SKIPPED_TREES_NOTE)
-            && warnings[1].contains("No files match in Pictures") && !warnings[1].contains(SKIPPED_TREES_NOTE)));
+    assert!(matches!(result, Ok(Planned::Steps { title, warnings, .. })
+        if title == "Tidy: 1 of 2 commands" && warnings.len() == 2 && warnings[0].contains(SKIPPED_TREES_NOTE)
+            && warnings[1].starts_with(&format!("Skipped “{second}”: No files match in Pictures.")) && !warnings[1].contains(SKIPPED_TREES_NOTE)));
+}
+
+#[test]
+fn shortcut_does_not_skip_a_chain_that_could_not_finish_planning() {
+    let h = home();
+    fs::write(h.roots.home.join("Documents/report.pdf"), b"x").unwrap();
+    let choices = HashMap::new();
+    let history = History::load(h.roots.home.join("history.json"));
+    let commands = ["create a folder in Desktop named Backup then copy PDFs from Pictures to Desktop/Backup", "delete PDFs in Documents"]
+        .map(|cmd| (cmd.into(), parse(cmd).unwrap()));
+    let result = Planner::new(&h.roots, &choices).plan_shortcut("backup and cleanup", &commands, &history);
+    assert!(matches!(result, Err(Stop::Problem(message)) if message == "No files match in Pictures."));
+}
+
+#[test]
+fn spotlight_failures_after_complete_disk_misses_are_speculative() {
+    fn timeout(_: &str, _: &[PathBuf], index: &search::Search) -> Vec<PathBuf> {
+        index.spotlight_timeout();
+        Vec::new()
+    }
+
+    let h = home();
+    // Read-only folder resolution will also probe this skipped tree.
+    fs::create_dir(h.roots.home.join("Documents/node_modules")).unwrap();
+    let choices = HashMap::new();
+    let history = History::load(h.roots.home.join("history.json"));
+    for cmd in ["delete missing.pdf", "open MissingFolder", "list files in MissingFolder"] {
+        let mut planner = Planner::new(&h.roots, &choices);
+        planner.index_hits = Some(timeout);
+        let control = planner.search.control.clone();
+        let result = planner.plan(&parse(cmd).unwrap(), &history);
+        assert!(matches!(result, Err(Stop::Problem(message)) if message.starts_with("Couldn't find")), "{cmd}");
+        let (_, events) = crate::diagnostics::capture(|| {
+            crate::emit_planning_failure(crate::Code::PlanningFailed, &control, control.stats(Duration::ZERO));
+        });
+        assert_eq!(events.len(), 1, "{cmd}: {events:?}");
+        assert!(events[0].contains("code=E_PLANNING_FAILED "), "{cmd}: {events:?}");
+    }
+}
+
+#[test]
+fn spotlight_failures_are_recorded_when_rescuing_an_incomplete_walk() {
+    fn timeout(_: &str, _: &[PathBuf], index: &search::Search) -> Vec<PathBuf> {
+        index.spotlight_timeout();
+        Vec::new()
+    }
+
+    let h = home();
+    fs::create_dir(h.roots.home.join("Documents/Deep")).unwrap();
+    let choices = HashMap::new();
+    let history = History::load(h.roots.home.join("history.json"));
+    let mut planner = Planner::new(&h.roots, &choices);
+    planner.search.depth = 0;
+    planner.index_hits = Some(timeout);
+    let control = planner.search.control.clone();
+    assert!(matches!(planner.plan(&parse("delete missing.pdf").unwrap(), &history), Err(Stop::SearchIncomplete(_))));
+    assert!(control.failed_with(search::Failure::Depth));
+    assert!(control.failed_with(search::Failure::SpotlightTimeout));
 }
 
 #[test]
 fn skipped_folder_spotlight_fallback_requires_confirmation_and_verifies_hits() {
-    fn hits(_: &str, dirs: &[PathBuf]) -> Vec<PathBuf> {
+    fn hits(_: &str, dirs: &[PathBuf], _: &search::Search) -> Vec<PathBuf> {
         let docs = dirs.iter().find(|d| file_name(d) == "Documents").unwrap();
         vec![
             docs.join("node_modules/a/b/c/d/e/LibraryDocs"),
@@ -1936,7 +2006,7 @@ fn from_subfolders_with_nothing_nested_says_so() {
     let h = home();
     let dl = h.roots.downloads();
     fs::write(dl.join("bill.pdf"), b"a").unwrap();
-    assert!(matches!(plan(&h, "delete PDFs in Downloads from subfolders"), Err(Stop::Problem(_))));
+    assert!(matches!(plan(&h, "delete PDFs in Downloads from subfolders"), Err(Stop::NothingToChange(_))));
 }
 
 #[test]
@@ -1964,10 +2034,14 @@ fn a_deeper_folder_elsewhere_or_an_unchecked_branch_requires_a_choice() {
     fs::create_dir_all(shallow.join("projects")).unwrap();
     fs::create_dir_all(&deeper).unwrap();
     let command = "create a folder in dev/projects named flagsmith";
-    assert!(matches!(plan_with_limit(&h, command, 3), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::MultipleMatches })
-        if name == "dev" && candidates == vec![deeper, shallow.clone()]));
-    assert!(matches!(plan_with_limit(&h, command, 2), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::IncompleteSearch })
-        if name == "dev" && candidates == vec![shallow.clone()]));
+    assert!(
+        matches!(plan_with_limit(&h, command, 3), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::MultipleMatches, .. })
+        if name == "dev" && candidates == vec![deeper, shallow.clone()])
+    );
+    assert!(
+        matches!(plan_with_limit(&h, command, 2), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::IncompleteSearch, .. })
+        if name == "dev" && candidates == vec![shallow.clone()])
+    );
 
     let choices = HashMap::from([("dev".into(), shallow.clone())]);
     let history = History::load(h.roots.home.join("history.json"));
@@ -2024,7 +2098,7 @@ fn incomplete_folder_lookup_falls_back_and_never_assumes_absence() {
     let history = History::load(h.roots.home.join("history.json"));
     let mut planner = Planner::new(&h.roots, &choices);
     planner.search.limit = 1;
-    assert!(matches!(planner.plan(&command, &history), Err(Stop::Problem(message)) if message.contains("entry limit")));
+    assert!(matches!(planner.plan(&command, &history), Err(Stop::SearchIncomplete(message)) if message.contains("Entry limit")));
 }
 
 #[test]
@@ -2264,4 +2338,13 @@ fn sorting_never_follows_a_category_folder_into_trash_or_a_package() {
     fs::create_dir_all(dl.join("Tool.app/Contents")).unwrap();
     std::os::unix::fs::symlink(dl.join("Tool.app/Contents"), dl.join("PDFs")).unwrap();
     assert!(matches!(plan(&h, "sort Downloads by type"), Err(Stop::Problem(_))));
+}
+
+#[test]
+fn an_existing_excluded_folder_is_not_nothing_to_change() {
+    let mut h = home();
+    let backup = h.roots.home.join("Desktop/Backup");
+    fs::create_dir_all(&backup).unwrap();
+    h.roots = h.roots.with_exclusions(std::slice::from_ref(&backup));
+    assert!(matches!(plan(&h, "create a folder named Backup"), Err(Stop::Problem(_))));
 }

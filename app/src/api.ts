@@ -36,7 +36,7 @@ export type FirstRunPolicy = "immediate" | "oneTimeDeferred" | "repeatLater" | "
 
 export type Outcome =
   | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; warnings: string[]; isUndo: boolean; firstRun: FirstRunPolicy; scheduledFor?: string | null; repeats?: string | null }
-  | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean; reason: "multiple_matches" | "suggested_match" | "incomplete_search" }
+  | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean; reason: "multiple_matches" | "suggested_match" | "incomplete_search"; note?: string }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
   | { status: "not_understood"; text: string };
@@ -67,8 +67,15 @@ export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders
 /** "This was wrong" reports, saved only on this Mac. */
 export type Reports = { count: number; path: string };
 export type ResultScope = { count: number; visible: number; label: string };
+/** Counts and a time bucket from the request that produced the result. */
+export type SearchStats = {
+  visited: number;
+  too_deep: number;
+  unreadable: number;
+  elapsed_ms_bucket: "under100" | "under1000" | "under5000" | "at_least5000";
+};
 /** `generation` names the results list after the command, for clearing only that one. */
-export type CommandReply = { outcome: Outcome; scope: ResultScope | null; generation: number };
+export type CommandReply = { outcome: Outcome; scope: ResultScope | null; generation: number; search_stats?: SearchStats };
 /** What a newly opened command view starts from; reading it twice gives the same answer. */
 export type Opening = { scope: ResultScope | null; generation: number; notice: string | null };
 
@@ -97,7 +104,7 @@ export const api = {
   stopExecution: (id: number, scheduledFor?: string) => invoke<boolean>("cancel_execution", { id, scheduledFor }),
   cancel: () => invoke<void>("cancel_plan"),
   hide: (requestId: number) => invoke<void>("hide_window", { requestId }),
-  reportWrong: (command: string, outcome: unknown, note: string) => invoke<Reports>("report_wrong", { command, outcome, note }),
+  reportWrong: (command: string, outcome: unknown, note: string, searchStats?: SearchStats) => invoke<Reports>("report_wrong", { command, outcome, note, searchStats }),
   reportsSummary: () => invoke<Reports>("reports_summary"),
   clearReports: () => invoke<Reports>("clear_reports"),
   revealReports: () => invoke<void>("reveal_reports"),

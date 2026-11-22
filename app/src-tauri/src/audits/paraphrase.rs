@@ -97,7 +97,9 @@ fn plan_intent(roots: &Roots, intent: &Intent) -> (String, Option<Vec<String>>) 
         }
         Ok(Planned::Info { total, .. }) => (format!("info:{total}"), None),
         Ok(Planned::Direct { .. }) => ("direct_preview_not_executed".into(), None),
-        Err(Stop::Problem(message)) => (format!("problem:{message}"), None),
+        Err(Stop::Problem(message) | Stop::SearchIncomplete(message) | Stop::NothingToChange(message)) => {
+            (format!("problem:{message}"), None)
+        }
         Err(Stop::Ambiguous { name, candidates, .. }) => (format!("ambiguous:{name}:{}", candidates.len()), None),
     }
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type Settings } from "./api";
+import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type SearchStats, type Settings } from "./api";
 import { readChoice } from "./choice";
 import examples from "./examples.json";
 import { AccessView } from "./access";
@@ -16,9 +16,9 @@ let lastRequest = 0;
 type Phase =
   | { k: "ready" }
   | { k: "parsing" }
-  | { k: "outcome"; outcome: Outcome; refused?: string }
+  | { k: "outcome"; outcome: Outcome; refused?: string; searchStats?: SearchStats }
   | { k: "running"; title: string; canStop: boolean; stopping: boolean; stopError?: string }
-  | { k: "done"; result: RunResult; wasUndo: boolean }
+  | { k: "done"; result: RunResult; wasUndo: boolean; searchStats?: SearchStats }
   | { k: "error"; message: string };
 
 /** Waiting for the answer to "which one?": the command being planned and
@@ -450,11 +450,11 @@ function CommandView({
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const { outcome, scope, generation } = await api.plan(command, picked, request, undoEntryId);
+        const { outcome, scope, generation, search_stats: searchStats } = await api.plan(command, picked, request, undoEntryId);
         if (request !== requestId.current) return;
         scopeGeneration.current = generation;
         setResultScope(scope);
-        setPhase({ k: "outcome", outcome });
+        setPhase({ k: "outcome", outcome, searchStats });
         if (outcome.status === "plan") planShownAt.current = performance.now();
         if (outcome.status === "not_understood") missed.current = { text: command.trim(), at: Date.now() };
         // Once the picked folder led somewhere, offer to remember it by name.
@@ -495,7 +495,7 @@ function CommandView({
 
   const confirm = useCallback(async () => {
     if (activeRun.current || phase.k !== "outcome" || phase.outcome.status !== "plan") return;
-    const plan = phase.outcome;
+    const { outcome: plan, searchStats } = phase;
     const skipped = skip.id === plan.id ? skip.steps : [];
     if (skipped.length >= plan.total) return;
     const canStop = plan.firstRun === "immediate" || plan.firstRun === "runNowAndRepeat";
@@ -507,7 +507,7 @@ function CommandView({
       if (after) scopeGeneration.current = after.generation;
       setResultScope(after?.scope ?? null);
       setSelectionNotice(after?.notice ?? null);
-      setPhase({ k: "done", result, wasUndo: plan.isUndo });
+      setPhase({ k: "done", result, wasUndo: plan.isUndo, searchStats });
       // A phrase Voxi missed, followed soon by a command that worked, can
       // be taught: next time the phrase runs this command.
       const miss = missed.current;
@@ -520,7 +520,7 @@ function CommandView({
     } catch (e) {
       // A refusal before anything ran (a file changed, a step can't be
       // left out) keeps the preview, so it can be fixed or cancelled.
-      if (isConfirmError(e) && e.previewKept) setPhase({ k: "outcome", outcome: plan, refused: e.message });
+      if (isConfirmError(e) && e.previewKept) setPhase({ k: "outcome", outcome: plan, refused: e.message, searchStats });
       else setPhase({ k: "error", message: errorMessage(e) });
     } finally {
       activeRun.current = null;
@@ -764,7 +764,8 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
     if (state.k !== "writing") return;
     setState({ k: "saving" });
     try {
-      const r = await api.reportWrong(command, reportOutcome(phase), note);
+      const searchStats = phase.k === "outcome" || phase.k === "done" ? phase.searchStats : undefined;
+      const r = await api.reportWrong(command, reportOutcome(phase), note, searchStats);
       setState({ k: "saved", count: r.count });
     } catch (e) {
       setState({ k: "error", message: errorMessage(e) });
@@ -1040,7 +1041,7 @@ function Body(props: {
       return (
         <section className="body">
           <p className="title">{o.candidates.length === 1 ? "Confirm the match" : "Choose a match"} for “{o.name}”</p>
-          {o.reason === "incomplete_search" && <p className="quiet">Deeper folders weren’t fully checked.</p>}
+          {o.reason === "incomplete_search" && <p className="quiet">{o.note ?? "Deeper folders weren’t fully checked."}</p>}
           <p className="quiet">Say a number, or click one.</p>
           <ol className="ruled choices">
             {o.candidates.map((c, i) => (
@@ -1094,9 +1095,9 @@ function Body(props: {
             </p>
           )}
           {o.firstRun === "runNowAndRepeat" && <p className="quiet">{o.repeats}</p>}
-          {o.warnings.map((w) => (
-            <p key={w} className="quiet">
-              {w}
+          {o.warnings.map((warning, index) => (
+            <p key={`${index}-${warning}`} className="quiet warn">
+              {warning}
             </p>
           ))}
           <div className="actions">

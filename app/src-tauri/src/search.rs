@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -44,6 +44,9 @@ pub(crate) fn is_virtual_env(path: &Path) -> bool {
 pub struct Control {
     pub cancelled: Arc<AtomicBool>,
     pub visited: Arc<AtomicUsize>,
+    too_deep: Arc<AtomicUsize>,
+    unreadable: Arc<AtomicUsize>,
+    failures: Arc<AtomicU8>,
 }
 
 #[cfg(test)]
@@ -61,7 +64,7 @@ mod tests {
         }
         let search = Search { limit: 2, ..Default::default() };
         search.entries(&root);
-        assert!(search.status().unwrap().contains("entry limit"));
+        assert!(search.status().unwrap().contains("Entry limit"));
         let search = Search { limit: 2, ..Default::default() };
         let roots = std::slice::from_ref(&root);
         assert_eq!(search.nearest_dirs(roots, "DEV"), NameLookup::Found { candidates: vec![root.join("dev")], needs_confirmation: false });
@@ -69,9 +72,9 @@ mod tests {
         assert_eq!(search.nearest_dirs(roots, "missing"), NameLookup::NotFound(Vec::new()));
         assert!(search.status().is_none());
         assert!(matches!(Search { limit: 1, ..Default::default() }.nearest_dirs(roots, "missing"),
-            NameLookup::Incomplete(message) if message.contains("entry limit")));
+            NameLookup::Incomplete(message) if message.contains("Entry limit")));
         assert!(matches!(Search { depth: 0, ..Default::default() }.nearest_dirs(roots, "missing"),
-            NameLookup::Incomplete(message) if message.contains("skipped 1 folder nested too deeply")));
+            NameLookup::Incomplete(message) if message.contains("dev” because it was nested too deeply")));
     }
 
     #[test]
@@ -95,7 +98,7 @@ mod tests {
         let blocked = root.join("Blocked");
         let readable = root.join("Other");
         fs::create_dir_all(&blocked).unwrap();
-        fs::create_dir_all(readable.join("Dev")).unwrap();
+        fs::create_dir_all(readable.join("Sub/Dev")).unwrap();
         fs::create_dir(root.join("Dev")).unwrap();
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).unwrap();
 
@@ -106,10 +109,10 @@ mod tests {
         let deeper = search.nearest_dirs(std::slice::from_ref(&root), "dev");
 
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).unwrap();
-        assert_eq!(deciding, NameLookup::Found { candidates: vec![root.join("Other/Dev")], needs_confirmation: true });
-        assert_eq!(visited, 1);
-        assert_eq!(deeper, NameLookup::Found { candidates: vec![root.join("Dev"), root.join("Other/Dev")], needs_confirmation: true });
-        assert!(search.status().is_none());
+        assert_eq!(deciding, NameLookup::Found { candidates: vec![root.join("Other/Sub/Dev")], needs_confirmation: true });
+        assert_eq!(visited, 2);
+        assert_eq!(deeper, NameLookup::Found { candidates: vec![root.join("Dev"), root.join("Other/Sub/Dev")], needs_confirmation: true });
+        assert!(search.status().unwrap().contains("Blocked"));
     }
 
     #[test]
@@ -266,6 +269,19 @@ mod tests {
     }
 
     #[test]
+    fn a_partial_ancestor_scan_cannot_supply_nested_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let nested = root.join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("file.txt"), b"a").unwrap();
+        let search = Search { depth: 0, ..Default::default() };
+        assert_eq!(search.entries(root).len(), 1);
+        assert!(search.status().unwrap().contains("nested”"));
+        assert_eq!(search.entries(&nested)[0].path, nested.join("file.txt"));
+    }
+
+    #[test]
     fn ancestor_cache_matches_differently_cased_and_symlinked_dirs() {
         let dir = tempfile::tempdir().unwrap();
         let nested = dir.path().join("Nested");
@@ -302,18 +318,35 @@ mod tests {
         fs::write(dir.path().join("nested/file.txt"), b"a").unwrap();
         let search = Search { depth: 0, ..Default::default() };
         search.entries(dir.path());
-        assert_eq!(search.status().unwrap(), "Search incomplete: skipped 1 folder nested too deeply. Try a smaller folder.");
-        // Many skipped folders still produce one short message without paths.
+        let message = search.status().unwrap();
+        assert!(message.contains("nested” because it was nested too deeply."), "{message}");
+        assert!(!message.contains("including"), "{message}");
+        fs::create_dir(dir.path().join("another")).unwrap();
+        let search = Search { depth: 0, ..Default::default() };
+        search.entries(dir.path());
+        let message = search.status().unwrap();
+        assert!(
+            message.contains("Skipped 2 folders nested too deeply:") && message.contains("another”") && message.contains("nested”"),
+            "{message}"
+        );
+        fs::remove_dir(dir.path().join("another")).unwrap();
         for n in 0..20 {
             fs::create_dir_all(dir.path().join(format!("deep{n}/inner"))).unwrap();
         }
         let search = Search { depth: 0, ..Default::default() };
         search.entries(dir.path());
         let message = search.status().unwrap();
-        assert!(message.contains("skipped 21 folders nested too deeply") && !message.contains(&*dir.path().to_string_lossy()), "{message}");
+        assert!(
+            message.contains("Skipped 21 folders nested too deeply, including")
+                && message.contains("deep0”")
+                && message.contains("deep1”")
+                && !message.contains("deep2”"),
+            "{message}"
+        );
         let search = Search { limit: 1, ..Default::default() };
         search.entries(dir.path());
-        assert!(search.status().unwrap().contains("entry limit"));
+        let message = search.status().unwrap();
+        assert!(message.contains("Entry limit") && message.contains("deep0”") && message.contains("Settings → Folders"), "{message}");
         let search = Search { timeout: Duration::ZERO, ..Default::default() };
         search.entries(dir.path());
         assert!(search.status().unwrap().contains("time limit"));
@@ -329,17 +362,82 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let search = Search::default();
         search.entries(&dir.path().join("missing"));
-        assert!(search.status().unwrap().contains("couldn't read"));
+        assert!(search.status().unwrap().contains("Couldn't read"));
         let denied = dir.path().join("denied");
         fs::create_dir(&denied).unwrap();
         fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).unwrap();
         let search = Search::default();
         search.entries(&denied);
         fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).unwrap();
-        assert!(search.status().unwrap().contains("couldn't read"));
+        assert!(search.status().unwrap().contains("Couldn't read"));
+    }
+
+    #[test]
+    fn unreadable_message_shows_that_the_list_is_truncated() {
+        let dir = tempfile::tempdir().unwrap();
+        let search = Search::default();
+        for folder in ["first", "second", "third"] {
+            search.direct_entries(&dir.path().join(folder));
+        }
+        let message = search.status().unwrap();
+        assert!(message.contains("first”") && message.contains("second”") && !message.contains("third”"), "{message}");
+        assert!(message.contains("3 read errors in total"), "{message}");
+    }
+
+    #[test]
+    fn speculative_probes_do_not_record_depth_or_read_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let deep = dir.path().join("deep");
+        let missing = dir.path().join("missing");
+        fs::create_dir_all(deep.join("one/two/three/four")).unwrap();
+        fs::create_dir(&missing).unwrap();
+        let search = Search::default();
+        let subdirs = search.direct_entries(dir.path());
+        fs::remove_dir(&missing).unwrap();
+
+        // Run each nested-count probe independently so both failure paths run.
+        for subdir in subdirs.iter() {
+            assert_eq!(search.count_nested(std::slice::from_ref(subdir), |_| Some(false)), None);
+        }
+        assert!(search.lookup_inside_skipped(&[deep, missing], "absent").is_empty());
+        assert!(search.status().is_none());
+        let stats = search.control.stats(Duration::ZERO);
+        assert_eq!((stats.too_deep, stats.unreadable), (0, 0));
     }
 }
+#[derive(Clone, Copy)]
+#[repr(u8)]
+pub(crate) enum Failure {
+    Limit = 1,
+    Depth = 2,
+    Timeout = 4,
+    Unreadable = 8,
+    SpotlightTimeout = 16,
+    Incomplete = 32,
+}
+
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Stats {
+    pub visited: usize,
+    pub too_deep: usize,
+    pub unreadable: usize,
+    pub elapsed_ms_bucket: crate::settings::diagnostics::ElapsedMsBucket,
+}
+
 impl Control {
+    pub(crate) fn stats(&self, elapsed: Duration) -> Stats {
+        Stats {
+            visited: self.visited.load(Ordering::Relaxed),
+            too_deep: self.too_deep.load(Ordering::Relaxed),
+            unreadable: self.unreadable.load(Ordering::Relaxed),
+            elapsed_ms_bucket: elapsed.into(),
+        }
+    }
+
+    pub(crate) fn failed_with(&self, failure: Failure) -> bool {
+        self.failures.load(Ordering::Relaxed) & failure as u8 != 0
+    }
+
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
     }
@@ -355,7 +453,7 @@ pub struct Entry {
     pub(crate) canon: PathBuf,
 }
 
-/// Whether a command's scans saw everything they were asked to.
+/// Whether a search saw everything its query asked for.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Completeness {
     Complete,
@@ -404,13 +502,44 @@ struct Walk {
     remaining: usize,
 }
 
+#[derive(Default)]
+struct FolderIssues {
+    count: usize,
+    folders: Vec<PathBuf>,
+}
+
+impl FolderIssues {
+    fn add(&mut self, folder: &Path) {
+        self.count += 1;
+        self.remember(folder);
+    }
+
+    fn remember(&mut self, folder: &Path) {
+        const MAX_SHOWN: usize = 2;
+        if self.folders.len() < MAX_SHOWN && !self.folders.iter().any(|path| path == folder) {
+            self.folders.push(folder.to_path_buf());
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.count += other.count;
+        for folder in &other.folders {
+            self.remember(folder);
+        }
+    }
+}
+
 pub struct Search {
     cache: RefCell<HashMap<PathBuf, Arc<Scan>>>,
     skipped_folders: RefCell<Vec<PathBuf>>,
     issues: RefCell<Vec<String>>,
-    // Counted rather than listed so a large tree yields one short message.
-    too_deep: std::cell::Cell<usize>,
-    unreadable: std::cell::Cell<usize>,
+    entry_limit: RefCell<FolderIssues>,
+    too_deep: RefCell<FolderIssues>,
+    unreadable: RefCell<FolderIssues>,
+    timed_out: std::cell::Cell<bool>,
+    spotlight_timed_out: std::cell::Cell<bool>,
+    track_issue_stats: bool,
+    home: PathBuf,
     pub control: Control,
     pub depth: usize,
     pub limit: usize,
@@ -435,8 +564,13 @@ impl Search {
             cache: RefCell::new(HashMap::new()),
             skipped_folders: RefCell::new(Vec::new()),
             issues: RefCell::new(Vec::new()),
+            entry_limit: Default::default(),
             too_deep: Default::default(),
             unreadable: Default::default(),
+            timed_out: Default::default(),
+            spotlight_timed_out: Default::default(),
+            track_issue_stats: true,
+            home: PathBuf::new(),
             control,
             depth: MAX_DEPTH,
             limit: MAX_ENTRIES,
@@ -449,6 +583,7 @@ impl Search {
     }
 
     pub fn with_roots(mut self, roots: &fsx::Roots) -> Self {
+        self.home = roots.home.clone();
         self.allowed = Some(roots.allowed.clone());
         self.standard_roots = ["Desktop", "Downloads", "Documents", "Pictures"].map(|name| fsx::canonical(&roots.home.join(name))).into();
         self.exclusions = roots.exclusions.clone();
@@ -463,11 +598,18 @@ impl Search {
             limit: self.limit,
             started: self.started,
             timeout: self.timeout.min(self.started.elapsed() + time_limit),
+            track_issue_stats: self.track_issue_stats,
+            home: self.home.clone(),
             allowed: self.allowed.clone(),
             standard_roots: self.standard_roots.clone(),
             exclusions: self.exclusions.clone(),
             ..Self::new(self.control.clone())
         }
+    }
+
+    fn probe(&self, time_limit: Duration) -> Self {
+        // Keep progress and cancellation shared while counting only required scan issues.
+        Self { track_issue_stats: false, ..self.isolated(time_limit) }
     }
 
     pub fn issue(&self, message: String) {
@@ -481,11 +623,50 @@ impl Search {
         for issue in other.issues.borrow().iter() {
             self.issue(issue.clone());
         }
-        self.too_deep.set(self.too_deep.get() + other.too_deep.get());
-        self.unreadable.set(self.unreadable.get() + other.unreadable.get());
+        self.entry_limit.borrow_mut().merge(&other.entry_limit.borrow());
+        self.too_deep.borrow_mut().merge(&other.too_deep.borrow());
+        self.unreadable.borrow_mut().merge(&other.unreadable.borrow());
+        self.timed_out.set(self.timed_out.get() || other.timed_out.get());
+        self.spotlight_timed_out.set(self.spotlight_timed_out.get() || other.spotlight_timed_out.get());
     }
 
-    /// How complete this command's scans were.
+    pub(crate) fn record_failure(&self) {
+        let mut flags = 0;
+        for (present, code) in [
+            (self.entry_limit.borrow().count > 0, Failure::Limit),
+            (self.too_deep.borrow().count > 0, Failure::Depth),
+            (self.timed_out.get(), Failure::Timeout),
+            (self.unreadable.borrow().count > 0, Failure::Unreadable),
+            (self.spotlight_timed_out.get(), Failure::SpotlightTimeout),
+        ] {
+            if present {
+                flags |= code as u8;
+            }
+        }
+        if flags == 0 && !self.issues.borrow().is_empty() {
+            flags = Failure::Incomplete as u8;
+        }
+        self.control.failures.fetch_or(flags, Ordering::Relaxed);
+    }
+
+    pub(crate) fn spotlight_timeout(&self) {
+        self.spotlight_timed_out.set(true);
+    }
+
+    pub(crate) fn unreadable(&self, folder: &Path) {
+        if self.track_issue_stats {
+            self.control.unreadable.fetch_add(1, Ordering::Relaxed);
+        }
+        self.unreadable.borrow_mut().add(folder);
+    }
+
+    fn too_deep(&self, folder: &Path) {
+        if self.track_issue_stats {
+            self.control.too_deep.fetch_add(1, Ordering::Relaxed);
+        }
+        self.too_deep.borrow_mut().add(folder);
+    }
+
     pub fn completeness(&self) -> Completeness {
         if self.control.is_cancelled() {
             return Completeness::Cancelled;
@@ -505,20 +686,62 @@ impl Search {
         }
     }
 
+    fn shown_folders(&self, issue: &FolderIssues) -> String {
+        issue
+            .folders
+            .iter()
+            .map(|folder| {
+                let shown = if let Ok(rest) = folder.strip_prefix(&self.home) {
+                    format!("~/{}", rest.display())
+                } else {
+                    folder.display().to_string()
+                };
+                format!("“{shown}”")
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     fn incomplete_message(&self) -> Option<String> {
-        let mut parts = self.issues.borrow().clone();
-        let count = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-        if self.too_deep.get() > 0 {
-            parts.push(format!("skipped {} nested too deeply", count(self.too_deep.get(), "folder", "folders")));
+        let mut parts = Vec::new();
+        let limit = self.entry_limit.borrow();
+        let depth = self.too_deep.borrow();
+        let unreadable = self.unreadable.borrow();
+        if limit.count > 0 {
+            parts.push(format!("Entry limit reached in {}.", self.shown_folders(&limit)));
         }
-        if self.unreadable.get() > 0 {
-            parts.push(format!("couldn't read {}", count(self.unreadable.get(), "item", "items")));
+        match depth.count {
+            0 => {}
+            1 => parts.push(format!("Skipped {} because it was nested too deeply.", self.shown_folders(&depth))),
+            n if n == depth.folders.len() => {
+                parts.push(format!("Skipped {n} folders nested too deeply: {}.", self.shown_folders(&depth)));
+            }
+            n => parts.push(format!("Skipped {n} folders nested too deeply, including {}.", self.shown_folders(&depth))),
         }
+        if unreadable.count > 0 {
+            parts.push(format!("Couldn't read {}.", self.shown_folders(&unreadable)));
+            if unreadable.count > unreadable.folders.len() {
+                parts.push(format!("{} read errors in total.", unreadable.count));
+            }
+        }
+        if self.timed_out.get() {
+            parts.push("Search time limit reached.".into());
+        }
+        if self.spotlight_timed_out.get() {
+            parts.push("Spotlight timed out.".into());
+        }
+        parts.extend(self.issues.borrow().iter().map(|issue| format!("{issue}.")));
         if parts.is_empty() {
             return None;
         }
-        let advice = if self.unreadable.get() > 0 { "Try a smaller folder or check folder access." } else { "Try a smaller folder." };
-        Some(format!("Search incomplete: {}. {advice}", parts.join("; ")))
+        let advice = if unreadable.count > 0 {
+            "Check folder access or name a smaller folder."
+        } else if limit.count > 0 || depth.count > 0 {
+            "Name a smaller folder or use − in Settings → Folders to exclude a subfolder."
+        } else {
+            "Try a smaller folder."
+        };
+        Some(format!("Search incomplete. {} {advice}", parts.join(" ")))
     }
 
     pub fn remaining_time(&self) -> Duration {
@@ -530,7 +753,7 @@ impl Search {
             return true;
         }
         if self.remaining_time().is_zero() {
-            self.issue("search time limit reached".into());
+            self.timed_out.set(true);
             return true;
         }
         false
@@ -591,7 +814,7 @@ impl Search {
     }
 
     pub fn lookup_inside_skipped(&self, roots: &[PathBuf], name: &str) -> Vec<PathBuf> {
-        let mut probe = self.isolated((self.remaining_time() / 4).min(Duration::from_millis(100)));
+        let mut probe = self.probe((self.remaining_time() / 4).min(Duration::from_millis(100)));
         probe.limit = probe.limit.min(1_024);
         probe.depth = probe.depth.min(3);
         // Don't start more folders than the budget can reasonably cover.
@@ -657,10 +880,8 @@ impl Search {
         let mut match_budget = self.limit;
         let mut fuzzy_budget = vec![self.limit; roots.len()];
         let mut fuzzy_paths = Vec::new();
-        let mut fuzzy_truncated = false;
-        let mut unreadable = 0;
-        let mut too_deep = 0;
-        let mut budget_exceeded = false;
+        let mut fuzzy_truncated = FolderIssues::default();
+        let mut budget_exceeded = None;
         let mut decided_folder = false;
         let mut exhaustive = false;
         'levels: for depth in 0.. {
@@ -681,14 +902,15 @@ impl Search {
                     continue;
                 }
                 if depth > self.depth && !files_only {
-                    too_deep += 1;
+                    self.too_deep(dir);
                     continue;
                 }
                 let Ok(rd) = fs::read_dir(dir) else {
-                    unreadable += 1;
+                    self.unreadable(dir);
                     continue;
                 };
                 let mut relevant = Vec::new();
+                let mut truncated_here = false;
                 let keep_for_fuzzy = kind != LookupKind::Container && found.is_empty();
                 for entry in rd {
                     if stopped() {
@@ -697,11 +919,11 @@ impl Search {
                     self.control.visited.fetch_add(1, Ordering::Relaxed);
                     let capture = keep_for_fuzzy && fuzzy_budget[*root_index] > 0;
                     if keep_for_fuzzy {
-                        fuzzy_truncated |= !capture;
+                        truncated_here |= !capture;
                         fuzzy_budget[*root_index] = fuzzy_budget[*root_index].saturating_sub(1);
                     }
                     let Ok(entry) = entry else {
-                        unreadable += 1;
+                        self.unreadable(dir);
                         continue;
                     };
                     let path = entry.path();
@@ -710,7 +932,7 @@ impl Search {
                         continue;
                     }
                     let Ok(file_type) = entry.file_type() else {
-                        unreadable += 1;
+                        self.unreadable(dir);
                         continue;
                     };
                     let is_dir = file_type.is_dir();
@@ -739,6 +961,9 @@ impl Search {
                         relevant.push((path, canon_path, is_dir, matches && !hidden));
                     }
                 }
+                if truncated_here {
+                    fuzzy_truncated.add(dir);
+                }
                 relevant.sort_unstable_by(|a, b| a.0.cmp(&b.0));
                 for (path, canon_path, is_dir, matches) in relevant {
                     if stopped() {
@@ -752,7 +977,7 @@ impl Search {
                     }
                     if is_dir && !skipped && queued.insert(canon_path.clone()) {
                         let Some(remaining) = dir_budget.checked_sub(1) else {
-                            budget_exceeded = true;
+                            budget_exceeded = Some(dir.clone());
                             break 'levels;
                         };
                         dir_budget = remaining;
@@ -763,7 +988,7 @@ impl Search {
                             matched_dirs.insert(canon_path.clone());
                         } else {
                             let Some(remaining) = match_budget.checked_sub(1) else {
-                                budget_exceeded = true;
+                                budget_exceeded = Some(dir.clone());
                                 break 'levels;
                             };
                             match_budget = remaining;
@@ -772,38 +997,33 @@ impl Search {
                     }
                 }
             }
-            let incomplete = unreadable > 0 || too_deep > 0;
-            if stopped() || (incomplete && !decided_folder) {
+            if stopped() {
                 break;
             }
             decided_folder |= !matched_dirs.is_empty();
             if next.is_empty() {
-                exhaustive = !incomplete;
+                exhaustive = self.unreadable.borrow().count == 0 && self.too_deep.borrow().count == 0;
                 break;
             }
             next.sort();
             level = next;
         }
-        let failed = self.control.is_cancelled() || (!exhaustive && !decided_folder);
-        if failed {
-            let stopped = self.stopped();
-            if !through_skipped && !stopped && budget_exceeded && unreadable == 0 && too_deep == 0 && root_count > 1 {
+        if self.control.is_cancelled() {
+            return self.incomplete_lookup();
+        }
+        let stopped = self.stopped();
+        if let Some(folder) = budget_exceeded {
+            if !through_skipped && !stopped && !decided_folder && self.status().is_none() && root_count > 1 {
                 let candidates = found.into_iter().map(|entry| entry.path).collect();
                 return NameLookup::RetryPerRoot(candidates);
             }
-            if budget_exceeded {
-                self.issue("entry limit reached".into());
-            }
-            self.unreadable.set(self.unreadable.get() + unreadable);
-            self.too_deep.set(self.too_deep.get() + too_deep);
-            if found.is_empty() || self.control.is_cancelled() {
-                return self.incomplete_lookup();
-            }
+            self.entry_limit.borrow_mut().add(&folder);
         }
         if found.is_empty() {
-            if fuzzy_truncated {
-                self.issue("entry limit reached".into());
+            if !exhaustive {
+                return self.incomplete_lookup();
             }
+            self.entry_limit.borrow_mut().merge(&fuzzy_truncated);
             fuzzy_paths.sort_unstable();
             return NameLookup::NotFound(fuzzy_paths);
         }
@@ -857,16 +1077,25 @@ impl Search {
             .filter(|(root, scan)| self.walkable(root, &key, false) && !scan.skipped.iter().any(|p| key.starts_with(p)))
             .max_by_key(|(root, _)| root.components().count())
             .map(|(_, scan)| scan.clone());
-        let scan = if let Some(ancestor) = ancestor {
-            Scan {
-                entries: Arc::new(ancestor.entries.iter().filter(|e| e.canon != key && e.canon.starts_with(&key)).cloned().collect()),
-                skipped: ancestor.skipped.iter().filter(|p| p.starts_with(&key)).cloned().collect(),
-            }
+        let (scan, complete) = if let Some(ancestor) = ancestor {
+            (
+                Scan {
+                    entries: Arc::new(ancestor.entries.iter().filter(|e| e.canon != key && e.canon.starts_with(&key)).cloned().collect()),
+                    skipped: ancestor.skipped.iter().filter(|p| p.starts_with(&key)).cloned().collect(),
+                },
+                true,
+            )
         } else {
-            self.scan(dir, &key, Some(self.depth))
+            let query = self.isolated(self.remaining_time());
+            let scan = query.scan(dir, &key, Some(self.depth));
+            let complete = query.status().is_none();
+            self.record_issues(&query);
+            (scan, complete)
         };
         let scan = Arc::new(scan);
-        self.cache.borrow_mut().insert(key, scan.clone());
+        if complete {
+            self.cache.borrow_mut().insert(key, scan.clone());
+        }
         scan
     }
 
@@ -886,7 +1115,7 @@ impl Search {
         if self.depth == 0 {
             return None;
         }
-        let probe = self.isolated((self.remaining_time() / 4).min(Duration::from_millis(50)));
+        let probe = self.probe((self.remaining_time() / 4).min(Duration::from_millis(50)));
         let mut walk = Walk { remaining: self.limit.min(512), ..Walk::default() };
         let mut seen = HashSet::new();
         let mut count = 0;
@@ -934,7 +1163,7 @@ impl Search {
         let rd = match fs::read_dir(dir) {
             Ok(rd) => rd,
             Err(_) => {
-                self.unreadable.set(self.unreadable.get() + 1);
+                self.unreadable(dir);
                 return;
             }
         };
@@ -945,7 +1174,7 @@ impl Search {
             }
             match entry {
                 Ok(entry) => entries.push(entry),
-                Err(_) => self.unreadable.set(self.unreadable.get() + 1),
+                Err(_) => self.unreadable(dir),
             }
             if entries.len() > walk.remaining {
                 break;
@@ -957,7 +1186,7 @@ impl Search {
                 return;
             }
             if walk.remaining == 0 {
-                self.issue("entry limit reached".into());
+                self.entry_limit.borrow_mut().add(dir);
                 return;
             }
             walk.remaining -= 1;
@@ -970,7 +1199,7 @@ impl Search {
             let ft = match e.file_type() {
                 Ok(ft) => ft,
                 Err(_) => {
-                    self.unreadable.set(self.unreadable.get() + 1);
+                    self.unreadable(dir);
                     continue;
                 }
             };
@@ -1000,7 +1229,7 @@ impl Search {
                         walk.skipped.push(canon_path);
                     }
                 } else if depth == 0 {
-                    self.too_deep.set(self.too_deep.get() + 1);
+                    self.too_deep(&path);
                 } else {
                     self.walk(&path, &canon_path, Some(depth - 1), walk);
                 }

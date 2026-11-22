@@ -1094,6 +1094,155 @@ fn repeating_with_explicit_clock_does_not_run_on_confirm() {
 }
 
 #[test]
+fn repeating_shortcut_skips_the_whole_run_after_an_incomplete_search() {
+    let f = Fixture::new();
+    let notes = f.write("Downloads/notes.txt");
+    let phrase = "run document cleanup";
+    let commands = vec![
+        "move notes.txt from Downloads to Pictures".into(),
+        "copy PDFs from Documents to Desktop including subfolders".into(),
+        "delete PDFs in Documents".into(),
+    ];
+    f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands });
+    let outcome = f.command(&format!("{phrase} every day at 9 pm"));
+    let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RepeatLater, .. } = outcome else { panic!("{outcome:?}") };
+    assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+
+    let report = f.write("Documents/report.pdf");
+    let deep = "nested/".repeat(search::MAX_DEPTH + 1);
+    f.write(&format!("Documents/{deep}other.pdf"));
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+    let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+    result.unwrap();
+
+    assert!(notes.exists());
+    assert!(report.exists());
+    assert!(!f.home.join("Pictures/notes.txt").exists());
+    assert!(!f.home.join("Desktop/report.pdf").exists());
+    assert!(f.state.history.lock().unwrap().entries.is_empty());
+    let store = scheduler::Store::load(f.home.join("schedules.json"));
+    let task = store.jobs[0].summary();
+    assert_eq!(task.series, scheduler::SeriesState::Active);
+    assert!(task.summary.contains("Skipped: Search incomplete") && task.summary.contains("Settings → Folders"), "{}", task.summary);
+    assert!(events.iter().any(|line| line.contains("code=E_SEARCH_DEPTH ")), "{events:?}");
+    assert!(events.iter().any(|line| line.contains("code=E_SCHED_SKIP ")), "{events:?}");
+    assert!(!events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), "{events:?}");
+}
+
+#[test]
+fn shortcut_planning_failures_block_previews_and_scheduled_runs() {
+    for (first, excluded, reason) in [
+        ("copy PDFs from Documents to Desktop/Backup", true, "is outside the folders Voxi may change"),
+        ("create a folder in Desktop named Backup", false, "A file named “Backup” already exists in Desktop"),
+    ] {
+        let f = Fixture::new();
+        let phrase = "run backup and cleanup";
+        let commands = vec![first.into(), "delete PDFs in Documents".into(), "create a folder in Pictures named Completed".into()];
+        f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands });
+        let outcome = f.command(&format!("{phrase} every day at 9 pm"));
+        let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RepeatLater, .. } = outcome else { panic!("{first}: {outcome:?}") };
+        assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+
+        let report = f.write("Documents/report.pdf");
+        let blocked = f.home.join("Desktop/Backup");
+        if excluded {
+            fs::create_dir(&blocked).unwrap();
+            let mut roots = f.state.roots.write().unwrap();
+            *roots = roots.clone().with_exclusions(std::slice::from_ref(&blocked));
+        } else {
+            fs::write(&blocked, b"existing file").unwrap();
+        }
+
+        let preview = f.command(phrase);
+        assert!(matches!(&preview, Outcome::Problem { message } if message.contains(reason)), "{first}: {preview:?}");
+        assert!(f.state.pending.lock().unwrap().is_none());
+
+        f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+        let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+        result.unwrap();
+        assert!(report.exists(), "{first}");
+        assert!(!blocked.join("report.pdf").exists(), "{first}");
+        assert!(!f.home.join("Pictures/Completed").exists(), "{first}");
+        assert!(f.state.history.lock().unwrap().entries.is_empty());
+        let store = scheduler::Store::load(f.home.join("schedules.json"));
+        let task = store.jobs[0].summary();
+        assert_eq!(task.series, scheduler::SeriesState::Active);
+        assert!(task.summary.contains(": Skipped: ") && task.summary.contains(reason), "{first}: {}", task.summary);
+        assert!(events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), "{events:?}");
+        assert!(events.iter().any(|line| line.contains("code=E_SCHED_SKIP ")), "{events:?}");
+    }
+}
+
+#[test]
+fn recurring_shortcut_reports_an_idle_run_without_repeating_the_prefix() {
+    let f = Fixture::new();
+    let report = f.write("Documents/report.pdf");
+    let phrase = "run document backup";
+    let command = "copy PDFs from Documents to Desktop";
+    f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands: vec![command.into()] });
+    let outcome = f.command(&format!("{phrase} every day at 9 pm"));
+    let Outcome::Plan { id, .. } = outcome else { panic!("{outcome:?}") };
+    assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+    fs::remove_file(report).unwrap();
+
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+    run_due_tasks(&f.state).unwrap();
+
+    let store = scheduler::Store::load(f.home.join("schedules.json"));
+    let task = store.jobs[0].summary();
+    assert_eq!(task.series, scheduler::SeriesState::Active);
+    assert!(
+        task.summary.ends_with(&format!(": Nothing to change for “{phrase}”. Skipped “{command}”: No files match in Documents.")),
+        "{}",
+        task.summary
+    );
+}
+
+#[test]
+fn planning_diagnostics_route_search_failures_ambiguity_and_cancellation() {
+    let f = Fixture::new();
+    let report = f.write("Documents/report.pdf");
+    let deep = "nested/".repeat(search::MAX_DEPTH + 1);
+    f.write(&format!("Documents/{deep}other.pdf"));
+    let plan_and_capture =
+        |text: &str, request_id| diagnostics::capture(|| plan_with_stats(&f.state, text.into(), HashMap::new(), request_id, None));
+    let codes = |events: Vec<String>| {
+        events
+            .iter()
+            .map(|line| line.split_whitespace().find_map(|word| word.strip_prefix("code=")).unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+
+    let ((outcome, stats), events) = plan_and_capture("delete PDFs in Downloads", 1);
+    assert!(matches!(outcome, Outcome::Problem { .. }));
+    assert_eq!(stats.too_deep, 0);
+    assert_eq!(codes(events), ["E_PLANNING_FAILED"]);
+
+    let ((outcome, stats), events) = plan_and_capture("delete PDFs in Documents including subfolders", 2);
+    assert!(matches!(outcome, Outcome::Problem { message } if message.contains("Search incomplete")));
+    assert_eq!(stats.too_deep, 1);
+    assert_eq!(codes(events), ["E_SEARCH_DEPTH"]);
+
+    let ((outcome, stats), events) = plan_and_capture("delete report.pdf from Documents", 3);
+    assert!(matches!(outcome, Outcome::Ambiguous { candidates, reason: model::AmbiguityReason::IncompleteSearch, .. }
+        if candidates == [report.to_string_lossy()]));
+    assert_eq!(stats.too_deep, 1);
+    assert_eq!(codes(events), ["E_SEARCH_DEPTH", "E_AMBIGUOUS"]);
+
+    let search = search::Search::default();
+    search.issue("Spotlight exited unsuccessfully".into());
+    search.record_failure();
+    let (_, events) = diagnostics::capture(|| emit_planning_failure(Code::Ambiguous, &search.control, stats));
+    assert_eq!(codes(events), ["E_SEARCH_INCOMPLETE", "E_AMBIGUOUS"]);
+
+    let control = f.state.active_search.lock().unwrap().as_ref().unwrap().1.clone();
+    assert!(control.failed_with(search::Failure::Depth));
+    control.cancel();
+    let (_, events) = diagnostics::capture(|| emit_planning_failure(Code::PlanningFailed, &control, stats));
+    assert!(events.is_empty(), "{events:?}");
+}
+
+#[test]
 fn repeating_move_into_a_new_folder_makes_the_folder() {
     let f = Fixture::new();
     let pdf = f.write("Downloads/bill.pdf");
@@ -1138,7 +1287,7 @@ fn repeating_task_replans_each_run_and_keeps_going() {
     make_due(&f);
     run_due_tasks(&f.state).unwrap();
     assert_eq!(f.state.schedules.lock().unwrap().jobs[0].series, scheduler::SeriesState::Active);
-    assert!(f.state.schedules.lock().unwrap().jobs[0].summary.contains("Nothing to change"));
+    assert!(f.state.schedules.lock().unwrap().jobs[0].summary.ends_with(": Nothing to change. No files match in Downloads."));
     // Paused tasks don't run; resuming skips the missed runs.
     let third = f.write("Downloads/c.dmg");
     f.state.schedules.lock().unwrap().pause(1).unwrap();

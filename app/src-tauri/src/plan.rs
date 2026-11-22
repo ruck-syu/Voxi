@@ -24,7 +24,9 @@ mod model_audit;
 /// Why planning stopped early.
 #[derive(Debug)]
 pub enum Stop {
-    Ambiguous { name: String, candidates: Vec<PathBuf>, reason: AmbiguityReason },
+    Ambiguous { name: String, candidates: Vec<PathBuf>, reason: AmbiguityReason, note: Option<String> },
+    SearchIncomplete(String),
+    NothingToChange(String),
     Problem(String),
 }
 
@@ -40,7 +42,7 @@ fn ambiguous(name: &str, candidates: Vec<PathBuf>, incomplete: bool) -> Stop {
     } else {
         AmbiguityReason::MultipleMatches
     };
-    Stop::Ambiguous { name: name.into(), candidates, reason }
+    Stop::Ambiguous { name: name.into(), candidates, reason, note: None }
 }
 
 /// Conservative path overlap used by the chain/shortcut dependency guard.
@@ -118,7 +120,7 @@ pub struct Planner<'a> {
 }
 
 #[cfg(test)]
-type IndexLookup = fn(&str, &[PathBuf]) -> Vec<PathBuf>;
+type IndexLookup = fn(&str, &[PathBuf], &search::Search) -> Vec<PathBuf>;
 
 /// How many Spotlight answers to look at, and how long to wait for them.
 const MAX_INDEXED: usize = 5_000;
@@ -175,26 +177,16 @@ impl<'a> Planner<'a> {
             scope.validate().map_err(Stop::Problem)?;
         }
         let result = self.step(intent, history);
-        match self.search.completeness() {
-            search::Completeness::Complete => {}
-            search::Completeness::Cancelled => return problem("Search cancelled."),
-            // Only a read-only answer may be shown from an incomplete search;
-            // changes must never be planned from one.
-            search::Completeness::Partial(message) => {
-                if let Ok(Step::Finished(Planned::Info { title, summary, rows, total, .. })) = result {
-                    return Ok(Planned::Info {
-                        title,
-                        summary: format!("{message} Partial results. {summary}"),
-                        rows,
-                        total,
-                        listed: None,
-                    });
-                }
-                return problem(message);
-            }
+        if self.search.control.is_cancelled() {
+            return problem("Search cancelled.");
         }
         let title = match result? {
             Step::Changes(title) => title,
+            Step::Finished(Planned::Info { title, summary, rows, total, .. })
+                if let search::Completeness::Partial(message) = self.search.completeness() =>
+            {
+                return Ok(Planned::Info { title, summary: format!("{message} Partial results. {summary}"), rows, total, listed: None });
+            }
             Step::Finished(done) => return Ok(done),
         };
         if self.actions.is_empty() {
@@ -202,16 +194,16 @@ impl<'a> Planner<'a> {
             if let Some(w) = self.warnings.first() {
                 msg = format!("{msg} {w}");
             }
-            return problem(msg);
+            return Err(Stop::NothingToChange(msg));
         }
         Ok(Planned::Steps { title, actions: self.actions, notes: self.notes, warnings: self.warnings, undo_of: None })
     }
 
     /// Plans a saved shortcut: every command goes into one preview, confirmed
-    /// once and undone as one change. A command with nothing to do (no
-    /// screenshots today, say) becomes a note instead of stopping the rest.
+    /// once and undone as one change. A command with nothing to do becomes a
+    /// warning. Any planning failure stops the entire shortcut.
     pub fn plan_shortcut(mut self, name: &str, commands: &[(String, Intent)], history: &History) -> Result<Planned, Stop> {
-        let mut notes_by_command = Vec::new();
+        let mut skipped = Vec::new();
         let mut deps = Dependencies::default();
         for (index, (text, intent)) in commands.iter().enumerate() {
             // A checkpoint of the whole draft, so a dropped command leaves
@@ -219,44 +211,40 @@ impl<'a> Planner<'a> {
             let (actions, notes, warnings, dirs, reserved) =
                 (self.actions.len(), self.notes.len(), self.warnings.len(), self.planned_dirs.clone(), self.reserved.clone());
             let result = self.step(intent, history);
-            if let Some(message) = self.search.status() {
-                return problem(message);
+            if self.search.control.is_cancelled() {
+                return problem("Search cancelled.");
             }
-            match result {
+            let why = match result {
                 Ok(Step::Changes(_)) if self.actions.len() == actions => {
-                    let why = self.warnings.drain(warnings..).next().unwrap_or_else(|| "nothing to change".into());
-                    notes_by_command.push(format!("“{text}”: {why}"));
+                    self.warnings.get(warnings).cloned().unwrap_or_else(|| "nothing to change".into())
                 }
                 Ok(Step::Changes(_)) => {
                     // A shortcut is one preview: give later commands the same
                     // dependency guard “then” chains get.
                     self.check_dependencies(actions, index + 1, &mut deps)?;
+                    continue;
                 }
                 Ok(Step::Finished(_)) => {
                     return problem(format!("“{text}” only shows information, so it can't be part of “{name}”."));
                 }
-                Err(Stop::Problem(why)) => {
-                    // Undo anything this command half-planned.
-                    self.actions.truncate(actions);
-                    self.notes.truncate(notes);
-                    self.warnings.truncate(warnings);
-                    self.planned_dirs = dirs;
-                    self.reserved = reserved;
-                    notes_by_command.push(format!("“{text}”: {why}"));
-                }
-                Err(ambiguous) => return Err(ambiguous),
-            }
-        }
-        if let Some(message) = self.search.status() {
-            return problem(message);
+                Err(Stop::NothingToChange(why)) => why,
+                Err(stop) => return Err(stop),
+            };
+            self.actions.truncate(actions);
+            self.notes.truncate(notes);
+            self.warnings.truncate(warnings);
+            self.planned_dirs = dirs;
+            self.reserved = reserved;
+            skipped.push(format!("Skipped “{text}”: {why}"));
         }
         if self.actions.is_empty() {
-            return problem(format!("Nothing to change for “{name}”. {}", notes_by_command.join(" ")));
+            return Err(Stop::NothingToChange(format!("Nothing to change for “{name}”. {}", skipped.join(" "))));
         }
-        self.warnings.extend(notes_by_command);
         let n = commands.len();
+        let count = if skipped.is_empty() { n.to_string() } else { format!("{} of {n}", n - skipped.len()) };
+        self.warnings.extend(skipped);
         Ok(Planned::Steps {
-            title: format!("{}: {n} {}", capitalize(name), plural(n, "command", "commands")),
+            title: format!("{}: {count} {}", capitalize(name), plural(n, "command", "commands")),
             actions: self.actions,
             notes: self.notes,
             warnings: self.warnings,
@@ -285,7 +273,7 @@ impl<'a> Planner<'a> {
             }
             Intent::Lowercase { src } => self.batch_rename(src, "Lowercase", |name, _| Some(name.to_lowercase()))?,
             Intent::Number { src, base, width } => self.number(src, base, *width)?,
-            Intent::CreateFolders { names, parent } => self.create_folders(names, parent.as_deref())?,
+            Intent::CreateFolders { names, parent } => self.create_folders(names, parent.as_deref())?.0,
             Intent::SortByType { folder, include_subfolders } => self.sort(folder, true, *include_subfolders)?,
             Intent::SortByMonth { folder, include_subfolders } => self.sort(folder, false, *include_subfolders)?,
             Intent::ConvertImage { src, format } => self.convert(src, *format)?,
@@ -395,29 +383,22 @@ impl<'a> Planner<'a> {
         } else {
             let roots = self.roots.search_roots();
             let disk = self.search.isolated(self.search.remaining_time());
-            let found = match disk.nearest_dirs(&roots, first) {
-                search::NameLookup::Found { candidates, needs_confirmation: true } => {
-                    return Err(ambiguous(first, candidates, true));
-                }
-                search::NameLookup::Found { candidates, .. } => candidates,
-                search::NameLookup::NotFound(_) => Vec::new(),
+            let (mut found, needs_confirmation) = match disk.nearest_dirs(&roots, first) {
+                search::NameLookup::Found { candidates, needs_confirmation } => (candidates, needs_confirmation),
+                search::NameLookup::NotFound(_) => (Vec::new(), false),
                 search::NameLookup::RetryPerRoot(mut candidates) => {
                     candidates.extend(disk.scan_lookup_paths(&roots, search::LookupKind::Container));
-                    let found = Self::name_candidates(first, candidates, search::LookupKind::Container);
-                    if let Some(message) = disk.status() {
-                        if !found.is_empty() && !self.search.control.is_cancelled() {
-                            return Err(ambiguous(first, found, true));
-                        }
-                        self.search.record_issues(&disk);
-                        return problem(message);
-                    }
-                    found
+                    (Self::name_candidates(first, candidates, search::LookupKind::Container), disk.status().is_some())
                 }
                 search::NameLookup::Incomplete(message) => {
-                    self.search.record_issues(&disk);
-                    return problem(message);
+                    disk.record_failure();
+                    return Err(Stop::SearchIncomplete(message));
                 }
             };
+            if needs_confirmation {
+                found.retain(|path| path.is_dir() && self.check(path).is_ok());
+                return self.partial_lookup(first, found, &disk, disk.status());
+            }
             if found.is_empty() && read_only && create_in.is_none() {
                 self.confirm_skipped_folder(&disk, first, &roots)?;
             }
@@ -452,6 +433,8 @@ impl<'a> Planner<'a> {
         let outside_packages = |p: &PathBuf| p.parent().is_none_or(|parent| !Self::in_package(parent));
         candidates.retain(|p| p.is_dir() && outside_packages(p) && self.check(p).is_ok());
         if candidates.is_empty() {
+            // This probe can suggest a folder, and every suggestion already
+            // needs confirmation because the normal lookup skipped the tree.
             let index = self.search.isolated(self.search.remaining_time());
             let hits = self.indexed_paths(name, dirs, &index);
             let hits = self.verified_hits(hits, &roots, true, &index);
@@ -553,14 +536,20 @@ impl<'a> Planner<'a> {
             paths.retain(|p| p.exists() && self.check(p).is_ok());
         }
         if incomplete.is_some() && folder.is_none() {
-            paths.extend(self.search_index(name, &dirs).0);
+            let (hits, index) = self.search_index(name, &dirs);
+            index.record_failure();
+            paths.extend(hits);
         }
         let mut found = Self::name_candidates(name, paths, kind);
         if found.is_empty() && incomplete.is_none() {
-            let (hits, index_issue) = self.search_index(name, &dirs);
+            let (hits, index) = self.search_index(name, &dirs);
             found = Self::name_candidates(name, hits, kind);
+            // An index miss leaves the complete disk result authoritative.
             if !found.is_empty() {
-                incomplete = index_issue;
+                incomplete = index.status();
+                if incomplete.is_some() {
+                    index.record_failure();
+                }
             }
         }
         if self.search.control.is_cancelled() {
@@ -569,12 +558,8 @@ impl<'a> Planner<'a> {
         if found.is_empty() && read_only {
             self.confirm_skipped_folder(&disk, name, &dirs)?;
         }
-        if let Some(message) = incomplete {
-            if found.is_empty() {
-                self.search.record_issues(&disk);
-                return problem(message);
-            }
-            return Err(ambiguous(name, found, true));
+        if incomplete.is_some() {
+            return self.partial_lookup(name, found, &disk, incomplete);
         }
         match found.len() {
             1 if strong_name_match(name, &found[0]) => {
@@ -591,6 +576,17 @@ impl<'a> Planner<'a> {
             }
             _ => Err(ambiguous(name, found, false)),
         }
+    }
+
+    fn partial_lookup<T>(&self, name: &str, candidates: Vec<PathBuf>, disk: &search::Search, note: Option<String>) -> Result<T, Stop> {
+        if self.search.control.is_cancelled() {
+            return problem("Search cancelled.");
+        }
+        disk.record_failure();
+        if candidates.is_empty() {
+            return Err(Stop::SearchIncomplete(note.unwrap_or_else(|| "Search incomplete. Try a smaller folder.".into())));
+        }
+        Err(Stop::Ambiguous { name: name.into(), candidates, reason: AmbiguityReason::IncompleteSearch, note })
     }
 
     fn name_candidates(name: &str, paths: Vec<PathBuf>, kind: search::LookupKind) -> Vec<PathBuf> {
@@ -631,17 +627,17 @@ impl<'a> Planner<'a> {
         }
         #[cfg(test)]
         {
-            self.index_hits.map_or_else(Vec::new, |lookup| lookup(name, dirs))
+            self.index_hits.map_or_else(Vec::new, |lookup| lookup(name, dirs, search))
         }
         #[cfg(not(test))]
         spotlight_checked(name, dirs, Some(search))
     }
 
-    fn search_index(&self, name: &str, dirs: &[PathBuf]) -> (Vec<PathBuf>, Option<String>) {
+    fn search_index(&self, name: &str, dirs: &[PathBuf]) -> (Vec<PathBuf>, search::Search) {
         let index = self.search.isolated(self.search.remaining_time());
         let hits = self.indexed_paths(name, dirs, &index);
         let hits = self.verified_hits(hits, dirs, false, &index);
-        (hits, index.status())
+        (hits, index)
     }
 
     /// Keeps the Spotlight answers Voxi could have reached itself. The index
@@ -751,15 +747,16 @@ impl<'a> Planner<'a> {
                     }
                     Some(matches_prepared(p, filter, now, contains.as_deref(), starts.as_deref()))
                 };
+                let query = self.search.isolated(self.search.remaining_time());
                 let mut out = Vec::new();
                 let mut seen = HashSet::new();
                 let mut subdirs = Vec::new();
                 let mut skipped = Vec::new();
                 for d in &dirs {
                     let entries = if direct {
-                        self.search.direct_entries(d)
+                        query.direct_entries(d)
                     } else {
-                        let scan = self.search.recursive_entries(d);
+                        let scan = query.recursive_entries(d);
                         skipped.extend_from_slice(scan.skipped());
                         scan.entries.clone()
                     };
@@ -777,14 +774,17 @@ impl<'a> Planner<'a> {
                         match matches_file(p) {
                             Some(true) => out.push(p.clone()),
                             Some(false) => {}
-                            None => self.search.issue(format!("couldn't inspect {}", p.display())),
+                            None => query.unreadable(p.parent().unwrap_or(d)),
                         }
                     }
                 }
-                if !read_only && let Some(message) = self.search.status() {
-                    return problem(message);
+                if read_only {
+                    self.search.record_issues(&query);
+                } else if let Some(message) = query.status() {
+                    query.record_failure();
+                    return Err(Stop::SearchIncomplete(message));
                 }
-                let nested = if direct { self.search.count_nested(&subdirs, matches_file).unwrap_or(0) } else { 0 };
+                let nested = if direct { query.count_nested(&subdirs, matches_file).unwrap_or(0) } else { 0 };
                 let skipped_note = self.skipped_trees_note(&skipped);
                 if !read_only && !skipped_note.is_empty() {
                     self.warnings.push(skipped_note.clone());
@@ -839,17 +839,16 @@ impl<'a> Planner<'a> {
         }
     }
 
-    /// The shared "nothing directly in the folder" refusal for transfers and
-    /// deletes that had to drop subfolder matches.
+    /// Explains why a complete search found no inputs for a change.
     fn no_matching_files(label: &str, nested: usize, skipped_note: &str) -> Stop {
         if nested > 0 {
-            Stop::Problem(format!(
+            Stop::NothingToChange(format!(
                 "Nothing directly in {label}. Found {nested} matching {} in subfolders: add “including subfolders” at the end to include {}, or list them first and say what to do with them.",
                 plural(nested, "file", "files"),
                 plural(nested, "it", "them")
             ))
         } else {
-            Stop::Problem(format!("No files match in {label}.{}", skipped_trees_suffix(skipped_note)))
+            Stop::NothingToChange(format!("No files match in {label}.{}", skipped_trees_suffix(skipped_note)))
         }
     }
 
@@ -1136,9 +1135,18 @@ impl<'a> Planner<'a> {
                 bound.replace_source(Source::item("\0chain-output"));
             }
             let start = self.actions.len();
-            match self.step(&bound, history)? {
-                Step::Changes(_) => {}
-                Step::Finished(_) => return problem("Every step in a chain must change files."),
+            if let Intent::CreateFolders { names, parent } = &bound {
+                let (_, parent) = self.create_folders(names, parent.as_deref())?;
+                created_targets.extend(names.iter().map(|name| parent.join(name)));
+            } else {
+                match self.step(&bound, history) {
+                    // A chain that cannot finish planning would discard its draft,
+                    // so it cannot be skipped as an idle shortcut command.
+                    Err(Stop::NothingToChange(message)) => return problem(message),
+                    Err(stop) => return Err(stop),
+                    Ok(Step::Finished(_)) => return problem("Every step in a chain must change files."),
+                    Ok(Step::Changes(_)) => {}
+                }
             }
             self.chain_input = None;
             if dependent {
@@ -1151,13 +1159,6 @@ impl<'a> Planner<'a> {
                 deps.writes.extend(next.writes);
             } else {
                 self.check_dependencies(start, index + 1, &mut deps)?;
-            }
-            if let Intent::CreateFolders { names, parent } = intent {
-                let parent = match parent {
-                    Some(p) => self.resolve_folder(p, None)?,
-                    None => self.roots.desktop(),
-                };
-                created_targets.extend(names.iter().map(|n| parent.join(n)));
             }
             let added = &self.actions[start..];
             #[cfg(test)]
@@ -1185,7 +1186,7 @@ impl<'a> Planner<'a> {
         Ok(format!("Run {} commands", commands.len()))
     }
 
-    fn create_folders(&mut self, names: &[String], parent: Option<&str>) -> Result<String, Stop> {
+    fn create_folders(&mut self, names: &[String], parent: Option<&str>) -> Result<(String, PathBuf), Stop> {
         let parent = match parent {
             Some(p) => self.resolve_folder(p, None)?,
             None => self.roots.desktop(),
@@ -1195,6 +1196,9 @@ impl<'a> Planner<'a> {
                 return problem(format!("“{n}” isn't a valid folder name."));
             }
             let p = parent.join(n);
+            // An existing folder still has to be one Voxi may use, so an
+            // excluded folder is a real failure, not "nothing to change".
+            self.check(&p)?;
             if p.exists() {
                 if !p.is_dir() {
                     return problem(format!("A file named “{n}” already exists in {}. Choose another folder name.", file_name(&parent)));
@@ -1205,7 +1209,7 @@ impl<'a> Planner<'a> {
             }
         }
         let what = if names.len() == 1 { format!("folder {}", names[0]) } else { format!("{} folders", names.len()) };
-        Ok(format!("Create {what} in {}", file_name(&parent)))
+        Ok((format!("Create {what} in {}", file_name(&parent)), parent))
     }
 
     fn sort(&mut self, folder: &str, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
@@ -1339,7 +1343,7 @@ impl<'a> Planner<'a> {
         let (paths, label) = self.expand_nonempty(src)?;
         let pdfs: Vec<PathBuf> = paths.into_iter().filter(|p| ext_of(p) == "pdf").collect();
         if pdfs.len() < 2 {
-            return problem(format!("Found {} PDF in {label}; merging needs at least two.", pdfs.len()));
+            return Err(Stop::NothingToChange(format!("Found {} PDF in {label}; merging needs at least two.", pdfs.len())));
         }
         pdfs.iter().try_for_each(|p| self.check(p))?;
         let (out, note) = self.output_path(output, pdfs[0].parent().unwrap(), "pdf")?;
@@ -1388,7 +1392,7 @@ impl<'a> Planner<'a> {
         let (paths, label) = self.expand_nonempty(src)?;
         let images: Vec<PathBuf> = paths.into_iter().filter(|p| is_ext(&ext_of(p), IMAGE_EXTS)).collect();
         if images.is_empty() {
-            return problem(format!("No images match in {label}."));
+            return Err(Stop::NothingToChange(format!("No images match in {label}.")));
         }
         images.iter().try_for_each(|p| self.check(p))?;
         let default = match src {
@@ -2141,7 +2145,7 @@ fn collect_spotlight(mut child: std::process::Child, search: Option<&search::Sea
         }
         if started.elapsed() >= timeout {
             if let Some(s) = search {
-                s.issue("Spotlight timed out".into());
+                s.spotlight_timeout();
             }
             break Vec::new();
         }
@@ -2186,7 +2190,7 @@ fn collect_spotlight(mut child: std::process::Child, search: Option<&search::Sea
             }
             if started.elapsed() >= timeout {
                 if let Some(s) = search {
-                    s.issue("Spotlight timed out".into());
+                    s.spotlight_timeout();
                 }
                 break;
             }

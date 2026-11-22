@@ -176,7 +176,8 @@ fn assert_plan_in_scope(roots: &Roots, command: &str, plan: &Planned, allow_expl
 
 fn assert_complete(command: &str, result: &Result<Planned, Stop>) {
     let messages = match result {
-        Err(Stop::Problem(message)) | Ok(Planned::Info { summary: message, .. }) => std::slice::from_ref(message),
+        Err(Stop::Problem(message) | Stop::SearchIncomplete(message) | Stop::NothingToChange(message))
+        | Ok(Planned::Info { summary: message, .. }) => std::slice::from_ref(message),
         Ok(Planned::Steps { warnings, .. }) => warnings,
         Err(Stop::Ambiguous { candidates, reason, .. }) => {
             assert_ne!(*reason, AmbiguityReason::IncompleteSearch, "{command:?}: incomplete lookup for {candidates:?}");
@@ -195,7 +196,7 @@ fn assert_result_in_scope(roots: &Roots, command: &str, result: &Result<Planned,
                 assert_in_scope(roots, command, path, false, None);
             }
         }
-        Err(Stop::Problem(_)) => {}
+        Err(Stop::Problem(_) | Stop::SearchIncomplete(_) | Stop::NothingToChange(_)) => {}
     }
 }
 
@@ -353,12 +354,85 @@ fn messy_mac_unreadable_folder_only_blocks_recursive_changes() {
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
             let command = "delete PDFs in Documents including subfolders";
             assert!(matches!(fixture.plan_command(command, ENTRY_LIMIT),
-                Err(Stop::Problem(message)) if message.contains("Search incomplete")
-                    && message.contains("couldn't read 1 item")));
+                Err(Stop::SearchIncomplete(message)) if message.contains("Search incomplete")
+                    && message.contains("Couldn't read “~/Documents/dev/Locked”")));
         }
         Ok(_) => eprintln!("privileged runner can read mode-000 dirs; permission-denied assertion skipped"),
         Err(err) => panic!("unexpected error reading the locked fixture folder: {err}"),
     }
+}
+
+#[test]
+fn messy_mac_scopes_partial_scans_to_the_step_that_reads_them() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let history = History::load(roots.home.join("history.json"));
+    let choices = HashMap::new();
+    let planner = || {
+        let mut planner = Planner::new(roots, &choices);
+        planner.search.depth = 0;
+        planner
+    };
+    let delete = "delete PDFs in Documents including subfolders";
+    let create = "create a folder called Ready in Desktop";
+    let commands = [(delete.into(), parse(delete).unwrap()), (create.into(), parse(create).unwrap())];
+    let expected = Action::CreateFolder { path: roots.desktop().join("Ready") };
+
+    // An incomplete search invalidates the whole shortcut, even with an independent later command.
+    assert!(matches!(planner().plan_shortcut("tidy", &commands, &history),
+        Err(Stop::SearchIncomplete(message)) if message.contains("~/Documents/Archive") && message.contains("Settings → Folders")));
+    // A chain is one sequence and must stop at a failed step.
+    let chain = Intent::Chain { commands: commands.iter().rev().map(|(_, intent)| intent.clone()).collect() };
+    let control = search::Control::default();
+    let mut chain_planner = Planner::new(roots, &choices).with_control(control.clone());
+    chain_planner.search.depth = 0;
+    assert!(matches!(chain_planner.plan(&chain, &history),
+        Err(Stop::SearchIncomplete(message)) if message.contains("Search incomplete")));
+    assert!(control.failed_with(search::Failure::Depth));
+    let stats = control.stats(Duration::ZERO);
+    assert!(stats.visited > 0 && stats.too_deep > 0);
+    assert_eq!(stats.unreadable, 0);
+
+    let chain =
+        Intent::Chain { commands: vec![parse(create).unwrap(), parse("move invoice.pdf from Documents/Project to Pictures").unwrap()] };
+    fs::write(roots.home.join("Documents/Project/invoice.pdf"), b"scoped").unwrap();
+    assert!(matches!(planner().plan(&chain, &history),
+        Ok(Planned::Steps { actions, .. })
+            if actions.len() == 2 && actions[0] == expected
+                && matches!(&actions[1], Action::Move { from, .. } if from == &roots.home.join("Documents/Project/invoice.pdf"))));
+}
+
+#[test]
+fn incomplete_scan_stops_shortcut_before_overlapping_delete_and_chain_before_dependent_move() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let history = History::load(roots.home.join("history.json"));
+    let choices = HashMap::new();
+    let report = roots.home.join("Documents/report.pdf");
+    fs::write(&report, b"keep").unwrap();
+    let planner = || {
+        let mut planner = Planner::new(roots, &choices);
+        planner.search.depth = 0;
+        planner
+    };
+    let copy = "copy PDFs from Documents to Desktop including subfolders";
+    let delete = "delete PDFs in Documents";
+    let commands = [(copy.into(), parse(copy).unwrap()), (delete.into(), parse(delete).unwrap())];
+    assert!(matches!(planner().plan(&commands[1].1, &history),
+        Ok(Planned::Steps { actions, .. }) if actions.contains(&Action::Trash { path: report.clone() })));
+    assert!(matches!(planner().plan_shortcut("tidy", &commands, &history), Err(Stop::SearchIncomplete(_))));
+    assert!(report.exists());
+
+    let chain_dir = roots.home.join("Documents/Chain");
+    fs::create_dir_all(chain_dir.join("nested")).unwrap();
+    fs::write(chain_dir.join("report.pdf"), b"keep").unwrap();
+    let chain = parse("zip PDFs in Documents/Chain as pdfs.zip and move it to Desktop").unwrap();
+    assert!(matches!(&chain, Intent::Chain { commands }
+        if matches!(commands[1].source(), Some(Source::Item { name, folder: None }) if name == "\0chain-output")));
+    assert!(matches!(planner().plan(&chain, &history), Err(Stop::SearchIncomplete(_))));
+    assert!(matches!(Planner::new(roots, &choices).plan(&chain, &history),
+        Ok(Planned::Steps { actions, .. }) if matches!(actions.as_slice(),
+            [Action::Zip { output, .. }, Action::Move { from, .. }] if from == output)));
 }
 
 #[test]

@@ -510,6 +510,8 @@ pub enum Outcome {
         candidates: Vec<String>,
         folders: bool,
         reason: AmbiguityReason,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     /// Read-only result; nothing changed.
     Info {

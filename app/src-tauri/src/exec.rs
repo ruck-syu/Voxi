@@ -1429,6 +1429,9 @@ mod tests {
                 Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. })
                     if path == *root && guard_open(&roots, &path).is_ok()));
             assert!(guard(&roots, &[root]).is_err());
+            let target = fsx::canonical(root);
+            assert!(guard_open(&roots, &target).is_ok());
+            assert!(guard(&roots, &[&target]).is_err());
             let lower = roots.home.join(name.to_lowercase());
             if lower.exists() {
                 assert!(guard_open(&roots, &lower).is_ok());
@@ -1468,7 +1471,8 @@ mod tests {
         assert!(!roots.is_configured_root(&downloads));
         assert!(guard_open(&roots, &downloads).is_err());
         assert!(matches!(Planner::new(&roots, &choices).plan(&parse("open Downloads").unwrap(), &history),
-            Err(crate::plan::Stop::Problem(message)) if message.contains("outside the folders")));
+            Err(crate::plan::Stop::Problem(message))
+                if message == "The folder ~/Downloads moved or was remounted. Restart Voxi or update Settings → Folders."));
     }
 
     #[test]

@@ -324,6 +324,8 @@ impl<'a> Planner<'a> {
     fn check(&self, p: &Path) -> Result<(), Stop> {
         if self.roots.is_allowed_entry(p) {
             Ok(())
+        } else if self.roots.configured_root_changed(p) {
+            problem(format!("The folder {} moved or was remounted. Restart Voxi or update Settings → Folders.", self.roots.display(p)))
         } else {
             problem(format!("{} is outside the folders Voxi may change.", self.roots.display(p)))
         }
@@ -502,8 +504,9 @@ impl<'a> Planner<'a> {
             self.check(p)?;
             return if p.exists() { Ok(p.clone()) } else { problem(format!("Couldn't find {}.", self.roots.display(p))) };
         }
-        if name.starts_with('/') || name.starts_with('~') {
-            let p = fsx::expand_tilde(name, &self.roots.home);
+        let typed = name.trim_start();
+        if typed.starts_with(['/', '~']) {
+            let p = fsx::expand_tilde(typed, &self.roots.home);
             self.check(&p)?;
             return if p.exists() { Ok(p) } else { problem(format!("Couldn't find {}.", self.roots.display(&p))) };
         }

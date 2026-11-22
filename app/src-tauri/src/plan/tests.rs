@@ -84,8 +84,33 @@ fn symlinked_configured_roots_plan_like_other_folders() {
     h.roots = Roots::new(&h.roots.home, None, std::slice::from_ref(&projects));
 
     for (name, root) in [("Downloads", downloads), ("Projects", projects)] {
+        let target = fsx::canonical(&root);
         assert!(matches!(plan(&h, &format!("open {name}")),
             Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. }) if path == root));
+        assert!(matches!(plan(&h, &format!("open \"{}\"", target.display())),
+            Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. }) if path == target));
+        let settings = crate::learn::add_nickname(&crate::settings::Settings::default(), "offsite vault", &target, &h.roots.home).unwrap();
+        let nicknames = settings.nickname_paths(&h.roots.home);
+        h.roots = h.roots.with_nicknames(nicknames);
+        assert!(matches!(plan(&h, "open offsite vault"),
+            Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. }) if path == target));
+        let choices = HashMap::from([("picked vault".into(), target.clone())]);
+        let history = History::load(h.roots.home.join("history.json"));
+        assert!(matches!(Planner::new(&h.roots, &choices).plan(&parse("list files in picked vault").unwrap(), &history),
+            Ok(Planned::Info { total: 1, rows, .. }) if rows[0].name == "bill.pdf"));
+        assert_eq!(Planner::new(&h.roots, &choices).resolve_item(&format!(" {}", target.display()), None).unwrap(), target);
+        for spelling in [&root, &target] {
+            let path = spelling.display();
+            for (command, refusal) in [
+                (format!("delete \"{path}\""), "won't remove"),
+                (format!("move \"{path}\" to Desktop"), "won't move an allowed root"),
+                (format!("rename \"{path}\" to Archived Files"), "won't rename an allowed root"),
+                (format!("copy \"{path}\" to Desktop"), "won't copy an allowed root"),
+            ] {
+                let result = plan(&h, &command);
+                assert!(matches!(&result, Err(Stop::Problem(message)) if message.contains(refusal)), "{command}: {:?}", result.err());
+            }
+        }
         let list = if name == "Downloads" { "list Downloads" } else { "list files in Projects" };
         assert!(matches!(plan(&h, list),
             Ok(Planned::Info { total: 1, rows, .. }) if rows[0].name == "bill.pdf"));
@@ -104,6 +129,24 @@ fn symlinked_configured_roots_plan_like_other_folders() {
             [Action::Move { from: root.join("bill.pdf"), to: h.roots.desktop().join("bill.pdf") }]
         );
     }
+}
+
+#[test]
+fn screenshots_at_symlinked_desktop_do_not_duplicate_the_root() {
+    let mut h = home();
+    let desktop = h.roots.desktop();
+    let external = tempfile::tempdir().unwrap();
+    let target = fsx::canonical(external.path());
+    fs::remove_dir(&desktop).unwrap();
+    std::os::unix::fs::symlink(&target, &desktop).unwrap();
+    fs::write(desktop.join("tax.pdf"), b"data").unwrap();
+    h.roots = Roots::new(&h.roots.home, Some(desktop.clone()), &[]);
+
+    assert_eq!(h.roots.allowed.iter().filter(|p| **p == target).count(), 1);
+    assert!(matches!(plan(&h, "open Desktop"),
+        Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. }) if path == desktop));
+    assert!(matches!(plan(&h, "list files in Desktop"), Ok(Planned::Info { total: 1, rows, .. }) if rows[0].name == "tax.pdf"));
+    assert_eq!(steps(&h, "delete tax.pdf"), [Action::Trash { path: desktop.join("tax.pdf") }]);
 }
 
 #[test]

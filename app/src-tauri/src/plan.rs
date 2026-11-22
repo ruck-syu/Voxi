@@ -1160,6 +1160,22 @@ impl<'a> Planner<'a> {
             if dependent {
                 bound.replace_source(Source::item("\0chain-output"));
             }
+            // A step that reads a folder this chain creates has nothing to do
+            // while that folder is new: "create a folder named X and delete
+            // its contents every day" creates X now and empties it on later runs.
+            if let Some(Source::Set { folder: Some(folder), .. }) = bound.source()
+                && let Ok(dir) = self.resolve_folder(folder, Some(&self.roots.desktop()))
+                && !dir.exists()
+                && created_targets.iter().any(|target: &PathBuf| same_path(target, &dir))
+            {
+                self.warnings.push(format!("“{}” is new, so command {} has nothing to do yet.", file_name(&dir), index + 1));
+                #[cfg(test)]
+                if let Some(ends) = &mut self.chain_action_ends {
+                    ends.push(self.actions.len());
+                }
+                previous = None;
+                continue;
+            }
             let start = self.actions.len();
             if let Intent::CreateFolders { names, parent } = &bound {
                 let (_, parent) = self.create_folders(names, parent.as_deref())?;

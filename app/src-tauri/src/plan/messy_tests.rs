@@ -211,6 +211,11 @@ fn assert_direct_sources(roots: &Roots, command: &str, intent: &Intent, actions:
         }
         return;
     }
+    // A step with nothing planned (e.g. reading a folder the chain is still
+    // creating) has no sources to check, and its folder may not exist yet.
+    if actions.is_empty() {
+        return;
+    }
     let folder = match intent {
         Intent::Move { src, .. } | Intent::Copy { src, .. } | Intent::Trash { src } => match src {
             Source::Set { folder, filter } if !Planner::includes_nested_files(folder.as_deref(), filter) => folder.as_deref(),
@@ -587,4 +592,18 @@ fn messy_mac_resize_backup_cannot_follow_an_outside_link() {
     symlink(base.parent().unwrap().join("Outside"), base.join("Pictures/_to_delete")).unwrap();
     assert!(matches!(fixture.plan_command("resize images in Pictures to 800 px wide", ENTRY_LIMIT),
         Err(Stop::Problem(message)) if message.contains("outside the folders")));
+}
+
+#[test]
+fn messy_mac_create_then_delete_contents_targets_the_new_folder() {
+    let fixture = MessyMac::new();
+    let downloads = fixture.roots().home.join("Downloads");
+    let command = "create a folder in downloads named test1 and delete its content";
+    // While the folder is new, only the folder is created; nothing else in
+    // the flat, busy Downloads folder is touched.
+    assert_eq!(action_plan(&fixture, command, ENTRY_LIMIT), [Action::CreateFolder { path: downloads.join("test1") }]);
+    fs::create_dir_all(downloads.join("test1/nested")).unwrap();
+    fs::write(downloads.join("test1/old.txt"), b"old").unwrap();
+    fs::write(downloads.join("test1/nested/keep.txt"), b"keep").unwrap();
+    assert_eq!(action_plan(&fixture, command, ENTRY_LIMIT), [Action::Trash { path: downloads.join("test1/old.txt") }]);
 }

@@ -2105,3 +2105,18 @@ fn recurring_folder_and_move_chain_is_idle_once_the_folder_exists() {
     assert!(!task.summary.contains("Skipped"), "{}", task.summary);
     assert!(!events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), "{events:?}");
 }
+
+#[test]
+fn daily_create_then_delete_contents_creates_now_and_empties_later() {
+    let f = Fixture::new();
+    let outcome = f.command("create a folder in downloads named test1 and delete its content every day");
+    let Outcome::Plan { id, total: 1, warnings, .. } = outcome else { panic!("{outcome:?}") };
+    assert!(warnings.iter().any(|w| w.contains("“test1” is new")), "{warnings:?}");
+    assert!(confirm_input(&f.state, id).unwrap().error.is_none());
+    assert!(f.home.join("Downloads/test1").is_dir());
+    let old = f.write("Downloads/test1/old.txt");
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+    run_due_tasks(&f.state).unwrap();
+    assert!(!old.exists());
+    assert!(f.home.join("Downloads/test1").is_dir());
+}

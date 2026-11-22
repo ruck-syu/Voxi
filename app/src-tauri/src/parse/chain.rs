@@ -17,6 +17,15 @@ static CLAUSE_IS_ACTION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!(r"(?i)^\s*(?:(?:in|inside|within|under|on|to|into)\s+\S+\s+)?(?P<verb>{ACTIONS})\s+")).unwrap());
 static DESTINATION_REFERENCE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(?:(?:to|into)\s+(?:it|that\s+folder|(?:the\s+)?(?:new|created)\s+folder)|there)\s*$").unwrap());
+/// "Delete its contents" (or everything / the files in it) after creating a
+/// folder deletes the files in that folder, never an item named "its content".
+static CONTENTS_REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
+    let it = r"(?:it|that\s+folder|(?:the\s+)?(?:new|created)\s+folder)";
+    Regex::new(&format!(
+        r"(?i)^(delete|remove|trash)\s+(?:all\s+(?:of\s+)?)?(?:its\s+contents?|its\s+files|the\s+contents?\s+of\s+{it}|everything\s+(?:in|inside)\s+{it}|(?:the\s+)?files\s+(?:in|inside)\s+{it})$"
+    ))
+    .unwrap()
+});
 
 fn refused() -> ParseFailure {
     ParseFailure::HardRefusal(RefusalReason::MultipleActions)
@@ -118,6 +127,15 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
                 format!("{}to \"{folder}\"", &clause[..reference.start()])
             } else {
                 clause.to_string()
+            };
+            let rewritten = if let Some(c) = CONTENTS_REFERENCE.captures(outside.trim()) {
+                let folder = created.as_ref().ok_or_else(refused)?;
+                if folder.contains(['"', '\\']) {
+                    return Err(refused());
+                }
+                format!("{} everything in \"{folder}\"", &c[1])
+            } else {
+                rewritten
             };
             let binds_output = source_it.is_match(&outside);
             let rewritten = if binds_output {

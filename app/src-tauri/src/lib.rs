@@ -259,6 +259,10 @@ fn hide(app: &AppHandle) {
 
 /// Asks the page to play its close animation; the page then calls
 /// `hide_window`.
+/// How long before a tray click's delivery its own blur may have started the
+/// close. The press and release arrive together once the click has ended.
+const TRAY_CLICK_CLOSE: std::time::Duration = std::time::Duration::from_millis(600);
+
 /// Shown and not already fading out.
 fn window_open(app: &AppHandle) -> bool {
     let closing = checked_state!(app.state::<AppState>().presentation.lock(), false).closing();
@@ -2158,19 +2162,23 @@ pub fn run() {
                 // Left click opens the window; the menu is on right click.
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    // Decide on press, not release: pressing the icon takes
-                    // focus from the window, which starts its close-on-blur
-                    // fade before the release arrives. A window that was open
-                    // at the press closes; otherwise the click opens it. A
-                    // click while it was already fading out still reopens it.
-                    static OPEN_AT_PRESS: AtomicBool = AtomicBool::new(false);
-                    let TrayIconEvent::Click { button: MouseButton::Left, button_state, .. } = event else { return };
+                    // macOS delivers the press and release together, after
+                    // the click ends. By then the press has already taken
+                    // focus from the window and started its close-on-blur.
+                    // A close that began just now was caused by this click,
+                    // so the click means "close": let it finish. A click on
+                    // a window that was fading out for another reason
+                    // reopens it, as the hotkey does.
+                    let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event else {
+                        return;
+                    };
                     let app = tray.app_handle();
-                    if button_state == MouseButtonState::Down {
-                        OPEN_AT_PRESS.store(window_open(app), Ordering::SeqCst);
+                    let closed_by_this_click =
+                        checked_state!(app.state::<AppState>().presentation.lock(), ()).closing_within(TRAY_CLICK_CLOSE);
+                    if closed_by_this_click {
                         return;
                     }
-                    if OPEN_AT_PRESS.swap(false, Ordering::SeqCst) {
+                    if window_open(app) {
                         request_hide(app);
                     } else {
                         show_window(app, "command");

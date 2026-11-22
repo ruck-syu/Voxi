@@ -422,6 +422,29 @@ pub enum Action {
     },
 }
 
+impl Action {
+    /// Every path a step reads or writes.
+    pub(crate) fn paths(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Move { from, to } | Self::Copy { from, to } => vec![from.clone(), to.clone()],
+            Self::Rename { path, new_name } => vec![path.clone(), path.with_file_name(new_name)],
+            Self::Trash { path } | Self::CreateFolder { path } | Self::OpenInFinder { path, .. } | Self::RemoveEmptyFolder { path } => {
+                vec![path.clone()]
+            }
+            Self::ConvertImage { path, output, .. }
+            | Self::ExtractPages { path, output, .. }
+            | Self::Zip { path, output }
+            | Self::ResizeImage { path, backup: output, .. } => vec![path.clone(), output.clone()],
+            Self::SplitPdf { path, output_dir } => vec![path.clone(), output_dir.clone()],
+            Self::Unzip { path, destination } => vec![path.clone(), destination.clone()],
+            Self::ImagesToPdf { paths, output } | Self::MergePdf { paths, output } => {
+                paths.iter().cloned().chain(std::iter::once(output.clone())).collect()
+            }
+            Self::RestoreFromTrash { from, to } | Self::Restore { from, to } => vec![from.clone(), to.clone()],
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewItem {
@@ -451,6 +474,14 @@ pub struct InfoRow {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AmbiguityReason {
+    MultipleMatches,
+    SuggestedMatch,
+    IncompleteSearch,
+}
+
 /// What the window gets back after Enter.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case", rename_all_fields = "camelCase")]
@@ -465,20 +496,23 @@ pub enum Outcome {
         /// How many steps carry a note, such as a name changed to avoid a clash.
         noted: usize,
         warnings: Vec<String>,
+        model_interpreted: bool,
         is_undo: bool,
         scheduled_for: Option<chrono::DateTime<chrono::Local>>,
         first_run: crate::scheduler::FirstRunPolicy,
         /// How often a repeating task runs, such as “every 3 days”.
         repeats: Option<String>,
     },
-    /// A name matched more than one file. The user picks one and the
-    /// command is planned again with that choice.
+    /// A name needs a choice before the command can be planned again.
     /// `folders` is true when every candidate is a folder, so the pick can be
     /// remembered as the user's name for it.
     Ambiguous {
         name: String,
         candidates: Vec<String>,
         folders: bool,
+        reason: AmbiguityReason,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     /// Read-only result; nothing changed.
     Info {

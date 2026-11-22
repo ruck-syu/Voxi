@@ -39,7 +39,13 @@ pub fn summary(path: &Path) -> Reports {
 
 /// Appends one report: the command, what the parser made of it, what the
 /// person saw, and what they say it should have done.
-pub fn record(path: &Path, command: &str, outcome: Value, note: &str) -> Result<Reports, String> {
+pub fn record(
+    path: &Path,
+    command: &str,
+    outcome: Value,
+    note: &str,
+    search_stats: Option<crate::search::Stats>,
+) -> Result<Reports, String> {
     let command = clip(command);
     if command.is_empty() {
         return Err("There's no command to report.".into());
@@ -55,6 +61,7 @@ pub fn record(path: &Path, command: &str, outcome: Value, note: &str) -> Result<
         "intent": intent,
         "outcome": outcome,
         "note": clip(note),
+        "search_stats": search_stats,
     });
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -123,14 +130,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = reports_path(dir.path());
         assert_eq!(summary(&path).count, 0);
-        record(&path, "move report.pdf to Documents", json!({"status": "plan"}), "should copy").unwrap();
-        let r = record(&path, "make me a sandwich", json!({"status": "not_understood"}), "").unwrap();
+        record(
+            &path,
+            "move report.pdf to Documents",
+            json!({"status": "plan"}),
+            "should copy",
+            Some(crate::search::Control::default().stats(std::time::Duration::from_millis(120))),
+        )
+        .unwrap();
+        let r = record(&path, "make me a sandwich", json!({"status": "not_understood"}), "", None).unwrap();
         assert_eq!(r.count, 2);
         let rows: Vec<Value> = fs::read_to_string(&path).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
         assert_eq!(rows[0]["intent"]["intent"], "move");
         assert_eq!(rows[0]["note"], "should copy");
+        assert_eq!(rows[0]["search_stats"], json!({"visited": 0, "too_deep": 0, "unreadable": 0, "elapsed_ms_bucket": "under1000"}));
+        assert!(rows[1]["search_stats"].is_null());
         assert!(rows[1]["intent"].is_null());
-        assert!(record(&path, "   ", json!(null), "").is_err());
+        assert!(record(&path, "   ", json!(null), "", None).is_err());
         assert_eq!(clear(&path).unwrap().count, 0);
     }
 

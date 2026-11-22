@@ -68,6 +68,33 @@ fn crate_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+pub(crate) fn regression_cases() -> Vec<(String, String, String)> {
+    cases_in(&crate_root().join("src/parse/corpus"))
+}
+
+pub(crate) const REGRESSION_DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();
+
+pub(crate) struct RegressionDateGuard(Option<NaiveDate>, std::marker::PhantomData<*const ()>);
+
+impl Drop for RegressionDateGuard {
+    fn drop(&mut self) {
+        super::dates::TEST_TODAY.with(|today| today.set(self.0));
+    }
+}
+
+#[must_use]
+pub(crate) fn pin_regression_date() -> RegressionDateGuard {
+    let previous = super::dates::TEST_TODAY.with(|today| today.replace(Some(REGRESSION_DATE)));
+    RegressionDateGuard(previous, std::marker::PhantomData)
+}
+
+pub(crate) fn xorshift32(state: &mut u32) -> u32 {
+    *state ^= *state << 13;
+    *state ^= *state >> 17;
+    *state ^= *state << 5;
+    *state
+}
+
 /// Opt-in extension inventory audit. The expected parser contract is the
 /// current, explicitly supported single-extension vocabulary; catalog entries
 /// outside that set are recorded as gaps rather than blessed by observation.
@@ -137,16 +164,10 @@ fn extension_inventory_audit_jsonl() {
     let alphabet = b"abcdefghijklmnopqrstuvwxyz0123456789";
     let mut generated = std::collections::BTreeSet::new();
     while generated.len() < 1024 {
-        state ^= state << 13;
-        state ^= state >> 17;
-        state ^= state << 5;
-        let len = 1 + (state as usize % 8);
+        let len = 1 + (xorshift32(&mut state) as usize % 8);
         let mut word = String::new();
         for _ in 0..len {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            word.push(alphabet[state as usize % alphabet.len()] as char);
+            word.push(alphabet[xorshift32(&mut state) as usize % alphabet.len()] as char);
         }
         if !extensions.contains(&word) {
             generated.insert(word);
@@ -252,8 +273,8 @@ fn extension_parse_outcome(command: &str) -> (bool, Value) {
 #[test]
 fn corpus_commands_build_the_intended_intent() {
     // The expected dates were written for this day.
-    super::dates::TEST_TODAY.with(|t| t.set(NaiveDate::from_ymd_opt(2026, 10, 28)));
-    let cases = cases_in(&crate_root().join("src/parse/corpus"));
+    let _date = pin_regression_date();
+    let cases = regression_cases();
     let mut failures = Vec::new();
     for (command, expected, at) in &cases {
         let want = expected_value(expected, at);

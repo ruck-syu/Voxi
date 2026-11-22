@@ -21,44 +21,32 @@ Ordinary builds do not enable this model automatically.
 
 ## Application behavior
 
-Eligible file changes and compound requests are sent to the model before the
-rule parser, including their original schedule wording. The model returns typed
-steps and a symbolic schedule. Quotes bind literal values on the host, preserving
-Unicode exactly and refusing omitted, invented or embedded aliases. Output
-must match the supported protocol, operation set, file types, previous-folder
-references and schedule bounds. Only then is it converted to typed app intents.
-No additional input-language patterns interpret the model's command.
+`VOXI_MODEL_ROUTING=fallback` is the default. The rules run first, and the model
+can interpret eligible grammar misses and failed lookups for unquoted transfer
+items that read like references. Each model step must account for the full
+wording of its clause. Transfer readings require an explicit source folder
+and a supported file type. Quote multiword names so Voxi can distinguish
+them from qualifiers. Folder lookup errors and named items stay on the
+rule path. Set `VOXI_MODEL_ROUTING=legacy` to try the model before eligible rules
+and skip the retry after a rule lookup fails. The values `0`, `false`, and
+`off` also select legacy mode, regardless of case. Voxi logs the mode at
+startup when the structured model is enabled.
 
-Existing explicit hard refusals remain terminal, except the multiple-action
-classification which now admits model interpretation. Read-only and other
-recognized command kinds, exact saved shortcuts and previous-result scopes keep
-their existing paths. A model REFUSE falls back to the rules; invalid model output
-or inference failure is an error and never a partially accepted model plan.
+Hard refusals, read-only requests, saved shortcuts, and previous-result scopes
+keep their rule paths. Trash commands and transfers into Trash or bin folders
+are rule-only in both modes. Repeating tasks also require a rule interpretation.
+One-time model schedules must match the scheduler's reading of the original
+command.
 
-Planning still resolves actual filesystem names, enforces allowed roots, reserves
-non-clobbering outputs, blocks unsupported file dependencies, and shows the normal
-preview. Model previews include a reminder to review source folders and schedule.
-File changes and scheduling still require confirmation. No generated text is
-executed as a shell command.
+The model returns typed steps and a symbolic schedule. The decoder preserves
+quoted names and checks literals, supported operations, file types, folder
+references, and schedule bounds. The planner checks the resolved filesystem
+paths, allowed roots, and transfer destinations. The preview displays a model
+notice above the steps and still requires confirmation. Cancellation and
+request-generation checks cover inference and preview publication.
 
-A recurring model task persists the approved typed `Intent` in the new optional
-`Rule.modelIntent` field. At future runs, the ordinary planner expands that same
-intent against current files; it does not call the model or reinterpret its text.
-Old jobs deserialize with no model intent and retain their original behavior.
-One-time tasks continue to persist their exact previewed actions and fingerprints.
-Cancellation and request-generation checks surround model inference and preview
-publication. Model work runs on the existing blocking planning worker, not the UI.
+## Historical activation results and remaining limits
 
-## Verification and remaining limits
-
-- 267 Rust tests pass with the model feature; 23 opt-in/report tests are ignored.
-- 261 Rust tests pass without the model feature.
-- The frontend TypeScript/Vite build passes.
-- Real-model native test: the known daily create-folder/move-PDFs sentence produces
-  two typed steps and a daily repeat.
-- Real-model app test: preview changes nothing, confirmation saves the schedule,
-  the stored typed intent survives reload, a later run works even if its text is
-  deliberately unparseable, and one undo reverses the run.
 - The native Q8 audit processed all 50 frozen cases using the actual Rust literal
   adapter, intent compiler and scheduler. It exactly handled 21/30 supported
   requests, refused seven, and accepted two wrong schedules (S006 and S027).
@@ -76,8 +64,11 @@ the app stays debuggable. No broader production-readiness claim is made.
 The activation is development-only and uses local external artifacts. It does not
 publish a release or bundle a Python runtime. Inference is native Rust/Candle.
 
-Re-run the real-model checks and report-only audit from `app/src-tauri`:
+Re-run the real-model checks and report-only audit from `app/src-tauri`.
+The audit applies the fallback wording and schedule checks to all 50 model
+outputs, including commands the app routes to rules. It counts Trash steps
+in the frozen corpus as expected refusals.
 
 ```sh
-rtk proxy env VOXI_PLAN_MODEL_DIR="$HOME/.local/share/voxi/experiments/plan-model-v4c-2026-11-17/native-model" VOXI_PLAN_AUDIT_OUT=/tmp/voxi-native-plan-audit.jsonl cargo test --lib --features tiny-model structured_model_ -- --ignored --nocapture --test-threads=1
+rtk proxy env VOXI_PLAN_MODEL_DIR="$HOME/.local/share/voxi/experiments/plan-model-v4c-2026-11-17/native-model" VOXI_PLAN_AUDIT_OUT=/tmp/voxi-native-plan-audit.jsonl cargo test --locked --lib --features tiny-model structured_model_ -- --ignored --nocapture --test-threads=1
 ```

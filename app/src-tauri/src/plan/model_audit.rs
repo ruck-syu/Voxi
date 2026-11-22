@@ -92,8 +92,17 @@ fn model_audit_all_flagged_planner_cases() {
         let result = match crate::parse::parse(row["text"].as_str().unwrap()) {
             Err(_) => json!({"status":"parser_refused"}),
             Ok(intent) => match Planner::new(&roots, &choices).plan(&intent, &history) {
-                Err(Stop::Problem(message)) => json!({"status":"planner_refused", "message":message}),
-                Err(Stop::Ambiguous { name, candidates }) => json!({"status":"planner_ambiguous", "name":name, "candidates":candidates}),
+                Err(
+                    Stop::Problem(message)
+                    | Stop::MissingTransferItem { message, .. }
+                    | Stop::SearchIncomplete(message)
+                    | Stop::NothingToChange(message),
+                ) => {
+                    json!({"status":"planner_refused", "message":message})
+                }
+                Err(Stop::Ambiguous { name, candidates, .. }) => {
+                    json!({"status":"planner_ambiguous", "name":name, "candidates":candidates})
+                }
                 Ok(Planned::Steps { actions, title, .. }) => json!({"status":"preview_only", "title":title, "actions":actions}),
                 Ok(Planned::Info { title, summary, total, .. }) => {
                     json!({"status":"read_only", "title":title, "summary":summary, "total":total})

@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "tiny-model")]
+use plan_model::RoutingMode::{Fallback, Legacy};
 use std::{cell::Cell, fs};
 struct Fixture {
     _temp: tempfile::TempDir,
@@ -42,6 +44,19 @@ impl Fixture {
         self.request.set(self.request.get() + 1);
         plan_input(&self.state, text.into(), HashMap::new(), self.request.get())
     }
+    #[cfg(feature = "tiny-model")]
+    fn command_with_model(&self, text: &str, mode: plan_model::RoutingMode, wire: impl Fn(&str) -> &'static str) -> Outcome {
+        self.request.set(self.request.get() + 1);
+        plan_input_routed(
+            &self.state,
+            text.into(),
+            HashMap::new(),
+            self.request.get(),
+            None,
+            &search::Control::default(),
+            ModelRouting { enabled: true, mode, interpret: &|text, _, now| plan_model::Prepared::new(text)?.finish(wire(text), text, now) },
+        )
+    }
     fn paths(&self) -> Vec<PathBuf> {
         self.state.result_scope.lock().unwrap().current.as_ref().unwrap().paths()
     }
@@ -52,6 +67,251 @@ impl Fixture {
         assert!(matches!(self.command("list the items in Downloads"), Outcome::Info { .. }));
     }
 }
+
+#[cfg(feature = "tiny-model")]
+const MOVE_ITS_CONTENT: &str = "move its content from Downloads to Pictures";
+
+#[cfg(feature = "tiny-model")]
+fn unexpected_inference(text: &str) -> &'static str {
+    panic!("Unexpected model call for {text:?}");
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_fallback_previews_a_missing_transfer_item_with_its_original_schedule() {
+    let f = Fixture::new();
+    let file = f.write("Downloads/report.pdf");
+    for scheduled in [false, true] {
+        let command = if scheduled { format!("{MOVE_ITS_CONTENT} at 5 pm") } else { MOVE_ITS_CONTENT.into() };
+        let calls = Cell::new(0);
+        let outcome = f.command_with_model(&command, Fallback, |text| {
+            assert_eq!(text, command);
+            calls.set(calls.get() + 1);
+            if scheduled {
+                r#"["plan",[["move","files","Downloads","Pictures"]],["at","17:00","next"]]"#
+            } else {
+                r#"["plan",[["move","files","Downloads","Pictures"]],null]"#
+            }
+        });
+        assert_eq!(calls.get(), 1);
+        assert!(
+            matches!(&outcome, Outcome::Plan { total: 1, model_interpreted: true, scheduled_for, .. }
+            if scheduled_for.is_some() == scheduled),
+            "{outcome:?}"
+        );
+        assert!(file.exists());
+        assert!(!f.home.join("Pictures/report.pdf").exists());
+    }
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_fallback_keeps_clean_rules_and_explicit_item_names() {
+    let f = Fixture::new();
+    for command in ["create a folder in downloads named test1", "create a folder in downloads named test1 and delete its content"] {
+        let outcome = f.command_with_model(command, Fallback, unexpected_inference);
+        assert!(matches!(&outcome, Outcome::Plan { total: 1, model_interpreted: false, .. }), "{outcome:?}");
+    }
+    for name in [r#""its    content""#, "its-notes", "IT-docs"] {
+        let outcome = f.command_with_model(&format!("move {name} from Downloads to Pictures"), Fallback, unexpected_inference);
+        assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("Couldn't find")), "{outcome:?}");
+    }
+    f.write("Downloads/its content");
+    let outcome = f.command_with_model(MOVE_ITS_CONTENT, Fallback, unexpected_inference);
+    assert!(matches!(outcome, Outcome::Plan { total: 1, model_interpreted: false, .. }));
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_fallback_keeps_explicit_folder_lookups_on_the_rule_path() {
+    let f = Fixture::new();
+    f.write("Downloads/unrelated.pdf");
+    for folder in ["Contents", r#""IT""#, r#""Stuff""#, r#""The   Inbox""#] {
+        for suffix in ["", " every week"] {
+            let command = format!("move PDFs from {folder} to Downloads{suffix}");
+            let outcome = f.command_with_model(&command, Fallback, unexpected_inference);
+            assert!(
+                matches!(&outcome, Outcome::Problem { message } if message.starts_with("Couldn't find a folder named")),
+                "{command}: {outcome:?}"
+            );
+            assert!(f.state.pending.lock().unwrap().is_none());
+        }
+    }
+    // Unquoted IT is already refused as a pronoun by the parser.
+    let outcome =
+        f.command_with_model("move PDFs from IT to Downloads", Fallback, |_| r#"["plan",[["move","pdfs","Downloads","IT"]],null]"#);
+    assert!(matches!(outcome, Outcome::NotUnderstood { .. }));
+    for command in [r#"create a folder named Reports in "The Inbox""#, r#"rename "The Inbox" from Documents to Reports"#] {
+        let outcome = f.command_with_model(command, Fallback, unexpected_inference);
+        assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("Couldn't find")), "{command}: {outcome:?}");
+    }
+    for folder in ["Contents", "IT"] {
+        let path = f.write(&format!("Documents/{folder}/report.pdf"));
+        let command = format!(r#"move PDFs from "{folder}" to Downloads"#);
+        let outcome = f.command_with_model(&command, Fallback, unexpected_inference);
+        assert!(matches!(&outcome, Outcome::Plan { total: 1, model_interpreted: false, .. }), "{outcome:?}");
+        assert!(matches!(&f.state.pending.lock().unwrap().as_ref().unwrap().actions[..], [Action::Move { from, .. }] if *from == path));
+    }
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_fallback_keeps_filters_on_transfer_grammar_misses() {
+    let f = Fixture::new();
+    f.write("Downloads/report.pdf");
+    for command in [
+        "Could PDFs older than 90 days from Downloads be moved to Documents",
+        "Could report.pdf from Downloads be relocated to Documents",
+        "back up PDFs larger than 50 MB from Downloads to Documents",
+        "place files containing invoice from Downloads into Documents",
+        "put unread PDFs from Downloads in the folder inside Documents",
+        r#"stash "report.pdf" from Downloads to the folder inside Documents"#,
+        "file big files from Downloads to the folder inside Documents",
+    ] {
+        let outcome = f.command_with_model(command, Fallback, |_| {
+            if command.contains('"') {
+                r#"["plan",[["rename","~0~","Downloads","Documents"]],null]"#
+            } else {
+                r#"["plan",[["move","pdfs","Downloads","Documents"]],null]"#
+            }
+        });
+        assert!(matches!(outcome, Outcome::NotUnderstood { .. } | Outcome::Problem { .. }), "{command}: {outcome:?}");
+        assert!(f.state.pending.lock().unwrap().is_none());
+    }
+    let command = "Could PDFs from Downloads be relocated to Documents?";
+    assert_eq!(parse::parse_classified(command), Err(parse::ParseFailure::GrammarMiss));
+    let outcome = f.command_with_model(command, Fallback, |_| r#"["plan",[["move","pdfs","Downloads","Documents"]],null]"#);
+    assert!(matches!(outcome, Outcome::Plan { total: 1, model_interpreted: true, .. }), "{outcome:?}");
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_fallback_keeps_the_lookup_error_when_the_model_changes_the_source() {
+    let f = Fixture::new();
+    let outcome = f.command_with_model(MOVE_ITS_CONTENT, Fallback, |_| r#"["plan",[["move","files","Pictures","Downloads"]],null]"#);
+    assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("Couldn't find “its content”")), "{outcome:?}");
+    assert!(f.state.pending.lock().unwrap().is_none());
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_fallback_refuses_repeating_reinterpretation() {
+    let f = Fixture::new();
+    for command in [format!("{MOVE_ITS_CONTENT} every week"), "move the PDFs somewhere useful every week".into()] {
+        let outcome = f.command_with_model(&command, Fallback, unexpected_inference);
+        assert!(matches!(&outcome, Outcome::Problem { message } if message == RULE_ONLY_REPEAT), "{outcome:?}");
+        assert!(f.state.pending.lock().unwrap().is_none());
+    }
+    let command = "delet the last file";
+    assert_eq!(parse::parse_classified(command), Err(parse::ParseFailure::GrammarMiss));
+    let outcome = f.command_with_model(&format!("{command} every week"), Fallback, unexpected_inference);
+    assert!(matches!(outcome, Outcome::NotUnderstood { .. }), "{outcome:?}");
+}
+
+#[test]
+fn chain_transfers_only_the_created_folders_contents() {
+    for (verb, subject) in [("move", "its content"), ("copy", "its files"), ("move", "everything in it"), ("copy", "the files in it")] {
+        let f = Fixture::new();
+        f.write("Downloads/unrelated.pdf");
+        let command = format!("create a folder in downloads named test1 and {verb} {subject} to pictures");
+        let folder = f.home.join("Downloads/test1");
+        let outcome = f.command(&command);
+        assert!(
+            matches!(&outcome, Outcome::Plan { warnings, model_interpreted: false, .. }
+            if warnings.iter().any(|warning| warning.contains("nothing to do yet"))),
+            "{command}: {outcome:?}"
+        );
+        assert_eq!(f.actions(), [Action::CreateFolder { path: folder.clone() }]);
+
+        let file = f.write("Downloads/test1/report.pdf");
+        let to = f.home.join("Pictures/report.pdf");
+        let outcome = f.command(&command);
+        assert!(matches!(outcome, Outcome::Plan { model_interpreted: false, .. }), "{command}: {outcome:?}");
+        let expected = if verb == "move" { Action::Move { from: file, to } } else { Action::Copy { from: file, to } };
+        assert_eq!(f.actions(), [expected]);
+    }
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_routing_keeps_trash_commands_on_the_rule_path() {
+    let f = Fixture::new();
+    let path = f.write("Downloads/report.pdf");
+    for mode in [Fallback, Legacy] {
+        for command in ["send to the trash all files in Downloads", r#"move files from Downloads to "Trash""#] {
+            let outcome = f.command_with_model(command, mode, unexpected_inference);
+            assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("To be safe")), "{command}: {outcome:?}");
+            assert!(f.state.pending.lock().unwrap().is_none());
+        }
+        let outcome = f.command_with_model("send to the trash PDFs in Downloads", mode, unexpected_inference);
+        assert!(matches!(&outcome, Outcome::Plan { total: 1, model_interpreted: false, .. }), "{outcome:?}");
+        assert!(path.exists());
+
+        let outcome = f.command_with_model(r#"move its content from Downloads to "Trash""#, mode, unexpected_inference);
+        assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("Couldn't find")), "{outcome:?}");
+
+        let command = r#"move files from Downloads to the "Trash" folder inside Documents"#;
+        assert_eq!(parse::parse_classified(command), Err(parse::ParseFailure::GrammarMiss));
+        let calls = Cell::new(0);
+        let outcome = f.command_with_model(command, mode, |_| {
+            calls.set(calls.get() + 1);
+            r#"["plan",[["move","files","Downloads","~0~"]],null]"#
+        });
+        assert_eq!(calls.get(), 1);
+        assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("Trash commands")), "{outcome:?}");
+        assert!(f.state.pending.lock().unwrap().is_none());
+    }
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_routing_refuses_a_nickname_that_resolves_to_trash() {
+    let f = Fixture::new();
+    f.write("Downloads/report.pdf");
+    let trash = f.home.join("Documents/Trash");
+    fs::create_dir(&trash).unwrap();
+    let mut roots = f.state.roots.write().unwrap();
+    *roots = roots.clone().with_nicknames(vec![("archive".into(), trash)]);
+    drop(roots);
+    let command = "copy PDFs from Downloads to Archive";
+    let outcome = f.command_with_model(command, Legacy, |_| r#"["plan",[["copy","pdfs","Downloads","Archive"]],null]"#);
+    assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("Trash commands")), "{outcome:?}");
+    assert!(f.state.pending.lock().unwrap().is_none());
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn model_routing_allows_a_root_under_a_bin_directory() {
+    let f = Fixture::new();
+    f.write("Downloads/report.pdf");
+    let work = f.home.join("bin/Work");
+    fs::create_dir_all(&work).unwrap();
+    *f.state.roots.write().unwrap() = Roots::new(&f.home, None, std::slice::from_ref(&work));
+    let outcome =
+        f.command_with_model("copy PDFs from Downloads to Work", Legacy, |_| r#"["plan",[["copy","pdfs","Downloads","Work"]],null]"#);
+    assert!(matches!(outcome, Outcome::Plan { model_interpreted: true, .. }), "{outcome:?}");
+    assert!(matches!(&f.actions()[..], [Action::Copy { to, .. }] if to == &work.join("report.pdf")));
+}
+
+#[test]
+#[cfg(feature = "tiny-model")]
+fn legacy_model_routing_still_probes_before_rules_and_does_not_retry_misses() {
+    let f = Fixture::new();
+    let clean = "create a folder in downloads named test1";
+    let calls = Cell::new(0);
+    let outcome = f.command_with_model(clean, Legacy, |text| {
+        assert_eq!(text, clean);
+        calls.set(calls.get() + 1);
+        r#"["plan",[["mkdir","test1","downloads"]],null]"#
+    });
+    assert!(matches!(outcome, Outcome::Plan { model_interpreted: true, .. }));
+    assert_eq!(calls.get(), 1);
+    for command in [MOVE_ITS_CONTENT, &format!("{MOVE_ITS_CONTENT} every week")] {
+        let outcome = f.command_with_model(command, Legacy, unexpected_inference);
+        assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("Couldn't find “its content”")), "{outcome:?}");
+    }
+}
+
 #[test]
 fn schedule_phrases_never_create_accidental_destinations() {
     let f = Fixture::new();
@@ -775,9 +1035,10 @@ fn structured_model_enabled_recurring_commands_use_the_rule_plan() {
     let f = Fixture::new();
     let source = f.write("Downloads/invoice.pdf");
     let outcome = f.command("create a folder in downloads called PDFS and move pdfs into it everyday");
-    let Outcome::Plan { id, total, warnings, scheduled_for: Some(_), repeats: Some(_), .. } = outcome else { panic!("{outcome:?}") };
+    let Outcome::Plan { id, total, model_interpreted: false, scheduled_for: Some(_), repeats: Some(_), .. } = outcome else {
+        panic!("{outcome:?}")
+    };
     assert_eq!(total, 2);
-    assert!(!warnings.iter().any(|w| w.starts_with("Model interpretation:")), "{warnings:?}");
     assert!(source.exists());
     assert!(!f.home.join("Downloads/PDFS").exists());
     assert!(confirm_input(&f.state, id).unwrap().error.is_none());
@@ -1094,6 +1355,209 @@ fn repeating_with_explicit_clock_does_not_run_on_confirm() {
 }
 
 #[test]
+fn repeating_shortcut_skips_the_whole_run_after_an_incomplete_search() {
+    let f = Fixture::new();
+    let notes = f.write("Downloads/notes.txt");
+    let phrase = "run document cleanup";
+    let commands = vec![
+        "move notes.txt from Downloads to Pictures".into(),
+        "copy PDFs from Documents to Desktop including subfolders".into(),
+        "delete PDFs in Documents".into(),
+    ];
+    f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands });
+    let outcome = f.command(&format!("{phrase} every day at 9 pm"));
+    let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RepeatLater, .. } = outcome else { panic!("{outcome:?}") };
+    assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+
+    let report = f.write("Documents/report.pdf");
+    let deep = "nested/".repeat(search::MAX_DEPTH + 1);
+    f.write(&format!("Documents/{deep}other.pdf"));
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+    let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+    result.unwrap();
+
+    assert!(notes.exists());
+    assert!(report.exists());
+    assert!(!f.home.join("Pictures/notes.txt").exists());
+    assert!(!f.home.join("Desktop/report.pdf").exists());
+    assert!(f.state.history.lock().unwrap().entries.is_empty());
+    let store = scheduler::Store::load(f.home.join("schedules.json"));
+    let task = store.jobs[0].summary();
+    assert_eq!(task.series, scheduler::SeriesState::Active);
+    assert!(task.summary.contains("Skipped: Search incomplete") && task.summary.contains("Settings → Folders"), "{}", task.summary);
+    assert!(events.iter().any(|line| line.contains("code=E_SEARCH_DEPTH ")), "{events:?}");
+    assert!(events.iter().any(|line| line.contains("code=E_SCHED_SKIP ")), "{events:?}");
+    assert!(!events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), "{events:?}");
+}
+
+#[test]
+fn shortcut_planning_failures_block_previews_and_scheduled_runs() {
+    for (first, excluded, reason) in [
+        ("copy PDFs from Documents to Desktop/Backup", true, "is outside the folders Voxi may change"),
+        ("create a folder in Desktop named Backup", false, "A file named “Backup” already exists in Desktop"),
+    ] {
+        let f = Fixture::new();
+        let phrase = "run backup and cleanup";
+        let commands = vec![first.into(), "delete PDFs in Documents".into(), "create a folder in Pictures named Completed".into()];
+        f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands });
+        let outcome = f.command(&format!("{phrase} every day at 9 pm"));
+        let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RepeatLater, .. } = outcome else { panic!("{first}: {outcome:?}") };
+        assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+
+        let report = f.write("Documents/report.pdf");
+        let blocked = f.home.join("Desktop/Backup");
+        if excluded {
+            fs::create_dir(&blocked).unwrap();
+            let mut roots = f.state.roots.write().unwrap();
+            *roots = roots.clone().with_exclusions(std::slice::from_ref(&blocked));
+        } else {
+            fs::write(&blocked, b"existing file").unwrap();
+        }
+
+        let preview = f.command(phrase);
+        assert!(matches!(&preview, Outcome::Problem { message } if message.contains(reason)), "{first}: {preview:?}");
+        assert!(f.state.pending.lock().unwrap().is_none());
+
+        f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+        let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+        result.unwrap();
+        assert!(report.exists(), "{first}");
+        assert!(!blocked.join("report.pdf").exists(), "{first}");
+        assert!(!f.home.join("Pictures/Completed").exists(), "{first}");
+        assert!(f.state.history.lock().unwrap().entries.is_empty());
+        let store = scheduler::Store::load(f.home.join("schedules.json"));
+        let task = store.jobs[0].summary();
+        assert_eq!(task.series, scheduler::SeriesState::Active);
+        assert!(task.summary.contains(": Skipped: ") && task.summary.contains(reason), "{first}: {}", task.summary);
+        assert!(events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), "{events:?}");
+        assert!(events.iter().any(|line| line.contains("code=E_SCHED_SKIP ")), "{events:?}");
+    }
+}
+
+#[test]
+fn recurring_chain_distinguishes_an_idle_start_from_an_unfinished_plan() {
+    for (removed, summary, planning_failed) in [
+        ("Documents/report.pdf", "Nothing to change. No files match in Documents.", false),
+        ("Pictures/old.pdf", "Skipped: No files match in Pictures.", true),
+    ] {
+        let f = Fixture::new();
+        let report = f.write("Documents/report.pdf");
+        let old = f.write("Pictures/old.pdf");
+        let outcome = f.command("copy PDFs from Documents to Desktop then delete PDFs in Pictures every day at 9 pm");
+        let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RepeatLater, total: 2, .. } = outcome else { panic!("{outcome:?}") };
+        assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+        fs::remove_file(f.home.join(removed)).unwrap();
+
+        f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+        let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+        result.unwrap();
+
+        let store = scheduler::Store::load(f.home.join("schedules.json"));
+        let task = store.jobs[0].summary();
+        assert_eq!(task.series, scheduler::SeriesState::Active);
+        assert!(task.summary.ends_with(&format!(": {summary}")), "{}", task.summary);
+        assert_eq!(events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), planning_failed, "{events:?}");
+        assert_eq!(report.exists(), planning_failed);
+        assert_eq!(old.exists(), !planning_failed);
+        assert!(!f.home.join("Desktop/report.pdf").exists());
+        assert!(f.state.history.lock().unwrap().entries.is_empty());
+    }
+}
+
+#[test]
+fn recurring_shortcut_reports_an_idle_run_without_repeating_the_prefix() {
+    let phrase = "run document backup";
+    let copy = "copy PDFs from Documents to Desktop";
+    let chain = "copy PDFs from Documents to Desktop then delete PDFs in Pictures";
+    for (command, later_command, idle_in_pictures) in
+        [(copy, None, false), (chain, None, false), (chain, Some("create folder Completed in Desktop"), false), (chain, None, true)]
+    {
+        let f = Fixture::new();
+        let report = f.write("Documents/report.pdf");
+        let old = f.write("Pictures/old.pdf");
+        let commands = std::iter::once(command).chain(later_command).map(String::from).collect();
+        f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands });
+        let outcome = f.command(&format!("{phrase} every day at 9 pm"));
+        let Outcome::Plan { id, .. } = outcome else { panic!("{outcome:?}") };
+        assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+        fs::remove_file(if idle_in_pictures { &old } else { &report }).unwrap();
+
+        f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+        let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+        result.unwrap();
+
+        let store = scheduler::Store::load(f.home.join("schedules.json"));
+        let task = store.jobs[0].summary();
+        assert_eq!(task.series, scheduler::SeriesState::Active);
+        let summary = if idle_in_pictures {
+            ": Skipped: No files match in Pictures.".into()
+        } else if later_command.is_some() {
+            ": Skipped: No files match in Documents.".into()
+        } else {
+            format!(": Nothing to change for “{phrase}”. Skipped “{command}”: No files match in Documents.")
+        };
+        assert!(task.summary.ends_with(&summary), "{command}, {later_command:?}: {}", task.summary);
+        assert_eq!(
+            events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")),
+            idle_in_pictures || later_command.is_some(),
+            "{events:?}"
+        );
+        if idle_in_pictures {
+            assert_eq!(fs::read(report).unwrap(), b"data");
+        } else {
+            assert_eq!(fs::read(old).unwrap(), b"data");
+        }
+        assert!(!f.home.join("Desktop/report.pdf").exists());
+        assert!(!f.home.join("Desktop/Completed").exists());
+        assert!(f.state.history.lock().unwrap().entries.is_empty());
+    }
+}
+
+#[test]
+fn planning_diagnostics_route_search_failures_ambiguity_and_cancellation() {
+    let f = Fixture::new();
+    let report = f.write("Documents/report.pdf");
+    let deep = "nested/".repeat(search::MAX_DEPTH + 1);
+    f.write(&format!("Documents/{deep}other.pdf"));
+    let plan_and_capture =
+        |text: &str, request_id| diagnostics::capture(|| plan_with_stats(&f.state, text.into(), HashMap::new(), request_id, None));
+    let codes = |events: Vec<String>| {
+        events
+            .iter()
+            .map(|line| line.split_whitespace().find_map(|word| word.strip_prefix("code=")).unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+
+    let ((outcome, stats), events) = plan_and_capture("delete PDFs in Downloads", 1);
+    assert!(matches!(outcome, Outcome::Problem { .. }));
+    assert_eq!(stats.too_deep, 0);
+    assert_eq!(codes(events), ["E_PLANNING_FAILED"]);
+
+    let ((outcome, stats), events) = plan_and_capture("delete PDFs in Documents including subfolders", 2);
+    assert!(matches!(outcome, Outcome::Problem { message } if message.contains("Search incomplete")));
+    assert_eq!(stats.too_deep, 1);
+    assert_eq!(codes(events), ["E_SEARCH_DEPTH"]);
+
+    let ((outcome, stats), events) = plan_and_capture("delete report.pdf from Documents", 3);
+    assert!(matches!(outcome, Outcome::Ambiguous { candidates, reason: model::AmbiguityReason::IncompleteSearch, .. }
+        if candidates == [report.to_string_lossy()]));
+    assert_eq!(stats.too_deep, 1);
+    assert_eq!(codes(events), ["E_SEARCH_DEPTH", "E_AMBIGUOUS"]);
+
+    let search = search::Search::default();
+    search.issue("Spotlight exited unsuccessfully".into());
+    search.record_failure();
+    let (_, events) = diagnostics::capture(|| emit_planning_failure(Code::Ambiguous, &search.control, stats));
+    assert_eq!(codes(events), ["E_SEARCH_INCOMPLETE", "E_AMBIGUOUS"]);
+
+    let control = f.state.active_search.lock().unwrap().as_ref().unwrap().1.clone();
+    assert!(control.failed_with(search::Failure::Depth));
+    control.cancel();
+    let (_, events) = diagnostics::capture(|| emit_planning_failure(Code::PlanningFailed, &control, stats));
+    assert!(events.is_empty(), "{events:?}");
+}
+
+#[test]
 fn repeating_move_into_a_new_folder_makes_the_folder() {
     let f = Fixture::new();
     let pdf = f.write("Downloads/bill.pdf");
@@ -1138,7 +1602,7 @@ fn repeating_task_replans_each_run_and_keeps_going() {
     make_due(&f);
     run_due_tasks(&f.state).unwrap();
     assert_eq!(f.state.schedules.lock().unwrap().jobs[0].series, scheduler::SeriesState::Active);
-    assert!(f.state.schedules.lock().unwrap().jobs[0].summary.contains("Nothing to change"));
+    assert!(f.state.schedules.lock().unwrap().jobs[0].summary.ends_with(": Nothing to change. No files match in Downloads."));
     // Paused tasks don't run; resuming skips the missed runs.
     let third = f.write("Downloads/c.dmg");
     f.state.schedules.lock().unwrap().pause(1).unwrap();
@@ -1880,4 +2344,40 @@ fn recurring_later_run_needs_review_marks_series_needs_review() {
     assert_eq!(store.jobs[0].series, scheduler::SeriesState::NeedsReview);
     assert_eq!(store.jobs[0].occurrence, scheduler::OccurrenceState::Finished);
     assert!(store.claim(chrono::Local::now() + chrono::Duration::days(10)).unwrap().is_none());
+}
+
+#[test]
+fn recurring_folder_and_move_chain_is_idle_once_the_folder_exists() {
+    let f = Fixture::new();
+    f.write("Downloads/bill.pdf");
+    let outcome = f.command("create a folder in downloads called PDFS and move pdfs into it everyday");
+    let Outcome::Plan { id, .. } = outcome else { panic!("{outcome:?}") };
+    confirm_input(&f.state, id).unwrap();
+    assert!(f.home.join("Downloads/PDFS/bill.pdf").is_file());
+
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+    let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+    result.unwrap();
+
+    let store = scheduler::Store::load(f.home.join("schedules.json"));
+    let task = store.jobs[0].summary();
+    assert_eq!(task.series, scheduler::SeriesState::Active);
+    assert!(task.summary.contains("Nothing to change."), "{}", task.summary);
+    assert!(!task.summary.contains("Skipped"), "{}", task.summary);
+    assert!(!events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), "{events:?}");
+}
+
+#[test]
+fn daily_create_then_delete_contents_creates_now_and_empties_later() {
+    let f = Fixture::new();
+    let outcome = f.command("create a folder in downloads named test1 and delete its content every day");
+    let Outcome::Plan { id, total: 1, warnings, .. } = outcome else { panic!("{outcome:?}") };
+    assert!(warnings.iter().any(|w| w.contains("“test1” is new")), "{warnings:?}");
+    assert!(confirm_input(&f.state, id).unwrap().error.is_none());
+    assert!(f.home.join("Downloads/test1").is_dir());
+    let old = f.write("Downloads/test1/old.txt");
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+    run_due_tasks(&f.state).unwrap();
+    assert!(!old.exists());
+    assert!(f.home.join("Downloads/test1").is_dir());
 }

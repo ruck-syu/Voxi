@@ -138,6 +138,8 @@ static RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         (r"(?i)^show\s+us\s+", "show "),
         (r"(?i)^(show|list)\s+which\s+", "$1 "),
         (r"(?i)^(?:bin\s+off|chuck\s+out)\s+", "delete "),
+        // "The contents of X" is everything in X, not an item named so.
+        (r"(?i)^(delete|remove|trash)\s+(?:all\s+(?:of\s+)?)?(?:the\s+)?contents?\s+of\s+", "$1 everything in "),
         // Explicit gerunds in polite requests, never guessed from typos.
         (r"(?i)^listing\s+", "list "),
         (r"(?i)^copying\s+", "copy "),

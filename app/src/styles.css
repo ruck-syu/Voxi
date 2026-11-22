@@ -205,6 +205,15 @@ html:not([data-native]) .card[data-glide] {
   color: var(--margin);
 }
 
+.model-notice {
+  margin: 8px 0;
+  padding: 7px 10px;
+  border-inline-start: 2px solid var(--margin);
+  background: color-mix(in srgb, var(--margin) 10%, transparent);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
 /* Each new state settles in under the command. */
 .body {
   animation: settle-in 200ms var(--settle) both;

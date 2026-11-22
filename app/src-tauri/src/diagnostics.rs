@@ -43,6 +43,15 @@ pub(crate) enum Code {
     JournalRecovered,
     LoginItem,
     Update,
+    ParseMiss,
+    PlanningFailed,
+    SearchIncomplete,
+    SearchLimit,
+    SearchDepth,
+    SearchTimeout,
+    SearchUnreadable,
+    SpotlightTimeout,
+    Ambiguous,
 }
 impl Code {
     fn label(self) -> &'static str {
@@ -57,6 +66,15 @@ impl Code {
             Self::JournalRecovered => "E_JOURNAL_RECOVERED",
             Self::LoginItem => "E_LOGIN_ITEM",
             Self::Update => "E_UPDATE",
+            Self::ParseMiss => "E_PARSE_MISS",
+            Self::PlanningFailed => "E_PLANNING_FAILED",
+            Self::SearchIncomplete => "E_SEARCH_INCOMPLETE",
+            Self::SearchLimit => "E_SEARCH_LIMIT",
+            Self::SearchDepth => "E_SEARCH_DEPTH",
+            Self::SearchTimeout => "E_SEARCH_TIMEOUT",
+            Self::SearchUnreadable => "E_SEARCH_UNREADABLE",
+            Self::SpotlightTimeout => "E_SPOTLIGHT_TIMEOUT",
+            Self::Ambiguous => "E_AMBIGUOUS",
         }
     }
 }
@@ -71,6 +89,26 @@ pub(crate) enum Stage {
     Skipped,
 }
 
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ElapsedMsBucket {
+    Under100,
+    Under1000,
+    Under5000,
+    AtLeast5000,
+}
+
+impl From<std::time::Duration> for ElapsedMsBucket {
+    fn from(elapsed: std::time::Duration) -> Self {
+        match elapsed.as_millis() {
+            0..100 => Self::Under100,
+            100..1000 => Self::Under1000,
+            1000..5000 => Self::Under5000,
+            _ => Self::AtLeast5000,
+        }
+    }
+}
+
 /// No string/path/payload field exists. Even IO errors are reduced immediately
 /// to ErrorKind and an optional OS integer, never Display/Debug of the error.
 #[derive(Clone, Copy)]
@@ -82,10 +120,11 @@ pub(crate) struct Event {
     count: usize,
     step: Option<usize>,
     io: Option<(io::ErrorKind, Option<i32>)>,
+    search: Option<(usize, ElapsedMsBucket)>,
 }
 impl Event {
     pub(crate) fn new(code: Code, stage: Stage) -> Self {
-        Self { code, stage, operation: SEQUENCE.fetch_add(1, Ordering::Relaxed), store: None, count: 0, step: None, io: None }
+        Self { code, stage, operation: SEQUENCE.fetch_add(1, Ordering::Relaxed), store: None, count: 0, step: None, io: None, search: None }
     }
     pub(crate) fn operation(mut self, id: u64) -> Self {
         self.operation = id;
@@ -107,10 +146,16 @@ impl Event {
         self.io = Some((error.kind(), error.raw_os_error()));
         self
     }
+    pub(crate) fn search(mut self, visited: usize, elapsed: ElapsedMsBucket) -> Self {
+        self.search = Some((visited, elapsed));
+        self
+    }
+
     fn line(self) -> String {
         let level = if matches!(self.stage, Stage::Begin | Stage::Preserved | Stage::Recovered) { "INFO" } else { "WARN" };
+        let search = self.search.map_or_else(String::new, |(visited, bucket)| format!(" visited={visited} elapsed_ms_bucket={bucket:?}"));
         format!(
-            "{} level={} code={} op={}-{}-{} stage={:?} store={:?} count={} step={:?} io={:?}\n",
+            "{} level={} code={} op={}-{}-{} stage={:?} store={:?} count={} step={:?} io={:?}{search}\n",
             chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
             level,
             self.code.label(),
@@ -175,9 +220,37 @@ impl Sink {
 }
 
 pub(crate) fn emit(event: Event) {
+    #[cfg(test)]
+    CAPTURE.with(|capture| {
+        if let Some(lines) = capture.borrow_mut().as_mut() {
+            lines.push(event.line());
+        }
+    });
     if let Some(sink) = SINK.get() {
         sink.emit(event);
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static CAPTURE: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn capture<T>(run: impl FnOnce() -> T) -> (T, Vec<String>) {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            CAPTURE.with(|capture| capture.take());
+        }
+    }
+    CAPTURE.with(|capture| {
+        assert!(capture.borrow().is_none(), "diagnostic capture is already active");
+        capture.replace(Some(Vec::new()));
+    });
+    let _reset = Reset;
+    let result = run();
+    (result, CAPTURE.with(|capture| capture.take().unwrap()))
 }
 
 /// Start before loading stores. Directory creation and opening run on the worker.
@@ -345,6 +418,33 @@ mod tests {
             assert!(!logs.contains(sentinel));
         }
         assert!(logs.contains("io=Some((Other, None))"));
+    }
+
+    #[test]
+    fn planning_failure_lines_contain_only_codes_and_search_metrics() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut writer = Writer::open(temp.path()).unwrap();
+        let codes = [
+            (Code::ParseMiss, "E_PARSE_MISS"),
+            (Code::PlanningFailed, "E_PLANNING_FAILED"),
+            (Code::SearchIncomplete, "E_SEARCH_INCOMPLETE"),
+            (Code::SearchLimit, "E_SEARCH_LIMIT"),
+            (Code::SearchDepth, "E_SEARCH_DEPTH"),
+            (Code::SearchTimeout, "E_SEARCH_TIMEOUT"),
+            (Code::SearchUnreadable, "E_SEARCH_UNREADABLE"),
+            (Code::SpotlightTimeout, "E_SPOTLIGHT_TIMEOUT"),
+            (Code::Ambiguous, "E_AMBIGUOUS"),
+        ];
+        for (code, _) in codes {
+            writer.write(Event::new(code, Stage::Failed).search(42, std::time::Duration::from_millis(123).into())).unwrap();
+        }
+        let logs = contents(temp.path());
+        assert_eq!(logs.lines().count(), codes.len());
+        for (line, (_, label)) in logs.lines().zip(codes) {
+            assert!(line.contains(&format!("code={label} ")), "{line}");
+            assert!(line.ends_with("io=None visited=42 elapsed_ms_bucket=Under1000"), "{line}");
+            assert_eq!(line.split_whitespace().count(), 11, "{line}");
+        }
     }
 
     #[test]

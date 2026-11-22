@@ -13,3 +13,12 @@ rename todo.txt on Desktop to tasks.txt and move it to Documents => {"intent":"c
 copy assets.zip from Downloads to Desktop and unzip it => {"intent":"chain","commands":[{"intent":"copy","src":{"kind":"item","name":"assets.zip","folder":"Downloads"},"to":"Desktop"},{"intent":"unzip","src":{"kind":"item","name":"\u0000chain-output"}}]}
 zip all pdfs in Downloads as pdfs.zip and move it to Documents => {"intent":"chain","commands":[{"intent":"zip","src":{"kind":"set","filter":{"type":"pdfs"},"folder":"Downloads"},"output":"pdfs.zip"},{"intent":"move","src":{"kind":"item","name":"\u0000chain-output"},"to":"Documents"}]}
 convert Pictures/photo.heic to png then resize Pictures/photo.png to 800px wide => {"intent":"chain","commands":[{"intent":"convert_image","src":{"kind":"item","name":"Pictures/photo.heic"},"format":"png"},{"intent":"resize_image","src":{"kind":"item","name":"Pictures/photo.png"},"width":800}]}
+# "Its contents" / "everything in it" after creating a folder means the
+# files in that folder, never an item literally named "its content".
+create a folder in downloads named test1 and delete its content => {"intent":"chain","commands":[{"intent":"create_folders","names":["test1"],"parent":"downloads"},{"intent":"trash","src":{"kind":"set","folder":"downloads/test1","filter":{"type":"files"}}}]}
+create a folder in downloads named test1 and delete everything in it => {"intent":"chain","commands":[{"intent":"create_folders","names":["test1"],"parent":"downloads"},{"intent":"trash","src":{"kind":"set","folder":"downloads/test1","filter":{"type":"files"}}}]}
+create a folder in downloads named test1 and delete all its files => {"intent":"chain","commands":[{"intent":"create_folders","names":["test1"],"parent":"downloads"},{"intent":"trash","src":{"kind":"set","folder":"downloads/test1","filter":{"type":"files"}}}]}
+create a folder in downloads named test1 and delete its contents including subfolders => {"intent":"chain","commands":[{"intent":"create_folders","names":["test1"],"parent":"downloads"},{"intent":"trash","src":{"kind":"set","folder":"downloads/test1","filter":{"type":"files","includeSubfolders":true}}}]}
+delete the contents of test1 => {"intent":"trash","src":{"kind":"set","folder":"test1","filter":{"type":"files"}}}
+delete the contents of the Downloads folder => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files"}}}
+delete "contents of report.pdf" => {"intent":"trash","src":{"kind":"item","name":"contents of report.pdf"}}

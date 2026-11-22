@@ -38,8 +38,8 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
   const t = text.toLowerCase();
   if (t.includes("usuals"))
     return {
-      status: "plan", firstRun: "immediate", id: 4, title: "Run my usuals: 2 commands", total: 3, noted: 0, isUndo: false,
-      warnings: ["“delete installers from Downloads”: No files match in Downloads."],
+      status: "plan", modelInterpreted: false, firstRun: "immediate", id: 4, title: "Run my usuals: 1 of 2 commands", total: 3, noted: 0, isUndo: false,
+      warnings: ["Skipped “delete installers from Downloads”: No files match in Downloads."],
       items: [
         { kind: "create_folder", primary: "Screenshots", detail: "new folder in ~/Desktop" },
         { kind: "move", primary: "Screenshot 2026-10-28 at 09.14.02.png", detail: "→ ~/Desktop/Screenshots" },
@@ -48,7 +48,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("pdf"))
     return {
-      status: "plan", firstRun: "immediate", id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
+      status: "plan", modelInterpreted: false, firstRun: "immediate", id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
       warnings: ["2 already in Documents, left alone."],
       items: [
         { kind: "move", primary: "Q3 board deck.pdf", detail: "→ ~/Documents", skippable: true },
@@ -60,7 +60,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("clean"))
     return {
-      status: "plan", firstRun: "immediate", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, noted: 0, isUndo: false, warnings: [],
+      status: "plan", modelInterpreted: false, firstRun: "immediate", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, noted: 0, isUndo: false, warnings: [],
       items: [
         { kind: "trash", primary: "Zoom.pkg", detail: "→ Trash" },
         { kind: "trash", primary: "Figma-124.3.dmg", detail: "→ Trash" },
@@ -69,12 +69,12 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("claude") && choices.claude)
     return {
-      status: "plan", firstRun: "immediate", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, noted: 0, isUndo: false, warnings: [],
+      status: "plan", modelInterpreted: false, firstRun: "immediate", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, noted: 0, isUndo: false, warnings: [],
       items: [{ kind: "trash", primary: choices.claude.split("/").pop()!, detail: "→ Trash" }],
     };
   if (t.includes("claude"))
     return {
-      status: "ambiguous", name: "claude", folders: false,
+      status: "ambiguous", name: "claude", folders: false, reason: "multiple_matches",
       candidates: ["/Users/me/Downloads/Claude.dmg", "/Users/me/Downloads/Claude Setup.dmg", "/Users/me/Documents/claude-notes.txt"],
     };
   if (t.includes("size"))

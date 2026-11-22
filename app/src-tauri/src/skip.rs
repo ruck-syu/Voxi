@@ -6,27 +6,6 @@ use crate::model::Action;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-/// Every path a step reads or writes.
-fn paths(a: &Action) -> Vec<PathBuf> {
-    match a {
-        Action::Move { from, to } | Action::Copy { from, to } => vec![from.clone(), to.clone()],
-        Action::Rename { path, new_name } => vec![path.clone(), path.with_file_name(new_name)],
-        Action::Trash { path } | Action::CreateFolder { path } | Action::OpenInFinder { path, .. } | Action::RemoveEmptyFolder { path } => {
-            vec![path.clone()]
-        }
-        Action::ConvertImage { path, output, .. }
-        | Action::ExtractPages { path, output, .. }
-        | Action::Zip { path, output }
-        | Action::ResizeImage { path, backup: output, .. } => vec![path.clone(), output.clone()],
-        Action::SplitPdf { path, output_dir } => vec![path.clone(), output_dir.clone()],
-        Action::Unzip { path, destination } => vec![path.clone(), destination.clone()],
-        Action::ImagesToPdf { paths, output } | Action::MergePdf { paths, output } => {
-            paths.iter().cloned().chain(std::iter::once(output.clone())).collect()
-        }
-        Action::RestoreFromTrash { from, to } | Action::Restore { from, to } => vec![from.clone(), to.clone()],
-    }
-}
-
 fn related(a: &Path, b: &Path) -> bool {
     a.starts_with(b) || b.starts_with(a)
 }
@@ -57,7 +36,7 @@ fn key(p: &Path) -> PathBuf {
 /// True when a step reads a symbolic link. A moved or renamed link can
 /// point at another step's output, which paths alone can't show.
 fn reads_link(a: &Action) -> bool {
-    paths(a).iter().any(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink()))
+    a.paths().iter().any(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink()))
 }
 
 /// Which steps the user may leave out. A step qualifies when it is a move,
@@ -70,7 +49,7 @@ pub fn skippable(actions: &[Action]) -> Vec<bool> {
     if actions.iter().any(reads_link) {
         return vec![false; actions.len()];
     }
-    let all: Vec<Vec<PathBuf>> = actions.iter().map(|a| paths(a).iter().map(|p| key(p)).collect()).collect();
+    let all: Vec<Vec<PathBuf>> = actions.iter().map(|a| a.paths().iter().map(|p| key(p)).collect()).collect();
     // How many path mentions sit at each path, and strictly below each folder,
     // across the steps that aren't folder creations.
     let mut at: HashMap<&Path, usize> = HashMap::new();

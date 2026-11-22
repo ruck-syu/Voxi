@@ -118,7 +118,12 @@ fn main() {
                     match plan::Planner::new(&roots, &choices).plan(&intent, &history) {
                         Ok(plan::Planned::Steps { actions, .. }) => (actions.len(), "plan".into()),
                         Err(plan::Stop::Ambiguous { candidates, .. }) => (candidates.len(), "ambiguous".into()),
-                        Err(plan::Stop::Problem(message)) => (0, message),
+                        Err(
+                            plan::Stop::Problem(message)
+                            | plan::Stop::MissingTransferItem { message, .. }
+                            | plan::Stop::SearchIncomplete(message)
+                            | plan::Stop::NothingToChange(message),
+                        ) => (0, message),
                         Ok(_) => (0, "other".into()),
                     }
                 },
@@ -144,7 +149,9 @@ fn main() {
             let intent = parse::parse("delete Aeroguard files from Downloads").unwrap();
             match plan::Planner::new(&roots, &choices).plan(&intent, &history) {
                 Ok(plan::Planned::Steps { actions, .. }) => (actions.len(), "plan".into()),
-                Err(plan::Stop::Problem(message)) => (0, message),
+                Err(plan::Stop::Problem(message) | plan::Stop::SearchIncomplete(message) | plan::Stop::NothingToChange(message)) => {
+                    (0, message)
+                }
                 _ => (0, "other".into()),
             }
         },

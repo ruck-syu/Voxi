@@ -24,6 +24,9 @@ pub struct Presentation {
     pub ready: bool,
     phase: Phase,
     next: u64,
+    /// When the current close began, so a click that caused it can be told
+    /// apart from a later click on a window that is fading out.
+    closing_since: Option<std::time::Instant>,
 }
 impl Presentation {
     pub fn request(&mut self, mode: &str) -> ShowRequest {
@@ -43,6 +46,9 @@ impl Presentation {
     }
     /// Starts closing: the window fades out, then `hidden` is called.
     pub fn cancel(&mut self) {
+        if self.phase != Phase::Closing {
+            self.closing_since = Some(std::time::Instant::now());
+        }
         self.phase = Phase::Closing;
     }
     /// The window is off screen.
@@ -58,6 +64,10 @@ impl Presentation {
     pub fn closing(&self) -> bool {
         self.phase == Phase::Closing
     }
+    /// Closing, and the close began within `window`.
+    pub fn closing_within(&self, window: std::time::Duration) -> bool {
+        self.closing() && self.closing_since.is_some_and(|since| since.elapsed() < window)
+    }
     pub fn is_current(&self, id: u64) -> bool {
         self.next == id
     }
@@ -71,6 +81,23 @@ impl Presentation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_close_remembers_when_it_began() {
+        use std::time::Duration;
+        let mut p = Presentation { ready: true, ..Default::default() };
+        assert!(!p.closing_within(Duration::from_secs(60)));
+        let shown = p.request("command");
+        assert!(p.acknowledge(shown.request_id));
+        p.cancel();
+        assert!(p.closing_within(Duration::from_secs(60)));
+        assert!(!p.closing_within(Duration::ZERO));
+        // A second close request keeps the original start time.
+        let started = p.closing_since;
+        p.cancel();
+        assert_eq!(p.closing_since, started);
+        p.hidden();
+        assert!(!p.closing_within(Duration::from_secs(60)));
+    }
     #[test]
     fn outside_click_dismisses_presented_window_without_needing_focus() {
         let mut p = Presentation { ready: true, ..Default::default() };

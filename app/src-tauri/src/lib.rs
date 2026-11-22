@@ -259,6 +259,16 @@ fn hide(app: &AppHandle) {
 
 /// Asks the page to play its close animation; the page then calls
 /// `hide_window`.
+/// How long before a tray click's delivery its own blur may have started the
+/// close. The press and release arrive together once the click has ended.
+const TRAY_CLICK_CLOSE: std::time::Duration = std::time::Duration::from_millis(600);
+
+/// Shown and not already fading out.
+fn window_open(app: &AppHandle) -> bool {
+    let closing = checked_state!(app.state::<AppState>().presentation.lock(), false).closing();
+    app.get_webview_window("main").is_some_and(|w| w.is_visible().unwrap_or(false)) && !closing
+}
+
 fn request_hide(app: &AppHandle) {
     checked_state!(app.state::<AppState>().presentation.lock(), ()).cancel();
     match app.get_webview_window("main") {
@@ -468,21 +478,23 @@ fn plan_command(
     request_id: u64,
     undo_entry_id: Option<u64>,
 ) -> CommandReply {
-    let outcome = plan_input_for(&state, text, choices, request_id, undo_entry_id);
+    let (outcome, search_stats) = plan_with_stats(&state, text, choices, request_id, undo_entry_id);
     let context = checked_state!(
         state.result_scope.lock(),
         CommandReply {
             outcome: Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() },
             scope: None,
-            generation: 0
+            generation: 0,
+            search_stats,
         }
     );
-    CommandReply { outcome, scope: context.summary(), generation: context.generation }
+    CommandReply { outcome, scope: context.summary(), generation: context.generation, search_stats }
 }
 
 #[derive(serde::Serialize)]
 struct CommandReply {
     outcome: Outcome,
+    search_stats: search::Stats,
     scope: Option<scope::Summary>,
     /// The results-list generation after this command.
     generation: u64,
@@ -572,17 +584,116 @@ fn recurring_route(rule_recurring: bool, rule_intent_present: bool, model_recurr
     if rule_recurring || model_recurring { if rule_intent_present { Route::Rule } else { Route::Refuse } } else { Route::Model }
 }
 
+#[cfg(feature = "tiny-model")]
+const RULE_ONLY_REPEAT: &str = "Repeating tasks need a command Voxi understands without the model.";
+
+#[cfg(feature = "tiny-model")]
+type InterpretPlan<'a> =
+    dyn Fn(&str, &search::Control, chrono::DateTime<chrono::Local>) -> Result<Option<plan_model::Interpreted>, String> + 'a;
+
+#[cfg(feature = "tiny-model")]
+struct ModelRouting<'a> {
+    enabled: bool,
+    mode: plan_model::RoutingMode,
+    interpret: &'a InterpretPlan<'a>,
+}
+
 #[cfg(test)]
 fn plan_input(state: &AppState, text: String, choices: HashMap<String, String>, request_id: u64) -> Outcome {
     plan_input_for(state, text, choices, request_id, None)
 }
 
+#[cfg(test)]
 fn plan_input_for(
     state: &AppState,
     text: String,
     choices: HashMap<String, String>,
     request_id: u64,
     undo_entry_id: Option<u64>,
+) -> Outcome {
+    plan_with_stats(state, text, choices, request_id, undo_entry_id).0
+}
+
+fn plan_with_stats(
+    state: &AppState,
+    text: String,
+    choices: HashMap<String, String>,
+    request_id: u64,
+    undo_entry_id: Option<u64>,
+) -> (Outcome, search::Stats) {
+    let start = std::time::Instant::now();
+    let control = search::Control::default();
+    let outcome = plan_input_with_control(state, text, choices, request_id, undo_entry_id, &control);
+    let stats = control.stats(start.elapsed());
+    match &outcome {
+        Outcome::NotUnderstood { .. } => emit_planning_failure(Code::ParseMiss, &control, stats),
+        Outcome::Problem { .. } => emit_planning_failure(Code::PlanningFailed, &control, stats),
+        Outcome::Ambiguous { .. } => emit_planning_failure(Code::Ambiguous, &control, stats),
+        _ => {}
+    }
+    (outcome, stats)
+}
+
+fn emit_planning_failure(code: Code, control: &search::Control, stats: search::Stats) {
+    use search::Failure;
+    if control.is_cancelled() {
+        return;
+    }
+    let emit = |code| diagnostics::emit(Event::new(code, Stage::Failed).search(stats.visited, stats.elapsed_ms_bucket));
+    let mut specific = false;
+    for (failure, code) in [
+        (Failure::Limit, Code::SearchLimit),
+        (Failure::Depth, Code::SearchDepth),
+        (Failure::Timeout, Code::SearchTimeout),
+        (Failure::Unreadable, Code::SearchUnreadable),
+        (Failure::SpotlightTimeout, Code::SpotlightTimeout),
+    ] {
+        if control.failed_with(failure) {
+            emit(code);
+            specific = true;
+        }
+    }
+    if !specific && control.failed_with(Failure::Incomplete) {
+        emit(Code::SearchIncomplete);
+        specific = true;
+    }
+    if !specific || matches!(code, Code::Ambiguous) {
+        emit(code);
+    }
+}
+
+fn plan_input_with_control(
+    state: &AppState,
+    text: String,
+    choices: HashMap<String, String>,
+    request_id: u64,
+    undo_entry_id: Option<u64>,
+    control: &search::Control,
+) -> Outcome {
+    plan_input_routed(
+        state,
+        text,
+        choices,
+        request_id,
+        undo_entry_id,
+        control,
+        #[cfg(feature = "tiny-model")]
+        ModelRouting {
+            enabled: plan_model::enabled(),
+            mode: plan_model::RoutingMode::active(),
+            interpret: &|text, control, now| plan_model::interpret_at(text, || control.is_cancelled(), now),
+        },
+    )
+}
+
+fn plan_input_routed(
+    state: &AppState,
+    text: String,
+    choices: HashMap<String, String>,
+    request_id: u64,
+    undo_entry_id: Option<u64>,
+    control: &search::Control,
+    #[cfg(feature = "tiny-model")] model: ModelRouting<'_>,
 ) -> Outcome {
     let text = if undo_entry_id.is_some() { "undo last".into() } else { text };
     if parse::check_length(&text).is_err() {
@@ -596,7 +707,6 @@ fn plan_input_for(
         return Outcome::Problem { message };
     }
     let now = chrono::Local::now();
-    let control = search::Control::default();
     {
         let mut active =
             checked_state!(state.active_search.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() });
@@ -620,9 +730,13 @@ fn plan_input_for(
     if let Err(message) = &raw_schedule {
         return Outcome::Problem { message: message.clone() };
     }
-    #[cfg(feature = "tiny-model")]
-    let found = raw_schedule.as_ref().ok().and_then(|(_, when)| when.as_ref());
     let rule_schedule = schedule_of(state, &text, now, &raw_schedule);
+    // The schedule the rule reading settled on (a folder named "Daily" is a
+    // destination, not a repeat), so model checks agree with it.
+    #[cfg(feature = "tiny-model")]
+    let rule_when = rule_schedule.as_ref().ok().and_then(|(_, when)| when.clone());
+    #[cfg(feature = "tiny-model")]
+    let found = rule_when.as_ref();
     let rule_base = rule_schedule.as_ref().ok().map(|(base, _)| base.clone());
     let probe = rule_base.as_deref().unwrap_or(&text);
     let classified = parse::parse_classified(probe);
@@ -649,26 +763,34 @@ fn plan_input_for(
         return Outcome::Problem { message };
     }
     #[cfg(feature = "tiny-model")]
+    let can_ask_model = model.enabled && previous_scope.is_none() && shortcut.is_none();
+    #[cfg(feature = "tiny-model")]
+    let model_fallback = model.mode == plan_model::RoutingMode::Fallback;
+    #[cfg(feature = "tiny-model")]
+    let rule_recurring = rule_schedule.as_ref().ok().and_then(|(_, w)| w.as_ref()).is_some_and(|w| w.rule.is_some());
+    #[cfg(feature = "tiny-model")]
     let interpreted = {
         let mut model_error: Option<String> = None;
-        let rule_recurring = rule_schedule.as_ref().ok().and_then(|(_, w)| w.as_ref()).is_some_and(|w| w.rule.is_some());
         let rule_intent_present = rule_intent.is_some();
+        let grammar_miss = matches!(classified, Err(parse::ParseFailure::GrammarMiss));
+        let eligible = can_ask_model && (!model_fallback || grammar_miss) && plan_model::eligible(&text, &classified);
+        if eligible && model_fallback && rule_recurring && grammar_miss {
+            return Outcome::Problem { message: RULE_ONLY_REPEAT.into() };
+        }
         // A recurring job may only come from a rule interpretation. When the
         // rule parser already read a recurring command, skip model inference
         // entirely: its intent can disagree harmlessly with the model's and
         // must not be used as the job's authoritative interpretation.
         let chosen = if recurring_route(rule_recurring, rule_intent_present, false) == Route::Rule {
             None
-        } else if plan_model::enabled() && previous_scope.is_none() && shortcut.is_none() && plan_model::eligible(&text, &classified) {
-            match plan_model::interpret_at(&text, || control.is_cancelled(), now) {
-                Ok(Some(value)) => {
+        } else if eligible {
+            match (model.interpret)(&text, control, now) {
+                Ok(Some(value)) if rule_intent.as_ref() == Some(&value.intent) || plan_model::accounts_for(probe, &value.intent, None) => {
                     let model_recurring = value.when.as_ref().is_some_and(|w| w.rule.is_some());
                     match recurring_route(rule_recurring, rule_intent_present, model_recurring) {
                         Route::Rule => None,
                         Route::Refuse => {
-                            return Outcome::Problem {
-                                message: "Repeating tasks need a command Voxi understands without the model.".into(),
-                            };
+                            return Outcome::Problem { message: RULE_ONLY_REPEAT.into() };
                         }
                         Route::Model => {
                             // Cross-check a non-recurring model schedule against
@@ -682,7 +804,7 @@ fn plan_input_for(
                         }
                     }
                 }
-                Ok(None) => None,
+                Ok(_) => None,
                 Err(message) => {
                     model_error = Some(message);
                     None
@@ -716,10 +838,6 @@ fn plan_input_for(
             Err(message) => return Outcome::Problem { message },
         },
     };
-    let scheduled_for = when.as_ref().map(|w| w.due);
-    use scheduler::FirstRunPolicy::{Immediate, RunNowAndRepeat};
-    let first_run = when.as_ref().map_or(Immediate, |w| w.first_run);
-    let repeat = when.as_ref().and_then(|w| w.rule.as_ref());
     let approved_shortcut =
         shortcut.as_ref().map(|s| scheduler::RuleSource::Shortcut { phrase: s.phrase.clone(), commands: s.commands.clone() });
     let approved_nicknames = {
@@ -759,15 +877,12 @@ fn plan_input_for(
             }
             Err(scope::PrepareError::NotUnderstood(raw)) => {
                 #[cfg(feature = "tiny-model")]
-                let recovered = if scheduled_for.is_none()
-                    && previous_scope.is_none()
-                    && !plan_model::enabled()
-                    && std::env::var_os("VOXI_TINY_MODEL_DIR").is_some()
-                {
-                    tiny_model::recover(&text, || control.is_cancelled())
-                } else {
-                    None
-                };
+                let recovered =
+                    if when.is_none() && previous_scope.is_none() && !model.enabled && std::env::var_os("VOXI_TINY_MODEL_DIR").is_some() {
+                        tiny_model::recover(&text, || control.is_cancelled())
+                    } else {
+                        None
+                    };
                 #[cfg(not(feature = "tiny-model"))]
                 let recovered: Option<model::Intent> = None;
                 match recovered {
@@ -808,6 +923,52 @@ fn plan_input_for(
             Work::UndoEntry(id) => history.undoable(*id).map_err(Stop::Problem).and_then(plan::plan_undo),
         }
     };
+    #[cfg(feature = "tiny-model")]
+    let (planned, when, used_model) = 'fallback: {
+        if !can_ask_model || !model_fallback || used_model {
+            break 'fallback (planned, when, used_model);
+        }
+        let (Err(Stop::MissingTransferItem { name, .. }), Some(intent)) = (&planned, rule_intent.as_ref()) else {
+            break 'fallback (planned, when, used_model);
+        };
+        if !plan_model::phrase_like_missing_name(name, &original_text) || !plan_model::recoverable_intent(intent, name) {
+            break 'fallback (planned, when, used_model);
+        }
+        if rule_recurring {
+            return Outcome::Problem { message: RULE_ONLY_REPEAT.into() };
+        }
+        if control.is_cancelled() {
+            return Outcome::Problem { message: "Search cancelled.".into() };
+        }
+        let value = match (model.interpret)(&original_text, control, now) {
+            Ok(Some(value)) if plan_model::accounts_for(probe, &value.intent, Some(name)) => value,
+            Ok(_) => break 'fallback (planned, when, used_model),
+            Err(message) => return Outcome::Problem { message },
+        };
+        if value.when.as_ref().is_some_and(|w| w.rule.is_some()) {
+            return Outcome::Problem { message: RULE_ONLY_REPEAT.into() };
+        }
+        if !model_schedule_ok(&value.when, found, &original_text) {
+            return Outcome::Problem { message: "The model's schedule didn't match your command.".into() };
+        }
+        let history =
+            checked_state!(state.history.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() });
+        // Search stats count the work of both attempts. Sharing the control
+        // also keeps the retry cancellable by the same request generation.
+        let planned = Planner::new(&roots, &choices).with_control(control.clone()).plan(&value.intent, &history);
+        (planned, value.when, true)
+    };
+    #[cfg(feature = "tiny-model")]
+    if used_model
+        && let Ok(Planned::Steps { actions, .. }) = &planned
+        && let Err(message) = plan_model::validate_actions(actions, &roots)
+    {
+        return Outcome::Problem { message: message.into() };
+    }
+    let scheduled_for = when.as_ref().map(|w| w.due);
+    use scheduler::FirstRunPolicy::{Immediate, RunNowAndRepeat};
+    let first_run = when.as_ref().map_or(Immediate, |w| w.first_run);
+    let repeat = when.as_ref().and_then(|w| w.rule.as_ref());
     // Fingerprinting can walk a folder tree. Keep it cancellable and outside
     // the publication lock; only installing the resulting preview is serialized.
     let scheduled = match (&planned, &when) {
@@ -831,7 +992,7 @@ fn plan_input_for(
                 })
             }
         } else {
-            scheduler::Job::new_with_control(original_text.clone(), when.due, actions.clone(), &control)
+            scheduler::Job::new_with_control(original_text.clone(), when.due, actions.clone(), control)
         }),
         _ => None,
     };
@@ -842,11 +1003,18 @@ fn plan_input_for(
         return Outcome::Problem { message: "Search cancelled.".into() };
     }
     match planned {
-        Err(Stop::Problem(message)) => Outcome::Problem { message },
-        Err(Stop::Ambiguous { name, candidates }) => Outcome::Ambiguous {
+        Err(
+            Stop::Problem(message)
+            | Stop::MissingTransferItem { message, .. }
+            | Stop::SearchIncomplete(message)
+            | Stop::NothingToChange(message),
+        ) => Outcome::Problem { message },
+        Err(Stop::Ambiguous { name, candidates, reason, note }) => Outcome::Ambiguous {
+            note,
             name,
             folders: !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
+            reason,
         },
         Ok(Planned::Info { .. } | Planned::Direct { .. }) if scheduled_for.is_some() => Outcome::Problem {
             message:
@@ -882,9 +1050,6 @@ fn plan_input_for(
             }
         }
         Ok(Planned::Steps { title, actions, notes, mut warnings, undo_of }) => {
-            if used_model {
-                warnings.insert(0, "Model interpretation: review the source folders and schedule before confirming.".into());
-            }
             let scheduled = match scheduled.transpose() {
                 Ok(job) => job,
                 Err(message) => return Outcome::Problem { message },
@@ -938,6 +1103,7 @@ fn plan_input_for(
                 items,
                 noted,
                 warnings,
+                model_interpreted: used_model,
                 is_undo: undo_of.is_some(),
                 scheduled_for,
                 first_run,
@@ -1308,9 +1474,12 @@ fn execute_recurring_rule(
         sched_skip(job);
         return Completion::Recurring(e);
     }
+    let start = std::time::Instant::now();
+    let control = search::Control::default();
+    let parsed_miss = || emit_planning_failure(Code::ParseMiss, &control, control.stats(start.elapsed()));
     let planned = {
         let history = checked_state!(state.history.lock(), Completion::Recurring("Voxi state is unavailable. Restart the app.".into()));
-        let planner = Planner::new(&roots, &rule.choices).with_control(search::Control::default());
+        let planner = Planner::new(&roots, &rule.choices).with_control(control.clone());
         // Legacy model intent is ignored. Use the approved shortcut snapshot
         // or parse the approved standalone command against the current files.
         match &rule.approved_source {
@@ -1322,6 +1491,7 @@ fn execute_recurring_rule(
                 match commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect::<Result<Vec<_>, _>>() {
                     Ok(commands) => planner.plan_shortcut(phrase, &commands, &history),
                     Err(bad) => {
+                        parsed_miss();
                         sched_skip(job);
                         return Completion::Recurring(format!("Skipped: Voxi doesn't understand “{bad}” in “{phrase}”."));
                     }
@@ -1330,12 +1500,24 @@ fn execute_recurring_rule(
             _ => match parse::parse(&rule.command) {
                 Ok(intent) => planner.plan(&intent, &history),
                 Err(_) => {
+                    parsed_miss();
                     sched_skip(job);
                     return Completion::Recurring(format!("Skipped: Voxi doesn't understand “{}”.", rule.command));
                 }
             },
         }
     };
+    if let Err(stop) = &planned {
+        let code = match stop {
+            Stop::Problem(_) | Stop::MissingTransferItem { .. } => Some(Code::PlanningFailed),
+            Stop::SearchIncomplete(_) => Some(Code::SearchIncomplete),
+            Stop::Ambiguous { .. } => Some(Code::Ambiguous),
+            Stop::NothingToChange(_) => None,
+        };
+        if let Some(code) = code {
+            emit_planning_failure(code, &control, control.stats(start.elapsed()));
+        }
+    }
     match planned {
         Ok(Planned::Steps { actions, undo_of: None, .. }) if actions.is_empty() => {
             sched_skip(job);
@@ -1378,13 +1560,25 @@ fn execute_recurring_rule(
             sched_skip(job);
             Completion::Recurring("Skipped: this command no longer changes files.".into())
         }
-        Err(Stop::Problem(message)) => {
+        Err(Stop::NothingToChange(message)) => {
             sched_skip(job);
-            Completion::Recurring(format!("Nothing to change. {message}"))
+            let summary = if message.starts_with("Nothing to change") { message } else { format!("Nothing to change. {message}") };
+            Completion::Recurring(summary)
         }
-        Err(Stop::Ambiguous { name, .. }) => {
+        Err(Stop::Problem(message) | Stop::MissingTransferItem { message, .. } | Stop::SearchIncomplete(message)) => {
             sched_skip(job);
-            Completion::Recurring(format!("Skipped: “{name}” matches more than one item. Schedule it again and pick one."))
+            Completion::Recurring(format!("Skipped: {message}"))
+        }
+        Err(Stop::Ambiguous { name, reason, note, .. }) => {
+            sched_skip(job);
+            let explanation = match reason {
+                model::AmbiguityReason::MultipleMatches => format!("“{name}” matches more than one item."),
+                model::AmbiguityReason::SuggestedMatch => format!("A possible match for “{name}” needs confirmation."),
+                model::AmbiguityReason::IncompleteSearch => {
+                    note.unwrap_or_else(|| format!("Deeper folders weren’t fully checked for “{name}”."))
+                }
+            };
+            Completion::Recurring(format!("Skipped: {explanation} Schedule it again and pick a match."))
         }
     }
 }
@@ -1692,8 +1886,14 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
 
 /// Saves a "this was wrong" report on this Mac. Nothing is sent anywhere.
 #[tauri::command]
-fn report_wrong(state: State<AppState>, command: String, outcome: serde_json::Value, note: String) -> Result<learn::Reports, String> {
-    learn::record(&state.reports_path, &command, outcome, &note)
+fn report_wrong(
+    state: State<AppState>,
+    command: String,
+    outcome: serde_json::Value,
+    note: String,
+    search_stats: Option<search::Stats>,
+) -> Result<learn::Reports, String> {
+    learn::record(&state.reports_path, &command, outcome, &note, search_stats)
 }
 
 #[tauri::command]
@@ -1898,7 +2098,11 @@ pub fn run() {
             app.manage(state);
             #[cfg(feature = "tiny-model")]
             if plan_model::enabled() {
-                eprintln!("Voxi: structured model mode enabled ({})", voxi_tiny_native::PLAN_PACKAGE_ID);
+                eprintln!(
+                    "Voxi: structured model enabled ({}, routing: {})",
+                    voxi_tiny_native::PLAN_PACKAGE_ID,
+                    plan_model::RoutingMode::active().as_str()
+                );
             }
             let scheduler_app = app.handle().clone();
             std::thread::spawn(move || {
@@ -1958,16 +2162,26 @@ pub fn run() {
                 // Left click opens the window; the menu is on right click.
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                        let app = tray.app_handle();
-                        // Clicking the menu bar takes focus from the window,
-                        // so go by visibility alone here. A click while it
-                        // fades out reopens it, as the hotkey does.
-                        let closing = checked_state!(app.state::<AppState>().presentation.lock(), ()).closing();
-                        match app.get_webview_window("main") {
-                            Some(w) if w.is_visible().unwrap_or(false) && !closing => request_hide(app),
-                            _ => show_window(app, "command"),
-                        }
+                    // macOS delivers the press and release together, after
+                    // the click ends. By then the press has already taken
+                    // focus from the window and started its close-on-blur.
+                    // A close that began just now was caused by this click,
+                    // so the click means "close": let it finish. A click on
+                    // a window that was fading out for another reason
+                    // reopens it, as the hotkey does.
+                    let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event else {
+                        return;
+                    };
+                    let app = tray.app_handle();
+                    let closed_by_this_click =
+                        checked_state!(app.state::<AppState>().presentation.lock(), ()).closing_within(TRAY_CLICK_CLOSE);
+                    if closed_by_this_click {
+                        return;
+                    }
+                    if window_open(app) {
+                        request_hide(app);
+                    } else {
+                        show_window(app, "command");
                     }
                 })
                 .on_menu_event(|app, event| match event.id().as_ref() {

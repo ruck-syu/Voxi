@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type Settings } from "./api";
+import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type SearchStats, type Settings } from "./api";
 import { readChoice } from "./choice";
 import examples from "./examples.json";
 import { AccessView } from "./access";
@@ -16,9 +16,9 @@ let lastRequest = 0;
 type Phase =
   | { k: "ready" }
   | { k: "parsing" }
-  | { k: "outcome"; outcome: Outcome; refused?: string }
+  | { k: "outcome"; outcome: Outcome; refused?: string; searchStats?: SearchStats }
   | { k: "running"; title: string; canStop: boolean; stopping: boolean; stopError?: string }
-  | { k: "done"; result: RunResult; wasUndo: boolean }
+  | { k: "done"; result: RunResult; wasUndo: boolean; searchStats?: SearchStats }
   | { k: "error"; message: string };
 
 /** Waiting for the answer to "which one?": the command being planned and
@@ -27,8 +27,8 @@ type Asking = { command: string; choices: Record<string, string>; name: string; 
 
 /** Something Voxi can learn from what just happened, offered once. */
 type Offer =
-  | { k: "folder"; name: string; path: string }
-  | { k: "phrase"; phrase: string; command: string };
+  | { k: "folder"; name: string; path: string; saved?: string }
+  | { k: "phrase"; phrase: string; command: string; saved?: string };
 
 /** How long a missed phrase stays teachable by the command that follows it. */
 const TEACH_WINDOW_MS = 3 * 60_000;
@@ -450,11 +450,11 @@ function CommandView({
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const { outcome, scope, generation } = await api.plan(command, picked, request, undoEntryId);
+        const { outcome, scope, generation, search_stats: searchStats } = await api.plan(command, picked, request, undoEntryId);
         if (request !== requestId.current) return;
         scopeGeneration.current = generation;
         setResultScope(scope);
-        setPhase({ k: "outcome", outcome });
+        setPhase({ k: "outcome", outcome, searchStats });
         if (outcome.status === "plan") planShownAt.current = performance.now();
         if (outcome.status === "not_understood") missed.current = { text: command.trim(), at: Date.now() };
         // Once the picked folder led somewhere, offer to remember it by name.
@@ -495,11 +495,13 @@ function CommandView({
 
   const confirm = useCallback(async () => {
     if (activeRun.current || phase.k !== "outcome" || phase.outcome.status !== "plan") return;
-    const plan = phase.outcome;
+    const { outcome: plan, searchStats } = phase;
     const skipped = skip.id === plan.id ? skip.steps : [];
     if (skipped.length >= plan.total) return;
     const canStop = plan.firstRun === "immediate" || plan.firstRun === "runNowAndRepeat";
     activeRun.current = { id: plan.id, canStop, stopping: false };
+    // An offer already answered is done; one still open stays for after the run.
+    setOffer((current) => (current?.saved ? null : current));
     setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
       const result = await api.confirm(plan.id, skipped);
@@ -507,7 +509,7 @@ function CommandView({
       if (after) scopeGeneration.current = after.generation;
       setResultScope(after?.scope ?? null);
       setSelectionNotice(after?.notice ?? null);
-      setPhase({ k: "done", result, wasUndo: plan.isUndo });
+      setPhase({ k: "done", result, wasUndo: plan.isUndo, searchStats });
       // A phrase Voxi missed, followed soon by a command that worked, can
       // be taught: next time the phrase runs this command.
       const miss = missed.current;
@@ -520,7 +522,7 @@ function CommandView({
     } catch (e) {
       // A refusal before anything ran (a file changed, a step can't be
       // left out) keeps the preview, so it can be fixed or cancelled.
-      if (isConfirmError(e) && e.previewKept) setPhase({ k: "outcome", outcome: plan, refused: e.message });
+      if (isConfirmError(e) && e.previewKept) setPhase({ k: "outcome", outcome: plan, refused: e.message, searchStats });
       else setPhase({ k: "error", message: errorMessage(e) });
     } finally {
       activeRun.current = null;
@@ -730,7 +732,7 @@ function CommandView({
         skipped={phase.k === "outcome" && phase.outcome.status === "plan" ? skippedFor(phase.outcome.id) : []}
         onToggleSkip={toggleSkip}
       />
-      {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={onSettingsChanged} onDone={() => { setOffer(null); focusInput(); }} />}
+      {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={(settings, text) => { onSettingsChanged(settings); setOffer((current) => (current === offer ? { ...offer, saved: text } : current)); }} onDone={() => { setOffer(null); focusInput(); }} />}
       {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
       <Footer phase={phase} asking={!!asking} onSettings={onSettings} />
     </>
@@ -764,7 +766,8 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
     if (state.k !== "writing") return;
     setState({ k: "saving" });
     try {
-      const r = await api.reportWrong(command, reportOutcome(phase), note);
+      const searchStats = phase.k === "outcome" || phase.k === "done" ? phase.searchStats : undefined;
+      const r = await api.reportWrong(command, reportOutcome(phase), note, searchStats);
       setState({ k: "saved", count: r.count });
     } catch (e) {
       setState({ k: "error", message: errorMessage(e) });
@@ -800,22 +803,22 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
 
 /** One offer to learn from what just happened: a folder's nickname, or a
  *  phrase that should run the command that worked. */
-function OfferRow({ offer, onSaved, onDone }: { offer: Offer; onSaved: (s: Settings) => void; onDone: () => void }) {
-  const [state, setState] = useState<{ k: "asking" } | { k: "saved"; text: string } | { k: "error"; message: string }>({ k: "asking" });
+// The answer lives in the parent's offer, not here: the row unmounts while a
+// command runs, and an answered offer must not ask again when it comes back.
+function OfferRow({ offer, onSaved, onDone }: { offer: Offer; onSaved: (s: Settings, text: string) => void; onDone: () => void }) {
+  const [state, setState] = useState<{ k: "asking" } | { k: "error"; message: string }>({ k: "asking" });
   const accept = async () => {
     try {
       if (offer.k === "folder") {
-        onSaved(await api.rememberFolder(offer.name, offer.path));
-        setState({ k: "saved", text: `Saved. “${offer.name}” now means ${tildify(offer.path)}.` });
+        onSaved(await api.rememberFolder(offer.name, offer.path), `Saved. “${offer.name}” now means ${tildify(offer.path)}.`);
       } else {
-        onSaved(await api.teachPhrase(offer.phrase, offer.command));
-        setState({ k: "saved", text: `Saved. “${offer.phrase}” now runs “${offer.command}”. Change it under Shortcuts.` });
+        onSaved(await api.teachPhrase(offer.phrase, offer.command), `Saved. “${offer.phrase}” now runs “${offer.command}”. Change it under Shortcuts.`);
       }
     } catch (e) {
       setState({ k: "error", message: errorMessage(e) });
     }
   };
-  if (state.k === "saved") return <div className="learn offer" role="status"><span>{state.text}</span></div>;
+  if (offer.saved) return <div className="learn offer" role="status"><span>{offer.saved}</span></div>;
   if (state.k === "error") return <div className="learn offer" role="alert"><span className="warn">{state.message}</span></div>;
   const question = offer.k === "folder"
     ? <>Always use <strong>{tildify(offer.path)}</strong> for “{offer.name}”?</>
@@ -1039,7 +1042,8 @@ function Body(props: {
     case "ambiguous":
       return (
         <section className="body">
-          <p className="title">Choose a match for “{o.name}”</p>
+          <p className="title">{o.candidates.length === 1 ? "Confirm the match" : "Choose a match"} for “{o.name}”</p>
+          {o.reason === "incomplete_search" && <p className="quiet">{o.note ?? "Deeper folders weren’t fully checked."}</p>}
           <p className="quiet">Say a number, or click one.</p>
           <ol className="ruled choices">
             {o.candidates.map((c, i) => (
@@ -1085,6 +1089,12 @@ function Body(props: {
         <section className="body">
           <p className="title">{o.title}</p>
           {phase.refused && <p className="note warn" role="alert">{phase.refused}</p>}
+          {o.modelInterpreted && (
+            <p className="model-notice">
+              <strong>Model interpretation.</strong>{" "}
+              {o.scheduledFor ? "Check the file changes and schedule before confirming." : "Check the file changes before confirming."}
+            </p>
+          )}
           <PlanSteps plan={o} skipped={props.skipped} onToggle={(step) => props.onToggleSkip(o.id, step)} />
           {props.skipped.length > 0 && (
             <p className="quiet" role="status">
@@ -1093,9 +1103,9 @@ function Body(props: {
             </p>
           )}
           {o.firstRun === "runNowAndRepeat" && <p className="quiet">{o.repeats}</p>}
-          {o.warnings.map((w) => (
-            <p key={w} className="quiet">
-              {w}
+          {o.warnings.map((warning, index) => (
+            <p key={`${index}-${warning}`} className="quiet warn">
+              {warning}
             </p>
           ))}
           <div className="actions">

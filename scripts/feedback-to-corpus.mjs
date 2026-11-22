@@ -7,7 +7,7 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 
 const HEADER =
-  '# Inbox: reports to review. Replace each ? with the expected intent JSON or !, then move the line into eval/ or src/parse/corpus/.';
+  '# Review the planner regression notes. For parser cases, replace ? with the expected intent JSON or ! and move the line into eval/ or src/parse/corpus/.';
 
 function expandHome(p) {
   if (p === '~') return os.homedir();
@@ -76,7 +76,7 @@ for (const raw of lines) {
   const key = report.command.trim().toLowerCase();
   let group = groups.get(key);
   if (!group) {
-    group = { latest: null, rank: -Infinity, notes: [] };
+    group = { latest: null, rank: -Infinity, notes: [], needsPlannerTest: false };
     groups.set(key, group);
   }
 
@@ -86,6 +86,10 @@ for (const raw of lines) {
   if (rank >= group.rank) {
     group.latest = report;
     group.rank = rank;
+  }
+
+  if (report.intent != null && report.outcome?.status === 'problem') {
+    group.needsPlannerTest = true;
   }
 
   if (typeof report.note === 'string') {
@@ -110,6 +114,7 @@ for (const group of groups.values()) {
   const block = [
     `# report ${oneLine(r.time ?? 'unknown')} v${oneLine(r.version ?? 'unknown')} outcome=${oneLine(status)}`,
     ...notes.map((n) => `# note: ${n}`),
+    ...(group.needsPlannerTest ? ['# planner regression: reproduce the folder layout in app/src-tauri/src/plan/messy_tests.rs.'] : []),
     `# parsed: ${parsed}`,
     `${command} => ?`,
   ];

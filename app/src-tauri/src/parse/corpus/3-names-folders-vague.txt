@@ -68,3 +68,6 @@ file the invoice under Archive => !miss
 clean the desktop => !miss
 find my passport scan => {"intent":"list","src":{"kind":"item","name":"passport scan"}}
 where is my passport scan => !miss
+
+create a folder in dev named flagsmith. => {"intent":"create_folders","names":["flagsmith"],"parent":"dev"}
+Create a folder in dev named flagsmith => {"intent":"create_folders","names":["flagsmith"],"parent":"dev"}

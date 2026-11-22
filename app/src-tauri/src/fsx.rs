@@ -1,6 +1,6 @@
 //! Allowed folders, path safety checks, and small filesystem helpers.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
@@ -35,6 +35,36 @@ impl Exclusions {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ConfiguredRoot {
+    parent: PathBuf,
+    dev: u64,
+    ino: u64,
+    target: PathBuf,
+}
+
+impl ConfiguredRoot {
+    fn read(path: &Path) -> Option<Self> {
+        let parent = fs::canonicalize(path.parent()?).ok()?;
+        let path = parent.join(path.file_name()?);
+        let entry = fs::symlink_metadata(&path).ok()?;
+        if entry.ino() == 0 {
+            return None;
+        }
+        let target = fs::canonicalize(&path).ok()?;
+        Some(Self { parent, dev: entry.dev(), ino: entry.ino(), target })
+    }
+
+    fn register(self, path: &Path, configured: &mut HashMap<PathBuf, Self>) {
+        if self.target != path
+            && let Some(target) = Self::read(&self.target)
+        {
+            configured.entry(self.target.clone()).or_insert(target);
+        }
+        configured.insert(path.to_path_buf(), self);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Roots {
     pub home: PathBuf,
@@ -43,6 +73,7 @@ pub struct Roots {
     pub named: Vec<(String, PathBuf)>,
     /// Canonical allowed roots. Nothing outside these is ever touched.
     pub allowed: Vec<PathBuf>,
+    configured: HashMap<PathBuf, ConfiguredRoot>,
     pub screenshots: Option<PathBuf>,
     /// The user's own folder names, looked up before the standard ones but
     /// never searched as extra roots (they already sit inside one).
@@ -56,10 +87,18 @@ impl Roots {
         let std_dirs = [("desktop", "Desktop"), ("downloads", "Downloads"), ("documents", "Documents"), ("pictures", "Pictures")];
         let mut named = Vec::new();
         let mut allowed = Vec::new();
+        let mut configured = HashMap::new();
+        let mut allow_root = |path: &Path| {
+            let entry = ConfiguredRoot::read(path);
+            allowed.push(entry.as_ref().map_or_else(|| canonical(path), |entry| entry.target.clone()));
+            if let Some(entry) = entry {
+                entry.register(path, &mut configured);
+            }
+        };
         for (key, dir) in std_dirs {
             let p = home.join(dir);
-            named.push((key.to_string(), p.clone()));
-            allowed.push(canonical(&p));
+            allow_root(&p);
+            named.push((key.to_string(), p));
         }
         named.push(("docs".into(), home.join("Documents")));
         named.push(("photos".into(), home.join("Pictures")));
@@ -67,10 +106,17 @@ impl Roots {
             if let Some(name) = p.file_name() {
                 named.push((name.to_string_lossy().to_lowercase(), p.clone()));
             }
-            allowed.push(canonical(p));
+            allow_root(p);
         }
-        let mut roots =
-            Roots { home: home.to_path_buf(), named, allowed, screenshots: None, nicknames: Vec::new(), exclusions: Exclusions::default() };
+        let mut roots = Roots {
+            home: home.to_path_buf(),
+            named,
+            allowed,
+            configured,
+            screenshots: None,
+            nicknames: Vec::new(),
+            exclusions: Exclusions::default(),
+        };
         // Where screenshots land: the system setting if there is one, else
         // the usual Screenshots folders. A custom location inside the home
         // folder is allowed even outside the four standard folders.
@@ -80,6 +126,11 @@ impl Roots {
         if let Some(s) = &screenshots {
             if !roots.is_allowed(s) {
                 roots.allowed.push(canonical(s));
+            }
+            if !roots.configured.contains_key(s)
+                && let Some(entry) = ConfiguredRoot::read(s)
+            {
+                entry.register(s, &mut roots.configured);
             }
             roots.named.push(("screenshots".into(), s.clone()));
         }
@@ -140,6 +191,25 @@ impl Roots {
     pub fn is_root(&self, p: &Path) -> bool {
         let c = canonical(p);
         self.allowed.contains(&c) || self.screenshots.as_ref().is_some_and(|s| canonical(s) == c)
+    }
+
+    /// Resolves a path for planning or Finder, including configured roots
+    /// whose parent is outside the allowed folders.
+    pub(crate) fn is_allowed_entry(&self, p: &Path) -> bool {
+        self.is_allowed(p) && (p.parent().is_none_or(|parent| self.is_allowed(parent)) || self.is_configured_root(p))
+    }
+
+    /// Match the original directory entry, resolving case via the filesystem
+    /// and checking that a configured symlink still resolves to its original target.
+    pub fn is_configured_root(&self, p: &Path) -> bool {
+        p.is_absolute()
+            && !has_parent_ref(p)
+            && ConfiguredRoot::read(p).is_some_and(|entry| self.configured.values().any(|root| *root == entry))
+    }
+
+    /// True when a recorded root spelling no longer points to its original entry.
+    pub(crate) fn configured_root_changed(&self, p: &Path) -> bool {
+        self.configured.get(p).is_some_and(|entry| ConfiguredRoot::read(p).as_ref() != Some(entry))
     }
 
     /// The `_to_delete/` folder for the root that holds `p`.
@@ -601,7 +671,7 @@ mod tests {
         for f in ["Documents/a.pdf", "Documents/Archive/Old/b.pdf", "Documents/Archive/c.pdf", "Documents/Archive/Keep/d.pdf"] {
             fs::write(h.join(f), b"x").unwrap();
         }
-        let search = crate::search::Search::default().with_exclusions(roots.exclusions.clone());
+        let search = crate::search::Search::default().with_roots(&roots);
         let mut found: Vec<String> =
             search.entries(&h.join("Documents")).iter().map(|e| e.path.strip_prefix(&h).unwrap().display().to_string()).collect();
         found.sort();
@@ -668,6 +738,8 @@ mod tests {
         let roots = Roots::new(home.path(), None, &[]);
         assert!(roots.is_allowed(&home.path().join("Downloads/a.txt")));
         assert!(!roots.is_allowed(&home.path().join("Downloads/../secret.txt")));
+        assert!(!roots.is_configured_root(&home.path().join("Documents/../Downloads")));
+        assert!(!roots.is_configured_root(Path::new("Downloads")));
         assert!(!roots.is_allowed(&home.path().join("Library/a.txt")));
         assert!(!roots.is_allowed(Path::new("/etc/hosts")));
     }

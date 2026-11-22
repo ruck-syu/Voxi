@@ -496,6 +496,7 @@ pub enum Outcome {
         /// How many steps carry a note, such as a name changed to avoid a clash.
         noted: usize,
         warnings: Vec<String>,
+        model_interpreted: bool,
         is_undo: bool,
         scheduled_for: Option<chrono::DateTime<chrono::Local>>,
         first_run: crate::scheduler::FirstRunPolicy,

@@ -2,7 +2,7 @@
 //! This validates the model's protocol and literal integrity, not its semantics.
 use crate::model_slot::{get_or_load, load_from_env};
 use crate::{
-    model::{FileType, Filter, Intent, Source},
+    model::{Action, FileType, Filter, Intent, Source},
     parse, scheduler,
 };
 use chrono::{DateTime, Local};
@@ -30,6 +30,33 @@ pub fn enabled() -> bool {
     std::env::var_os("VOXI_PLAN_MODEL_DIR").is_some()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoutingMode {
+    Fallback,
+    Legacy,
+}
+
+impl RoutingMode {
+    pub fn active() -> Self {
+        Self::from_value(std::env::var("VOXI_MODEL_ROUTING").ok().as_deref())
+    }
+
+    fn from_value(value: Option<&str>) -> Self {
+        if value.is_some_and(|value| ["legacy", "0", "false", "off"].iter().any(|alias| alias.eq_ignore_ascii_case(value.trim()))) {
+            Self::Legacy
+        } else {
+            Self::Fallback
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fallback => "fallback",
+            Self::Legacy => "legacy",
+        }
+    }
+}
+
 /// The structured schema only carries a folder plus a file type. Age, size,
 /// name and other narrowing filters (and single items) would be silently
 /// dropped, so commands using them must not reach the model.
@@ -53,10 +80,12 @@ fn only_file_type(filter: &Filter) -> bool {
 
 fn model_can_express(intent: &Intent) -> bool {
     match intent {
-        Intent::Move { src, .. } | Intent::Copy { src, .. } | Intent::Trash { src } => match src {
+        Intent::Trash { .. } => false,
+        Intent::Move { src, to } | Intent::Copy { src, to } if !trash_destination(Path::new(to)) => match src {
             Source::Set { filter, .. } => only_file_type(filter),
             Source::Item { .. } => false,
         },
+        Intent::Move { .. } | Intent::Copy { .. } => false,
         Intent::Chain { commands } => commands.iter().all(model_can_express),
         // CreateFolders and Rename map directly onto schema steps.
         _ => true,
@@ -129,10 +158,8 @@ fn quoted_spans(text: &str) -> Result<Vec<(usize, usize, String)>, String> {
     Ok(spans)
 }
 
-/// The trash schema can only say "trash <file type> in <folder>". A GrammarMiss
-/// that names a destructive, outward or overwrite operation must never reach
-/// the model, which would silently drop its qualifiers. Fail closed (stay
-/// ineligible) whenever such a word appears outside quoted names.
+/// A GrammarMiss that names a destructive, outward or overwrite operation
+/// stays on the rule path. Ignore words that belong to quoted names.
 fn destructive_miss(text: &str) -> bool {
     let spans = quoted_spans(text).unwrap_or_default();
     let mut masked = String::new();
@@ -201,12 +228,192 @@ pub fn eligible(text: &str, classified: &Result<Intent, parse::ParseFailure>) ->
             intent @ (Intent::CreateFolders { .. }
             | Intent::Move { .. }
             | Intent::Copy { .. }
-            | Intent::Trash { .. }
             | Intent::Rename { .. }
             | Intent::Chain { .. }),
         ) => model_can_express(intent),
         Ok(_) => false,
     }
+}
+
+/// Match the entire scheduler-stripped command against the proposed steps.
+/// Keep literal names in their argument positions and require multiword names
+/// to be quoted so a model cannot pass a dropped qualifier off as a name.
+pub fn accounts_for(base: &str, intent: &Intent, missing_item: Option<&str>) -> bool {
+    static SPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
+    let Ok(spans) = quoted_spans(base) else { return false };
+    let mut text = String::new();
+    let mut end = 0;
+    for (start, stop, name) in spans {
+        text.push_str(&SPACE.replace_all(&base[end..start], " "));
+        text.push_str(&serde_json::to_string(&name).unwrap());
+        end = stop;
+    }
+    text.push_str(&SPACE.replace_all(&base[end..], " "));
+
+    let commands = match intent {
+        Intent::Chain { commands } => commands.as_slice(),
+        step => std::slice::from_ref(step),
+    };
+    if commands.is_empty() {
+        return false;
+    }
+    let mut created = None;
+    let mut patterns = Vec::new();
+    for step in commands {
+        let pattern = match step {
+            Intent::CreateFolders { names, parent: Some(parent) } if names.len() == 1 => {
+                created = Some(Path::new(parent).join(&names[0]));
+                let name = name_syntax(&names[0]);
+                let location = format!("(?:in|inside|within|under|on) (?:the )?{}(?: folder)?", name_syntax(parent));
+                format!(
+                    "(?:create|make|add|set up|i need) (?:a )?(?:new )?(?:folder (?:called|named) {name} {location}|folder {location} (?:called|named) {name}|{name} folder {location})"
+                )
+            }
+            Intent::Move { src, to } | Intent::Copy { src, to } => {
+                let Source::Set { folder: Some(folder), filter } = src else { return false };
+                if !only_file_type(filter) {
+                    return false;
+                }
+                let kind = match filter.file_type {
+                    Some(FileType::Pdfs) => "(?:pdfs|pdf (?:files|documents))",
+                    Some(FileType::Images) => "(?:images|pictures|photos|pics|image files)",
+                    Some(FileType::Videos) => "(?:videos|movies|clips|vids|footage|screen recordings|video files)",
+                    Some(FileType::Documents) => "(?:documents|docs|document files)",
+                    Some(FileType::Screenshots) => "(?:screenshots|screen shots|screen captures|screen grabs|screengrabs|screenies)",
+                    Some(FileType::Files) => "(?:files|items|everything|anything|stuff|things)",
+                    _ => return false,
+                };
+                let mut subject = format!("(?:all (?:of )?)?(?:the |my )?{kind}");
+                if filter.file_type == Some(FileType::Files)
+                    && created.is_none()
+                    && missing_item
+                        .is_some_and(|name| matches!(name.to_ascii_lowercase().as_str(), "its content" | "its contents" | "its files"))
+                {
+                    // This exact phrase still needs an explicitly named source.
+                    subject = format!("(?:{subject}|its (?:contents?|files))");
+                }
+                let source = format!("{subject} (?:from|in|inside|within|under) (?:the )?{}(?: folder)?", name_syntax(folder));
+                let mut destination = format!("(?:to|into) (?:the )?{}(?: folder)?", name_syntax(to));
+                if created.as_deref() == Some(Path::new(to)) {
+                    destination = format!("(?:{destination}|(?:to|into) (?:it|that folder|the new folder)|there)");
+                }
+                let (verb, past) = if matches!(step, Intent::Move { .. }) {
+                    (
+                        "move|shift|relocate|transfer|put|place|bring|drop|stash|store|file|migrate|collect|gather",
+                        "moved|shifted|relocated|transferred|put|placed|brought|dropped|stashed|stored|filed|migrated|collected|gathered",
+                    )
+                } else {
+                    ("copy|duplicate|back up|backup", "copied|duplicated|backed up")
+                };
+                format!("(?:(?:{verb}) {source}|{source} be (?:{past})) {destination}")
+            }
+            Intent::Rename { src: Source::Item { name, folder: Some(folder) }, new_name } => format!(
+                "rename (?:the )?{} (?:in|inside|from) (?:the )?{} to {}",
+                name_syntax(name),
+                name_syntax(folder),
+                name_syntax(new_name)
+            ),
+            _ => return false,
+        };
+        patterns.push(pattern);
+    }
+    let steps = patterns.join(r"(?:,? (?:and(?: then)?|then) |[,;] *)");
+    Regex::new(&format!(r"(?i)\A(?:please )?(?:(?:could|can|would|will) (?:you )?(?:please )?)?{steps}(?:,? please)?[.!?]?\z"))
+        .is_ok_and(|pattern| pattern.is_match(text.trim()))
+}
+
+fn name_syntax(value: &str) -> String {
+    static BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\A[\p{L}\p{M}\p{N}_~./-]+\z").unwrap());
+    let quoted = regex::escape(&serde_json::to_string(value).unwrap());
+    if BARE.is_match(value) && !value.ends_with('.') && !parse::phrase::bad_destination(value) {
+        format!("(?-i:{quoted}|{})", regex::escape(value))
+    } else {
+        format!("(?-i:{quoted})")
+    }
+}
+
+const MODEL_TRASH_REFUSAL: &str = "Trash commands need a command Voxi understands without the model.";
+
+fn trash_name(name: &str) -> bool {
+    ["trash", "bin", "recycle bin"].iter().any(|trash| trash.eq_ignore_ascii_case(name.trim()))
+}
+
+fn internal_trash(path: &Path) -> bool {
+    path.iter()
+        .filter_map(|part| part.to_str())
+        .any(|name| [".trash", ".trashes", crate::fsx::TRASH_DIR].iter().any(|trash| trash.eq_ignore_ascii_case(name.trim())))
+}
+
+fn trash_destination(path: &Path) -> bool {
+    internal_trash(path) || path.file_name().and_then(|name| name.to_str()).is_some_and(trash_name)
+}
+
+// A nickname, choice or symlink can resolve to a Trash path even when the
+// model's literal passed the wire check.
+pub fn validate_actions(actions: &[Action], roots: &crate::fsx::Roots) -> Result<(), &'static str> {
+    if actions.iter().any(|action| match action {
+        Action::Trash { .. } => true,
+        Action::Move { to, .. } | Action::Copy { to, .. } => to.parent().is_some_and(|folder| {
+            [folder, &crate::fsx::canonical(folder)].into_iter().any(|path| {
+                internal_trash(path)
+                    || roots
+                        .allowed
+                        .iter()
+                        .chain(
+                            roots
+                                .named
+                                .iter()
+                                .map(|(_, root)| root)
+                                .filter(|root| path.starts_with(root) && roots.allowed.contains(&crate::fsx::canonical(root))),
+                        )
+                        .filter_map(|root| path.strip_prefix(root).ok())
+                        .min_by_key(|relative| relative.as_os_str().len())
+                        .is_some_and(|relative| relative.iter().filter_map(|part| part.to_str()).any(trash_name))
+            })
+        }),
+        _ => false,
+    }) {
+        return Err(MODEL_TRASH_REFUSAL);
+    }
+    Ok(())
+}
+
+pub fn phrase_like_missing_name(name: &str, text: &str) -> bool {
+    if Path::new(name).extension().is_some_and(|ext| !ext.is_empty()) {
+        return false;
+    }
+    let normalize = |value: &str| value.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+    let name = normalize(name);
+    let is_phrase = name.starts_with("the ")
+        || name.split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-').any(|word| {
+            matches!(word, "it" | "them" | "there" | "its" | "their" | "that" | "those" | "these" | "everything" | "stuff" | "contents")
+        });
+    is_phrase
+        && quoted_spans(text).is_ok_and(|spans| !spans.iter().any(|(_, _, quoted)| quoted.split('/').any(|part| normalize(part) == name)))
+}
+
+pub fn recoverable_intent(intent: &Intent, missing: &str) -> bool {
+    match intent {
+        Intent::Move { src, to } | Intent::Copy { src, to } if !trash_destination(Path::new(to)) => match src {
+            Source::Item { name, .. } => name == missing,
+            Source::Set { filter, .. } => supported_type(filter),
+        },
+        Intent::Chain { commands } => {
+            let mut created = false;
+            commands.iter().all(|step| {
+                created |= matches!(step, Intent::CreateFolders { .. });
+                !(created && matches!(step.source(), Some(Source::Item { name, .. }) if name == missing))
+                    && recoverable_intent(step, missing)
+            })
+        }
+        Intent::CreateFolders { .. } => true,
+        Intent::Rename { src, .. } => matches!(src, Source::Item { folder: Some(_), .. }),
+        _ => false,
+    }
+}
+
+fn supported_type(filter: &Filter) -> bool {
+    only_file_type(filter) && !matches!(filter.file_type, Some(FileType::Archives | FileType::Installers | FileType::Audio))
 }
 
 /// Called on Tauri's existing blocking planning worker. Errors never authorize
@@ -262,6 +469,15 @@ fn original_spelling(value: &str, original: &str) -> Option<String> {
     if folded.is_empty() {
         return None;
     }
+    let boundary = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric() && c != '_');
+    // Prefer an exact spelling when another word differs only in case,
+    // such as the file type and folder in "copy documents from Documents".
+    if original
+        .match_indices(value)
+        .any(|(start, word)| boundary(original[..start].chars().next_back()) && boundary(original[start + word.len()..].chars().next()))
+    {
+        return Some(value.to_string());
+    }
     let mut lower = String::with_capacity(original.len());
     let mut orig_at: Vec<Option<usize>> = Vec::with_capacity(original.len() + 1);
     for (orig_byte, ch) in original.char_indices() {
@@ -276,7 +492,6 @@ fn original_spelling(value: &str, original: &str) -> Option<String> {
     }
     orig_at.push(Some(original.len()));
 
-    let boundary = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric() && c != '_');
     let mut from = 0;
     while let Some(offset) = lower[from..].find(&folded) {
         let start = from + offset;
@@ -292,12 +507,12 @@ fn original_spelling(value: &str, original: &str) -> Option<String> {
     None
 }
 
-struct Prepared {
+pub(crate) struct Prepared {
     input: String,
     bindings: Vec<(String, String)>,
 }
 impl Prepared {
-    fn new(text: &str) -> Result<Self, String> {
+    pub(crate) fn new(text: &str) -> Result<Self, String> {
         if text.len() > 16_384 {
             return Err("That command is too long.".into());
         }
@@ -348,7 +563,7 @@ impl Prepared {
         Ok(restored)
     }
 
-    fn finish(&self, raw: &str, original: &str, now: DateTime<Local>) -> Result<Option<Interpreted>, String> {
+    pub(crate) fn finish(&self, raw: &str, original: &str, now: DateTime<Local>) -> Result<Option<Interpreted>, String> {
         if raw.trim() == "REFUSE" {
             return Ok(None);
         }
@@ -387,13 +602,14 @@ impl Prepared {
                     } else {
                         lit(3)?
                     };
+                    if trash_destination(Path::new(&to)) {
+                        return Err(MODEL_TRASH_REFUSAL.into());
+                    }
                     let src = Source::Set { folder: Some(folder), filter: Filter { file_type: Some(kind), ..Default::default() } };
                     if op == "move" { Intent::Move { src, to } } else { Intent::Copy { src, to } }
                 }
                 ("rename", 4) => Intent::Rename { src: Source::Item { name: lit(1)?, folder: Some(lit(2)?) }, new_name: lit(3)? },
-                ("trash", 3) => Intent::Trash {
-                    src: Source::Set { folder: Some(lit(2)?), filter: Filter { file_type: Some(file_type(&s[1])?), ..Default::default() } },
-                },
+                ("trash", _) => return Err(MODEL_TRASH_REFUSAL.into()),
                 _ => return Err("The model requested an unsupported operation.".into()),
             };
             folders.push(match &intent {
@@ -493,6 +709,116 @@ fn compile_schedule(value: &Value, intent: &Intent, original: &str, now: DateTim
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn voxi_model_routing_values() {
+        for value in [None, Some("fallback"), Some("FALLBACK"), Some(""), Some("unknown")] {
+            assert_eq!(RoutingMode::from_value(value), RoutingMode::Fallback);
+        }
+        for value in ["legacy", "LEGACY", "0", "FaLsE", " Off "] {
+            assert_eq!(RoutingMode::from_value(Some(value)), RoutingMode::Legacy);
+        }
+    }
+
+    #[test]
+    fn a_folder_reading_needs_the_word_folder_for_an_unquoted_name() {
+        let mkdir = |name: &str, parent: &str| Intent::CreateFolders { names: vec![name.into()], parent: Some(parent.into()) };
+        // Files, file types and wishes are not requests to make a folder.
+        for (text, name, parent) in [
+            ("I need report.pdf in Documents", "report.pdf", "Documents"),
+            ("create a pdf in Documents", "pdf", "Documents"),
+            ("add files in Downloads", "files", "Downloads"),
+            ("make a video in Pictures", "video", "Pictures"),
+        ] {
+            assert!(!accounts_for(text, &mkdir(name, parent), None), "{text}");
+        }
+        assert!(accounts_for("I need a new Vetch folder in Downloads", &mkdir("Vetch", "Downloads"), None));
+        assert!(!accounts_for("", &Intent::Chain { commands: vec![] }, None));
+    }
+
+    #[test]
+    fn model_readings_must_account_for_every_word_in_its_original_role() {
+        let now = Local::now();
+        let raw = r#"["plan",[["move","pdfs","Downloads","Documents"]],null]"#;
+        let check = |text: &str, raw: &str| {
+            let reading = Prepared::new(text).unwrap().finish(raw, text, now).unwrap().unwrap();
+            accounts_for(text, &reading.intent, None)
+        };
+        for command in [
+            "Could PDFs older than 90 days from Downloads be moved to Documents",
+            "Could report.pdf from Downloads be relocated to Documents",
+            "back up PDFs larger than 50 MB from Downloads to Documents",
+            "place files containing invoice from Downloads into Documents",
+            "for old files, move PDFs from Downloads to the folder inside Documents",
+            "copy PDFs from Downloads to Documents containing invoice",
+            "put PDFs from Downloads into Documents named invoice",
+            "stash PDFs from Downloads to Documents starting with invoice",
+            "store PDFs from Downloads into Documents ending in .pdf",
+            "drop PDFs from Downloads into Documents without invoices",
+            "copy PDFs from Downloads to Documents that are unread",
+            "relocate archives from Downloads to Documents",
+            "move PDFs from Downloads to Documents that are duplicates",
+            "move PDFs from Downloads to Documents, only the newest",
+            "move a PDF from Downloads to Documents",
+            "move PDFs from Documents to Downloads",
+            "copy PDFs from Downloads to Documents",
+            "move files from Downloads to Documents then move files from Downloads to Documents",
+        ] {
+            assert!(!check(command, raw), "{command}");
+        }
+        for qualifier in ["huge", "recent", "unused", "oldest", "biggest", "smallest", "empty", "temporary"] {
+            let command = format!("move PDFs from Downloads to Documents that are {qualifier}");
+            assert!(!check(&command, raw), "{command}");
+        }
+        for command in [
+            "could you move all my pdfs from downloads into documents please",
+            "shift pdfs from downloads to documents",
+            "Could PDFs from Downloads be relocated to Documents?",
+        ] {
+            assert!(check(command, raw), "{command}");
+        }
+        assert!(!check("move PDFs from Downloads to Documents", &raw.replace("\"pdfs\"", "\"files\"")));
+        assert!(!check(
+            "move PDFs from Downloads to Documents that are duplicates",
+            &raw.replace("\"Documents\"", "\"Documents that are duplicates\"")
+        ));
+        let raw = raw.replace("\"move\"", "\"copy\"");
+        assert!(check("back up PDFs from Downloads into Documents", &raw));
+        assert!(check("copy documents from Documents to Downloads", r#"["plan",[["copy","documents","Documents","Downloads"]],null]"#));
+        assert!(!check("back up PDFs larger than 50 MB from Downloads to Documents", &raw));
+        assert!(!check("place files containing invoice from Downloads into Documents", &raw.replace("\"pdfs\"", "\"files\"")));
+        assert!(check(r#"duplicate PDFs from "Big Files" to 'Invoice Archive'"#, r#"["plan",[["copy","pdfs","~0~","~1~"]],null]"#));
+    }
+
+    #[test]
+    fn missing_transfer_items_after_folder_creation_cannot_retry() {
+        let transfer = "move its content from downloads to pictures";
+        let intent = parse::parse(transfer).unwrap();
+        assert!(recoverable_intent(&intent, "its content"));
+        let intent = parse::parse(&format!("create a folder in downloads named test1 and {transfer}")).unwrap();
+        assert!(!recoverable_intent(&intent, "its content"));
+    }
+
+    #[test]
+    fn schema_refuses_trash_steps_and_transfer_destinations() {
+        let now = Local::now();
+        let text = "send to the trash PDFs in Downloads";
+        let prepared = Prepared::new(text).unwrap();
+        let raw = r#"["plan",[["trash","pdfs","Downloads"]],null]"#;
+        assert_eq!(prepared.finish(raw, text, now).err().as_deref(), Some(MODEL_TRASH_REFUSAL));
+        for op in ["move", "copy"] {
+            for folder in ["Trash", "bin", "recycle bin", "Documents/Trash", "Downloads/_to_delete", "Desktop/.Trash"] {
+                let text = format!(r#"{op} PDFs from Downloads to "{folder}""#);
+                let prepared = Prepared::new(&text).unwrap();
+                let raw = format!(r#"["plan",[["{op}","pdfs","Downloads","~0~"]],null]"#);
+                assert_eq!(prepared.finish(&raw, &text, now).err().as_deref(), Some(MODEL_TRASH_REFUSAL));
+            }
+        }
+        let text = r#"make a folder named "bin" in Documents then copy PDFs from Downloads into it"#;
+        let prepared = Prepared::new(text).unwrap();
+        let raw = r#"["plan",[["mkdir","~0~","Documents"],["copy","pdfs","Downloads",["ref",0]]],null]"#;
+        assert_eq!(prepared.finish(raw, text, now).err().as_deref(), Some(MODEL_TRASH_REFUSAL));
+    }
     #[test]
     fn quoted_values_restore_exactly_and_bad_references_refuse() {
         let text = "make \"資料 2028\" in Documents and move PDFs into it daily";
@@ -651,6 +977,31 @@ mod tests {
     }
 
     #[test]
+    fn schema_folder_references_are_transfer_destinations_only() {
+        let text = "create a folder in downloads named test1 and move its content to pictures";
+        let prepared = Prepared::new(text).unwrap();
+        let source_ref = r#"["plan",[["mkdir","test1","downloads"],["move","files",["ref",0],"pictures"]],null]"#;
+        assert_eq!(prepared.finish(source_ref, text, Local::now()).err().unwrap(), "The model returned an invalid name.");
+        let invented = r#"["plan",[["mkdir","test1","downloads"],["move","files","downloads/test1","pictures"]],null]"#;
+        assert_eq!(prepared.finish(invented, text, Local::now()).err().unwrap(), "The model changed a name you typed.");
+    }
+
+    #[test]
+    #[ignore = "requires VOXI_PLAN_MODEL_DIR pointing to the native v4c package"]
+    fn structured_model_native_reports_created_folder_source_examples() {
+        let mut model = NativeRewriter::load_plan(std::env::var_os("VOXI_PLAN_MODEL_DIR").unwrap()).unwrap();
+        for text in [
+            "create a folder in downloads named test1 and move its content to pictures",
+            "create a folder in downloads named test1 and delete its content",
+        ] {
+            let prepared = Prepared::new(text).unwrap();
+            let raw = model.rewrite(&prepared.input).unwrap();
+            let decoded = prepared.finish(&raw, text, Local::now()).map(|plan| plan.map(|plan| plan.intent));
+            eprintln!("{text}\n  raw: {raw}\n  decoded: {decoded:?}");
+        }
+    }
+
+    #[test]
     #[ignore = "report-only native audit; requires VOXI_PLAN_MODEL_DIR and VOXI_PLAN_AUDIT_OUT"]
     fn structured_model_native_audit() {
         use chrono::TimeZone;
@@ -666,9 +1017,23 @@ mod tests {
             let start = Instant::now();
             let raw = model.rewrite(&prepared.input);
             let elapsed_ms = start.elapsed().as_secs_f64() * 1000.;
-            let actual = raw.as_ref().map_err(ToString::to_string).and_then(|raw| prepared.finish(raw, text, now));
+            let actual = raw.as_ref().map_err(ToString::to_string).and_then(|raw| prepared.finish(raw, text, now)).and_then(|plan| {
+                // Exercise the fallback validation directly across the frozen
+                // corpus, including cases rule-first routing would handle.
+                let Some(plan) = plan else { return Ok(None) };
+                let (base, when) = scheduler::extract_schedule(text, now)?;
+                if !accounts_for(&base, &plan.intent, None) {
+                    return Err("Fallback reading did not account for the full command.".into());
+                }
+                if !crate::model_schedule_ok(&plan.when, when.as_ref(), text) {
+                    return Err("Fallback reading did not match the schedule.".into());
+                }
+                Ok(Some(plan))
+            });
             let target = &row["target"];
-            let expected = if target == "REFUSE" {
+            // The frozen corpus predates the rule-only Trash restriction.
+            let rule_only_trash = target["steps"].as_array().is_some_and(|steps| steps.iter().any(|step| step[0] == "trash"));
+            let expected = if target == "REFUSE" || rule_only_trash {
                 None
             } else {
                 let mut steps = target["steps"].clone();
@@ -694,8 +1059,10 @@ mod tests {
         let output = records.iter().map(|r| format!("{r}\n")).collect::<String>();
         std::fs::write(std::env::var_os("VOXI_PLAN_AUDIT_OUT").unwrap(), output).unwrap();
         eprintln!(
-            "Native audit: {} correct/blocked of 50; {} accepted wrong plans",
-            records.iter().filter(|r| r["correct"] == true).count(),
+            "Native audit: {} correct plans, {} blocked ({} expected refusals), {} wrongly accepted of 50",
+            records.iter().filter(|r| r["accepted"] == true && r["correct"] == true).count(),
+            records.iter().filter(|r| r["accepted"] == false).count(),
+            records.iter().filter(|r| r["accepted"] == false && r["correct"] == true).count(),
             records.iter().filter(|r| r["accepted"] == true && r["correct"] == false).count()
         );
     }

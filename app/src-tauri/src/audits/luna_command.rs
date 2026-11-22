@@ -353,7 +353,14 @@ fn luna_command_audit_report() {
                     Ok(Planned::Steps { actions, .. }) => format!("steps:{}", actions.iter().map(action).collect::<Vec<_>>().join(";")),
                     Ok(Planned::Info { total, .. }) => format!("info:{total}"),
                     Ok(Planned::Direct { .. }) => "direct_preview_not_executed".into(),
-                    Err(Stop::Problem(m) | Stop::SearchIncomplete(m) | Stop::NothingToChange(m)) => format!("problem:{m}"),
+                    Err(
+                        Stop::Problem(m)
+                        | Stop::MissingTransferItem { message: m, .. }
+                        | Stop::SearchIncomplete(m)
+                        | Stop::NothingToChange(m),
+                    ) => {
+                        format!("problem:{m}")
+                    }
                     Err(Stop::Ambiguous { name, candidates, .. }) => format!("ambiguous:{name}:{}", candidates.len()),
                 };
                 (a, p, true)
@@ -425,7 +432,14 @@ fn luna_command_audit_report() {
                     Ok(Planned::Steps { actions, .. }) => format!("steps:{}", actions.iter().map(action).collect::<Vec<_>>().join(";")),
                     Ok(Planned::Info { total, .. }) => format!("info:{total}"),
                     Ok(Planned::Direct { .. }) => "direct_preview_not_executed".into(),
-                    Err(Stop::Problem(m) | Stop::SearchIncomplete(m) | Stop::NothingToChange(m)) => format!("problem:{m}"),
+                    Err(
+                        Stop::Problem(m)
+                        | Stop::MissingTransferItem { message: m, .. }
+                        | Stop::SearchIncomplete(m)
+                        | Stop::NothingToChange(m),
+                    ) => {
+                        format!("problem:{m}")
+                    }
                     Err(Stop::Ambiguous { name, candidates, .. }) => format!("ambiguous:{name}:{}", candidates.len()),
                 };
                 (v, p, true)

@@ -119,7 +119,10 @@ fn main() {
                         Ok(plan::Planned::Steps { actions, .. }) => (actions.len(), "plan".into()),
                         Err(plan::Stop::Ambiguous { candidates, .. }) => (candidates.len(), "ambiguous".into()),
                         Err(
-                            plan::Stop::Problem(message) | plan::Stop::SearchIncomplete(message) | plan::Stop::NothingToChange(message),
+                            plan::Stop::Problem(message)
+                            | plan::Stop::MissingTransferItem { message, .. }
+                            | plan::Stop::SearchIncomplete(message)
+                            | plan::Stop::NothingToChange(message),
                         ) => (0, message),
                         Ok(_) => (0, "other".into()),
                     }

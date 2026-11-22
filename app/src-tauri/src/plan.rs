@@ -24,7 +24,17 @@ mod model_audit;
 /// Why planning stopped early.
 #[derive(Debug)]
 pub enum Stop {
-    Ambiguous { name: String, candidates: Vec<PathBuf>, reason: AmbiguityReason, note: Option<String> },
+    Ambiguous {
+        name: String,
+        candidates: Vec<PathBuf>,
+        reason: AmbiguityReason,
+        note: Option<String>,
+    },
+    MissingTransferItem {
+        #[cfg_attr(not(feature = "tiny-model"), expect(dead_code))]
+        name: String,
+        message: String,
+    },
     SearchIncomplete(String),
     NothingToChange(String),
     Problem(String),
@@ -129,6 +139,7 @@ const SKIPPED_TREES_NOTE: &str = "Some folders were skipped.";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Expansion {
+    Transfer,
     DirectChanges,
     RecursiveChanges,
     ReadOnly,
@@ -459,10 +470,16 @@ impl<'a> Planner<'a> {
 
     /// Resolves a file or folder by name, searching the allowed folders.
     fn resolve_item(&self, name: &str, folder: Option<&str>) -> Result<PathBuf, Stop> {
-        self.resolve_named_item(name, folder, search::LookupKind::Item)
+        self.resolve_named_item(name, folder, search::LookupKind::Item, false)
     }
 
-    fn resolve_named_item(&self, name: &str, folder: Option<&str>, kind: search::LookupKind) -> Result<PathBuf, Stop> {
+    fn resolve_named_item(
+        &self,
+        name: &str,
+        folder: Option<&str>,
+        kind: search::LookupKind,
+        transfer_source: bool,
+    ) -> Result<PathBuf, Stop> {
         let read_only = kind == search::LookupKind::ReadOnly;
         if name == "\0chain-output"
             && folder.is_none()
@@ -583,7 +600,8 @@ impl<'a> Planner<'a> {
                     Some(f) => f.to_string(),
                     None => "Desktop, Downloads, Documents, or Pictures".into(),
                 };
-                problem(format!("Couldn't find “{name}” in {wher}."))
+                let message = format!("Couldn't find “{name}” in {wher}.");
+                if transfer_source { Err(Stop::MissingTransferItem { name: name.into(), message }) } else { problem(message) }
             }
             _ => Err(ambiguous(name, found, false)),
         }
@@ -627,13 +645,13 @@ impl<'a> Planner<'a> {
     fn resolve_any(&self, name: &str) -> Result<PathBuf, Stop> {
         let typed = name.trim_start();
         if typed.starts_with(['/', '~']) {
-            return self.resolve_named_item(typed, None, search::LookupKind::ReadOnly);
+            return self.resolve_named_item(typed, None, search::LookupKind::ReadOnly, false);
         }
         if let Some(p) = self.roots.named(name) {
             self.check(p)?;
             return Ok(p.clone());
         }
-        self.resolve_named_item(name, None, search::LookupKind::ReadOnly)
+        self.resolve_named_item(name, None, search::LookupKind::ReadOnly, false)
     }
 
     fn indexed_paths(&self, name: &str, dirs: &[PathBuf], search: &search::Search) -> Vec<PathBuf> {
@@ -709,11 +727,11 @@ impl<'a> Planner<'a> {
 
     fn expand_source(&mut self, src: &Source, expansion: Expansion) -> Result<ExpandedSource, Stop> {
         let read_only = expansion == Expansion::ReadOnly;
-        let direct_by_default = expansion == Expansion::DirectChanges;
+        let direct_by_default = matches!(expansion, Expansion::DirectChanges | Expansion::Transfer);
         match src {
             Source::Item { name, folder } => {
                 let kind = if read_only { search::LookupKind::ReadOnly } else { search::LookupKind::Item };
-                let p = self.resolve_named_item(name, folder.as_deref(), kind)?;
+                let p = self.resolve_named_item(name, folder.as_deref(), kind, expansion == Expansion::Transfer)?;
                 let label = file_name(&p);
                 Ok(ExpandedSource { paths: vec![p], label, nested: 0, skipped_note: String::new() })
             }
@@ -880,44 +898,38 @@ impl<'a> Planner<'a> {
     // ---- Planners ----------------------------------------------------------
 
     fn transfer(&mut self, src: &Source, to: &str, copy: bool) -> Result<String, Stop> {
-        let ExpandedSource { paths, label, nested, skipped_note } = self.expand_source(src, Expansion::DirectChanges)?;
-        if paths.is_empty() {
-            return Err(Self::no_matching_files(&label, nested, &skipped_note));
-        }
-        self.note_nested(nested);
         let src_dir = match src {
             Source::Set { folder: Some(folder), .. } => Some(self.resolve_folder(folder, None)?),
             _ => None,
         };
         let parent_for_new = src_dir.unwrap_or_else(|| self.roots.desktop());
-        let dest = self.resolve_folder(to, Some(&parent_for_new))?;
-        if matches!(src, Source::Set { folder, filter } if Self::includes_nested_files(folder.as_deref(), filter))
-            && (self.in_package(&dest) || self.in_hidden_tree(&dest))
-        {
-            return problem("Recursive transfers can't put files inside a macOS package or a hidden folder.");
-        }
+        let dest = self.resolve_folder(to, Some(&parent_for_new)).and_then(|dest| {
+            if matches!(src, Source::Set { folder, filter } if Self::includes_nested_files(folder.as_deref(), filter))
+                && (self.in_package(&dest) || self.in_hidden_tree(&dest))
+            {
+                return problem("Recursive transfers can't put files inside a macOS package or a hidden folder.");
+            }
+            Ok(dest)
+        });
         // A filter after "to Trash" ("move files ... to Trash between 10 and
         // 50 MB") parses as a Move, not the delete phrasing. Never create a
-        // folder called Trash: plan the Trash actions the delete phrasing
-        // would plan for the files already selected above.
-        let dest_name = file_name(&dest).to_ascii_lowercase();
-        if matches!(dest_name.as_str(), "trash" | "bin" | "recycle bin") && !dest.exists() && !self.planned_dirs.contains(&dest) {
+        // folder called Trash: apply the same checks as a delete command.
+        if let Ok(dest) = &dest
+            && matches!(file_name(dest).to_ascii_lowercase().as_str(), "trash" | "bin" | "recycle bin")
+            && !dest.exists()
+            && !self.planned_dirs.contains(dest)
+        {
             if copy {
                 return problem("Copying to the Trash isn't supported. Use “delete” instead.");
             }
-            for p in &paths {
-                self.check(p)?;
-                if self.roots.is_root(p) {
-                    return problem(format!("Voxi won't remove {} itself.", file_name(p)));
-                }
-                self.push(Action::Trash { path: p.clone() }, None);
-            }
-            return Ok(if matches!(src, Source::Item { .. }) {
-                format!("Move {} to the Trash", count_label(&paths))
-            } else {
-                format!("Move {} from {label} to the Trash", count_label(&paths))
-            });
+            return self.trash(src);
         }
+        let ExpandedSource { paths, label, nested, skipped_note } = self.expand_source(src, Expansion::Transfer)?;
+        if paths.is_empty() {
+            return Err(Self::no_matching_files(&label, nested, &skipped_note));
+        }
+        let dest = dest?;
+        self.note_nested(nested);
         self.ensure_dir(&dest)?;
         // A destination inside the source may already hold previous results.
         let canonical_dest = fsx::canonical(&dest);

@@ -176,7 +176,12 @@ fn assert_plan_in_scope(roots: &Roots, command: &str, plan: &Planned, allow_expl
 
 fn assert_complete(command: &str, result: &Result<Planned, Stop>) {
     let messages = match result {
-        Err(Stop::Problem(message) | Stop::SearchIncomplete(message) | Stop::NothingToChange(message))
+        Err(
+            Stop::Problem(message)
+            | Stop::MissingTransferItem { message, .. }
+            | Stop::SearchIncomplete(message)
+            | Stop::NothingToChange(message),
+        )
         | Ok(Planned::Info { summary: message, .. }) => std::slice::from_ref(message),
         Ok(Planned::Steps { warnings, .. }) => warnings,
         Err(Stop::Ambiguous { candidates, reason, .. }) => {
@@ -196,7 +201,7 @@ fn assert_result_in_scope(roots: &Roots, command: &str, result: &Result<Planned,
                 assert_in_scope(roots, command, path, false, None);
             }
         }
-        Err(Stop::Problem(_) | Stop::SearchIncomplete(_) | Stop::NothingToChange(_)) => {}
+        Err(Stop::Problem(_) | Stop::MissingTransferItem { message: _, .. } | Stop::SearchIncomplete(_) | Stop::NothingToChange(_)) => {}
     }
 }
 

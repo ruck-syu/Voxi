@@ -1070,6 +1070,13 @@ fn moving_to_trash_with_a_filter_plans_trash_without_creating_a_folder() {
 }
 
 #[test]
+fn moving_unfiltered_files_to_trash_requires_a_filter_even_when_the_source_is_empty() {
+    let h = home();
+    assert!(matches!(plan(&h, r#"move files from Downloads to "Trash""#),
+        Err(Stop::Problem(message)) if message.starts_with("To be safe")));
+}
+
+#[test]
 fn sort_by_type_groups_known_types() {
     let h = home();
     for f in ["a.pdf", "b.png", "c.weird"] {
@@ -1605,7 +1612,7 @@ fn excluded_folders_are_refused_and_never_found_by_name() {
     let roots = Roots::new(&h.roots.home, None, &[]).with_exclusions(std::slice::from_ref(&archive));
     let h = Home { _dir: h._dir, roots };
     assert!(matches!(plan(&h, "move ~/Documents/Archive/old.pdf to Desktop"), Err(Stop::Problem(m)) if m.contains("outside the folders")));
-    assert!(matches!(plan(&h, "move old.pdf to Desktop"), Err(Stop::Problem(_))));
+    assert!(matches!(plan(&h, "move old.pdf to Desktop"), Err(Stop::MissingTransferItem { .. })));
     fs::write(h.roots.home.join("Documents/new.pdf"), b"a").unwrap();
     // The excluded folder is invisible: the name is treated as a new folder,
     // and nothing planned reaches inside the excluded one.
@@ -1734,13 +1741,14 @@ fn recursive_preview_reports_skipped_trees_and_still_scans_ordinary_subfolders()
     let invoice = docs.join("Reference/vendor/invoice.pdf");
     fs::write(&guide, b"a").unwrap();
     fs::write(&invoice, b"b").unwrap();
-    let cmd = "delete PDFs in Documents including subfolders";
-    let Ok(Planned::Steps { actions, warnings, .. }) = plan_with_limit(&h, cmd, 12) else { panic!("expected recursive preview") };
-    assert_eq!(trash_paths(&actions), vec![invoice, guide]);
-    assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains(SKIPPED_TREES_NOTE));
-    for name in ["build", "node_modules", "Preview.XcArChIvE"] {
-        assert!(warnings[0].contains(name), "{warnings:?}");
+    for cmd in ["delete PDFs in Documents including subfolders", r#"move PDFs from Documents to "Trash" including subfolders"#] {
+        let Ok(Planned::Steps { actions, warnings, .. }) = plan_with_limit(&h, cmd, 12) else { panic!("expected recursive preview") };
+        assert_eq!(trash_paths(&actions), vec![invoice.clone(), guide.clone()]);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains(SKIPPED_TREES_NOTE));
+        for name in ["build", "node_modules", "Preview.XcArChIvE"] {
+            assert!(warnings[0].contains(name), "{warnings:?}");
+        }
     }
 }
 

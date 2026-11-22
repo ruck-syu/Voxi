@@ -1089,6 +1089,12 @@ function Body(props: {
         <section className="body">
           <p className="title">{o.title}</p>
           {phase.refused && <p className="note warn" role="alert">{phase.refused}</p>}
+          {o.modelInterpreted && (
+            <p className="model-notice">
+              <strong>Model interpretation.</strong>{" "}
+              {o.scheduledFor ? "Check the file changes and schedule before confirming." : "Check the file changes before confirming."}
+            </p>
+          )}
           <PlanSteps plan={o} skipped={props.skipped} onToggle={(step) => props.onToggleSkip(o.id, step)} />
           {props.skipped.length > 0 && (
             <p className="quiet" role="status">

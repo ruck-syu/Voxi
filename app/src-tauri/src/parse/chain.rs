@@ -17,12 +17,11 @@ static CLAUSE_IS_ACTION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!(r"(?i)^\s*(?:(?:in|inside|within|under|on|to|into)\s+\S+\s+)?(?P<verb>{ACTIONS})\s+")).unwrap());
 static DESTINATION_REFERENCE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(?:(?:to|into)\s+(?:it|that\s+folder|(?:the\s+)?(?:new|created)\s+folder)|there)\s*$").unwrap());
-/// "Delete its contents" (or everything / the files in it) after creating a
-/// folder deletes the files in that folder, never an item named "its content".
+/// Bind content references after creating a folder to the files it contains.
 static CONTENTS_REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
     let it = r"(?:it|that\s+folder|(?:the\s+)?(?:new|created)\s+folder)";
     Regex::new(&format!(
-        r"(?i)^(delete|remove|trash)\s+(?:all\s+(?:of\s+)?)?(?:its\s+contents?|its\s+files|the\s+contents?\s+of\s+{it}|everything\s+(?:in|inside)\s+{it}|(?:the\s+)?files\s+(?:in|inside)\s+{it})$"
+        r"(?i)^(delete|remove|trash|move|copy)\s+(?:all\s+(?:of\s+)?)?(?:its\s+contents?|its\s+files|the\s+contents?\s+of\s+{it}|everything\s+(?:in|inside)\s+{it}|(?:the\s+)?files\s+(?:in|inside)\s+{it})$"
     ))
     .unwrap()
 });
@@ -128,12 +127,21 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
             } else {
                 clause.to_string()
             };
-            let rewritten = if let Some(c) = CONTENTS_REFERENCE.captures(outside.trim()) {
+            let (subject, destination) = phrase::split_arguments(&rewritten, &["to", "into"])
+                .map_or((rewritten.as_str(), None), |(subject, to)| (subject, Some(to)));
+            let subject_syntax = outside_syntax(subject).ok_or_else(refused)?;
+            let rewritten = if let Some(c) = CONTENTS_REFERENCE.captures(subject_syntax.trim())
+                && (c[1].eq_ignore_ascii_case("move") || c[1].eq_ignore_ascii_case("copy")) == destination.is_some()
+            {
                 let folder = created.as_ref().ok_or_else(refused)?;
                 if folder.contains(['"', '\\']) {
                     return Err(refused());
                 }
-                format!("{} everything in \"{folder}\"", &c[1])
+                let bound = format!("{} everything in \"{folder}\"", &c[1]);
+                match destination {
+                    Some(to) => format!("{bound} to {to}"),
+                    None => bound,
+                }
             } else {
                 rewritten
             };

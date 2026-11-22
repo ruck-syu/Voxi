@@ -52,7 +52,9 @@ fn planner(home: &Path, roots: &Roots, i: &Intent) -> (String, Vec<String>) {
         Ok(Planned::Steps { actions, .. }) => ("steps".into(), actions.iter().map(|a| action_key(home, a)).collect()),
         Ok(Planned::Info { total, .. }) => (format!("info:{total}"), vec![]),
         Ok(Planned::Direct { .. }) => ("direct_preview_not_executed".into(), vec![]),
-        Err(Stop::Problem(m) | Stop::SearchIncomplete(m) | Stop::NothingToChange(m)) => (format!("problem:{m}"), vec![]),
+        Err(Stop::Problem(m) | Stop::MissingTransferItem { message: m, .. } | Stop::SearchIncomplete(m) | Stop::NothingToChange(m)) => {
+            (format!("problem:{m}"), vec![])
+        }
         Err(Stop::Ambiguous { name, candidates, .. }) => (format!("ambiguous:{name}:{}", candidates.len()), vec![]),
     }
 }

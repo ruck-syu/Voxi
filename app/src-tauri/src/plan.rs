@@ -113,6 +113,8 @@ pub struct Planner<'a> {
     scope: Option<crate::scope::Snapshot>,
     #[cfg(test)]
     index_hits: Option<IndexLookup>,
+    #[cfg(test)]
+    chain_action_ends: Option<&'a mut Vec<usize>>,
 }
 
 #[cfg(test)]
@@ -153,6 +155,8 @@ impl<'a> Planner<'a> {
             scope: None,
             #[cfg(test)]
             index_hits: None,
+            #[cfg(test)]
+            chain_action_ends: None,
         }
     }
 
@@ -713,7 +717,7 @@ impl<'a> Planner<'a> {
                     let mut paths = Vec::new();
                     for path in scope.paths() {
                         self.check(&path)?;
-                        if matches(&path, filter, self.now.date_naive()) {
+                        if matches(&path, filter, self.now) {
                             if !read_only && path.parent().is_some_and(Self::in_package) {
                                 return problem("File sets can't change items inside a macOS package.");
                             }
@@ -737,7 +741,7 @@ impl<'a> Planner<'a> {
                 }
                 let top_level: HashSet<_> =
                     dirs.iter().filter(|_| direct_by_default && filter.only_subfolders).map(|d| fsx::canonical(d)).collect();
-                let today = self.now.date_naive();
+                let now = self.now;
                 let contains = filter.name_contains.as_deref().map(normalized_name);
                 let starts = filter.name_starts_with.as_deref().map(normalized_name);
                 let inspect = filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some() || has_date_filter(filter);
@@ -745,7 +749,7 @@ impl<'a> Planner<'a> {
                     if inspect && fs::metadata(p).is_err() {
                         return None;
                     }
-                    Some(matches_prepared(p, filter, today, contains.as_deref(), starts.as_deref()))
+                    Some(matches_prepared(p, filter, now, contains.as_deref(), starts.as_deref()))
                 };
                 let mut out = Vec::new();
                 let mut seen = HashSet::new();
@@ -903,6 +907,9 @@ impl<'a> Planner<'a> {
         let mut already = 0;
         for p in &paths {
             self.check(p)?;
+            if copy && p.parent().is_some_and(|parent| !self.roots.is_allowed(parent)) {
+                return problem("Voxi won't copy an allowed root folder itself. Name a folder inside it.");
+            }
             if !copy && self.roots.is_root(p) {
                 return problem("Voxi won't move an allowed root folder itself. Name a folder inside it.");
             }
@@ -1153,6 +1160,10 @@ impl<'a> Planner<'a> {
                 created_targets.extend(names.iter().map(|n| parent.join(n)));
             }
             let added = &self.actions[start..];
+            #[cfg(test)]
+            if let Some(ends) = &mut self.chain_action_ends {
+                ends.push(start + added.len());
+            }
             previous = match added.last() {
                 Some(Action::CreateFolder { path }) => Some(path.clone()),
                 Some(Action::Rename { path, new_name }) => Some(path.with_file_name(new_name)),
@@ -1297,7 +1308,9 @@ impl<'a> Planner<'a> {
                 continue;
             }
             let backup_dir = self.roots.trash_dir_for(p).join(".voxi-originals").join(&stamp);
+            self.check(&backup_dir)?;
             let backup = unique_path(&backup_dir, &file_name(p), &mut self.reserved);
+            self.check(&backup)?;
             self.push(
                 Action::ResizeImage { path: p.clone(), max_width_px: width, backup },
                 Some("Original kept in _to_delete/.voxi-originals".into()),
@@ -1406,9 +1419,13 @@ impl<'a> Planner<'a> {
     fn unzip(&mut self, src: &Source, destination: Option<&str>) -> Result<String, Stop> {
         let p = self.single(src, "zip", "zip file")?;
         let parent = p.parent().unwrap().to_path_buf();
+        let stem = p.file_stem().unwrap();
         let wanted = match destination {
-            Some(d) => self.resolve_folder(d, Some(&parent))?,
-            None => parent.join(p.file_stem().unwrap()),
+            Some(d) => {
+                let resolved = self.resolve_folder(d, Some(&parent))?;
+                if self.roots.is_root(&resolved) { resolved.join(stem) } else { resolved }
+            }
+            None => parent.join(stem),
         };
         let wanted_parent = wanted.parent().unwrap().to_path_buf();
         self.ensure_dir(&wanted_parent)?;
@@ -1775,13 +1792,13 @@ fn date_note(f: &Filter) -> Option<&'static str> {
     })
 }
 
-pub fn matches(p: &Path, f: &Filter, today: NaiveDate) -> bool {
+pub fn matches(p: &Path, f: &Filter, now: DateTime<Local>) -> bool {
     let contains = f.name_contains.as_deref().map(normalized_name);
     let starts = f.name_starts_with.as_deref().map(normalized_name);
-    matches_prepared(p, f, today, contains.as_deref(), starts.as_deref())
+    matches_prepared(p, f, now, contains.as_deref(), starts.as_deref())
 }
 
-fn matches_prepared(p: &Path, f: &Filter, today: NaiveDate, contains: Option<&str>, starts: Option<&str>) -> bool {
+fn matches_prepared(p: &Path, f: &Filter, now: DateTime<Local>, contains: Option<&str>, starts: Option<&str>) -> bool {
     let e = ext_of(p);
     let type_ok = match f.file_type {
         None => true,
@@ -1808,7 +1825,7 @@ fn matches_prepared(p: &Path, f: &Filter, today: NaiveDate, contains: Option<&st
     }
     if has_date_filter(f) {
         let Some(t) = filter_date(p, f) else { return false };
-        return taken_matches(f, t, today);
+        return taken_matches(f, t, now);
     }
     true
 }
@@ -1825,12 +1842,14 @@ fn has_date_filter(f: &Filter) -> bool {
 
 /// Whether a file taken at `t` passes the date filters. The caller reads the
 /// creation date once per file, so every date check sees the same moment.
-fn taken_matches(f: &Filter, t: DateTime<Local>, today: NaiveDate) -> bool {
+/// `now` is the planner's clock, so relative ages and calendar days agree.
+fn taken_matches(f: &Filter, t: DateTime<Local>, now: DateTime<Local>) -> bool {
+    let today = now.date_naive();
     let day = t.date_naive();
     if f.since.is_some_and(|s| day < s) || f.before.is_some_and(|b| day >= b) {
         return false;
     }
-    let age_days = (Local::now() - t).num_seconds() as f64 / 86_400.0;
+    let age_days = (now - t).num_seconds() as f64 / 86_400.0;
     if f.older_than_days.is_some_and(|d| age_days <= d as f64) || f.newer_than_days.is_some_and(|d| age_days > d as f64) {
         return false;
     }

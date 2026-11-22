@@ -3,10 +3,11 @@
 //! Permanent deletion, ambiguous references, exclusions and compound commands are
 //! deliberately omitted: the hand-checked corpus refuses those categories.
 use super::{Case, part, report, wanted};
+use chrono::{DateTime, Local};
 use serde_json::{Value, json};
 
-fn check(text: &str, ty: &str, folder: Option<&str>, extra: &Value, schedule: Option<bool>) -> Result<(), String> {
-    let (command, when) = crate::scheduler::extract_schedule(text, chrono::Local::now()).map_err(|e| format!("schedule error: {e}"))?;
+fn check(text: &str, ty: &str, folder: Option<&str>, extra: &Value, schedule: Option<bool>, now: DateTime<Local>) -> Result<(), String> {
+    let (command, when) = crate::scheduler::extract_schedule(text, now).map_err(|e| format!("schedule error: {e}"))?;
     if when.as_ref().map(|w| w.rule.is_some()) != schedule {
         return Err(format!("schedule {:?} expected {schedule:?}", when.as_ref().map(|w| w.rule.is_some())));
     }
@@ -34,6 +35,19 @@ fn check(text: &str, ty: &str, folder: Option<&str>, extra: &Value, schedule: Op
         return Err(format!("got {got} expected {expected}"));
     }
     Ok(())
+}
+
+#[test]
+fn combo_delete_sample() {
+    for verb in ["delete", "trash"] {
+        for (what, ty) in [("PDFs", "pdfs"), ("images", "images")] {
+            for (schedule, repeat) in [("", None), (" every 2 days", Some(true))] {
+                let text = format!("{verb} {what} in Downloads{schedule}");
+                check(&text, ty, Some("Downloads"), &json!({}), repeat, super::sample_now())
+                    .unwrap_or_else(|err| panic!("{text:?}: {err}"));
+            }
+        }
+    }
 }
 
 #[test]
@@ -86,7 +100,7 @@ fn combo_delete() {
                             if !wanted(&text) {
                                 continue;
                             }
-                            let verdict = check(&text, ty, folder, extra, rep);
+                            let verdict = check(&text, ty, folder, extra, rep, Local::now());
                             cases.push(Case { text, parts: [verb, q, plural, source, filter, dest, sched].map(part).to_vec(), verdict });
                         }
                     }

@@ -328,7 +328,7 @@ pub(crate) fn typed_src(c: &Captures, i: usize, t: FileType) -> Option<Source> {
 }
 
 #[cfg(test)]
-mod corpus_tests;
+pub(crate) mod corpus_tests;
 
 #[cfg(test)]
 mod rule_regressions;

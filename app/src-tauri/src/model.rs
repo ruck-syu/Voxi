@@ -422,6 +422,29 @@ pub enum Action {
     },
 }
 
+impl Action {
+    /// Every path a step reads or writes.
+    pub(crate) fn paths(&self) -> Vec<PathBuf> {
+        match self {
+            Self::Move { from, to } | Self::Copy { from, to } => vec![from.clone(), to.clone()],
+            Self::Rename { path, new_name } => vec![path.clone(), path.with_file_name(new_name)],
+            Self::Trash { path } | Self::CreateFolder { path } | Self::OpenInFinder { path, .. } | Self::RemoveEmptyFolder { path } => {
+                vec![path.clone()]
+            }
+            Self::ConvertImage { path, output, .. }
+            | Self::ExtractPages { path, output, .. }
+            | Self::Zip { path, output }
+            | Self::ResizeImage { path, backup: output, .. } => vec![path.clone(), output.clone()],
+            Self::SplitPdf { path, output_dir } => vec![path.clone(), output_dir.clone()],
+            Self::Unzip { path, destination } => vec![path.clone(), destination.clone()],
+            Self::ImagesToPdf { paths, output } | Self::MergePdf { paths, output } => {
+                paths.iter().cloned().chain(std::iter::once(output.clone())).collect()
+            }
+            Self::RestoreFromTrash { from, to } | Self::Restore { from, to } => vec![from.clone(), to.clone()],
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewItem {

@@ -2,10 +2,11 @@
 //! Run `cargo test --lib combo_rename -- --ignored --nocapture`.
 //! Suffix and uppercase are omitted: Intent has no corresponding operation.
 use super::{Case, part, report, wanted};
+use chrono::{DateTime, Local};
 use serde_json::{Value, json};
 
-fn check(text: &str, mut expected: Value, repeating: Option<bool>) -> Result<(), String> {
-    let (command, schedule) = crate::scheduler::extract_schedule(text, chrono::Local::now()).map_err(|e| format!("schedule: {e}"))?;
+fn check(text: &str, mut expected: Value, repeating: Option<bool>, now: DateTime<Local>) -> Result<(), String> {
+    let (command, schedule) = crate::scheduler::extract_schedule(text, now).map_err(|e| format!("schedule: {e}"))?;
     if schedule.as_ref().map(|s| s.rule.is_some()) != repeating {
         return Err("schedule presence/repetition mismatch".into());
     }
@@ -25,6 +26,23 @@ fn check(text: &str, mut expected: Value, repeating: Option<bool>) -> Result<(),
     normalize(&mut actual);
     normalize(&mut expected);
     if actual == expected { Ok(()) } else { Err(format!("got {actual} expected {expected}")) }
+}
+
+#[test]
+fn combo_rename_sample() {
+    for (wording, intent, fields) in
+        [("add prefix Invoice- to", "add_prefix", json!({"prefix":"Invoice-"})), ("lowercase names of", "lowercase", json!({}))]
+    {
+        for (what, ty) in [("PDFs", "pdfs"), ("photos", "images")] {
+            for (schedule, repeat) in [("", None), (" daily", Some(true))] {
+                let text = format!("{wording} {what} in Downloads{schedule}");
+                let mut expected = fields.clone();
+                expected["intent"] = json!(intent);
+                expected["src"] = json!({"kind":"set","folder":"Downloads","filter":{"type":ty}});
+                check(&text, expected, repeat, super::sample_now()).unwrap_or_else(|err| panic!("{text:?}: {err}"));
+            }
+        }
+    }
 }
 
 #[test]
@@ -79,7 +97,7 @@ fn combo_rename() {
                                 let mut expected = fields.clone();
                                 expected["intent"] = json!(intent);
                                 expected["src"] = json!({"kind":"set","folder":folder,"filter":f});
-                                let verdict = check(&text, expected, rep);
+                                let verdict = check(&text, expected, rep, Local::now());
                                 cases.push(Case {
                                     text,
                                     parts: [polite, *verb, q, plural, filter, source, *output, schedule].map(part).to_vec(),
@@ -103,8 +121,12 @@ fn combo_rename() {
                         continue;
                     }
                     let folder = if source.is_empty() { None } else { Some("Downloads") };
-                    let verdict =
-                        check(&text, json!({"intent":"rename","src":{"kind":"item","name":name,"folder":folder},"new_name":output}), None);
+                    let verdict = check(
+                        &text,
+                        json!({"intent":"rename","src":{"kind":"item","name":name,"folder":folder},"new_name":output}),
+                        None,
+                        Local::now(),
+                    );
                     singles.push(Case { text, parts: [verb, name, source, output].map(part).to_vec(), verdict });
                 }
             }

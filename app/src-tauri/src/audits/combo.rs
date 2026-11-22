@@ -27,6 +27,7 @@ mod rename;
 
 use crate::parse::parse;
 use crate::scheduler::extract_schedule;
+use chrono::{DateTime, Local, TimeZone};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -110,8 +111,16 @@ fn lower(v: Option<&Value>) -> Option<String> {
     v.and_then(Value::as_str).map(str::to_lowercase)
 }
 
-fn check(text: &str, intent: &str, ty: &str, folder: Option<&str>, to: &str, schedule: Option<bool>) -> Result<(), String> {
-    let (command, when) = extract_schedule(text, chrono::Local::now()).map_err(|e| format!("schedule error: {e}"))?;
+fn check(
+    text: &str,
+    intent: &str,
+    ty: &str,
+    folder: Option<&str>,
+    to: &str,
+    schedule: Option<bool>,
+    now: DateTime<Local>,
+) -> Result<(), String> {
+    let (command, when) = extract_schedule(text, now).map_err(|e| format!("schedule error: {e}"))?;
     match (schedule, &when) {
         (None, Some(_)) => return Err("found a schedule that isn't there".into()),
         (Some(_), None) => return Err("schedule not recognised".into()),
@@ -144,8 +153,9 @@ fn check(text: &str, intent: &str, ty: &str, folder: Option<&str>, to: &str, sch
     Ok(())
 }
 
-fn cases() -> Vec<Case> {
+fn cases(stride: usize, include: impl Fn(&str) -> bool, now: DateTime<Local>) -> Vec<Case> {
     let mut out = Vec::new();
+    let mut index = 0usize;
     for &(verb, intent) in VERBS {
         for &q in QUANTITY {
             for &(plural, single, ty) in TYPES {
@@ -153,11 +163,16 @@ fn cases() -> Vec<Case> {
                 for &(source, folder) in SOURCES {
                     for &(dest, to) in DESTINATIONS {
                         for &(sched, rep) in SCHEDULES {
-                            let text = format!("{verb} {q}{what}{source}{dest}{sched}");
-                            if !wanted(&text) {
+                            let sampled = index.is_multiple_of(stride);
+                            index += 1;
+                            if !sampled {
                                 continue;
                             }
-                            let verdict = check(&text, intent, ty, folder, to, rep);
+                            let text = format!("{verb} {q}{what}{source}{dest}{sched}");
+                            if !include(&text) {
+                                continue;
+                            }
+                            let verdict = check(&text, intent, ty, folder, to, rep, now);
                             let parts = [verb, q, plural, source, dest, sched].map(part).to_vec();
                             out.push(Case { text, parts, verdict });
                         }
@@ -172,7 +187,27 @@ fn cases() -> Vec<Case> {
 #[test]
 #[ignore]
 fn combo_audit() {
-    report("move/copy", &["verb", "how many", "file type", "from", "to", "when"], cases());
+    report("move/copy", &["verb", "how many", "file type", "from", "to", "when"], cases(1, wanted, Local::now()));
+}
+
+fn sample_now() -> DateTime<Local> {
+    Local.with_ymd_and_hms(2026, 11, 16, 12, 0, 0).single().unwrap()
+}
+
+#[test]
+fn combo_move_copy_sample_ratchet() {
+    let started = std::time::Instant::now();
+    let sample = cases(997, |_| true, sample_now());
+    for (axis, values) in
+        [VERBS.len(), QUANTITY.len(), TYPES.len(), SOURCES.len(), DESTINATIONS.len(), SCHEDULES.len()].into_iter().enumerate()
+    {
+        let covered: std::collections::BTreeSet<_> = sample.iter().map(|case| &case.parts[axis]).collect();
+        assert_eq!(covered.len(), values, "sample must cover every value of axis {axis}");
+    }
+    let failures: Vec<_> =
+        sample.iter().filter_map(|case| case.verdict.as_ref().err().map(|err| format!("{} → {err}", case.text))).collect();
+    println!("combo move/copy: {} failures in {} cases ({:?})", failures.len(), sample.len(), started.elapsed());
+    assert!(failures.is_empty(), "combo sample exceeded its zero-failure baseline:\n{}", failures.join("\n"));
 }
 
 /// Prints the failure rate overall, by reason, and for each value of each

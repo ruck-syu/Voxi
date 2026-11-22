@@ -1,6 +1,7 @@
 //! Folder creation, sorting, cleanup, and undo/refusal combinations.
 //! Run: cargo test --lib combo_folders -- --ignored --nocapture
 use super::{Case, part, report, wanted};
+use chrono::{DateTime, Local};
 use serde_json::{Value, json};
 
 fn normalized(v: Value) -> Value {
@@ -16,23 +17,41 @@ fn add(out: &mut Vec<Case>, parts: &[&str], expected: Option<Value>, repeat: Opt
     if !wanted(&text) {
         return;
     }
-    let verdict = (|| {
-        let (command, schedule) = crate::scheduler::extract_schedule(&text, chrono::Local::now()).map_err(|e| e.to_string())?;
-        if schedule.as_ref().map(|s| s.rule.is_some()) != repeat {
-            return Err("schedule mismatch".into());
-        }
-        match (crate::parse::parse(&command), expected) {
-            (Err(_), None) => Ok(()),
-            (Ok(got), Some(want)) => {
-                let got = serde_json::to_value(got).unwrap();
-                if normalized(got.clone()) == normalized(want.clone()) { Ok(()) } else { Err(format!("got {got}; expected {want}")) }
-            }
-            (Err(_), Some(want)) => Err(format!("refused; expected {want}")),
-            (Ok(got), None) => Err(format!("accepted intentionally unsupported command: {got:?}")),
-        }
-    })();
+    let verdict = check(&text, expected, repeat, Local::now());
     out.push(Case { text, parts: parts.iter().map(|s| part(s)).collect(), verdict });
 }
+
+fn check(text: &str, expected: Option<Value>, repeat: Option<bool>, now: DateTime<Local>) -> Result<(), String> {
+    let (command, schedule) = crate::scheduler::extract_schedule(text, now).map_err(|e| e.to_string())?;
+    if schedule.as_ref().map(|s| s.rule.is_some()) != repeat {
+        return Err("schedule mismatch".into());
+    }
+    match (crate::parse::parse(&command), expected) {
+        (Err(_), None) => Ok(()),
+        (Ok(got), Some(want)) => {
+            let got = serde_json::to_value(got).unwrap();
+            if normalized(got.clone()) == normalized(want.clone()) { Ok(()) } else { Err(format!("got {got}; expected {want}")) }
+        }
+        (Err(_), Some(want)) => Err(format!("refused; expected {want}")),
+        (Ok(got), None) => Err(format!("accepted intentionally unsupported command: {got:?}")),
+    }
+}
+
+#[test]
+fn combo_folders_sample() {
+    for (command, expected) in [
+        ("create a folder called Taxes in Documents", json!({"intent":"create_folders","names":["Taxes"],"parent":"Documents"})),
+        ("make folders Receipts and Photos", json!({"intent":"create_folders","names":["Receipts","Photos"]})),
+        ("sort Downloads by type", json!({"intent":"sort_by_type","folder":"Downloads"})),
+        ("organize Pictures by month", json!({"intent":"sort_by_month","folder":"Pictures"})),
+    ] {
+        for (schedule, repeat) in [("", None), (" every monday", Some(true))] {
+            let text = format!("{command}{schedule}");
+            check(&text, Some(expected.clone()), repeat, super::sample_now()).unwrap_or_else(|err| panic!("{text:?}: {err}"));
+        }
+    }
+}
+
 #[test]
 #[ignore]
 fn combo_folders() {

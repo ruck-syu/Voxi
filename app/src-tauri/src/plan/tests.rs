@@ -2,6 +2,9 @@ use super::*;
 use crate::parse::parse;
 use std::fs;
 
+#[path = "messy_tests.rs"]
+mod messy;
+
 struct Home {
     _dir: tempfile::TempDir,
     roots: Roots,
@@ -526,11 +529,28 @@ fn luna_named_allowed_roots_are_found_and_protected() {
     let root = h.roots.home.join("Other Folder");
     fs::create_dir(&root).unwrap();
     h.roots = Roots::new(&h.roots.home, None, std::slice::from_ref(&root));
+    assert!(matches!(plan(&h, "open \"Other Folder\""), Ok(Planned::Direct {
+        action: Action::OpenInFinder { path, reveal: false }, ..
+    }) if path == root));
+    let report = root.join("report.pdf");
+    fs::write(&report, b"report").unwrap();
     assert_eq!(
-        steps(&h, "copy \"Other Folder\" to Desktop"),
-        vec![Action::Copy { from: root.clone(), to: h.roots.home.join("Desktop/Other Folder") }]
+        steps(&h, "copy report.pdf in \"Other Folder\" to Desktop"),
+        vec![Action::Copy { from: report, to: h.roots.home.join("Desktop/report.pdf") }]
     );
-    for command in ["delete folder Other Folder", "move Other Folder into Documents", "rename Other Folder to New Name"] {
+    // A folder inside a root copies like any other item.
+    let inner = root.join("Inner");
+    fs::create_dir(&inner).unwrap();
+    assert_eq!(
+        steps(&h, "copy Inner in \"Other Folder\" to Desktop"),
+        vec![Action::Copy { from: inner, to: h.roots.home.join("Desktop/Inner") }]
+    );
+    for command in [
+        "copy \"Other Folder\" to Desktop",
+        "delete folder Other Folder",
+        "move Other Folder into Documents",
+        "rename Other Folder to New Name",
+    ] {
         assert!(matches!(plan(&h, command), Err(Stop::Problem(_))), "{command}");
     }
     assert!(root.exists());

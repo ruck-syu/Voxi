@@ -201,7 +201,8 @@ impl<'a> Planner<'a> {
 
     /// Plans a saved shortcut: every command goes into one preview, confirmed
     /// once and undone as one change. A command with nothing to do becomes a
-    /// warning. Any planning failure or chain that stops early aborts the shortcut.
+    /// warning. An idle chain aborts a shortcut with multiple commands, and
+    /// any planning failure aborts the shortcut.
     pub fn plan_shortcut(mut self, name: &str, commands: &[(String, Intent)], history: &History) -> Result<Planned, Stop> {
         let mut skipped = Vec::new();
         let mut deps = Dependencies::default();
@@ -227,12 +228,13 @@ impl<'a> Planner<'a> {
                 Ok(Step::Finished(_)) => {
                     return problem(format!("“{text}” only shows information, so it can't be part of “{name}”."));
                 }
-                // An idle first step stops its chain. Abort the shortcut too,
-                // so a later command cannot run without that chain.
-                Err(Stop::NothingToChange(why)) if matches!(intent, Intent::Chain { .. }) => return problem(why),
                 Err(Stop::NothingToChange(why)) => why,
                 Err(stop) => return Err(stop),
             };
+            // A shortcut with other commands cannot proceed past an idle chain.
+            if commands.len() > 1 && matches!(intent, Intent::Chain { .. }) {
+                return problem(why);
+            }
             self.actions.truncate(actions);
             self.notes.truncate(notes);
             self.warnings.truncate(warnings);
@@ -617,7 +619,9 @@ impl<'a> Planner<'a> {
 
     /// A file, or a folder by its spoken name (for "open Downloads").
     fn resolve_any(&self, name: &str) -> Result<PathBuf, Stop> {
-        if let Some(p) = self.roots.named(name) {
+        if !name.starts_with(['/', '~'])
+            && let Some(p) = self.roots.named(name)
+        {
             self.check(p)?;
             return Ok(p.clone());
         }
@@ -1146,8 +1150,7 @@ impl<'a> Planner<'a> {
                     // With nothing drafted yet (an idle first step, or only a
                     // folder that already exists), the whole chain is idle. Once
                     // a step drafted changes, a later idle step aborts planning
-                    // and discards the draft. Shortcuts still abort on any idle
-                    // chain (see plan_shortcut).
+                    // and discards the draft.
                     Err(stop @ Stop::NothingToChange(_)) if self.actions.is_empty() => return Err(stop),
                     Err(Stop::NothingToChange(message)) => return problem(message),
                     Err(stop) => return Err(stop),

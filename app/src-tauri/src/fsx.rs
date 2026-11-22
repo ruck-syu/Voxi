@@ -143,10 +143,26 @@ impl Roots {
     }
 
     pub fn is_configured_root(&self, p: &Path) -> bool {
-        (self.allowed.iter().any(|root| root == p) || self.named.iter().any(|(_, root)| root == p))
-            && p.parent()
-                .zip(p.file_name())
-                .is_some_and(|(parent, name)| !fs::symlink_metadata(parent.join(name)).is_ok_and(|meta| meta.is_symlink()))
+        let Some((parent, name)) = p.parent().zip(p.file_name()) else { return false };
+        let entry = fs::symlink_metadata(parent.join(name));
+        if entry.as_ref().is_ok_and(|meta| meta.is_symlink()) {
+            return false;
+        }
+        if self.allowed.iter().any(|root| root == p) || self.named.iter().any(|(_, root)| root == p) {
+            return true;
+        }
+
+        // Let the filesystem resolve alternate spellings. Only a real
+        // directory entry matching a configured root in the same parent qualifies.
+        let Ok(entry) = entry else { return false };
+        if !entry.is_dir() {
+            return false;
+        }
+        let Ok(parent) = fs::canonicalize(parent) else { return false };
+        self.allowed.iter().any(|root| {
+            root.parent() == Some(parent.as_path())
+                && fs::symlink_metadata(root).is_ok_and(|meta| meta.is_dir() && meta.dev() == entry.dev() && meta.ino() == entry.ino())
+        })
     }
 
     /// The `_to_delete/` folder for the root that holds `p`.

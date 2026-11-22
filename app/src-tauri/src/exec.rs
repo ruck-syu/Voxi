@@ -99,7 +99,7 @@ fn guard(roots: &Roots, paths: &[&Path]) -> Result<(), String> {
 /// this read-only action gets the exemption; moves, renames and trash still
 /// use `guard`, whose parent check keeps roots out of destructive actions.
 fn guard_open(roots: &Roots, path: &Path) -> Result<(), String> {
-    if !roots.is_allowed(path) || (!roots.is_configured_root(path) && path.parent().is_some_and(|parent| !roots.is_allowed(parent))) {
+    if !roots.is_allowed(path) || (path.parent().is_some_and(|parent| !roots.is_allowed(parent)) && !roots.is_configured_root(path)) {
         return Err(format!("Stopped: {} is outside the allowed folders.", roots.display(path)));
     }
     Ok(())
@@ -1366,6 +1366,63 @@ mod tests {
         assert!(guard(&roots, &[&inside]).is_ok());
         assert!(guard_open(&roots, &inside).is_ok());
         assert!(guard_open(&roots, Path::new("/etc/passwd")).is_err());
+    }
+
+    #[test]
+    fn typed_root_paths_follow_the_filesystems_case_rules() {
+        let (_dir, roots) = setup();
+        let documents = roots.home.join("Documents");
+        fs::write(documents.join("note.txt"), b"data").unwrap();
+        let lower_documents = roots.home.join("documents");
+        let history = History::load(roots.home.join("history.json"));
+        let choices = HashMap::new();
+        let plan = |cmd| Planner::new(&roots, &choices).plan(&parse(cmd).unwrap(), &history);
+        let open = plan("open ~/documents");
+        let size = plan("size of ~/DOCUMENTS");
+        let create = "create folder X in ~/downloads";
+
+        if lower_documents.exists() {
+            assert!(roots.is_configured_root(&lower_documents));
+            assert!(matches!(open, Ok(Planned::Direct { action: Action::OpenInFinder { path, reveal: false }, .. })
+                if path == lower_documents && guard_open(&roots, &path).is_ok()));
+            assert!(matches!(size, Ok(Planned::Info { total: 1, .. })));
+            let out = plan_and_run(&roots, &history, create);
+            assert!(out.terminal.error().is_none(), "{:?}", out.terminal);
+            assert!(roots.home.join("Downloads/X").is_dir());
+        } else {
+            // Even a distinct on-disk directory whose name differs only in case
+            // must remain outside the configured roots.
+            fs::create_dir(&lower_documents).unwrap();
+            fs::create_dir(roots.home.join("downloads")).unwrap();
+            assert!(!roots.is_configured_root(&lower_documents));
+            for cmd in ["open ~/documents", "size of ~/DOCUMENTS", create] {
+                assert!(matches!(plan(cmd), Err(crate::plan::Stop::Problem(m)) if m.contains("outside the folders")), "{cmd}");
+            }
+            assert!(guard_open(&roots, &lower_documents).is_err());
+            assert!(!roots.home.join("Downloads/X").exists());
+        }
+        assert!(guard(&roots, &[&lower_documents]).is_err());
+    }
+
+    #[test]
+    fn a_symlink_to_a_root_outside_allowed_folders_has_no_root_exemption() {
+        let (_dir, roots) = setup();
+        let outside = roots.home.join("Outside");
+        fs::create_dir(&outside).unwrap();
+        for link in [outside.join("documents"), roots.home.join("Documents Alias")] {
+            std::os::unix::fs::symlink(roots.home.join("Documents"), &link).unwrap();
+            assert!(roots.is_allowed(&link));
+            assert!(!roots.is_configured_root(&link));
+            assert!(guard_open(&roots, &link).is_err());
+            assert!(guard(&roots, &[&link]).is_err());
+        }
+
+        let history = History::load(roots.home.join("history.json"));
+        let choices = HashMap::new();
+        for cmd in ["open ~/Outside/documents", "size of ~/Outside/documents"] {
+            let result = Planner::new(&roots, &choices).plan(&parse(cmd).unwrap(), &history);
+            assert!(matches!(result, Err(crate::plan::Stop::Problem(m)) if m.contains("outside the folders")), "{cmd}");
+        }
     }
 
     #[test]

@@ -1205,27 +1205,39 @@ fn recurring_chain_distinguishes_an_idle_start_from_an_unfinished_plan() {
 
 #[test]
 fn recurring_shortcut_reports_an_idle_run_without_repeating_the_prefix() {
-    let f = Fixture::new();
-    let report = f.write("Documents/report.pdf");
     let phrase = "run document backup";
-    let command = "copy PDFs from Documents to Desktop";
-    f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands: vec![command.into()] });
-    let outcome = f.command(&format!("{phrase} every day at 9 pm"));
-    let Outcome::Plan { id, .. } = outcome else { panic!("{outcome:?}") };
-    assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
-    fs::remove_file(report).unwrap();
+    let copy = "copy PDFs from Documents to Desktop";
+    let chain = "copy PDFs from Documents to Desktop then delete PDFs in Pictures";
+    for (command, later_command) in [(copy, None), (chain, None), (chain, Some("create folder Completed in Desktop"))] {
+        let f = Fixture::new();
+        let report = f.write("Documents/report.pdf");
+        let old = f.write("Pictures/old.pdf");
+        let commands = std::iter::once(command).chain(later_command).map(String::from).collect();
+        f.state.settings.lock().unwrap().shortcuts.push(settings::Shortcut { phrase: phrase.into(), commands });
+        let outcome = f.command(&format!("{phrase} every day at 9 pm"));
+        let Outcome::Plan { id, .. } = outcome else { panic!("{outcome:?}") };
+        assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+        fs::remove_file(report).unwrap();
 
-    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
-    run_due_tasks(&f.state).unwrap();
+        f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+        let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+        result.unwrap();
 
-    let store = scheduler::Store::load(f.home.join("schedules.json"));
-    let task = store.jobs[0].summary();
-    assert_eq!(task.series, scheduler::SeriesState::Active);
-    assert!(
-        task.summary.ends_with(&format!(": Nothing to change for “{phrase}”. Skipped “{command}”: No files match in Documents.")),
-        "{}",
-        task.summary
-    );
+        let store = scheduler::Store::load(f.home.join("schedules.json"));
+        let task = store.jobs[0].summary();
+        assert_eq!(task.series, scheduler::SeriesState::Active);
+        let summary = if later_command.is_some() {
+            ": Skipped: No files match in Documents.".into()
+        } else {
+            format!(": Nothing to change for “{phrase}”. Skipped “{command}”: No files match in Documents.")
+        };
+        assert!(task.summary.ends_with(&summary), "{command}, {later_command:?}: {}", task.summary);
+        assert_eq!(events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), later_command.is_some(), "{events:?}");
+        assert_eq!(fs::read(old).unwrap(), b"data");
+        assert!(!f.home.join("Desktop/report.pdf").exists());
+        assert!(!f.home.join("Desktop/Completed").exists());
+        assert!(f.state.history.lock().unwrap().entries.is_empty());
+    }
 }
 
 #[test]

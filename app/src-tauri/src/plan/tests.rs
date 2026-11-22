@@ -1797,6 +1797,19 @@ fn shortcut_does_not_skip_a_chain_that_could_not_finish_planning() {
 }
 
 #[test]
+fn shortcut_with_other_commands_aborts_when_a_chain_drafts_no_actions() {
+    let h = home();
+    fs::create_dir(h.roots.home.join("Desktop/Backup")).unwrap();
+    fs::create_dir(h.roots.home.join("Desktop/Archive")).unwrap();
+    let chain = "create a folder in Desktop named Backup then create a folder in Desktop named Archive";
+    let commands = [chain, "create a folder in Desktop named Completed"].map(|cmd| (cmd.into(), parse(cmd).unwrap()));
+    let choices = HashMap::new();
+    let history = History::load(h.roots.home.join("history.json"));
+    let result = Planner::new(&h.roots, &choices).plan_shortcut("prepare folders", &commands, &history);
+    assert!(matches!(result, Err(Stop::Problem(message)) if message == "Backup already exists in Desktop."));
+}
+
+#[test]
 fn spotlight_failures_after_complete_disk_misses_are_speculative() {
     fn timeout(_: &str, _: &[PathBuf], index: &search::Search) -> Vec<PathBuf> {
         index.spotlight_timeout();

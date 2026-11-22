@@ -201,7 +201,7 @@ fn assert_result_in_scope(roots: &Roots, command: &str, result: &Result<Planned,
                 assert_in_scope(roots, command, path, false, None);
             }
         }
-        Err(Stop::Problem(_) | Stop::MissingTransferItem { message: _, .. } | Stop::SearchIncomplete(_) | Stop::NothingToChange(_)) => {}
+        Err(Stop::Problem(_) | Stop::MissingTransferItem { .. } | Stop::SearchIncomplete(_) | Stop::NothingToChange(_)) => {}
     }
 }
 

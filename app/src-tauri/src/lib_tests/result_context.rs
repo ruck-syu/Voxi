@@ -1174,6 +1174,36 @@ fn shortcut_planning_failures_block_previews_and_scheduled_runs() {
 }
 
 #[test]
+fn recurring_chain_distinguishes_an_idle_start_from_an_unfinished_plan() {
+    for (removed, summary, planning_failed) in [
+        ("Documents/report.pdf", "Nothing to change. No files match in Documents.", false),
+        ("Pictures/old.pdf", "Skipped: No files match in Pictures.", true),
+    ] {
+        let f = Fixture::new();
+        let report = f.write("Documents/report.pdf");
+        let old = f.write("Pictures/old.pdf");
+        let outcome = f.command("copy PDFs from Documents to Desktop then delete PDFs in Pictures every day at 9 pm");
+        let Outcome::Plan { id, first_run: scheduler::FirstRunPolicy::RepeatLater, total: 2, .. } = outcome else { panic!("{outcome:?}") };
+        assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+        fs::remove_file(f.home.join(removed)).unwrap();
+
+        f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+        let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+        result.unwrap();
+
+        let store = scheduler::Store::load(f.home.join("schedules.json"));
+        let task = store.jobs[0].summary();
+        assert_eq!(task.series, scheduler::SeriesState::Active);
+        assert!(task.summary.ends_with(&format!(": {summary}")), "{}", task.summary);
+        assert_eq!(events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), planning_failed, "{events:?}");
+        assert_eq!(report.exists(), planning_failed);
+        assert_eq!(old.exists(), !planning_failed);
+        assert!(!f.home.join("Desktop/report.pdf").exists());
+        assert!(f.state.history.lock().unwrap().entries.is_empty());
+    }
+}
+
+#[test]
 fn recurring_shortcut_reports_an_idle_run_without_repeating_the_prefix() {
     let f = Fixture::new();
     let report = f.write("Documents/report.pdf");
@@ -2029,4 +2059,25 @@ fn recurring_later_run_needs_review_marks_series_needs_review() {
     assert_eq!(store.jobs[0].series, scheduler::SeriesState::NeedsReview);
     assert_eq!(store.jobs[0].occurrence, scheduler::OccurrenceState::Finished);
     assert!(store.claim(chrono::Local::now() + chrono::Duration::days(10)).unwrap().is_none());
+}
+
+#[test]
+fn recurring_folder_and_move_chain_is_idle_once_the_folder_exists() {
+    let f = Fixture::new();
+    f.write("Downloads/bill.pdf");
+    let outcome = f.command("create a folder in downloads called PDFS and move pdfs into it everyday");
+    let Outcome::Plan { id, .. } = outcome else { panic!("{outcome:?}") };
+    confirm_input(&f.state, id).unwrap();
+    assert!(f.home.join("Downloads/PDFS").is_dir());
+
+    f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
+    let (result, events) = diagnostics::capture(|| run_due_tasks(&f.state));
+    result.unwrap();
+
+    let store = scheduler::Store::load(f.home.join("schedules.json"));
+    let task = store.jobs[0].summary();
+    assert_eq!(task.series, scheduler::SeriesState::Active);
+    assert!(task.summary.contains("Nothing to change."), "{}", task.summary);
+    assert!(!task.summary.contains("Skipped"), "{}", task.summary);
+    assert!(!events.iter().any(|line| line.contains("code=E_PLANNING_FAILED ")), "{events:?}");
 }

@@ -1786,10 +1786,14 @@ fn shortcut_does_not_skip_a_chain_that_could_not_finish_planning() {
     fs::write(h.roots.home.join("Documents/report.pdf"), b"x").unwrap();
     let choices = HashMap::new();
     let history = History::load(h.roots.home.join("history.json"));
-    let commands = ["create a folder in Desktop named Backup then copy PDFs from Pictures to Desktop/Backup", "delete PDFs in Documents"]
-        .map(|cmd| (cmd.into(), parse(cmd).unwrap()));
-    let result = Planner::new(&h.roots, &choices).plan_shortcut("backup and cleanup", &commands, &history);
-    assert!(matches!(result, Err(Stop::Problem(message)) if message == "No files match in Pictures."));
+    for chain in [
+        "copy PDFs from Pictures to Desktop then create a folder in Desktop named Backup",
+        "create a folder in Desktop named Backup then copy PDFs from Pictures to Desktop/Backup",
+    ] {
+        let commands = [chain, "delete PDFs in Documents"].map(|cmd| (cmd.into(), parse(cmd).unwrap()));
+        let result = Planner::new(&h.roots, &choices).plan_shortcut("backup and cleanup", &commands, &history);
+        assert!(matches!(result, Err(Stop::Problem(message)) if message == "No files match in Pictures."), "{chain}");
+    }
 }
 
 #[test]
@@ -1816,6 +1820,33 @@ fn spotlight_failures_after_complete_disk_misses_are_speculative() {
         assert_eq!(events.len(), 1, "{cmd}: {events:?}");
         assert!(events[0].contains("code=E_PLANNING_FAILED "), "{cmd}: {events:?}");
     }
+}
+
+#[test]
+fn incomplete_spotlight_hits_after_a_complete_disk_miss_require_confirmation() {
+    fn partial_hit(_: &str, dirs: &[PathBuf], index: &search::Search) -> Vec<PathBuf> {
+        let docs = dirs.iter().find(|d| file_name(d) == "Documents").unwrap();
+        let candidate = docs.join("report.pdf");
+        // The file arrives after the disk walk and can be verified on disk.
+        fs::write(&candidate, b"x").unwrap();
+        index.issue("Spotlight result limit reached".into());
+        vec![candidate]
+    }
+
+    let h = home();
+    let candidate = h.roots.home.join("Documents/report.pdf");
+    let choices = HashMap::new();
+    let history = History::load(h.roots.home.join("history.json"));
+    let command = "rename report.pdf to final.pdf";
+    assert!(matches!(plan(&h, command), Err(Stop::Problem(message)) if message.starts_with("Couldn't find")));
+
+    let mut planner = Planner::new(&h.roots, &choices);
+    planner.index_hits = Some(partial_hit);
+    let control = planner.search.control.clone();
+    let result = planner.plan(&parse(command).unwrap(), &history);
+    assert!(matches!(result, Err(Stop::Ambiguous { candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note), .. })
+        if candidates == vec![candidate] && note.contains("Spotlight result limit reached")));
+    assert!(control.failed_with(search::Failure::Incomplete));
 }
 
 #[test]

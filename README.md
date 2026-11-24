@@ -8,7 +8,9 @@
 <p align="center">
   <a href="https://github.com/ruck-syu/Voxi/releases/latest"><b>Download for Mac</b></a>
   &nbsp;&nbsp;|&nbsp;&nbsp;
-  <a href="website/commands.html">Commands</a>
+  <a href="https://tryvoxi.vercel.app">Website</a>
+  &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="https://tryvoxi.vercel.app/commands">Commands</a>
   &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="#install">Install</a>
   <br />
@@ -46,7 +48,7 @@ Say **undo last**.
 | run my usuals | Runs a shortcut you saved in Settings |
 
 There are 27 kinds of commands, with filters for type, date (including months,
-like "in August"), size, and name. See the [Commands page](website/commands.html)
+like "in August"), size, and name. See the [Commands page](https://tryvoxi.vercel.app/commands)
 for the full catalog and [docs/COMMANDS.md](docs/COMMANDS.md) for search,
 quoting, list, chaining, scheduling, and shortcut details.
 

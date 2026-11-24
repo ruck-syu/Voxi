@@ -1,40 +1,88 @@
-//! "Organize with Voxi" in Finder: a macOS Service that hands Voxi the
-//! selected files. They become the current results list, so "move these to
-//! Receipts" acts on exactly that selection, checked again before it runs.
+//! Files handed over by macOS become the current results list, so "move
+//! these to Receipts" acts on exactly that selection.
 
 use crate::fsx::{self, Roots};
+use std::collections::HashSet;
+use std::io::ErrorKind;
 use std::path::PathBuf;
+use tauri::Url;
 
 /// What the window says about a selection it couldn't take in full.
 pub const LABEL: &str = "your Finder selection";
+
+/// Launch Services can deliver URLs before Tauri's Ready event. While the
+/// buffer is present, accumulate file URLs for Ready to drain together.
+#[cfg(any(target_os = "macos", test))]
+pub fn opened_files(mut urls: Vec<Url>, pending: &mut Option<Vec<Url>>) -> Option<Vec<Url>> {
+    urls.retain(|url| url.scheme() == "file");
+    if let Some(pending) = pending {
+        pending.extend(urls);
+        None
+    } else {
+        (!urls.is_empty()).then_some(urls)
+    }
+}
+
+/// Keep local file paths in their original order. Existence and access are
+/// checked by `accept` so the window can explain why an item was left out.
+pub fn paths_from_urls(urls: Vec<Url>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    urls.into_iter().filter_map(path_from_url).filter(|path| seen.insert(path.clone())).collect()
+}
+
+fn path_from_url(url: Url) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    let url = if url.scheme() == "file" && url.path().starts_with("/.file/id=") {
+        // Finder can supply a file reference URL. Ask Foundation for its
+        // current path before checking it against the allowed folders.
+        use objc2_foundation::{NSString, NSURL};
+        let reference = NSURL::URLWithString(&NSString::from_str(url.as_str()))?;
+        Url::parse(&reference.filePathURL()?.absoluteString()?.to_string()).ok()?
+    } else {
+        url
+    };
+    url.to_file_path().ok()
+}
 
 /// Keeps the selected files Voxi may touch. Folders and anything outside the
 /// allowed folders (or inside an excluded one) are left out and named in the
 /// returned notice; with nothing left, the notice is the error.
 pub fn accept(roots: &Roots, selected: Vec<PathBuf>) -> Result<(Vec<PathBuf>, Option<String>), String> {
-    let (mut files, mut folders, mut outside, mut links) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut files, mut folders, mut outside, mut links, mut missing, mut inaccessible) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut seen = HashSet::new();
     for p in selected {
         let name = fsx::file_name(&p);
         // A link would be swapped for the file it points to, which the user
         // didn't select: leave it out and say so.
-        if std::fs::symlink_metadata(&p).is_ok_and(|m| m.file_type().is_symlink()) {
-            links.push(name);
-        } else if !roots.is_allowed(&p) {
-            outside.push(name);
-        } else if p.is_dir() {
-            folders.push(name);
-        } else if p.is_file() {
-            let c = fsx::canonical(&p);
-            if !files.contains(&c) {
-                files.push(c);
+        let entry = std::fs::symlink_metadata(&p).and_then(|m| {
+            if m.is_symlink() || !p.is_absolute() || fsx::has_parent_ref(&p) {
+                return Ok((m, None));
             }
-        } else {
-            outside.push(name);
+            Ok((m, Some(std::fs::canonicalize(&p)?)))
+        });
+        match entry {
+            Err(e) if e.kind() == ErrorKind::NotFound => missing.push(name),
+            Err(e) if e.kind() == ErrorKind::PermissionDenied => inaccessible.push(name),
+            Ok((m, _)) if m.is_symlink() => links.push(name),
+            Ok((m, Some(c))) if roots.is_allowed_canonical(&c) => {
+                if m.is_dir() {
+                    folders.push(name);
+                } else if !m.is_file() {
+                    outside.push(name);
+                } else if seen.insert(c.clone()) {
+                    files.push(c);
+                }
+            }
+            _ => outside.push(name),
         }
     }
     let mut notes = Vec::new();
     if !outside.is_empty() {
         notes.push(format!("{} outside the folders Voxi may use, left out: {}.", count(outside.len()), names(&outside)));
+    }
+    if !inaccessible.is_empty() {
+        notes.push(format!("Voxi doesn't have access to {}: {}.", count(inaccessible.len()), names(&inaccessible)));
     }
     if !folders.is_empty() {
         notes.push(format!("{} left out, since only files can be selected: {}.", folder_count(folders.len()), names(&folders)));
@@ -42,6 +90,9 @@ pub fn accept(roots: &Roots, selected: Vec<PathBuf>) -> Result<(Vec<PathBuf>, Op
     if !links.is_empty() {
         let what = if links.len() == 1 { "1 symbolic link".to_string() } else { format!("{} symbolic links", links.len()) };
         notes.push(format!("{what} left out; select the original instead: {}.", names(&links)));
+    }
+    if !missing.is_empty() {
+        notes.push(format!("{} could no longer be found: {}.", count(missing.len()), names(&missing)));
     }
     let notice = (!notes.is_empty()).then(|| notes.join(" "));
     if files.is_empty() {
@@ -71,13 +122,12 @@ fn names(all: &[String]) -> String {
 pub mod service {
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, NSObject};
-    use objc2::{AnyThread, MainThreadMarker, define_class, msg_send};
-    use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeFileURL, NSUpdateDynamicServices};
-    use objc2_foundation::{NSString, NSURL};
+    use objc2::{AnyThread, ClassType, MainThreadMarker, define_class, msg_send};
+    use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardURLReadingFileURLsOnlyKey, NSUpdateDynamicServices};
+    use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSURL};
     use std::cell::RefCell;
-    use std::path::PathBuf;
     use std::sync::OnceLock;
-    use tauri::AppHandle;
+    use tauri::{AppHandle, Url};
 
     static APP: OnceLock<AppHandle> = OnceLock::new();
 
@@ -96,23 +146,28 @@ pub mod service {
             /// Named by NSMessage in Info.plist.
             #[unsafe(method(organizeWithVoxi:userData:error:))]
             fn organize(&self, pboard: &NSPasteboard, _data: Option<&NSString>, _error: *mut *mut NSString) {
-                let paths = file_paths(pboard);
                 if let Some(app) = APP.get() {
-                    crate::use_finder_selection(app, paths);
+                    crate::use_finder_selection(app, file_urls(pboard));
                 }
             }
         }
     );
 
-    fn file_paths(pboard: &NSPasteboard) -> Vec<PathBuf> {
-        let Some(items) = pboard.pasteboardItems() else { return Vec::new() };
+    fn file_urls(pboard: &NSPasteboard) -> Vec<Url> {
+        let classes = NSArray::from_slice(&[NSURL::class()]);
+        let file_only: &AnyObject = &NSNumber::new_bool(true);
+        // SAFETY: The AppKit key maps to a boolean, and NSURL implements
+        // NSPasteboardReading.
+        let items = unsafe {
+            let options = NSDictionary::from_slices(&[NSPasteboardURLReadingFileURLsOnlyKey], &[file_only]);
+            pboard.readObjectsForClasses_options(&classes, Some(&options))
+        };
+        let Some(items) = items else { return Vec::new() };
         items
             .iter()
             .filter_map(|item| {
-                // SAFETY: an AppKit constant, read on the main thread.
-                let url = item.stringForType(unsafe { NSPasteboardTypeFileURL })?;
-                let url = NSURL::URLWithString(&url)?;
-                url.isFileURL().then(|| url.path())?.map(|p| PathBuf::from(p.to_string()))
+                let url = item.downcast_ref::<NSURL>()?.absoluteString()?;
+                Url::parse(&url.to_string()).ok()
             })
             .collect()
     }
@@ -136,6 +191,57 @@ pub mod service {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn opened_events_only_buffer_and_deliver_file_urls() {
+        let first = Url::parse("file:///first.pdf").unwrap();
+        let second = Url::parse("file:///second.pdf").unwrap();
+        let web = Url::parse("https://example.com/report.pdf").unwrap();
+        let mut pending = Some(Vec::new());
+        assert!(opened_files(vec![first.clone()], &mut pending).is_none());
+        assert!(opened_files(vec![web.clone()], &mut pending).is_none());
+        assert!(opened_files(vec![web.clone(), second.clone()], &mut pending).is_none());
+        assert_eq!(pending.take().unwrap(), [first.clone(), second.clone()]);
+        assert!(opened_files(vec![web.clone()], &mut pending).is_none());
+        assert!(opened_files(Vec::new(), &mut pending).is_none());
+        assert_eq!(opened_files(vec![first.clone(), web, second.clone()], &mut pending).unwrap(), [first, second]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reports_permission_denied_as_lack_of_access() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let h = fsx::canonical(dir.path());
+        let locked = h.join("Downloads/Locked");
+        fs::create_dir_all(&locked).unwrap();
+        let file = locked.join("report.pdf");
+        fs::write(&file, b"x").unwrap();
+        let roots = Roots::new(&h, None, &[]);
+        let permissions = fs::metadata(&locked).unwrap().permissions();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        let denied = fs::symlink_metadata(&file).is_err_and(|e| e.kind() == ErrorKind::PermissionDenied);
+        let result = accept(&roots, vec![file]);
+        fs::set_permissions(&locked, permissions).unwrap();
+        if denied {
+            assert_eq!(result.unwrap_err(), "Voxi doesn't have access to 1 item: “report.pdf”.");
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn resolves_finders_file_reference_urls() {
+        use objc2_foundation::{NSString, NSURL};
+        let dir = tempfile::tempdir().unwrap();
+        let path = fsx::canonical(dir.path()).join("report #1.pdf");
+        fs::write(&path, b"x").unwrap();
+        let ns_url = NSURL::fileURLWithPath(&NSString::from_str(path.to_str().unwrap()));
+        let reference = ns_url.fileReferenceURL().unwrap();
+        assert!(reference.isFileReferenceURL());
+        let url = Url::parse(&reference.absoluteString().unwrap().to_string()).unwrap();
+        assert_eq!(paths_from_urls(vec![url, Url::from_file_path(&path).unwrap()]), [path]);
+    }
 
     #[test]
     fn keeps_allowed_files_and_names_what_it_leaves_out() {

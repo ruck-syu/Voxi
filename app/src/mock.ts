@@ -124,12 +124,12 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "plan_command": {
       activePlan = null;
       const text = String(args.text);
-      if (utf8Bytes(text) > MAX_COMMAND_BYTES) return { outcome: { status: "problem", message: TOO_LONG }, scope: null };
+      if (utf8Bytes(text) > MAX_COMMAND_BYTES) return { outcome: { status: "problem", message: TOO_LONG }, scope: null, generation: 0 };
       pendingSchedule = null;
       const repeat = text.match(/\s+(?:every\s+(?:(\d+)\s+)?(days?|hours?)|daily|everyday|hourly)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/i);
       if (repeat) {
         const planned = plan(text.slice(0, repeat.index), args.choices as Record<string, string>);
-        if (planned.status !== "plan") return { outcome: planned, scope: null };
+        if (planned.status !== "plan") return { outcome: planned, scope: null, generation: 0 };
         const outcome = { ...planned, id: ++planSeq };
         const n = Number(repeat[1] || 1);
         const unit = repeat[2] || (/hourly/i.test(repeat[0]) ? "hour" : "day");
@@ -144,7 +144,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         }
         pendingSchedule = { id: scheduled.length + 1, command: text, due: due.toISOString(), series: "active", occurrence: "waiting", summary: "", repeat: every, runNow, total: outcome.total, intervalMs };
         activePlan = outcome.id;
-        return { outcome: { ...outcome, scheduledFor: due.toISOString(), firstRun: runNow ? "runNowAndRepeat" : "repeatLater", repeats: runNow ? `Runs now, then ${every}` : every, warnings: [`${runNow ? `Runs now, then ${every}. Next run` : `Repeats ${every}, first on`} ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null };
+        return { outcome: { ...outcome, scheduledFor: due.toISOString(), firstRun: runNow ? "runNowAndRepeat" : "repeatLater", repeats: runNow ? `Runs now, then ${every}` : every, warnings: [`${runNow ? `Runs now, then ${every}. Next run` : `Repeats ${every}, first on`} ${due.toLocaleString()}. Each run changes whatever matches at that time, without a preview, and can be undone from History.`, ...outcome.warnings] }, scope: null, generation: 0 };
       }
       const timing = text.match(/\s+(?:at\s+(.+)|(after|in)\s+(\d+)\s+(hours?|minutes?))$/i);
       let outcome = plan(timing ? text.slice(0, timing.index) : text, args.choices as Record<string, string>);
@@ -153,7 +153,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         const due = new Date();
         if (timing[1]) {
           const clock = timing[1].match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
-          if (!clock) return { outcome: { status: "problem", message: "Use a time such as at 9:40 pm." }, scope: null };
+          if (!clock) return { outcome: { status: "problem", message: "Use a time such as at 9:40 pm." }, scope: null, generation: 0 };
           due.setHours(Number(clock[1]) % (clock[3] ? 12 : 24) + (clock[3]?.toLowerCase() === "pm" ? 12 : 0), Number(clock[2]), 0, 0);
           if (due <= new Date()) due.setDate(due.getDate() + 1);
         } else due.setTime(due.getTime() + Number(timing[3]) * (timing[4].startsWith("hour") ? 3600000 : 60000));
@@ -167,7 +167,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
         outcome = { ...outcome, id: ++planSeq };
         activePlan = outcome.id;
       }
-      return { outcome, scope: null };
+      return { outcome, scope: null, generation: 0 };
     }
     case "preview_page": {
       if (args.id !== activePlan) throw "This preview expired. Run the command again.";

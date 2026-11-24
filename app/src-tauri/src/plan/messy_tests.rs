@@ -36,6 +36,32 @@ fn regression_noon() -> DateTime<Local> {
     Local.from_local_datetime(&REGRESSION_DATE.and_hms_opt(12, 0, 0).unwrap()).single().unwrap()
 }
 
+#[test]
+fn mixed_finder_selection_plans_only_the_selected_allowed_file() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let selected = roots.home.join("Downloads/Resume 📄.pdf");
+    let (paths, notice) = crate::finder_selection::accept(
+        roots,
+        vec![
+            selected.clone(),
+            roots.home.join("Downloads/Incoming"),
+            roots.home.join("Downloads/Outside link/escape.pdf"),
+            roots.home.join("Documents/Private/excluded.pdf"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(paths, std::slice::from_ref(&selected));
+    assert!(notice.unwrap().contains("1 folder left out"));
+    let snapshot = crate::scope::Snapshot::capture(paths, crate::finder_selection::LABEL.into()).unwrap();
+    let (intent, uses_selection) = crate::scope::prepare("move these to Documents", Some(&snapshot)).unwrap();
+    assert!(uses_selection);
+    let choices = HashMap::new();
+    let planned = Planner::new(roots, &choices).with_scope(Some(snapshot)).plan(&intent, &History::load(roots.home.join("history.json")));
+    let Ok(Planned::Steps { actions, .. }) = planned else { panic!("expected the selected file to be moved") };
+    assert!(matches!(actions.as_slice(), [Action::Move { from, .. }] if *from == selected));
+}
+
 impl MessyMac {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();

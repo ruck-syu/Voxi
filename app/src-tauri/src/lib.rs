@@ -1848,7 +1848,19 @@ fn get_settings(app: AppHandle, state: State<AppState>) -> Result<Settings, Stri
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings) -> Result<Settings, settings::SaveError> {
+fn save_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<Settings, settings::SaveError> {
+    let saved = write_settings(&app, &state, settings)?;
+    // Saved from the Settings window, so the user has seen their folders:
+    // tasks held back while settings were unreadable can run again.
+    if let Ok(mut schedules) = state.schedules.lock() {
+        schedules.resume_runs();
+    }
+    Ok(saved)
+}
+
+/// Saves settings. Shortcuts taught from the command box and remembered
+/// folders use this too, without resuming paused scheduled tasks.
+fn write_settings(app: &AppHandle, state: &AppState, mut settings: Settings) -> Result<Settings, settings::SaveError> {
     state.ensure_settings_writable()?;
     settings.validate_shortcuts()?;
     settings.validate_nicknames(&home())?;
@@ -1878,7 +1890,7 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
         &mut installed,
         &requested_hotkey,
         os_before,
-        |actual, wanted| settings::set_hotkey(&app, actual, wanted),
+        |actual, wanted| settings::set_hotkey(app, actual, wanted),
         |enabled| {
             let result = if enabled { al.enable() } else { al.disable() };
             let accepted = result
@@ -1906,11 +1918,6 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     // The list's notice goes with it, including a pre-setup "Finish setting up" one.
     *state.selection_notice.lock().map_err(|_| "Results unavailable. Restart Voxi.")? = None;
     settings.hotkey = installed.clone();
-    // Saved settings are readable again: tasks held back for them can run.
-    drop((current, installed, roots, context));
-    if let Ok(mut schedules) = state.schedules.lock() {
-        schedules.resume_runs();
-    }
     Ok(settings)
 }
 
@@ -1954,7 +1961,7 @@ fn reveal_reports(state: State<AppState>) -> Result<(), String> {
 fn teach_phrase(app: AppHandle, state: State<AppState>, phrase: String, command: String) -> Result<Settings, String> {
     let current = get_settings(app.clone(), state.clone())?;
     let next = learn::teach_phrase(&current, &phrase, &command)?;
-    save_settings(app, state, next).map_err(|e| e.message)
+    write_settings(&app, &state, next).map_err(|e| e.message)
 }
 
 /// Remembers a folder the user picked as their name for it. Only folders
@@ -1969,7 +1976,7 @@ fn remember_folder(app: AppHandle, state: State<AppState>, name: String, path: S
     }
     let current = get_settings(app.clone(), state.clone())?;
     let next = learn::add_nickname(&current, &name, &folder, &home())?;
-    save_settings(app, state, next).map_err(|e| e.message)
+    write_settings(&app, &state, next).map_err(|e| e.message)
 }
 
 /// A fixed destination; the frontend cannot ask this command to open arbitrary URLs.
@@ -2088,6 +2095,7 @@ pub fn run() {
             // Unreadable settings load as defaults, without the user's folder
             // exclusions, so scheduled tasks wait instead of running against them.
             let settings_unreadable = settings_warning.is_some();
+            let settings_unwritable = settings_blocked.is_some();
             let (mut history, history_warning) = History::load_with_warning(data_dir.join("history.json"));
             let mut storage_notices: Vec<String> = [settings_warning, history_warning]
                 .into_iter()
@@ -2122,9 +2130,11 @@ pub fn run() {
                 schedules: Mutex::new({
                     let mut store = scheduler::Store::load(data_dir.join("schedules.json"));
                     if settings_unreadable {
-                        store.suspend_runs(
-                            "Scheduled tasks are paused because Voxi couldn't read its settings. Check Settings → Folders, then save to resume them.".into(),
-                        );
+                        store.suspend_runs(if settings_unwritable {
+                            "Scheduled tasks are paused because Voxi can't read or save its settings. Quit and reopen Voxi; the notice in Settings says what went wrong.".into()
+                        } else {
+                            "Scheduled tasks are paused because Voxi couldn't read its settings. Check Settings → Folders, then save to resume them.".into()
+                        });
                     }
                     store
                 }),

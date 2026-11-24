@@ -565,6 +565,17 @@ fn whole_folder_previews_refuse_excluded_descendants() {
     assert!(missed.is_empty(), "whole-folder commands allowed excluded contents: {missed:?}");
     assert!(matches!(plan("rename Downloads/Project to Renamed"),
         Err(Stop::Problem(message)) if message.contains("Remove the exclusion first, then rename it")));
+    // A destination that doesn't exist yet, spelled with different case from
+    // its excluded subfolder, still lands in that subfolder on the drive.
+    let lower = base.join("Downloads/project-lower");
+    fs::create_dir_all(lower.join("Private")).unwrap();
+    fs::write(lower.join("Private/secret.pdf"), b"secret").unwrap();
+    let roots_case = fixture.roots().clone().with_exclusions(&[base.join("Desktop/Project-Lower/Private")]);
+    let planned = Planner::new(&roots_case, &choices).plan(&parse("copy Downloads/project-lower to Desktop").unwrap(), &history);
+    assert!(
+        matches!(&planned, Err(Stop::Problem(message)) if message.contains("excluded in Settings")),
+        "copy into an excluded subfolder was allowed"
+    );
     for command in ["copy Downloads/Project/public.pdf to Documents/Private", "move Downloads/Project/public.pdf to Documents/Private"] {
         assert!(matches!(plan(command), Err(Stop::Problem(message)) if message.contains("outside the folders")), "{command}");
     }
@@ -883,6 +894,16 @@ fn messy_mac_a_folder_path_named_trash_is_not_the_trash() {
         let actions = action_plan(&fixture, &command, ENTRY_LIMIT);
         assert!(!actions.iter().any(|a| matches!(a, Action::Trash { .. })), "{command}: {actions:?}");
         assert!(actions.iter().any(|a| matches!(a, Action::Move { .. })), "{command}: {actions:?}");
+    }
+    for command in [
+        "move Downloads/Archive.zip to \"Trash\"",
+        "move Downloads/Archive.zip to \"bin\"",
+        "move Downloads/Archive.zip to a new folder called Trash",
+        "copy Downloads/Archive.zip to a folder named \"bin\"",
+    ] {
+        let actions = action_plan(&fixture, command, ENTRY_LIMIT);
+        assert!(!actions.iter().any(|a| matches!(a, Action::Trash { .. })), "{command}: {actions:?}");
+        assert!(actions.iter().any(|a| matches!(a, Action::Move { .. } | Action::Copy { .. })), "{command}: {actions:?}");
     }
     for command in ["move Downloads/Archive.zip to Trash", "move Downloads/Archive.zip to the trash"] {
         let actions = action_plan(&fixture, command, ENTRY_LIMIT);

@@ -238,7 +238,7 @@ fn model_routing_keeps_trash_commands_on_the_rule_path() {
     let f = Fixture::new();
     let path = f.write("Downloads/report.pdf");
     for mode in [Fallback, Legacy] {
-        for command in ["send to the trash all files in Downloads", r#"move files from Downloads to "Trash""#] {
+        for command in ["send to the trash all files in Downloads", "move files from Downloads to Trash"] {
             let outcome = f.command_with_model(command, mode, unexpected_inference);
             assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("To be safe")), "{command}: {outcome:?}");
             assert!(f.state.pending.lock().unwrap().is_none());

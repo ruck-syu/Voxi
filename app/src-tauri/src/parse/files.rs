@@ -24,6 +24,11 @@ fn destination(text: &str) -> Option<String> {
         return None;
     }
     let name = clean_name(text);
+    // A quoted "Trash" or "bin" names a folder, not the Trash: the trailing
+    // slash keeps it a folder path, which the planner never reads as the Trash.
+    if text.trim().starts_with(['"', '\'']) && matches!(name.to_lowercase().as_str(), "trash" | "bin" | "recycle bin") {
+        return Some(format!("{name}/"));
+    }
     // A delivery request must never silently become a local folder creation.
     // Quoted names and explicit paths still let users name a real email folder.
     if !text.starts_with(['"', '\'']) && !name.contains('/') {

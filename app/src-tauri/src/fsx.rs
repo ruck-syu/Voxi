@@ -255,7 +255,7 @@ impl Roots {
     fn check_excluded_descendants(&self, folder: &Path, contents: Option<&Path>) -> Result<(), String> {
         let canonical_folder = canonical(folder);
         for excluded in &self.exclusions.excluded {
-            let Ok(relative) = excluded.strip_prefix(&canonical_folder) else { continue };
+            let Some(relative) = strip_prefix_ignoring_case(excluded, &canonical_folder) else { continue };
             if relative.as_os_str().is_empty() {
                 continue;
             }
@@ -263,7 +263,7 @@ impl Roots {
             // by searches. Missing paths do not count, and unreadable ones
             // may still contain excluded entries.
             if let Some(contents) = contents
-                && matches!(fs::symlink_metadata(contents.join(relative)),
+                && matches!(fs::symlink_metadata(contents.join(&relative)),
                     Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory))
             {
                 continue;
@@ -803,6 +803,20 @@ impl Drop for Staging {
             let _ = remove_private_tree(&self.dir);
         }
     }
+}
+
+/// `path` relative to `prefix`, comparing names without regard to case: a
+/// folder that doesn't exist yet keeps the spelling typed, while the drive
+/// usually treats "project" and "Project" as one folder.
+fn strip_prefix_ignoring_case(path: &Path, prefix: &Path) -> Option<PathBuf> {
+    let mut rest = path.components();
+    for wanted in prefix.components() {
+        let got = rest.next()?;
+        if got.as_os_str().to_string_lossy().to_lowercase() != wanted.as_os_str().to_string_lossy().to_lowercase() {
+            return None;
+        }
+    }
+    Some(rest.as_path().to_path_buf())
 }
 
 /// Removes Voxi's own staging tree. A copied read-only folder (mode 0555)

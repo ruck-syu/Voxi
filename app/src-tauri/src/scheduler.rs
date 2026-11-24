@@ -1644,8 +1644,8 @@ mod tests {
                 "Move screenshots from desktop to screenshots folder",
                 2
             ),
-            saved(3, "tidy up everyday", "tidy up", 1),
-            saved(4, "move pdfs to inbox everyday", "move pdfs to inbox", 1),
+            saved(3, "Tidy Up everyday", "Tidy Up", 1),
+            saved(4, "move pdfs to INBOX everyday", "move pdfs to INBOX", 1),
         ]);
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("schedules.json");

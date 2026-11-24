@@ -2079,6 +2079,9 @@ pub fn run() {
             let settings_path = config_dir.join("settings.json");
             let (settings, settings_warning) = Settings::load_with_warning(&settings_path);
             let settings_blocked = settings_warning.as_ref().filter(|w| w.write_blocked).map(|w| w.message.clone());
+            // Unreadable settings load as defaults, without the user's shortcuts
+            // and nicknames, so they can't vouch for old repeating tasks.
+            let settings_readable = settings_warning.is_none();
             let (mut history, history_warning) = History::load_with_warning(data_dir.join("history.json"));
             let mut storage_notices: Vec<String> = [settings_warning, history_warning]
                 .into_iter()
@@ -2112,7 +2115,9 @@ pub fn run() {
                 settings_blocked,
                 schedules: Mutex::new({
                     let mut store = scheduler::Store::load(data_dir.join("schedules.json"));
-                    store.restore_legacy(&settings, chrono::Local::now());
+                    if settings_readable {
+                        store.restore_legacy(&settings, chrono::Local::now());
+                    }
                     store
                 }),
                 execution: Mutex::new(()),

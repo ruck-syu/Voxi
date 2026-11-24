@@ -499,9 +499,51 @@ fn mv_no_clobber(from: &Path, to: &Path) -> Publication {
     mv_no_clobber_with(from, to, || {})
 }
 
+/// Whether names that differ only by case are different files in `dir`.
+/// Unknown counts as not case-sensitive, the safer answer for a move.
+fn case_sensitive(dir: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(path) = std::ffi::CString::new(dir.as_os_str().as_bytes()) else { return false };
+    // SAFETY: `path` is a valid NUL-terminated string for the whole call.
+    unsafe { libc::pathconf(path.as_ptr(), libc::_PC_CASE_SENSITIVE) == 1 }
+}
+
+/// The first entry under `dir` whose name differs from a sibling's only by
+/// case. Links are not followed.
+fn case_collision(dir: &Path) -> Result<Option<PathBuf>, String> {
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(folder) = pending.pop() {
+        let mut seen = std::collections::HashSet::new();
+        for entry in fs::read_dir(&folder).map_err(io_err("read", &folder))? {
+            let entry = entry.map_err(io_err("read", &folder))?;
+            if !seen.insert(entry.file_name().to_string_lossy().to_lowercase()) {
+                return Ok(Some(entry.path()));
+            }
+            if entry.file_type().map_err(io_err("read", &entry.path()))?.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn mv_no_clobber_with(from: &Path, to: &Path, before_mv: impl FnOnce()) -> Publication {
     fresh(to)?;
     let source_meta = fs::symlink_metadata(from).map_err(|e| PublishError::Clean(io_err("move", from)(e)))?;
+    // `mv` copies a folder to another drive and then deletes the original. If
+    // that drive ignores case, "Report.txt" and "report.txt" would become one
+    // file and the other would be lost, with `mv` still reporting success.
+    if source_meta.is_dir()
+        && !to.parent().is_some_and(case_sensitive)
+        && let Some(clash) = case_collision(from).map_err(PublishError::Clean)?
+    {
+        return Err(PublishError::Clean(format!(
+            "Can't move {} to {}: that drive treats “{}” and another name in the same folder as one file. Rename one of them first.",
+            file_name(from),
+            to.parent().map_or_else(|| to.display().to_string(), |p| p.display().to_string()),
+            file_name(&clash)
+        )));
+    }
     let source_had_nested = source_meta.is_dir() && from.join(file_name(from)).symlink_metadata().is_ok();
     before_mv();
     tool("/bin/mv", &["-n".as_ref(), from.as_os_str(), to.as_os_str()]).map_err(PublishError::Uncertain)?;
@@ -1243,6 +1285,61 @@ mod tests {
         assert!(!to.join("b.txt").exists(), "nothing was merged into the destination");
         assert_eq!(fs::read(to.join("a.txt")).unwrap(), b"a");
         assert!(from.exists());
+    }
+
+    /// A folder on a case-sensitive drive holding "Report.txt" and
+    /// "report.txt" must not be moved to a drive that ignores case: `mv`
+    /// would merge them and delete the original. Needs `hdiutil`.
+    #[test]
+    fn cross_volume_folder_move_refuses_names_that_differ_only_by_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = fsx::canonical(dir.path());
+        if case_sensitive(&dest) {
+            eprintln!("skipped: the temp folder's drive is case-sensitive");
+            return;
+        }
+        let image = dest.join("cs.dmg");
+        let mount = dest.join("mnt");
+        fs::create_dir(&mount).unwrap();
+        let made = std::process::Command::new("/usr/bin/hdiutil")
+            .args(["create", "-quiet", "-size", "8m", "-fs", "Case-sensitive APFS", "-volname", "VoxiCaseTest"])
+            .arg(&image)
+            .status()
+            .is_ok_and(|s| s.success())
+            && std::process::Command::new("/usr/bin/hdiutil")
+                .args(["attach", "-quiet", "-nobrowse", "-mountpoint"])
+                .arg(&mount)
+                .arg(&image)
+                .status()
+                .is_ok_and(|s| s.success());
+        if !made {
+            eprintln!("skipped: couldn't mount a case-sensitive disk image");
+            return;
+        }
+        struct Detach(PathBuf);
+        impl Drop for Detach {
+            fn drop(&mut self) {
+                let _ = std::process::Command::new("/usr/bin/hdiutil").args(["detach", "-quiet", "-force"]).arg(&self.0).status();
+            }
+        }
+        let _detach = Detach(mount.clone());
+        let from = mount.join("folder");
+        fs::create_dir(&from).unwrap();
+        fs::write(from.join("Report.txt"), b"one").unwrap();
+        fs::write(from.join("report.txt"), b"two").unwrap();
+        let to = dest.join("folder");
+
+        let err = mv_no_clobber(&from, &to).unwrap_err();
+        assert!(matches!(&err, PublishError::Clean(m) if m.contains("Rename one of them first")), "{err:?}");
+        assert_eq!(fs::read(from.join("Report.txt")).unwrap(), b"one");
+        assert_eq!(fs::read(from.join("report.txt")).unwrap(), b"two");
+        assert!(to.symlink_metadata().is_err(), "nothing was moved");
+
+        // Without the clash, the same move goes through.
+        fs::remove_file(from.join("report.txt")).unwrap();
+        mv_no_clobber(&from, &to).unwrap();
+        assert_eq!(fs::read(to.join("Report.txt")).unwrap(), b"one");
+        assert!(from.symlink_metadata().is_err());
     }
 
     #[test]

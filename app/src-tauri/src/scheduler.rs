@@ -422,7 +422,8 @@ fn clock_time(value: &str) -> Result<NaiveTime, String> {
 }
 
 fn weekday(name: &str) -> Option<Weekday> {
-    Some(match &name.to_ascii_lowercase()[..3] {
+    // `get` rather than slicing: the name may start with a multi-byte character.
+    Some(match name.to_ascii_lowercase().get(..3)? {
         "mon" => Weekday::Mon,
         "tue" => Weekday::Tue,
         "wed" => Weekday::Wed,
@@ -1659,6 +1660,21 @@ mod tests {
             assert!(extract(command, now()).is_err(), "{command}");
         }
         assert!(extract("move pdfs to Archive at 9 pm", now()).unwrap().1.is_some());
+        // Dates, delays and repeats too: refused or read as text, never a crash.
+        for command in [
+            "move pdfs to Archive on ٢٠٢٦-١-١ at 9 pm",
+            "move pdfs to Archive on ٢٠٢٦-١-١",
+            "move pdfs to Archive next ٢day",
+            "move pdfs to Archive in ٥ minutes",
+            "move pdfs to Archive after ١ hours and ٥ minutes",
+            "move pdfs to Archive every ٢ days",
+            "move pdfs to Archive every morning at ٩",
+            "move pdfs to Archive on March ٣",
+            "move pdfs to Archive on ééé",
+        ] {
+            let _ = extract(command, now());
+            let _ = extract_schedule(command, now());
+        }
     }
 
     #[test]

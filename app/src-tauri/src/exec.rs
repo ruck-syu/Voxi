@@ -706,6 +706,7 @@ fn restore(a: &Action, from: &Path, to: &Path, roots: &Roots) -> Result<Effect, 
 /// Runs one step and captures the identities of the files its inverse can touch.
 pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Effect, StepError> {
     check_cancel(is_cancelled)?;
+    roots.check_whole_tree_exclusions(a)?;
     match a {
         Action::Move { from, to } => {
             guard(roots, &[from, to])?;

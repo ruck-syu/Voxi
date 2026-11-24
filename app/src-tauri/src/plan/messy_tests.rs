@@ -530,6 +530,109 @@ fn messy_mac_refuses_to_copy_an_allowed_root() {
 }
 
 #[test]
+fn whole_folder_previews_refuse_excluded_descendants() {
+    let fixture = MessyMac::new();
+    let base = &fixture.roots().home;
+    let project = base.join("Downloads/Project");
+    let private = project.join("Private");
+    let public = project.join("public.pdf");
+    let photo_folder = base.join("Downloads/Project.png");
+    fs::create_dir_all(&private).unwrap();
+    fs::create_dir_all(photo_folder.join("Private")).unwrap();
+    fs::write(private.join("excluded.pdf"), b"private").unwrap();
+    fs::write(&public, b"public").unwrap();
+    symlink(project, base.join("Downloads/Project alias")).unwrap();
+    let roots = fixture.roots().clone().with_exclusions(&[private, photo_folder.join("Private"), base.join("Documents/Private")]);
+    let choices = HashMap::new();
+    let history = History::load(base.join("history.json"));
+    let plan = |command| Planner::new(&roots, &choices).plan(&parse(command).unwrap(), &history);
+    let mut missed = Vec::new();
+    for command in [
+        "copy Downloads/Project to Documents",
+        "zip Downloads/Project as export",
+        "zip Downloads/Project alias as export",
+        "move Downloads/Project to Desktop",
+        "delete Downloads/Project",
+        "rename Downloads/Project to Renamed",
+        "resize Downloads/Project.png to 16 pixels wide",
+    ] {
+        if !matches!(plan(command), Err(Stop::Problem(message)) if message.contains("contains “Private”")
+            && message.contains("excluded in Settings → Folders"))
+        {
+            missed.push(command);
+        }
+    }
+    assert!(missed.is_empty(), "whole-folder commands allowed excluded contents: {missed:?}");
+    for command in ["copy Downloads/Project/public.pdf to Documents/Private", "move Downloads/Project/public.pdf to Documents/Private"] {
+        assert!(matches!(plan(command), Err(Stop::Problem(message)) if message.contains("outside the folders")), "{command}");
+    }
+    assert!(matches!(plan("copy PDFs in Downloads/Project to Documents including subfolders"),
+        Ok(Planned::Steps { actions, .. }) if matches!(actions.as_slice(), [Action::Copy { from, .. }] if from == &public)));
+}
+
+#[test]
+fn whole_folder_execution_rechecks_for_excluded_descendants_added_after_preview() {
+    let fixture = MessyMac::new();
+    let project = fixture.roots().downloads().join("Project");
+    let private = project.join("Private");
+    fs::create_dir(&project).unwrap();
+    fs::write(project.join("public.pdf"), b"public").unwrap();
+    let roots = fixture.roots().clone().with_exclusions(std::slice::from_ref(&private));
+    let choices = HashMap::new();
+    let history = History::load(roots.home.join("history.json"));
+    let previews: Vec<_> = [
+        "copy Downloads/Project to Documents",
+        "zip Downloads/Project as export",
+        "move Downloads/Project to Desktop",
+        "delete Downloads/Project",
+        "rename Downloads/Project to Renamed",
+    ]
+    .into_iter()
+    .map(|command| {
+        let Ok(Planned::Steps { actions, .. }) = Planner::new(&roots, &choices).plan(&parse(command).unwrap(), &history) else {
+            panic!("expected a preview before the excluded folder exists for {command}");
+        };
+        (command, actions)
+    })
+    .collect();
+    fs::create_dir(&private).unwrap();
+    fs::write(private.join("excluded.pdf"), b"private").unwrap();
+    for (command, actions) in previews {
+        let outcome = crate::exec::run(&actions, &roots);
+        assert!(outcome.done.is_empty(), "{command} changed files");
+        assert!(outcome.terminal.error().is_some_and(|e| e.contains("contains “Private”")), "{command}: {:?}", outcome.terminal);
+        assert!(private.join("excluded.pdf").exists());
+    }
+}
+
+#[test]
+fn whole_folder_transfer_refuses_an_exclusion_at_the_projected_destination() {
+    let fixture = MessyMac::new();
+    let project = fixture.roots().downloads().join("Project");
+    let private = project.join("Private");
+    fs::create_dir_all(&private).unwrap();
+    fs::write(private.join("report.pdf"), b"pdf").unwrap();
+    let dest = fixture.roots().desktop().join("Project");
+    let roots = fixture.roots().clone().with_exclusions(&[dest.join("Private")]);
+    let choices = HashMap::new();
+    let history = History::load(roots.home.join("history.json"));
+    for command in ["copy Downloads/Project to Desktop", "move Downloads/Project to Desktop"] {
+        let result = Planner::new(&roots, &choices).plan(&parse(command).unwrap(), &history);
+        assert!(matches!(result, Err(Stop::Problem(message)) if message.contains("excluded in Settings → Folders")), "{command}");
+    }
+    assert!(
+        crate::exec::run(&[Action::Copy { from: project, to: dest.clone() }], &roots)
+            .terminal
+            .error()
+            .is_some_and(|e| e.contains("excluded in Settings → Folders"))
+    );
+    let unzip = parse("unzip Archive.zip into Desktop/Project").unwrap();
+    assert!(matches!(Planner::new(&roots, &choices).plan(&unzip, &history),
+        Err(Stop::Problem(message)) if message.contains("excluded in Settings → Folders")));
+    assert!(!dest.exists());
+}
+
+#[test]
 fn messy_mac_skips_opaque_trees_and_rejects_escaping_links() {
     let fixture = MessyMac::new();
     let base = &fixture.roots().home;

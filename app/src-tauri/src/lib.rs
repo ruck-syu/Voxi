@@ -944,7 +944,7 @@ fn plan_input_routed(
         match &work {
             Work::Shortcut(phrase, commands) => planner.plan_shortcut(phrase, commands, &history),
             Work::Command(intent) => planner.plan(intent, &history),
-            Work::UndoEntry(id) => history.undoable(*id).map_err(Stop::Problem).and_then(plan::plan_undo),
+            Work::UndoEntry(id) => history.undoable(*id).map_err(Stop::Problem).and_then(|entry| plan::plan_undo(entry, &roots)),
         }
     };
     #[cfg(feature = "tiny-model")]

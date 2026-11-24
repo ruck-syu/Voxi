@@ -1,5 +1,6 @@
 //! Allowed folders, path safety checks, and small filesystem helpers.
 
+use crate::model::Action;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -201,6 +202,71 @@ impl Roots {
     /// whose parent is outside the allowed folders.
     pub(crate) fn is_allowed_entry(&self, p: &Path) -> bool {
         self.is_allowed(p) && (p.parent().is_none_or(|parent| self.is_allowed(parent)) || self.is_configured_root(p))
+    }
+
+    pub(crate) fn check_whole_tree_exclusions(&self, action: &Action) -> Result<(), String> {
+        if self.exclusions.is_empty() {
+            return Ok(());
+        }
+        let renamed;
+        let (source, destination) = match action {
+            Action::Move { from, to } | Action::Copy { from, to } | Action::RestoreFromTrash { from, to } => (from, Some(to)),
+            Action::Rename { path, new_name } => {
+                renamed = path.with_file_name(new_name);
+                if *path == renamed {
+                    return Ok(());
+                }
+                (path, Some(&renamed))
+            }
+            Action::Trash { path } => (path, None),
+            Action::Zip { path, .. } => {
+                // ditto follows a link supplied as a source argument.
+                return self.check_excluded_descendants(path, Some(path));
+            }
+            Action::ResizeImage { path, backup, .. } => (path, Some(backup)),
+            Action::Restore { from, to } => {
+                if fs::symlink_metadata(to).is_ok_and(|meta| meta.is_dir()) {
+                    self.check_excluded_descendants(to, Some(to))?;
+                }
+                (from, Some(to))
+            }
+            Action::Unzip { destination, .. } => return self.check_excluded_descendants(destination, None),
+            _ => return Ok(()),
+        };
+        // Moving or copying a symlink operates on the link itself.
+        if fs::symlink_metadata(source).is_ok_and(|meta| meta.is_dir()) {
+            self.check_excluded_descendants(source, Some(source))?;
+            if let Some(destination) = destination {
+                self.check_excluded_descendants(destination, Some(source))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn check_excluded_descendants(&self, folder: &Path, contents: Option<&Path>) -> Result<(), String> {
+        let canonical_folder = canonical(folder);
+        for excluded in &self.exclusions.excluded {
+            let Ok(relative) = excluded.strip_prefix(&canonical_folder) else { continue };
+            if relative.as_os_str().is_empty() {
+                continue;
+            }
+            // Check configured paths directly, including inside trees skipped
+            // by searches. Missing paths do not count, and unreadable ones
+            // may still contain excluded entries.
+            if let Some(contents) = contents
+                && matches!(fs::symlink_metadata(contents.join(relative)),
+                    Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory))
+            {
+                continue;
+            }
+            let relation = if contents == Some(folder) { "contains" } else { "would include" };
+            return Err(format!(
+                "“{}” {relation} “{}”, which is excluded in Settings → Folders. Name the files to include, or remove the exclusion.",
+                file_name(folder),
+                relative.display()
+            ));
+        }
+        Ok(())
     }
 
     /// Match the original directory entry, resolving case via the filesystem

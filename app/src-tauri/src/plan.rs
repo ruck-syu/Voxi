@@ -276,6 +276,7 @@ impl<'a> Planner<'a> {
     }
 
     fn step(&mut self, intent: &Intent, history: &History) -> Result<Step, Stop> {
+        let start = self.actions.len();
         let title = match intent {
             Intent::Chain { commands } => self.chain(commands, history)?,
             Intent::Move { src, to } => self.transfer(src, to, false)?,
@@ -320,9 +321,14 @@ impl<'a> Planner<'a> {
             Intent::RecentActions => return Ok(Step::Finished(recent(history, self.roots))),
             Intent::Undo => {
                 let Some(entry) = history.last_undoable() else { return problem("Nothing to undo.") };
-                return plan_undo(entry).map(Step::Finished);
+                return plan_undo(entry, self.roots).map(Step::Finished);
             }
         };
+        if !matches!(intent, Intent::Chain { .. }) {
+            for action in &self.actions[start..] {
+                self.roots.check_whole_tree_exclusions(action).map_err(Stop::Problem)?;
+            }
+        }
         Ok(Step::Changes(title))
     }
 
@@ -977,6 +983,7 @@ impl<'a> Planner<'a> {
                 return problem(format!("Can't put {} inside itself.", file_name(p)));
             }
             let (to, note) = self.target(&dest, &file_name(p));
+            self.check(&to)?;
             let a = if copy { Action::Copy { from: p.clone(), to } } else { Action::Move { from: p.clone(), to } };
             self.push(a, note);
         }
@@ -1719,8 +1726,11 @@ fn skipped_trees_suffix(note: &str) -> String {
     if note.is_empty() { String::new() } else { format!(" {note}") }
 }
 
-pub(crate) fn plan_undo(entry: &Entry) -> Result<Planned, Stop> {
+pub(crate) fn plan_undo(entry: &Entry, roots: &Roots) -> Result<Planned, Stop> {
     crate::history::validate_inverses(entry.inverses()).map_err(Stop::Problem)?;
+    for inverse in entry.inverses() {
+        roots.check_whole_tree_exclusions(&inverse.action).map_err(Stop::Problem)?;
+    }
     let actions: Vec<_> = entry.inverses().iter().map(|inverse| inverse.action.clone()).collect();
     Ok(Planned::Steps {
         title: format!("Undo “{}”", entry.command),

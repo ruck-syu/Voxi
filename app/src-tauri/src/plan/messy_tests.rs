@@ -563,6 +563,8 @@ fn whole_folder_previews_refuse_excluded_descendants() {
         }
     }
     assert!(missed.is_empty(), "whole-folder commands allowed excluded contents: {missed:?}");
+    assert!(matches!(plan("rename Downloads/Project to Renamed"),
+        Err(Stop::Problem(message)) if message.contains("Remove the exclusion first, then rename it")));
     for command in ["copy Downloads/Project/public.pdf to Documents/Private", "move Downloads/Project/public.pdf to Documents/Private"] {
         assert!(matches!(plan(command), Err(Stop::Problem(message)) if message.contains("outside the folders")), "{command}");
     }
@@ -869,4 +871,21 @@ fn messy_mac_plans_the_restored_repeating_tasks() {
         moved.iter().any(|a| matches!(a, Action::Move { from, to } if from.ends_with("Screenshot 2026-10-28.png") && to.parent().is_some_and(|p| p.ends_with("Pictures/Screenshots")))),
         "{moved:?}"
     );
+}
+
+/// "Documents/Trash" and "Documents/bin" are folder paths: moving a file there
+/// must never put it in the macOS Trash, even when the folder doesn't exist.
+#[test]
+fn messy_mac_a_folder_path_named_trash_is_not_the_trash() {
+    let fixture = MessyMac::new();
+    for to in ["Documents/Trash", "Documents/bin", "~/Documents/Recycle Bin"] {
+        let command = format!("move Downloads/Archive.zip to {to}");
+        let actions = action_plan(&fixture, &command, ENTRY_LIMIT);
+        assert!(!actions.iter().any(|a| matches!(a, Action::Trash { .. })), "{command}: {actions:?}");
+        assert!(actions.iter().any(|a| matches!(a, Action::Move { .. })), "{command}: {actions:?}");
+    }
+    for command in ["move Downloads/Archive.zip to Trash", "move Downloads/Archive.zip to the trash"] {
+        let actions = action_plan(&fixture, command, ENTRY_LIMIT);
+        assert!(actions.iter().any(|a| matches!(a, Action::Trash { .. })), "{command}: {actions:?}");
+    }
 }

@@ -925,6 +925,14 @@ impl<'a> Planner<'a> {
 
     // ---- Planners ----------------------------------------------------------
 
+    /// "Trash", "the bin", "Recycle Bin": a destination that names the Trash
+    /// itself rather than a folder path.
+    fn names_the_trash(to: &str) -> bool {
+        let to = to.trim().to_lowercase();
+        let to = to.strip_prefix("the ").unwrap_or(&to).trim();
+        !to.contains(['/', '~']) && matches!(to, "trash" | "bin" | "recycle bin")
+    }
+
     fn transfer(&mut self, src: &Source, to: &str, copy: bool) -> Result<String, Stop> {
         let src_dir = match src {
             Source::Set { folder: Some(folder), .. } => Some(self.resolve_folder(folder, None)?),
@@ -942,8 +950,10 @@ impl<'a> Planner<'a> {
         // A filter after "to Trash" ("move files ... to Trash between 10 and
         // 50 MB") parses as a Move, not the delete phrasing. Never create a
         // folder called Trash: apply the same checks as a delete command.
+        // Only a bare "Trash" means the Trash: "Documents/Trash" or "~/bin" is
+        // an ordinary folder path, even when that folder doesn't exist yet.
         if let Ok(dest) = &dest
-            && matches!(file_name(dest).to_ascii_lowercase().as_str(), "trash" | "bin" | "recycle bin")
+            && Self::names_the_trash(to)
             && !dest.exists()
             && !self.planned_dirs.contains(dest)
         {

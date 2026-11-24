@@ -235,10 +235,19 @@ impl Roots {
         };
         // Moving or copying a symlink operates on the link itself.
         if fs::symlink_metadata(source).is_ok_and(|meta| meta.is_dir()) {
-            self.check_excluded_descendants(source, Some(source))?;
-            if let Some(destination) = destination {
-                self.check_excluded_descendants(destination, Some(source))?;
+            let checked = self
+                .check_excluded_descendants(source, Some(source))
+                .and_then(|()| destination.map_or(Ok(()), |destination| self.check_excluded_descendants(destination, Some(source))));
+            // Exclusions are saved by path, so a rename would quietly drop one.
+            if matches!(action, Action::Rename { .. }) {
+                return checked.map_err(|message| {
+                    message.replace(
+                        "Name the files to include, or remove the exclusion.",
+                        "Renaming it would stop that exclusion from working. Remove the exclusion first, then rename it and exclude the folder again.",
+                    )
+                });
             }
+            checked?;
         }
         Ok(())
     }

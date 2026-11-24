@@ -749,6 +749,11 @@ impl<'a> Planner<'a> {
                 Ok(ExpandedSource { paths: vec![p], label, folder: None, nested: 0, skipped_note: String::new() })
             }
             Source::Set { folder, filter } => {
+                let contains = filter.name_contains.as_deref().map(NameNeedle::new).transpose()?;
+                let starts = filter.name_starts_with.as_deref().map(NameNeedle::new).transpose()?;
+                if filter.ext.as_ref().is_some_and(|exts| exts.is_empty() || exts.iter().any(|ext| ext.trim().is_empty())) {
+                    return problem("Enter a file extension for the filter, such as .txt.");
+                }
                 if let Some(scope) = &self.scope {
                     if folder.is_some() {
                         return problem("An explicit source folder starts a new search.");
@@ -761,7 +766,9 @@ impl<'a> Planner<'a> {
                     let mut paths = Vec::new();
                     for path in scope.paths() {
                         self.check(&path)?;
-                        if boundary.is_none_or(|folder| crate::scope::is_nested_in(&path, folder)) && matches(&path, filter, self.now) {
+                        if boundary.is_none_or(|folder| crate::scope::is_nested_in(&path, folder))
+                            && matches_prepared(&path, filter, self.now, contains.as_ref(), starts.as_ref())
+                        {
                             if !read_only && path.parent().is_some_and(|parent| self.in_package(parent)) {
                                 return problem("File sets can't change items inside a macOS package.");
                             }
@@ -794,14 +801,12 @@ impl<'a> Planner<'a> {
                 let top_level: HashSet<_> =
                     dirs.iter().filter(|_| direct_by_default && filter.only_subfolders).map(|d| fsx::canonical(d)).collect();
                 let now = self.now;
-                let contains = filter.name_contains.as_deref().map(normalized_name);
-                let starts = filter.name_starts_with.as_deref().map(normalized_name);
                 let inspect = filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some() || has_date_filter(filter);
                 let matches_file = |p: &Path| {
                     if inspect && fs::metadata(p).is_err() {
                         return None;
                     }
-                    Some(matches_prepared(p, filter, now, contains.as_deref(), starts.as_deref()))
+                    Some(matches_prepared(p, filter, now, contains.as_ref(), starts.as_ref()))
                 };
                 let query = self.search.isolated(self.search.remaining_time());
                 let mut out = Vec::new();
@@ -1879,13 +1884,42 @@ fn date_note(f: &Filter) -> Option<&'static str> {
     })
 }
 
-pub fn matches(p: &Path, f: &Filter, now: DateTime<Local>) -> bool {
-    let contains = f.name_contains.as_deref().map(normalized_name);
-    let starts = f.name_starts_with.as_deref().map(normalized_name);
-    matches_prepared(p, f, now, contains.as_deref(), starts.as_deref())
+enum NameNeedle<'a> {
+    Literal(&'a str),
+    Normalized(String),
 }
 
-fn matches_prepared(p: &Path, f: &Filter, now: DateTime<Local>, contains: Option<&str>, starts: Option<&str>) -> bool {
+impl<'a> NameNeedle<'a> {
+    fn new(needle: &'a str) -> Result<Self, Stop> {
+        if !needle.trim().is_empty() {
+            // Punctuation alone is meaningful exactly as entered. For
+            // example, "-." must not become "." and match every extension.
+            if !needle.chars().any(char::is_alphanumeric) {
+                return Ok(Self::Literal(needle));
+            }
+            let normalized = normalized_name(needle);
+            if !normalized.is_empty() {
+                return Ok(Self::Normalized(normalized));
+            }
+        }
+        problem("Enter a filename filter with a letter, number, or punctuation mark.")
+    }
+
+    fn matches(&self, filename: &str, normalized: &str, check: impl FnOnce(&str, &str) -> bool) -> bool {
+        match self {
+            Self::Literal(needle) => check(filename, needle),
+            Self::Normalized(needle) => check(normalized, needle),
+        }
+    }
+}
+
+fn matches_prepared(
+    p: &Path,
+    f: &Filter,
+    now: DateTime<Local>,
+    contains: Option<&NameNeedle<'_>>,
+    starts: Option<&NameNeedle<'_>>,
+) -> bool {
     let e = ext_of(p);
     let type_ok = match f.file_type {
         None => true,
@@ -1899,8 +1933,11 @@ fn matches_prepared(p: &Path, f: &Filter, now: DateTime<Local>, contains: Option
         return false;
     }
     if contains.is_some() || starts.is_some() {
-        let name = normalized_name(&file_name(p));
-        if contains.is_some_and(|needle| !name.contains(needle)) || starts.is_some_and(|needle| !name.starts_with(needle)) {
+        let filename = file_name(p);
+        let normalized = normalized_name(&filename);
+        if contains.is_some_and(|needle| !needle.matches(&filename, &normalized, |name, n| name.contains(n)))
+            || starts.is_some_and(|needle| !needle.matches(&filename, &normalized, |name, n| name.starts_with(n)))
+        {
             return false;
         }
     }

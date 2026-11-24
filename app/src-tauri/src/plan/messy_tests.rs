@@ -633,6 +633,72 @@ fn whole_folder_transfer_refuses_an_exclusion_at_the_projected_destination() {
 }
 
 #[test]
+fn punctuation_name_filters_match_literally() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = fsx::canonical(dir.path());
+    let downloads = home.join("Downloads");
+    fs::create_dir(&downloads).unwrap();
+    let roots = Roots::new(&home, None, &[]);
+    for name in ["tax-2026.txt", "-draft.txt", "ends-.txt", "receipt_2026.txt", "plain.txt", "README"] {
+        fs::write(downloads.join(name), b"fixture").unwrap();
+    }
+    let choices = HashMap::new();
+    let history = History::load(roots.home.join("history.json"));
+    let cases: &[(&str, &[&str])] = &[
+        (r#"delete files in Downloads containing "-""#, &["-draft.txt", "ends-.txt", "tax-2026.txt"]),
+        (r#"delete files in Downloads starting with "-""#, &["-draft.txt"]),
+        (r#"delete files in Downloads containing "_""#, &["receipt_2026.txt"]),
+        (r#"delete files in Downloads containing "-.""#, &["ends-.txt"]),
+        (r#"delete files in Downloads named "_""#, &["receipt_2026.txt"]),
+        (r#"delete files in Downloads called "-""#, &["-draft.txt", "ends-.txt", "tax-2026.txt"]),
+        (r#"delete files in Downloads containing "tax 2026""#, &["tax-2026.txt"]),
+    ];
+    let mut mismatches = Vec::new();
+    for (command, expected) in cases {
+        let Ok(Planned::Steps { actions, .. }) = Planner::new(&roots, &choices).plan(&parse(command).unwrap(), &history) else {
+            panic!("expected a preview for {command}");
+        };
+        let names: Vec<_> = actions
+            .into_iter()
+            .map(|action| match action {
+                Action::Trash { path } => file_name(&path),
+                _ => panic!("expected a trash action"),
+            })
+            .collect();
+        if names != *expected {
+            mismatches.push((command, names));
+        }
+    }
+    assert!(mismatches.is_empty(), "unexpected matches: {mismatches:?}");
+}
+
+#[test]
+fn empty_name_and_extension_filters_refuse_to_plan() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    fs::write(roots.downloads().join("README"), b"no extension").unwrap();
+    let choices = HashMap::new();
+    let history = History::load(roots.home.join("history.json"));
+    let plan = |intent| Planner::new(roots, &choices).plan(&intent, &history);
+    let whitespace = parse(r#"delete files in Downloads containing " ""#).unwrap();
+    let mut missed = Vec::new();
+    if !matches!(plan(whitespace), Err(Stop::Problem(message)) if message.contains("filename filter")) {
+        missed.push("whitespace name filter");
+    }
+    for (label, filter) in [
+        ("empty name filter", Filter { name_starts_with: Some(String::new()), ..Default::default() }),
+        ("empty extension", Filter { ext: Some(vec![String::new()]), ..Default::default() }),
+        ("empty extension list", Filter { ext: Some(vec![]), ..Default::default() }),
+    ] {
+        let intent = Intent::Trash { src: Source::set(Some("Downloads"), filter) };
+        if !matches!(plan(intent), Err(Stop::Problem(message)) if message.contains("filter")) {
+            missed.push(label);
+        }
+    }
+    assert!(missed.is_empty(), "filters were accepted: {missed:?}");
+}
+
+#[test]
 fn messy_mac_skips_opaque_trees_and_rejects_escaping_links() {
     let fixture = MessyMac::new();
     let base = &fixture.roots().home;

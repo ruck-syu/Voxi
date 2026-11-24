@@ -91,8 +91,9 @@ restarts.
 - **Shortcuts:** Save a phrase and a list of commands in Settings → Shortcuts to
   run them all as one preview with one undo.
 - **From Finder:** Select files in Finder, right-click, and choose **Organize
-  with Voxi** (under Quick Actions or Services) to act on `"these"` or `"them"`.
-  If the item is missing, enable it in System Settings → Keyboard → Keyboard
+  with Voxi** (under Quick Actions or Services) or **Open With → Voxi** to act
+  on `"these"` or `"them"`.
+  If the Service is missing, enable it in System Settings → Keyboard → Keyboard
   Shortcuts → Services (on macOS 12, System Preferences → Keyboard → Shortcuts →
   Services).
 - **Dictation:** Focus the command bar and dictate with any external dictation

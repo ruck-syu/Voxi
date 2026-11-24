@@ -79,12 +79,16 @@ its operation type isn't supported.
 ## From Finder
 
 Select files in Finder, right-click, and choose **Organize with Voxi** (under
-Quick Actions or Services). Voxi opens with those files as the ones “these”
-and “them” refer to, so you can say “move these to Receipts”.
+Quick Actions or Services) or **Open With → Voxi**. You can also send files
+by dropping them onto the Voxi app icon or with `open -a Voxi file1 file2`.
+Voxi opens with those files as the ones “these” and “them” refer to, so you
+can say “move these to Receipts”. Sending another selection replaces the
+current list. If Finder leaves Voxi out of **Open With** for a file type,
+choose **Other… → All Applications** or use **Organize with Voxi**.
 
 Folders, symbolic links, and anything outside the folders Voxi may use are left
 out, and Voxi says which. The files are checked again before anything runs. If
-the item is missing, turn it on in System Settings → Keyboard → Keyboard
+the Service is missing, turn it on in System Settings → Keyboard → Keyboard
 Shortcuts → Services (on macOS 12, System Preferences → Keyboard → Shortcuts →
 Services).
 

@@ -1,35 +1,61 @@
-//! "Organize with Voxi" in Finder: a macOS Service that hands Voxi the
-//! selected files. They become the current results list, so "move these to
-//! Receipts" acts on exactly that selection, checked again before it runs.
+//! Files handed over by macOS become the current results list, so "move
+//! these to Receipts" acts on exactly that selection.
 
 use crate::fsx::{self, Roots};
+use std::collections::HashSet;
 use std::path::PathBuf;
+use tauri::Url;
 
 /// What the window says about a selection it couldn't take in full.
 pub const LABEL: &str = "your Finder selection";
+
+/// Keep local file paths in their original order. Existence and access are
+/// checked by `accept` so the window can explain why an item was left out.
+pub fn paths_from_urls(urls: Vec<Url>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    urls.into_iter().filter_map(path_from_url).filter(|path| seen.insert(path.clone())).collect()
+}
+
+fn path_from_url(url: Url) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    let url = if url.scheme() == "file" && url.path().starts_with("/.file/id=") {
+        // Finder can supply a file reference URL. Ask Foundation for its
+        // current path before checking it against the allowed folders.
+        use objc2_foundation::{NSString, NSURL};
+        let reference = NSURL::URLWithString(&NSString::from_str(url.as_str()))?;
+        Url::parse(&reference.filePathURL()?.absoluteString()?.to_string()).ok()?
+    } else {
+        url
+    };
+    url.to_file_path().ok()
+}
 
 /// Keeps the selected files Voxi may touch. Folders and anything outside the
 /// allowed folders (or inside an excluded one) are left out and named in the
 /// returned notice; with nothing left, the notice is the error.
 pub fn accept(roots: &Roots, selected: Vec<PathBuf>) -> Result<(Vec<PathBuf>, Option<String>), String> {
-    let (mut files, mut folders, mut outside, mut links) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut files, mut folders, mut outside, mut links, mut missing) = (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut seen = HashSet::new();
     for p in selected {
         let name = fsx::file_name(&p);
         // A link would be swapped for the file it points to, which the user
         // didn't select: leave it out and say so.
-        if std::fs::symlink_metadata(&p).is_ok_and(|m| m.file_type().is_symlink()) {
-            links.push(name);
-        } else if !roots.is_allowed(&p) {
-            outside.push(name);
-        } else if p.is_dir() {
-            folders.push(name);
-        } else if p.is_file() {
-            let c = fsx::canonical(&p);
-            if !files.contains(&c) {
-                files.push(c);
+        match std::fs::symlink_metadata(&p) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => missing.push(name),
+            Ok(m) if m.is_symlink() => links.push(name),
+            Ok(m) if roots.is_allowed(&p) => {
+                if m.is_dir() {
+                    folders.push(name);
+                } else if m.is_file() {
+                    let c = fsx::canonical(&p);
+                    if seen.insert(c.clone()) {
+                        files.push(c);
+                    }
+                } else {
+                    outside.push(name);
+                }
             }
-        } else {
-            outside.push(name);
+            _ => outside.push(name),
         }
     }
     let mut notes = Vec::new();
@@ -42,6 +68,9 @@ pub fn accept(roots: &Roots, selected: Vec<PathBuf>) -> Result<(Vec<PathBuf>, Op
     if !links.is_empty() {
         let what = if links.len() == 1 { "1 symbolic link".to_string() } else { format!("{} symbolic links", links.len()) };
         notes.push(format!("{what} left out; select the original instead: {}.", names(&links)));
+    }
+    if !missing.is_empty() {
+        notes.push(format!("{} could no longer be found: {}.", count(missing.len()), names(&missing)));
     }
     let notice = (!notes.is_empty()).then(|| notes.join(" "));
     if files.is_empty() {
@@ -71,13 +100,12 @@ fn names(all: &[String]) -> String {
 pub mod service {
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, NSObject};
-    use objc2::{AnyThread, MainThreadMarker, define_class, msg_send};
-    use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardTypeFileURL, NSUpdateDynamicServices};
-    use objc2_foundation::{NSString, NSURL};
+    use objc2::{AnyThread, ClassType, MainThreadMarker, define_class, msg_send};
+    use objc2_app_kit::{NSApplication, NSPasteboard, NSPasteboardURLReadingFileURLsOnlyKey, NSUpdateDynamicServices};
+    use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString, NSURL};
     use std::cell::RefCell;
-    use std::path::PathBuf;
     use std::sync::OnceLock;
-    use tauri::AppHandle;
+    use tauri::{AppHandle, Url};
 
     static APP: OnceLock<AppHandle> = OnceLock::new();
 
@@ -96,23 +124,28 @@ pub mod service {
             /// Named by NSMessage in Info.plist.
             #[unsafe(method(organizeWithVoxi:userData:error:))]
             fn organize(&self, pboard: &NSPasteboard, _data: Option<&NSString>, _error: *mut *mut NSString) {
-                let paths = file_paths(pboard);
                 if let Some(app) = APP.get() {
-                    crate::use_finder_selection(app, paths);
+                    crate::use_finder_selection(app, file_urls(pboard));
                 }
             }
         }
     );
 
-    fn file_paths(pboard: &NSPasteboard) -> Vec<PathBuf> {
-        let Some(items) = pboard.pasteboardItems() else { return Vec::new() };
+    fn file_urls(pboard: &NSPasteboard) -> Vec<Url> {
+        let classes = NSArray::from_slice(&[NSURL::class()]);
+        let file_only: &AnyObject = &NSNumber::new_bool(true);
+        // SAFETY: The AppKit key maps to a boolean, and NSURL implements
+        // NSPasteboardReading.
+        let items = unsafe {
+            let options = NSDictionary::from_slices(&[NSPasteboardURLReadingFileURLsOnlyKey], &[file_only]);
+            pboard.readObjectsForClasses_options(&classes, Some(&options))
+        };
+        let Some(items) = items else { return Vec::new() };
         items
             .iter()
             .filter_map(|item| {
-                // SAFETY: an AppKit constant, read on the main thread.
-                let url = item.stringForType(unsafe { NSPasteboardTypeFileURL })?;
-                let url = NSURL::URLWithString(&url)?;
-                url.isFileURL().then(|| url.path())?.map(|p| PathBuf::from(p.to_string()))
+                let url = item.downcast_ref::<NSURL>()?.absoluteString()?;
+                Url::parse(&url.to_string()).ok()
             })
             .collect()
     }
@@ -136,6 +169,20 @@ pub mod service {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn resolves_finders_file_reference_urls() {
+        use objc2_foundation::{NSString, NSURL};
+        let dir = tempfile::tempdir().unwrap();
+        let path = fsx::canonical(dir.path()).join("report #1.pdf");
+        fs::write(&path, b"x").unwrap();
+        let ns_url = NSURL::fileURLWithPath(&NSString::from_str(path.to_str().unwrap()));
+        let reference = ns_url.fileReferenceURL().unwrap();
+        assert!(reference.isFileReferenceURL());
+        let url = Url::parse(&reference.absoluteString().unwrap().to_string()).unwrap();
+        assert_eq!(paths_from_urls(vec![url, Url::from_file_path(&path).unwrap()]), [path]);
+    }
 
     #[test]
     fn keeps_allowed_files_and_names_what_it_leaves_out() {

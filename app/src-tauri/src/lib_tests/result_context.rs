@@ -2063,6 +2063,56 @@ fn a_finder_selection_becomes_the_list_that_these_refers_to() {
     assert!(take_selection(&f.state, vec![stray]).1.unwrap().contains("outside the folders"));
     assert!(f.state.result_scope.lock().unwrap().current.is_none());
 }
+
+#[test]
+fn finder_handoff_keeps_the_latest_batch_for_its_own_window_request() {
+    let f = Fixture::new();
+    f.state.settings.lock().unwrap().onboarded = true;
+    let first = f.write("Downloads/first.pdf");
+    let second = f.write("Downloads/second file #1.pdf");
+    let missing = f.home.join("Downloads/gone.pdf");
+    let url = |path: &PathBuf| tauri::Url::from_file_path(path).unwrap();
+    let previous = f.state.presentation.lock().unwrap().request("command");
+    let previous_generation = opening_for_request(&f.state, previous.request_id).unwrap().generation;
+    let first_mode = prepare_finder_selection(&f.state, finder_selection::paths_from_urls(vec![url(&first)]));
+    let first_show = f.state.presentation.lock().unwrap().request(first_mode);
+    let paths = finder_selection::paths_from_urls(vec![
+        tauri::Url::parse("https://example.com/report.pdf").unwrap(),
+        url(&second),
+        url(&missing),
+        url(&second),
+        url(&missing),
+    ]);
+    assert_eq!(paths, [second.clone(), missing]);
+    let latest_mode = prepare_finder_selection(&f.state, paths);
+    let latest_show = f.state.presentation.lock().unwrap().request(latest_mode);
+
+    // A cold webview can miss both notifications and still open the latest batch.
+    let mut presentation = f.state.presentation.lock().unwrap();
+    assert!(!presentation.ready);
+    assert_eq!(presentation.pending().unwrap().request_id, latest_show.request_id);
+    presentation.ready = true;
+    drop(presentation);
+    assert!(opening_for_request(&f.state, previous.request_id).is_none());
+    assert!(opening_for_request(&f.state, first_show.request_id).is_none());
+    clear_scope(&f.state, Some(previous_generation));
+    let latest = opening_for_request(&f.state, latest_show.request_id).unwrap();
+    assert_eq!(latest.scope.unwrap().count, 1);
+    assert_eq!(f.paths(), [second]);
+    assert_eq!(latest.notice.as_deref(), Some("1 item could no longer be found: “gone.pdf”."));
+}
+
+#[test]
+fn finder_handoff_before_setup_opens_welcome_without_a_scope() {
+    let f = Fixture::new();
+    let file = f.write("Downloads/report.pdf");
+    let mode = prepare_finder_selection(&f.state, vec![file]);
+    assert_eq!(mode, "welcome");
+    let request = f.state.presentation.lock().unwrap().request(mode);
+    let opening = opening_for_request(&f.state, request.request_id).unwrap();
+    assert!(opening.scope.is_none());
+    assert!(opening.notice.unwrap().starts_with("Finish setting up Voxi"));
+}
 #[test]
 fn repeats_saved_before_modified_meant_last_edit_are_skipped_not_reread() {
     let f = Fixture::new();

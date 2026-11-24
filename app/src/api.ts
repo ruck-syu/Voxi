@@ -93,7 +93,7 @@ export const api = {
   /** Clears the results list, only if it is still the one at `generation` when given. */
   clearResultScope: (generation?: number | null) => invoke<void>("clear_result_scope", { generation: generation ?? null }),
   resultScope: () => invoke<ResultScope | null>("result_scope"),
-  openingContext: () => invoke<Opening>("opening_context"),
+  openingContext: (requestId: number) => invoke<Opening | null>("opening_context", { requestId }),
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   /** Runs the pending plan, leaving out the 0-based steps in `skip`. */

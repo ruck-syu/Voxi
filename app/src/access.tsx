@@ -8,11 +8,13 @@ type AccessState = { k: "idle" } | { k: AccessAction } | { k: "error"; action: A
 export function AccessView({
   settings,
   firstRun,
+  notice,
   onDone,
   beginOperation,
 }: {
   settings: Settings;
   firstRun: boolean;
+  notice?: string | null;
   onDone: () => void | Promise<void>;
   beginOperation: () => () => void;
 }) {
@@ -88,6 +90,7 @@ export function AccessView({
         </button>
       }
     >
+      {notice && <p className="hint warn" role="status">{notice}</p>}
       <p className="access-lead">
         {firstRun
           ? "Voxi moves, renames, and tidies files when you tell it to. macOS asks once for each folder; allow them now and commands won't stop to ask."

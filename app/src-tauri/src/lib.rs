@@ -228,7 +228,11 @@ fn fade_window(ns: &objc2_app_kit::NSWindow, visible: bool, animate: bool) {
 
 /// Shows the command window on the screen with the cursor and focuses it.
 /// `mode` tells the page which view to open (command, settings, welcome).
-fn show_window(app: &AppHandle, mode: &str) {
+fn show_window(app: &AppHandle, mode: &'static str) {
+    request_window(app, |_| mode);
+}
+
+fn request_window(app: &AppHandle, prepare: impl FnOnce(&AppState) -> &'static str) {
     let Some(w) = app.get_webview_window("main") else { return };
     if let Ok(cursor) = app.cursor_position()
         && let Ok(Some(m)) = app.monitor_from_point(cursor.x, cursor.y)
@@ -240,7 +244,9 @@ fn show_window(app: &AppHandle, mode: &str) {
     }
     let state = app.state::<AppState>();
     let mut presentation = checked_state!(state.presentation.lock(), ());
-    let request = presentation.request(mode);
+    // Publish the handoff and change the request ID together. An outgoing
+    // view asking for its opening context must never acquire the new scope.
+    let request = presentation.request(prepare(&state));
     if presentation.ready {
         let _ = w.emit("voxi://shown", request);
     }
@@ -277,32 +283,36 @@ fn request_hide(app: &AppHandle) {
     }
 }
 
-/// Files handed over by "Organize with Voxi" in Finder become the results
-/// list, then the window opens so the user can say what to do with them.
-pub(crate) fn use_finder_selection(app: &AppHandle, selected: Vec<PathBuf>) {
-    let state = app.state::<AppState>();
+/// Both Finder entry points replace the results list and open the command window.
+#[cfg(target_os = "macos")]
+fn use_finder_selection(app: &AppHandle, urls: Vec<tauri::Url>) {
+    let paths = finder_selection::paths_from_urls(urls);
+    request_window(app, |state| prepare_finder_selection(state, paths));
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn prepare_finder_selection(state: &AppState, selected: Vec<PathBuf>) -> &'static str {
     // The selection replaces whatever was being planned: cancel it, so its
     // late reply can't arrive carrying this new list as its own.
-    if let Some((_, control)) = checked_state!(state.active_search.lock(), ()).take() {
+    if let Some((_, control)) = checked_state!(state.active_search.lock(), "command").take() {
         control.cancel();
     }
-    let onboarded = checked_state!(state.settings.lock(), ()).onboarded;
+    let onboarded = checked_state!(state.settings.lock(), "command").onboarded;
     let notice = if onboarded {
-        let (generation, notice) = take_selection(&state, selected);
+        let (generation, notice) = take_selection(state, selected);
         notice.map(|n| (Some(generation), n))
     } else {
         // Finishing setup rebuilds the allowed folders and clears the list.
-        Some((None, "Finish setting up Voxi, then choose Organize with Voxi in Finder again.".into()))
+        Some((None, "Finish setting up Voxi, then send your selection from Finder again.".into()))
     };
-    *checked_state!(state.selection_notice.lock(), ()) = notice;
-    show_window(app, "command");
-    // An open command view (one kept through a run, say) reads the new list.
-    let _ = app.emit("voxi://selection", ());
+    *checked_state!(state.selection_notice.lock(), "command") = notice;
+    if onboarded { "command" } else { "welcome" }
 }
 
 /// Publishes the selection as the results list. Returns the list's new
 /// generation and the notice to show: what was left out, or why nothing
 /// could be used.
+#[cfg(any(target_os = "macos", test))]
 fn take_selection(state: &AppState, selected: Vec<PathBuf>) -> (u64, Option<String>) {
     let unavailable = || (0, Some("Voxi state is unavailable. Restart the app.".into()));
     let Ok(roots) = state.roots.read().map(|r| r.clone()) else { return unavailable() };
@@ -337,8 +347,13 @@ struct Opening {
 }
 
 #[tauri::command]
-fn opening_context(state: State<AppState>) -> Opening {
-    opening(&state)
+fn opening_context(state: State<AppState>, request_id: u64) -> Option<Opening> {
+    opening_for_request(&state, request_id)
+}
+
+fn opening_for_request(state: &AppState, request_id: u64) -> Option<Opening> {
+    let presentation = checked_state!(state.presentation.lock(), None);
+    presentation.is_current(request_id).then(|| opening(state))
 }
 
 fn opening(state: &AppState) -> Opening {
@@ -2245,10 +2260,26 @@ pub fn run() {
             return;
         }
     };
-    app.run(|_, event| {
+    #[cfg(target_os = "macos")]
+    let mut pending_open = None;
+    app.run(move |_app, _event| {
         #[cfg(target_os = "macos")]
-        if matches!(event, tauri::RunEvent::Exit) {
-            outside_click::uninstall();
+        match _event {
+            tauri::RunEvent::Opened { urls } => {
+                if _app.try_state::<AppState>().is_some() {
+                    use_finder_selection(_app, urls);
+                } else {
+                    // Launch Services can send openURLs before Tauri runs setup.
+                    pending_open = Some(urls);
+                }
+            }
+            tauri::RunEvent::Ready => {
+                if let Some(urls) = pending_open.take() {
+                    use_finder_selection(_app, urls);
+                }
+            }
+            tauri::RunEvent::Exit => outside_click::uninstall(),
+            _ => {}
         }
     });
 }

@@ -497,7 +497,7 @@ pub(crate) fn rename_exclusive(from: &Path, to: &Path) -> Publication {
     #[cfg(test)]
     run_hook(&BEFORE_PUBLISH);
     if meta.is_dir() || same_entry_rename(from, to) {
-        rename_no_replace(from, to).map_err(|error| rename_error(to, error))?;
+        rename_without_replacing(from, to).map_err(|error| rename_error(to, error))?;
         return Ok(identity);
     }
     // One no-replace rename moves whatever file is at `from` and never
@@ -617,9 +617,24 @@ fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> R
         || matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK))
         || (error.kind() == std::io::ErrorKind::AlreadyExists && same_entry_rename(from, to))
     {
-        return rename_no_replace(from, to).map_err(|error| rename_error(to, error));
+        return rename_without_replacing(from, to).map_err(|error| rename_error(to, error));
     }
     Err(rename_error(to, error))
+}
+
+/// A no-replace rename. Drives without that option (ExFAT, FAT32) get a
+/// plain rename after checking the destination is free; a plain rename
+/// still can't replace a folder that has anything in it.
+fn rename_without_replacing(from: &Path, to: &Path) -> std::io::Result<()> {
+    match rename_no_replace(from, to) {
+        Err(error) if rename_flag_unsupported(&error) => {
+            if to.symlink_metadata().is_ok() {
+                return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
+            }
+            fs::rename(from, to)
+        }
+        result => result,
+    }
 }
 
 fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -703,7 +718,7 @@ impl Staging {
             if before.dev() != now.dev() || before.ino() != now.ino() {
                 return Err("staging directory moved or replaced".into());
             }
-            fs::remove_dir_all(&self.dir).map_err(|e| e.to_string())
+            remove_private_tree(&self.dir).map_err(|e| e.to_string())
         })();
         let Err(error) = cleanup else { return result };
         let append = |message: &str| format!("{message}; staging cleanup failed at {}: {error}", self.dir.display());
@@ -785,9 +800,27 @@ impl Drop for Staging {
             && before.dev() == now.dev()
             && before.ino() == now.ino()
         {
-            let _ = fs::remove_dir_all(&self.dir);
+            let _ = remove_private_tree(&self.dir);
         }
     }
+}
+
+/// Removes Voxi's own staging tree. A copied read-only folder (mode 0555)
+/// can't have its contents deleted, so make folders writable first.
+fn remove_private_tree(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(folder) = pending.pop() {
+        if let Ok(meta) = fs::symlink_metadata(&folder)
+            && meta.is_dir()
+        {
+            let _ = fs::set_permissions(&folder, fs::Permissions::from_mode(meta.permissions().mode() | 0o700));
+            if let Ok(entries) = fs::read_dir(&folder) {
+                pending.extend(entries.flatten().map(|entry| entry.path()));
+            }
+        }
+    }
+    fs::remove_dir_all(dir)
 }
 
 /// Generate privately, then publish with a no-replace claim.

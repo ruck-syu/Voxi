@@ -19,7 +19,7 @@ use std::{
 static SUFFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^\s+(?:(after|in)\s+(.+?)\s+(hours?|hrs?|minutes?|mins?)|at\s+(.+?))\s*[.!]?\s*$").unwrap());
 static CLOCK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^(?:(today|tomorrow)\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?(?:\s+(today|tomorrow))?$").unwrap()
+    Regex::new(r"(?i)^(?:(today|tomorrow)\s+)?([0-9]{1,2})(?::([0-9]{2}))?\s*(a\.?m\.?|p\.?m\.?)?(?:\s+(today|tomorrow))?$").unwrap()
 });
 
 static CLAUSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s+(?:at|after|in)\b").unwrap());
@@ -136,8 +136,9 @@ pub fn extract(text: &str, now: DateTime<Local>) -> Result<(String, Option<DateT
         if [clock.get(1).is_some(), clock.get(5).is_some(), lead_day.is_some()].into_iter().filter(|b| *b).count() > 1 {
             return Err("Mention today or tomorrow once.".into());
         }
-        let mut hour: u32 = clock[2].parse().unwrap();
-        let minute: u32 = clock.get(3).map_or("0", |m| m.as_str()).parse().unwrap();
+        let digits = |text: &str| text.parse::<u32>().map_err(|_| "Use a time such as “at 9:40 pm” or “at 21:40”.".to_string());
+        let mut hour = digits(&clock[2])?;
+        let minute = digits(clock.get(3).map_or("0", |m| m.as_str()))?;
         if let Some(period) = clock.get(4) {
             if !(1..=12).contains(&hour) {
                 return Err("Use an hour from 1 to 12 with am or pm.".into());
@@ -216,7 +217,8 @@ pub struct Rule {
 pub const APPROVED_RULE_VERSION: u32 = 2;
 
 /// Why a repeating task saved before approvals were recorded was stopped.
-const LEGACY_UNVERIFIED: &str = "Voxi couldn't verify the original command or shortcut. Schedule it again to keep this task.";
+const LEGACY_UNVERIFIED: &str =
+    "This task was saved by an older version of Voxi, which didn't record what you approved. Schedule it again to keep it.";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -344,14 +346,10 @@ impl Rule {
             Some(RuleSource::Shortcut { phrase, .. }) => {
                 Err(format!("The shortcut “{phrase}” was changed or removed. Schedule it again to keep this task."))
             }
-            // Saved before Voxi recorded approvals. The saved text is what was
-            // approved unless it is a shortcut phrase (whose commands may have
-            // changed) or uses a folder nickname (whose folder may have changed).
-            None if settings.find_shortcut(&self.command).is_none()
-                && !settings.nicknames.iter().any(|n| names_word(&self.command, &n.name)) =>
-            {
-                Ok(())
-            }
+            // Saved before Voxi recorded approvals. The text may have been a
+            // shortcut since removed or a nickname since changed, and older
+            // versions let a shortcut win over a built-in command of the same
+            // words, so there is no safe way to tell what was approved.
             None => Err(LEGACY_UNVERIFIED.into()),
         }
     }
@@ -965,6 +963,9 @@ pub struct Store {
     /// state is kept, and this warning shown.
     durability: std::cell::RefCell<Option<String>>,
     unavailable: Option<String>,
+    /// Why due tasks are held back without being changed, such as settings
+    /// that couldn't be read (their folder exclusions would be missing).
+    suspended: Option<String>,
 }
 
 impl Store {
@@ -978,9 +979,10 @@ impl Store {
                 notice: None,
                 durability: Default::default(),
                 unavailable: Some(format!("{} Scheduling is unavailable; original data has been kept.", warning.message)),
+                suspended: None,
             };
         }
-        let mut store = Self { path, jobs, dirty: true, notice: None, durability: Default::default(), unavailable: None };
+        let mut store = Self { path, jobs, dirty: true, notice: None, durability: Default::default(), unavailable: None, suspended: None };
         for job in &mut store.jobs {
             if job.occurrence == OccurrenceState::ResultUnsaved && job.result.is_some() {
                 continue;
@@ -1009,37 +1011,21 @@ impl Store {
         store
     }
 
-    /// Tasks saved before Voxi recorded approvals were stopped for review by
-    /// an earlier version. Make the ones that now pass the approval check
-    /// active again, from their next scheduled time (missed runs are skipped,
-    /// as when resuming).
-    pub fn restore_legacy(&mut self, settings: &crate::settings::Settings, now: DateTime<Local>) {
-        let restorable = |job: &Job| {
-            job.series == SeriesState::NeedsReview
-                && job.occurrence == OccurrenceState::Finished
-                && job.summary == LEGACY_UNVERIFIED
-                && job
-                    .repeat
-                    .as_ref()
-                    .is_some_and(|rule| rule.approved_source.is_none() && rule.check_approval(settings, &job.command).is_ok())
-        };
-        let ids: Vec<u64> = self.jobs.iter().filter(|job| restorable(job)).map(|job| job.id).collect();
-        for id in ids {
-            let _ = self.change(id, |job| {
-                let rule = job.repeat.as_ref().ok_or("Only repeating tasks can be restored.")?;
-                if job.due <= now {
-                    job.due = rule.next_after(job.due, now).ok_or("That time is too far away.")?;
-                }
-                job.series = SeriesState::Active;
-                job.occurrence = OccurrenceState::Waiting;
-                job.summary = "Made active again after a Voxi update.".into();
-                Ok(())
-            });
-        }
+    pub fn notice(&self) -> Option<String> {
+        self.unavailable
+            .clone()
+            .or_else(|| self.suspended.clone())
+            .or_else(|| self.notice.clone())
+            .or_else(|| self.durability.borrow().clone())
     }
 
-    pub fn notice(&self) -> Option<String> {
-        self.unavailable.clone().or_else(|| self.notice.clone()).or_else(|| self.durability.borrow().clone())
+    /// Hold due tasks back (they stay as they are) until `resume_runs`.
+    pub fn suspend_runs(&mut self, reason: String) {
+        self.suspended = Some(reason);
+    }
+
+    pub fn resume_runs(&mut self) {
+        self.suspended = None;
     }
 
     fn save_jobs(&self, jobs: &[Job]) -> Result<(), String> {
@@ -1228,6 +1214,9 @@ impl Store {
 
     pub fn claim(&mut self, now: DateTime<Local>) -> Result<Option<Job>, String> {
         self.retry_results()?;
+        if self.suspended.is_some() {
+            return Ok(None);
+        }
         let job = self
             .jobs
             .iter()
@@ -1623,55 +1612,53 @@ mod tests {
         }
     }
 
-    /// Repeating tasks saved on 2026-11-19, before approvals were recorded,
-    /// were stopped for review by 0.2.4 ("sort downloads by type everyday",
-    /// "Move screenshots from desktop to screenshots folder every 2 days").
+    /// Repeating tasks saved before approvals were recorded are never run:
+    /// Voxi can't tell whether the text was a shortcut or used a nickname.
     #[test]
-    fn legacy_plain_command_tasks_are_approved_and_restored() {
-        let saved = |id: u64, command: &str, rule: &str, every: u32| {
-            serde_json::json!({
-                "id": id, "command": command, "due": "2026-11-10T07:44:22+05:30",
-                "series": "needsReview", "occurrence": "finished", "summary": LEGACY_UNVERIFIED,
-                "actions": [], "stamps": [], "firstRun": "repeatLater",
-                "repeat": {"every": every, "unit": "days", "time": "07:44:22", "command": rule, "choices": {}, "approvedVersion": 0},
-            })
-        };
-        let jobs = serde_json::json!([
-            saved(1, "sort downloads by type everyday", "sort downloads by type", 1),
-            saved(
-                2,
-                "Move screenshots from desktop to screenshots folder every 2 days",
-                "Move screenshots from desktop to screenshots folder",
-                2
-            ),
-            saved(3, "Tidy Up everyday", "Tidy Up", 1),
-            saved(4, "move pdfs to INBOX everyday", "move pdfs to INBOX", 1),
-        ]);
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("schedules.json");
-        crate::settings::save_store(&path, &jobs, crate::settings::diagnostics::Store::Schedules).unwrap();
-        let mut settings = crate::settings::Settings::default();
-        settings.shortcuts.push(crate::settings::Shortcut { phrase: "tidy up".into(), commands: vec!["sort downloads by type".into()] });
-        settings.nicknames.push(crate::settings::Nickname { name: "inbox".into(), path: "/tmp/inbox".into() });
+    fn legacy_tasks_without_an_approval_record_stay_for_review() {
+        let rule: Rule = serde_json::from_value(serde_json::json!({
+            "every": 1, "unit": "days", "time": "07:44:22", "command": "sort downloads by type", "choices": {}, "approvedVersion": 0,
+        }))
+        .unwrap();
+        assert!(rule.approved_source.is_none());
+        let err = rule.check_approval(&crate::settings::Settings::default(), "sort downloads by type everyday").unwrap_err();
+        assert!(err.contains("older version of Voxi"), "{err}");
+    }
 
-        let mut store = Store::load(path.clone());
-        store.restore_legacy(&settings, now());
-        let state = |store: &Store, id: u64| store.jobs.iter().find(|j| j.id == id).map(|j| (j.series, j.occurrence, j.due)).unwrap();
-        for id in [1, 2] {
-            let (series, occurrence, due) = state(&store, id);
-            assert_eq!((series, occurrence), (SeriesState::Active, OccurrenceState::Waiting), "task {id}");
-            assert!(due > now(), "missed runs are skipped, not run at once");
-            let job = store.jobs.iter().find(|j| j.id == id).unwrap();
-            job.repeat.as_ref().unwrap().check_approval(&settings, &job.command).unwrap();
+    /// While settings can't be read, their folder exclusions are missing, so
+    /// due tasks must wait rather than run against the defaults.
+    #[test]
+    fn suspended_runs_wait_until_resumed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::load(dir.path().join("schedules.json"));
+        let rule = Rule {
+            every: 1,
+            unit: Unit::Hours,
+            time: None,
+            command: "move a.pdf to Documents".into(),
+            choices: HashMap::new(),
+            model_intent: None,
+            approved_version: APPROVED_RULE_VERSION,
+            approved_source: Some(RuleSource::Command),
+            approved_nicknames: None,
+        };
+        store.add(Job::recurring_later("move a.pdf to Documents hourly".into(), now(), rule)).unwrap();
+        store.suspend_runs("Settings couldn't be read.".into());
+        assert!(store.claim(now() + Duration::days(2)).unwrap().is_none());
+        assert_eq!(store.notice().as_deref(), Some("Settings couldn't be read."));
+        assert_eq!(store.jobs[0].series, SeriesState::Active, "the task itself is unchanged");
+        store.resume_runs();
+        assert!(store.claim(now() + Duration::days(2)).unwrap().is_some());
+    }
+
+    /// Digits from other scripts used to match the clock and then panic
+    /// when parsed, closing Voxi.
+    #[test]
+    fn non_ascii_clock_digits_are_refused_not_a_crash() {
+        for command in ["move pdfs to Archive at ٩ pm", "move pdfs to Archive at 9:٣٠", "move pdfs to Archive at ９pm"] {
+            assert!(extract(command, now()).is_err(), "{command}");
         }
-        // A shortcut phrase or a folder nickname can't be verified: still for review.
-        for id in [3, 4] {
-            assert_eq!(state(&store, id).0, SeriesState::NeedsReview, "task {id}");
-        }
-        // The restore is saved, so it survives a restart without settings.
-        let reloaded = Store::load(path);
-        assert_eq!(state(&reloaded, 1).0, SeriesState::Active);
-        assert_eq!(state(&reloaded, 3).0, SeriesState::NeedsReview);
+        assert!(extract("move pdfs to Archive at 9 pm", now()).unwrap().1.is_some());
     }
 
     #[test]

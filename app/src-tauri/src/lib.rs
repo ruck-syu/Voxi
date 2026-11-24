@@ -1905,6 +1905,11 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     // The list's notice goes with it, including a pre-setup "Finish setting up" one.
     *state.selection_notice.lock().map_err(|_| "Results unavailable. Restart Voxi.")? = None;
     settings.hotkey = installed.clone();
+    // Saved settings are readable again: tasks held back for them can run.
+    drop((current, installed, roots, context));
+    if let Ok(mut schedules) = state.schedules.lock() {
+        schedules.resume_runs();
+    }
     Ok(settings)
 }
 
@@ -2079,9 +2084,9 @@ pub fn run() {
             let settings_path = config_dir.join("settings.json");
             let (settings, settings_warning) = Settings::load_with_warning(&settings_path);
             let settings_blocked = settings_warning.as_ref().filter(|w| w.write_blocked).map(|w| w.message.clone());
-            // Unreadable settings load as defaults, without the user's shortcuts
-            // and nicknames, so they can't vouch for old repeating tasks.
-            let settings_readable = settings_warning.is_none();
+            // Unreadable settings load as defaults, without the user's folder
+            // exclusions, so scheduled tasks wait instead of running against them.
+            let settings_unreadable = settings_warning.is_some();
             let (mut history, history_warning) = History::load_with_warning(data_dir.join("history.json"));
             let mut storage_notices: Vec<String> = [settings_warning, history_warning]
                 .into_iter()
@@ -2115,8 +2120,10 @@ pub fn run() {
                 settings_blocked,
                 schedules: Mutex::new({
                     let mut store = scheduler::Store::load(data_dir.join("schedules.json"));
-                    if settings_readable {
-                        store.restore_legacy(&settings, chrono::Local::now());
+                    if settings_unreadable {
+                        store.suspend_runs(
+                            "Scheduled tasks are paused because Voxi couldn't read its settings. Check Settings → Folders, then save to resume them.".into(),
+                        );
                     }
                     store
                 }),

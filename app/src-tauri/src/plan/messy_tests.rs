@@ -612,3 +612,17 @@ fn messy_mac_create_then_delete_contents_targets_the_new_folder() {
     fs::write(downloads.join("test1/nested/keep.txt"), b"keep").unwrap();
     assert_eq!(action_plan(&fixture, command, ENTRY_LIMIT), [Action::Trash { path: downloads.join("test1/old.txt") }]);
 }
+
+/// The repeating tasks a user had stopped for review after an update must
+/// still plan each run against today's files.
+#[test]
+fn messy_mac_plans_the_restored_repeating_tasks() {
+    let fixture = MessyMac::new();
+    let sorted = action_plan(&fixture, "sort downloads by type", ENTRY_LIMIT);
+    assert!(sorted.iter().any(|a| matches!(a, Action::Move { from, .. } if from.ends_with("Resume 📄.pdf"))), "{sorted:?}");
+    let moved = action_plan(&fixture, "Move screenshots from desktop to screenshots folder", ENTRY_LIMIT);
+    assert!(
+        moved.iter().any(|a| matches!(a, Action::Move { from, to } if from.ends_with("Screenshot 2026-10-28.png") && to.parent().is_some_and(|p| p.ends_with("Pictures/Screenshots")))),
+        "{moved:?}"
+    );
+}

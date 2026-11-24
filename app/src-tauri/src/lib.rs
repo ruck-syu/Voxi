@@ -2084,7 +2084,11 @@ pub fn run() {
                 pending: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
                 settings_blocked,
-                schedules: Mutex::new(scheduler::Store::load(data_dir.join("schedules.json"))),
+                schedules: Mutex::new({
+                    let mut store = scheduler::Store::load(data_dir.join("schedules.json"));
+                    store.restore_legacy(&settings, chrono::Local::now());
+                    store
+                }),
                 execution: Mutex::new(()),
                 active_runs: Mutex::new(HashMap::new()),
                 settings_path,

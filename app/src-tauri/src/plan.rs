@@ -101,13 +101,19 @@ pub enum Planned {
         summary: String,
         rows: Vec<InfoRow>,
         total: usize,
-        listed: Option<(Vec<PathBuf>, String)>,
+        listed: Option<Listed>,
     },
     /// Read-only, runs right away without a preview.
     Direct {
         action: Action,
         title: String,
     },
+}
+
+pub struct Listed {
+    pub paths: Vec<PathBuf>,
+    pub label: String,
+    pub folder: Option<PathBuf>,
 }
 
 pub struct Planner<'a> {
@@ -148,6 +154,7 @@ enum Expansion {
 struct ExpandedSource {
     paths: Vec<PathBuf>,
     label: String,
+    folder: Option<PathBuf>,
     nested: usize,
     skipped_note: String,
 }
@@ -733,31 +740,41 @@ impl<'a> Planner<'a> {
                 let kind = if read_only { search::LookupKind::ReadOnly } else { search::LookupKind::Item };
                 let p = self.resolve_named_item(name, folder.as_deref(), kind, expansion == Expansion::Transfer)?;
                 let label = file_name(&p);
-                Ok(ExpandedSource { paths: vec![p], label, nested: 0, skipped_note: String::new() })
+                Ok(ExpandedSource { paths: vec![p], label, folder: None, nested: 0, skipped_note: String::new() })
             }
             Source::Set { folder, filter } => {
                 if let Some(scope) = &self.scope {
                     if folder.is_some() {
                         return problem("An explicit source folder starts a new search.");
                     }
-                    if direct_by_default && filter.only_subfolders {
-                        return problem("“From subfolders” works on a named folder, not on the current list.");
-                    }
+                    let boundary = filter
+                        .only_subfolders
+                        .then(|| crate::scope::subfolder_boundary(scope.folder.as_deref()))
+                        .transpose()
+                        .map_err(Stop::Problem)?;
                     let mut paths = Vec::new();
                     for path in scope.paths() {
                         self.check(&path)?;
-                        if matches(&path, filter, self.now) {
+                        if boundary.is_none_or(|folder| crate::scope::is_nested_in(&path, folder)) && matches(&path, filter, self.now) {
                             if !read_only && path.parent().is_some_and(|parent| self.in_package(parent)) {
                                 return problem("File sets can't change items inside a macOS package.");
                             }
                             paths.push(path);
                         }
                     }
+                    let folder = scope.folder.clone();
                     self.note_dates(filter);
-                    return Ok(ExpandedSource { paths, label: "the previous results".into(), nested: 0, skipped_note: String::new() });
+                    return Ok(ExpandedSource {
+                        paths,
+                        label: "the previous results".into(),
+                        folder,
+                        nested: 0,
+                        skipped_note: String::new(),
+                    });
                 }
                 let (dirs, label) = self.set_folders(folder.as_deref(), filter, read_only)?;
                 let direct = direct_by_default && !Self::includes_nested_files(folder.as_deref(), filter);
+                let folder = folder.as_ref().and_then(|_| dirs.first()).map(|dir| fsx::canonical(dir));
                 if !read_only
                     && !direct
                     && let Some(d) = dirs.iter().find(|d| self.in_hidden_tree(d) || self.in_package(d))
@@ -824,7 +841,7 @@ impl<'a> Planner<'a> {
                 }
                 out.sort_by_key(|p| file_name(p).to_lowercase());
                 self.note_dates(filter);
-                Ok(ExpandedSource { paths: out, label, nested, skipped_note })
+                Ok(ExpandedSource { paths: out, label, folder, nested, skipped_note })
             }
         }
     }
@@ -924,7 +941,7 @@ impl<'a> Planner<'a> {
             }
             return self.trash(src);
         }
-        let ExpandedSource { paths, label, nested, skipped_note } = self.expand_source(src, Expansion::Transfer)?;
+        let ExpandedSource { paths, label, nested, skipped_note, .. } = self.expand_source(src, Expansion::Transfer)?;
         if paths.is_empty() {
             return Err(Self::no_matching_files(&label, nested, &skipped_note));
         }
@@ -1511,7 +1528,7 @@ impl<'a> Planner<'a> {
                 return problem("To be safe, clean-up needs a filter, like “older than 90 days”, “installers”, or “larger than 500 MB”.");
             }
         }
-        let ExpandedSource { paths, label, nested, skipped_note } = self.expand_source(src, Expansion::DirectChanges)?;
+        let ExpandedSource { paths, label, nested, skipped_note, .. } = self.expand_source(src, Expansion::DirectChanges)?;
         if paths.is_empty() {
             return Err(Self::no_matching_files(&label, nested, &skipped_note));
         }
@@ -1543,7 +1560,7 @@ impl<'a> Planner<'a> {
     }
 
     fn list(&mut self, src: &Source) -> Result<Planned, Stop> {
-        let ExpandedSource { mut paths, label, skipped_note, .. } = self.expand_source(src, Expansion::ReadOnly)?;
+        let ExpandedSource { mut paths, label, folder, skipped_note, .. } = self.expand_source(src, Expansion::ReadOnly)?;
         let by_size = matches!(src, Source::Set { filter, .. } if filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some());
         let modified = reads_modified(src);
         if by_size {
@@ -1554,7 +1571,7 @@ impl<'a> Planner<'a> {
         let total_bytes: u64 = paths.iter().map(|p| fs::metadata(p).map_or(0, |m| m.len())).sum();
         let rows = paths.iter().take(200).map(|p| self.file_row(p, modified)).collect();
         Ok(Planned::Info {
-            listed: Some((paths.clone(), label.clone())),
+            listed: Some(Listed { paths: paths.clone(), label: label.clone(), folder }),
             // A single named file's label is its own name; title it by its folder instead.
             title: match paths.as_slice() {
                 [one] if file_name(one) == label => format!("{label} in {}", one.parent().map_or_else(|| label.clone(), file_name)),

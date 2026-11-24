@@ -1053,8 +1053,9 @@ fn plan_input_routed(
                     Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }
                 );
                 if context.generation == scope_generation {
-                    match listed.and_then(|(paths, label)| {
-                        scope::Snapshot::capture(paths, previous_scope.as_ref().filter(|_| use_scope).map_or(label, |s| s.label.clone()))
+                    match listed.and_then(|plan::Listed { paths, label, folder }| {
+                        let label = previous_scope.as_ref().filter(|_| use_scope).map_or(label, |s| s.label.clone());
+                        scope::Snapshot::capture_list(paths, label, folder)
                     }) {
                         Some(snapshot) => {
                             context.publish(snapshot);

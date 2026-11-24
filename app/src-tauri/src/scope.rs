@@ -36,6 +36,7 @@ fn identity(path: &Path) -> Option<(u64, u64)> {
 pub struct Snapshot {
     entries: Vec<Entry>,
     pub label: String,
+    pub folder: Option<PathBuf>,
 }
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,9 +65,12 @@ impl State {
 }
 impl Snapshot {
     pub fn capture(paths: Vec<PathBuf>, label: String) -> Option<Self> {
+        Self::capture_list(paths, label, None)
+    }
+    pub fn capture_list(paths: Vec<PathBuf>, label: String, folder: Option<PathBuf>) -> Option<Self> {
         let entries: Option<Vec<_>> =
             paths.into_iter().map(|path| Some(Entry { identity: identity(&path)?, path, removed: false })).collect();
-        Some(Self { entries: entries?, label })
+        Some(Self { entries: entries?, label, folder })
     }
     pub fn paths(&self) -> Vec<PathBuf> {
         self.entries.iter().filter(|e| !e.removed).map(|e| e.path.clone()).collect()
@@ -121,6 +125,14 @@ impl Snapshot {
     }
 }
 
+pub(crate) fn subfolder_boundary(folder: Option<&Path>) -> Result<&Path, String> {
+    folder.ok_or_else(|| "Name the folder whose subfolders to use, such as “delete PDFs in Downloads from subfolders”.".into())
+}
+
+pub(crate) fn is_nested_in(path: &Path, folder: &Path) -> bool {
+    crate::fsx::canonical(path).parent().is_some_and(|parent| parent != folder && parent.starts_with(folder))
+}
+
 const MARKER: &str = "__voxi_result_reference__";
 static REFERENCES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -131,9 +143,7 @@ static REFERENCES: LazyLock<Regex> = LazyLock::new(|| {
 /// Only source arguments are substituted. Quoted names and destinations remain literal.
 pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>, String> {
     crate::parse::check_length(text).map_err(|_| "That command is too long.".to_string())?;
-    // "Delete them including subfolders": the list already holds every
-    // match, subfolders included, so the opt-in adds nothing.
-    let (cleaned, _) = parse::split_subfolders(&parse::phrase::normalize(text));
+    let (cleaned, subfolders) = parse::split_subfolders(&parse::phrase::normalize(text));
     let Some(unquoted) = parse::phrase::unquoted_text(&cleaned) else { return Ok(None) };
     for matched in REFERENCES.find_iter(&unquoted) {
         let replacement = format!("{}\"{MARKER}\"{}", &cleaned[..matched.start()], &cleaned[matched.end()..]);
@@ -141,6 +151,10 @@ pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>,
         if !matches!(intent.source(), Some(Source::Item { name, folder: None }) if name == MARKER) {
             continue;
         }
+        let only_subfolders = subfolders == parse::Subfolders::Only;
+        let boundary = matches!(subfolders, parse::Subfolders::Only | parse::Subfolders::NeedsFolder)
+            .then(|| subfolder_boundary(snapshot.folder.as_deref()))
+            .transpose()?;
         let reference = matched.as_str().to_ascii_lowercase();
         let mut words = reference.split_whitespace();
         let first = words.next().unwrap_or("");
@@ -176,9 +190,20 @@ pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>,
                 .and_then(|p| snapshot.entries.get(p))
                 .filter(|e| !e.removed)
                 .ok_or("That position isn't in the displayed results. Name a listed file or run another list command.")?;
+            if only_subfolders && boundary.is_some_and(|folder| !is_nested_in(&entry.path, folder)) {
+                return Err("That file isn't in a subfolder of the listed folder.".into());
+            }
             Source::item(&entry.path.to_string_lossy())
         } else {
-            Source::Set { folder: None, filter: Filter { file_type: Some(FileType::Files), ..Default::default() } }
+            Source::Set {
+                folder: None,
+                filter: Filter {
+                    file_type: Some(FileType::Files),
+                    include_subfolders: subfolders != parse::Subfolders::None,
+                    only_subfolders,
+                    ..Default::default()
+                },
+            }
         };
         intent.replace_source(source);
         return Ok(Some(intent));

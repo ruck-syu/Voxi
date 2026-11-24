@@ -62,6 +62,53 @@ fn mixed_finder_selection_plans_only_the_selected_allowed_file() {
     assert!(matches!(actions.as_slice(), [Action::Move { from, .. }] if *from == selected));
 }
 
+#[test]
+fn result_followups_only_change_files_below_the_listed_folder() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let work = roots.downloads().join("Work");
+    let direct = work.join("root.pdf");
+    let nested = work.join("child/nested.pdf");
+    fs::create_dir_all(nested.parent().unwrap()).unwrap();
+    for path in [&direct, &nested] {
+        fs::write(path, b"pdf").unwrap();
+    }
+    let Planned::Info { listed: Some(Listed { paths, label, folder }), .. } =
+        complete_plan(&fixture, "list PDFs in Downloads/Work", ENTRY_LIMIT)
+    else {
+        panic!("expected complete list results");
+    };
+    assert_eq!(paths.len(), 2);
+    let direct_row = paths.iter().position(|p| p == &direct).unwrap() + 1;
+    let snapshot = crate::scope::Snapshot::capture_list(paths, label, folder).unwrap();
+    let choices = HashMap::new();
+    let history = History::load(roots.home.join("history.json"));
+    let plan = |command| {
+        let (intent, scoped) = crate::scope::prepare(command, Some(&snapshot)).unwrap();
+        assert!(scoped, "{command}");
+        let Ok(Planned::Steps { actions, .. }) = Planner::new(roots, &choices).with_scope(Some(snapshot.clone())).plan(&intent, &history)
+        else {
+            panic!("expected an action plan for {command}");
+        };
+        actions
+    };
+    for command in ["delete them from subfolders", "delete these files in subfolders only"] {
+        assert_eq!(plan(command), [Action::Trash { path: nested.clone() }], "{command}");
+    }
+    assert!(matches!(plan("copy these to Documents from subfolders").as_slice(), [Action::Copy { from, .. }] if from == &nested));
+    assert_eq!(plan("delete them including subfolders").len(), 2);
+    assert!(matches!(
+        crate::scope::prepare(&format!("delete {direct_row} from subfolders"), Some(&snapshot)),
+        Err(crate::scope::PrepareError::Problem(message)) if message.contains("isn't in a subfolder")
+    ));
+
+    let selection = crate::scope::Snapshot::capture(vec![direct, nested], crate::finder_selection::LABEL.into()).unwrap();
+    assert!(matches!(
+        crate::scope::prepare("delete these files in subfolders only", Some(&selection)),
+        Err(crate::scope::PrepareError::Problem(message)) if message.contains("Name the folder")
+    ));
+}
+
 impl MessyMac {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
@@ -172,7 +219,7 @@ fn assert_plan_in_scope(roots: &Roots, command: &str, plan: &Planned, allow_expl
         Planned::Steps { actions, .. } => actions,
         Planned::Direct { action, .. } => std::slice::from_ref(action),
         Planned::Info { listed, .. } => {
-            if let Some((paths, _)) = listed {
+            if let Some(Listed { paths, .. }) = listed {
                 for path in paths {
                     assert_in_scope(roots, command, path, allow_explicit_package, None);
                 }
@@ -334,8 +381,10 @@ fn messy_mac_command_families() {
     assert!(matches!(complete_plan(&fixture, "open Documents", ENTRY_LIMIT), Planned::Direct { action, .. }
         if action == Action::OpenInFinder { path: docs.clone(), reveal: false }));
     assert!(matches!(complete_plan(&fixture, "size of dev", ENTRY_LIMIT), Planned::Info { title, .. } if title.starts_with("dev uses ")));
-    assert!(matches!(complete_plan(&fixture, "list PDFs in Documents", ENTRY_LIMIT), Planned::Info { listed: Some((paths, _)), .. }
-        if paths.len() == 2 && paths.contains(&invoice) && paths.contains(&docs.join("Project/spec.pdf"))));
+    assert!(
+        matches!(complete_plan(&fixture, "list PDFs in Documents", ENTRY_LIMIT), Planned::Info { listed: Some(Listed { paths, .. }), .. }
+        if paths.len() == 2 && paths.contains(&invoice) && paths.contains(&docs.join("Project/spec.pdf")))
+    );
     assert!(matches!(complete_plan(&fixture, "count PDFs in Documents", ENTRY_LIMIT), Planned::Info { total: 2, .. }));
     assert!(matches!(action_plan(&fixture, "zip Documents/Project", ENTRY_LIMIT).as_slice(),
         [Action::Zip { path, output }] if path == &docs.join("Project") && output == &docs.join("Project.zip")));

@@ -64,7 +64,7 @@ fn model_audit_scope_hidden_and_local_folder_boundaries() {
         assert!(actions.iter().all(|a| matches!(a, Action::Copy { to, .. } if to.starts_with(roots.home.join("Documents")))));
     }
     let intent = crate::parse::parse("list files in Downloads").unwrap();
-    let Planned::Info { listed: Some((paths, _)), .. } = Planner::new(&roots, &choices).plan(&intent, &history).unwrap() else {
+    let Planned::Info { listed: Some(Listed { paths, .. }), .. } = Planner::new(&roots, &choices).plan(&intent, &history).unwrap() else {
         panic!("expected listing");
     };
     assert!(!paths.is_empty());

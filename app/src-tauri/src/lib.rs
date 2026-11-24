@@ -1902,6 +1902,8 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     *roots = build_roots(&settings);
     *current = settings.clone();
     context.clear();
+    // The list's notice goes with it, including a pre-setup "Finish setting up" one.
+    *state.selection_notice.lock().map_err(|_| "Results unavailable. Restart Voxi.")? = None;
     settings.hotkey = installed.clone();
     Ok(settings)
 }

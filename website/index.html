@@ -13,6 +13,12 @@
       property="og:description"
       content="Press a hotkey, tell Voxi what you want done with your files, check the preview, press Enter. A small menu-bar app for macOS."
     />
+    <link rel="canonical" href="https://tryvoxi.vercel.app/" />
+    <meta property="og:url" content="https://tryvoxi.vercel.app/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Voxi" />
+    <meta property="og:image" content="https://tryvoxi.vercel.app/assets/product/preview-light.webp" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="theme-color" content="#eef3fa" />
     <script>
       // Follows the Mac's appearance; a choice made with the switch wins.
@@ -139,7 +145,7 @@
         </div>
       </section>
 
-      <section class="band">
+      <section class="band frosted">
         <div class="wrap">
           <div class="band-head">
             <h2 class="headline">More things you can tell it.</h2>
@@ -225,8 +231,12 @@
 
       <section class="band closing center">
         <div class="wrap">
+          <div class="logo-say">
+            <img class="section-logo" src="/assets/product/voxi-icon.webp" width="72" height="72" alt="" />
+            <p class="egg" data-egg role="status"></p>
+          </div>
           <p class="keys" aria-label="Control, Option, Space">
-            <kbd>⌃<small>control</small></kbd><kbd>⌥<small>option</small></kbd><kbd class="space">&nbsp;<small>space</small></kbd>
+            <kbd data-key="Control">⌃<small>control</small></kbd><kbd data-key="Alt">⌥<small>option</small></kbd><kbd class="space" data-key=" ">&nbsp;<small>space</small></kbd><span class="try" aria-hidden="true"><span>try it</span><svg viewBox="0 0 100 64"><path d="M94 10C72 2 44 8 42 28c-2 18 22 20 20 6-2-14-28-10-52 24"/><path d="M10 58l1.5-12.5M10 58l12.5-1.5"/></svg></span>
           </p>
           <h2 class="headline">Then tell it what you want.</h2>
           <p class="subhead">

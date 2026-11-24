@@ -38,7 +38,7 @@
   --sans: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont,
     "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
-  --gutter: max(16px, 4vw);
+  --gutter: clamp(16px, 4.5vw, 96px);
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 :root[data-theme="dark"] {
@@ -82,7 +82,8 @@ html {
 }
 body {
   margin: 0;
-  background: var(--bg);
+  /* No background here: the page colour is on <html>, so the wave field
+     (a fixed canvas behind everything) shows through. */
   color: var(--text);
   font-family: var(--sans);
   font-size: 17px;
@@ -156,7 +157,7 @@ kbd {
 }
 .wrap {
   width: 100%;
-  max-width: 1120px;
+  max-width: 1760px;
   margin-inline: auto;
   padding-inline: var(--gutter);
 }
@@ -343,7 +344,7 @@ kbd {
   padding-block: clamp(72px, 10vw, 128px);
 }
 .band.alt {
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 .band-head {
   margin-bottom: clamp(36px, 5vw, 56px);
@@ -1184,5 +1185,274 @@ kbd {
   }
   .install-card {
     position: static;
+  }
+}
+
+/* ---- The wave field --------------------------------------------------------
+   A fixed canvas behind the page: horizontal sound waves, like the smile in
+   the icon. They swell where the pointer is, ripple out from a click, and
+   speak along with the hero sentence as it types. Drawn by site.js. */
+
+.field {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+main,
+.footer {
+  position: relative;
+}
+
+/* ---- Desktop first ----------------------------------------------------------
+   On a wide screen the hero fills the window: words on the left, the
+   sentence and its plan on the right. Narrower screens keep the stacked
+   layout above. */
+
+@media (min-width: 1100px) {
+  body {
+    font-size: 18px;
+  }
+  .hero {
+    padding-block: clamp(32px, 4vh, 64px) clamp(48px, 7vh, 96px);
+  }
+  .hero > .wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: clamp(40px, 5vw, 112px);
+    align-items: center;
+    min-height: calc(100svh - 60px - clamp(80px, 11vh, 160px));
+  }
+  .hero-top {
+    grid-template-columns: 1fr;
+    gap: clamp(24px, 3vh, 40px);
+    align-items: start;
+  }
+  .hero h1 {
+    font-size: clamp(64px, 6.2vw, 128px);
+    max-width: 8em;
+  }
+  .hero-side .subhead {
+    font-size: clamp(19px, 1.35vw, 24px);
+  }
+  .stage {
+    margin-top: 0;
+  }
+  .said {
+    font-size: clamp(32px, 2.9vw, 56px);
+    /* Room for the longest sentence, so the hero doesn't jump. */
+    min-height: calc(3 * 1.12em + 3.4em);
+  }
+  .plan {
+    min-height: 300px;
+  }
+  .headline {
+    font-size: clamp(48px, 4.4vw, 84px);
+  }
+  .subhead {
+    font-size: clamp(19px, 1.3vw, 23px);
+  }
+  .band-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 24px clamp(40px, 5vw, 96px);
+    align-items: end;
+  }
+  .band-head .subhead {
+    margin-top: 0;
+  }
+  .lines q {
+    font-size: clamp(32px, 2.8vw, 52px);
+  }
+  .lines h3 {
+    font-size: 21px;
+  }
+  .wont {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .page-head h1 {
+    font-size: clamp(64px, 6vw, 112px);
+  }
+  .reference {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+  .say li {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 4px 56px;
+  }
+}
+
+/* A band that softens the wave field behind it. */
+.band.frosted {
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.section-logo {
+  width: clamp(140px, 14vw, 240px);
+  height: auto;
+  margin-bottom: clamp(24px, 3vw, 40px);
+}
+.center .section-logo {
+  margin-inline: auto;
+}
+
+/* The closing keys press down with the real keyboard, or a click. */
+.keys kbd {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    transform 0.08s var(--ease),
+    box-shadow 0.08s var(--ease),
+    background 0.12s var(--ease);
+}
+.keys kbd.down {
+  transform: translateY(4px);
+  box-shadow: inset 0 -2px 0 rgb(22 36 74 / 0.18);
+  background: color-mix(in srgb, var(--bg) 88%, var(--red));
+}
+.section-logo {
+  transition: transform 0.35s var(--ease);
+}
+.section-logo.heard {
+  transform: scale(1.08) rotate(-4deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .keys kbd,
+  .section-logo {
+    transition: none;
+  }
+  .section-logo.heard {
+    transform: none;
+  }
+}
+
+/* The easter egg: press ⌃⌥Space on the page and Voxi answers in a speech
+   bubble beside its icon. */
+.logo-say {
+  position: relative;
+  width: fit-content;
+  margin-inline: auto;
+}
+.egg {
+  position: absolute;
+  left: calc(100% + 18px);
+  top: 18%;
+  width: max-content;
+  max-width: min(440px, 60vw);
+  padding: 12px 18px;
+  border-radius: 18px 18px 18px 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: clamp(17px, 1.4vw, 21px);
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-align: left;
+  box-shadow: 0 18px 40px -18px rgb(0 0 0 / 0.5);
+  opacity: 0;
+  transform: translateX(-8px) scale(0.92);
+  transform-origin: left center;
+  pointer-events: none;
+  transition:
+    opacity 0.22s var(--ease),
+    transform 0.32s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.egg::before {
+  content: "";
+  position: absolute;
+  left: -7px;
+  bottom: 10px;
+  width: 16px;
+  height: 16px;
+  background: inherit;
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+.egg.shown {
+  opacity: 1;
+  transform: none;
+}
+@media (max-width: 700px) {
+  .egg {
+    left: 50%;
+    top: auto;
+    bottom: calc(100% + 14px);
+    transform: translate(-50%, 8px) scale(0.92);
+    transform-origin: center bottom;
+    border-radius: 18px;
+  }
+  .egg::before {
+    left: calc(50% - 8px);
+    bottom: -6px;
+  }
+  .egg.shown {
+    transform: translate(-50%, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .egg {
+    transition: opacity 0.2s;
+  }
+}
+
+/* "try it": a hand-drawn arrow pointing at the space bar. */
+.keys {
+  position: relative;
+  width: fit-content;
+  margin-inline: auto;
+}
+.try {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: -22px;
+  width: max-content;
+  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: var(--red);
+  pointer-events: none;
+  transform-origin: left bottom;
+  animation: try-bob 2.4s ease-in-out infinite;
+  transition: opacity 0.4s var(--ease);
+}
+.try span {
+  font-size: clamp(20px, 1.8vw, 26px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  transform: rotate(-8deg);
+  margin-right: -6px;
+}
+.try svg {
+  width: clamp(80px, 7vw, 104px);
+  max-width: none;
+  height: auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.try.done {
+  opacity: 0;
+}
+@keyframes try-bob {
+  50% {
+    transform: translate(-4px, 3px) rotate(-2deg);
+  }
+}
+@media (max-width: 900px) {
+  .try {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .try {
+    animation: none;
   }
 }

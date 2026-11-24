@@ -2,7 +2,7 @@
 
 This document covers the detailed rules behind searching, lists, quoting,
 Finder actions, chaining, schedules, and shortcuts. For the full catalog of all
-27 command types, see the [Commands page](../website/commands.html).
+27 command types, see the [Commands page](https://tryvoxi.vercel.app/commands).
 
 ## How searching works
 

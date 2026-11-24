@@ -287,6 +287,7 @@ const Tray = (() => {
       for (const ch of text) {
         await onScreen();
         node.data += ch;
+        dispatchEvent(new CustomEvent("voxi-voice", { detail: { tag: kind ? tagOf(kind) : null } }));
         await wait(45 + Math.random() * 55);
       }
       if (kind) part.classList.add("got");
@@ -294,6 +295,7 @@ const Tray = (() => {
     }
     await wait(650); // Enter.
     caret.remove();
+    dispatchEvent(new CustomEvent("voxi-voice", { detail: { enter: true } }));
     renderPlan(scene);
     await wait(5200);
     await onScreen();
@@ -370,8 +372,43 @@ const Tray = (() => {
   let token = 0;
   let app = null; // { win, box }
 
+  // The demo is something to watch, not to use. The app focuses its own
+  // command box, which would pull the visitor's typing into the frame, so
+  // every real key press, paste or drop is swallowed there (the demo's own
+  // typing is scripted and untrusted, so it still gets through), handed back
+  // to the page, and focus leaves the frame.
+  const KEY_EVENTS = ["keydown", "keyup", "keypress"];
+  const INPUT_EVENTS = ["beforeinput", "paste", "cut", "drop", "dragover", "compositionstart"];
+  function lock(win) {
+    if (!win || win.__voxiLocked) return;
+    win.__voxiLocked = true;
+    const swallow = (e) => {
+      if (!e.isTrusted) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    };
+    for (const type of INPUT_EVENTS) win.addEventListener(type, swallow, true);
+    for (const type of KEY_EVENTS)
+      win.addEventListener(
+        type,
+        (e) => {
+          if (!e.isTrusted) return;
+          swallow(e);
+          if (type === "keypress") return;
+          dispatchEvent(new KeyboardEvent(type, { key: e.key, code: e.code, bubbles: true }));
+        },
+        true,
+      );
+    const leave = () => {
+      if (document.activeElement === frame) frame.blur();
+    };
+    win.addEventListener("focus", leave);
+    win.addEventListener("focusin", leave, true);
+  }
+
   function connect() {
     const win = frame.contentWindow;
+    lock(win);
     const box = win?.document.querySelector("textarea.command");
     app = box ? { win, box } : null;
     if (app) {
@@ -506,4 +543,303 @@ const Tray = (() => {
     { rootMargin: "-120px 0px -60% 0px" },
   );
   sections.forEach((section) => observer.observe(section));
+})();
+
+// ---- The wave field --------------------------------------------------------------
+// Sound waves across the whole page, behind everything, like the smile in the
+// icon. They swell around the pointer, a click sends a ripple through them, and
+// they speak with the hero sentence: each typed letter is a small pulse in the
+// colour of the part being typed, and Enter sends a ripple from the stage.
+// Still with reduced motion; paused when the tab is hidden.
+
+(() => {
+  const canvas = document.createElement("canvas");
+  canvas.className = "field";
+  canvas.setAttribute("aria-hidden", "true");
+  document.body.prepend(canvas);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const STRANDS = 11;
+  const KEYS = ["t-to", "t-from", "t-what", "t-do", "t-when"];
+  let w = 0, h = 0, dpr = 1;
+  let colors = {}, lineAlpha = 0.2;
+  const pointer = { x: -1e4, y: -1e4, tx: -1e4, ty: -1e4, on: 0, ton: 0 };
+  let voice = 0; // Swells with each typed letter, then fades.
+  let voiceColor = null;
+  const ripples = []; // { x, y, t0, color }
+  let running = false, last = 0, t = 0;
+
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    for (const k of KEYS) colors[k] = cs.getPropertyValue(`--${k}`).trim() || "#2a6ad9";
+    lineAlpha = document.documentElement.dataset.theme === "dark" ? 0.26 : 0.2;
+  }
+  function size() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    w = innerWidth;
+    h = innerHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    const px = pointer.x, py = pointer.y, on = pointer.on;
+    const sx = Math.max(160, w * 0.14), sy = Math.max(120, h * 0.16);
+    const scroll = scrollY * 0.15;
+    const now = t;
+    const step = w > 1600 ? 7 : 6;
+
+    // A soft light that follows the pointer.
+    if (on > 0.01) {
+      const g = ctx.createRadialGradient(px, py, 0, px, py, Math.max(w, h) * 0.35);
+      g.addColorStop(0, withAlpha(voiceColor || colors["t-to"], 0.1 * on));
+      g.addColorStop(1, withAlpha(colors["t-to"], 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+
+    ctx.lineWidth = 1.4;
+    ctx.lineCap = "round";
+    for (let i = 0; i < STRANDS; i++) {
+      const base = ((i + 0.5) / STRANDS) * h + Math.sin(i * 1.7 + scroll * 0.01) * 14;
+      const k1 = 0.0026 + (i % 4) * 0.0007;
+      const k2 = 0.0061 + (i % 3) * 0.0011;
+      const amp = 10 + (i % 5) * 4;
+      const phase = i * 1.31 + scroll * 0.02;
+      const near = Math.exp(-((base - py) ** 2) / (2 * sy * sy)) * on;
+      const color = colors[KEYS[i % KEYS.length]];
+      ctx.strokeStyle = withAlpha(color, lineAlpha * (0.55 + near * 0.9 + voice * 0.35));
+      ctx.beginPath();
+      for (let x = -step; x <= w + step; x += step) {
+        let y =
+          base +
+          Math.sin(x * k1 + now * 0.35 + phase) * amp +
+          Math.sin(x * k2 - now * 0.22 + phase * 2) * amp * 0.45;
+        // The pointer speaks: a fast ripple, enveloped like the icon's smile.
+        const gx = Math.exp(-((x - px) ** 2) / (2 * sx * sx));
+        y += gx * near * 26 * Math.sin(x * 0.045 - now * 5 + i);
+        // Typing: the whole field hums a little.
+        y += voice * 9 * Math.sin(x * 0.03 - now * 7 + i * 0.8) * Math.sin((x / w) * Math.PI);
+        // Ripples from clicks and from Enter.
+        for (const r of ripples) {
+          const age = now - r.t0;
+          const radius = age * 520;
+          const d = Math.hypot(x - r.x, base - r.y) - radius;
+          if (d > -90 && d < 90) {
+            const fade = Math.max(0, 1 - age / 2.4);
+            y += Math.cos((d / 90) * Math.PI * 0.5) ** 2 * 22 * fade * Math.sin(d * 0.08);
+          }
+        }
+        if (x === -step) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function withAlpha(color, a) {
+    a = Math.max(0, Math.min(1, a));
+    if (color.startsWith("#") && color.length === 7) {
+      const n = parseInt(color.slice(1), 16);
+      return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+    }
+    return color;
+  }
+
+  function frame(ms) {
+    if (!running) return;
+    const dt = Math.min(0.05, (ms - (last || ms)) / 1000);
+    last = ms;
+    t += dt;
+    const ease = 1 - Math.exp(-dt * 6);
+    if (pointer.x < -1e3) (pointer.x = pointer.tx), (pointer.y = pointer.ty);
+    pointer.x += (pointer.tx - pointer.x) * ease;
+    pointer.y += (pointer.ty - pointer.y) * ease;
+    pointer.on += (pointer.ton - pointer.on) * ease;
+    voice *= Math.exp(-dt * 2.2);
+    for (let i = ripples.length - 1; i >= 0; i--) if (t - ripples[i].t0 > 2.4) ripples.splice(i, 1);
+    draw();
+    requestAnimationFrame(frame);
+  }
+  function start() {
+    if (running || reduced.matches || document.hidden) return;
+    running = true;
+    last = 0;
+    requestAnimationFrame(frame);
+  }
+  function stop() {
+    running = false;
+  }
+  function refresh() {
+    if (reduced.matches) {
+      stop();
+      pointer.on = 0;
+      voice = 0;
+      ripples.length = 0;
+      draw(); // One still frame.
+    } else start();
+  }
+
+  addEventListener(
+    "pointermove",
+    (e) => {
+      if (e.pointerType === "touch") return;
+      pointer.tx = e.clientX;
+      pointer.ty = e.clientY;
+      pointer.ton = 1;
+    },
+    { passive: true },
+  );
+  document.documentElement.addEventListener("pointerleave", () => (pointer.ton = 0));
+  addEventListener("pointerdown", (e) => {
+    if (reduced.matches) return;
+    ripples.push({ x: e.clientX, y: e.clientY, t0: t });
+    if (ripples.length > 6) ripples.shift();
+  });
+  addEventListener("voxi-voice", (e) => {
+    if (reduced.matches) return;
+    const { tag, enter, at } = e.detail || {};
+    if (enter && at) {
+      ripples.push({ x: at.x, y: at.y, t0: t });
+      return;
+    }
+    if (enter) {
+      const stage = document.querySelector("[data-stage]")?.getBoundingClientRect();
+      if (stage) ripples.push({ x: stage.left + stage.width / 2, y: stage.top + stage.height / 2, t0: t });
+      return;
+    }
+    voice = Math.min(1, voice + 0.12);
+    voiceColor = tag ? colors[`t-${tag}`] : null;
+  });
+  addEventListener("voxi-theme", () => (readColors(), reduced.matches && draw()));
+  addEventListener("resize", () => (size(), reduced.matches && draw()));
+  document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
+  reduced.addEventListener?.("change", refresh);
+
+  readColors();
+  size();
+  refresh();
+})();
+
+// ---- The closing keys -----------------------------------------------------------
+// ⌃, ⌥ and Space on the page press down when the visitor presses them on their
+// keyboard, or clicks them. All three together is Voxi's shortcut: the logo
+// perks up and a ripple goes through the wave field.
+
+(() => {
+  const keys = [...document.querySelectorAll(".keys [data-key]")];
+  if (!keys.length) return;
+  const logo = document.querySelector(".closing .section-logo");
+  const held = new Set();
+  // Match the physical key, not the character: Option+Space types a
+  // non-breaking space on a Mac, so `key` alone would miss it.
+  const which = (e) =>
+    /^Control/.test(e.code) || e.key === "Control"
+      ? "Control"
+      : /^Alt/.test(e.code) || e.key === "Alt"
+        ? "Alt"
+        : e.code === "Space" || e.key === " " || e.key === "\u00a0"
+          ? " "
+          : null;
+
+  // Each key has its own state. A quick tap still shows for a moment.
+  const MIN_DOWN = 160;
+  const since = new Map(); // key -> when it went down
+  const timers = new Map();
+  const el = (name) => keys.find((k) => k.dataset.key === name);
+  function press(name) {
+    clearTimeout(timers.get(name));
+    if (!held.has(name)) since.set(name, performance.now());
+    held.add(name);
+    el(name)?.classList.add("down");
+    if (keys.every((k) => held.has(k.dataset.key))) heard();
+  }
+  function release(name) {
+    if (!held.delete(name)) return;
+    const left = MIN_DOWN - (performance.now() - (since.get(name) || 0));
+    const lift = () => !held.has(name) && el(name)?.classList.remove("down");
+    if (left > 0) timers.set(name, setTimeout(lift, left));
+    else lift();
+  }
+  let heardTimer = 0;
+  // The easter egg: pressing Voxi's shortcut on the website, where there is
+  // no Voxi to open yet.
+  const egg = document.querySelector("[data-egg]");
+  let eggTimer = 0;
+  function speak() {
+    if (!egg) return;
+    egg.textContent = "Ooh, almost! Download me and try again.";
+    egg.classList.add("shown");
+    clearTimeout(eggTimer);
+    eggTimer = setTimeout(() => egg.classList.remove("shown"), 3200);
+  }
+  function heard() {
+    speak();
+    document.querySelector(".keys .try")?.classList.add("done"); // They found it.
+    if (!logo) return;
+    logo.classList.add("heard");
+    clearTimeout(heardTimer);
+    heardTimer = setTimeout(() => logo.classList.remove("heard"), 450);
+    const box = logo.getBoundingClientRect();
+    dispatchEvent(
+      new CustomEvent("voxi-voice", { detail: { enter: true, at: { x: box.left + box.width / 2, y: box.top + box.height / 2 } } }),
+    );
+  }
+
+  addEventListener("keydown", (e) => {
+    const name = which(e);
+    if (!name || e.repeat || e.target.closest?.("input, textarea, [contenteditable]")) return;
+    press(name);
+  });
+  addEventListener("keyup", (e) => {
+    const name = which(e);
+    if (name) release(name);
+    // While ⌘ is held macOS sends no keyup for Space, so lift it with ⌘.
+    if (e.key === "Meta") release(" ");
+  });
+  // A key released while the window was in the background never sends keyup.
+  // The demo frame taking focus also blurs this window, but the page still has
+  // focus then, so only let go when focus has really left the page.
+  addEventListener("blur", () =>
+    setTimeout(() => document.hasFocus() || [...held].forEach(release)),
+  );
+
+  // Clicking presses a key for as long as the pointer is down. With ⌃ held a
+  // click is a right-click on a Mac: its menu would swallow the release, so
+  // the menu is suppressed and the pointer captured, and any way the press
+  // can end lets go of the key.
+  keys.forEach((k) => {
+    const name = k.dataset.key;
+    let pointer = null;
+    const up = () => {
+      if (pointer === null) return;
+      pointer = null;
+      release(name);
+    };
+    k.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      pointer = e.pointerId;
+      try {
+        k.setPointerCapture(e.pointerId);
+      } catch {}
+      press(name);
+    });
+    k.addEventListener("contextmenu", (e) => e.preventDefault());
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) k.addEventListener(type, up);
+    addEventListener("pointerup", up);
+  });
+
+  // A modifier's keyup can go missing (a menu, another app, the shortcut
+  // itself). Every key and pointer event says which modifiers are really
+  // down, so trust that over what was last seen.
+  const MODS = { Control: "ctrlKey", Alt: "altKey" };
+  const reconcile = (e) => {
+    for (const [name, flag] of Object.entries(MODS))
+      if (held.has(name) && !e[flag] && !(e.type === "keydown" && which(e) === name)) release(name);
+  };
+  for (const type of ["keydown", "keyup", "pointerdown", "pointermove", "pointerup"])
+    addEventListener(type, reconcile, true);
 })();

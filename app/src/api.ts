@@ -74,8 +74,8 @@ export type SearchStats = {
   unreadable: number;
   elapsed_ms_bucket: "under100" | "under1000" | "under5000" | "at_least5000";
 };
-/** `generation` names the results list after the command, for clearing only that one. */
-export type CommandReply = { outcome: Outcome; scope: ResultScope | null; generation: number; search_stats?: SearchStats };
+/** A null generation leaves the view's results list alone. */
+export type CommandReply = { outcome: Outcome; scope: ResultScope | null; generation: number | null; search_stats?: SearchStats };
 /** What a newly opened command view starts from; reading it twice gives the same answer. */
 export type Opening = { scope: ResultScope | null; generation: number; notice: string | null };
 

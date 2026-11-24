@@ -2103,6 +2103,32 @@ fn finder_handoff_keeps_the_latest_batch_for_its_own_window_request() {
 }
 
 #[test]
+fn a_plan_reply_cannot_claim_the_finder_list_that_cancelled_it() {
+    let f = Fixture::new();
+    f.state.settings.lock().unwrap().onboarded = true;
+    let old = f.write("Downloads/old.pdf");
+    let new = f.write("Downloads/new.pdf");
+    let (known_generation, _) = take_selection(&f.state, vec![old]);
+    let (outcome, stats) = plan_with_stats(&f.state, "move these to Documents".into(), HashMap::new(), 1, None);
+    assert!(matches!(outcome, Outcome::Plan { .. }));
+    // The handoff can interrupt between computing the outcome and building
+    // the IPC reply, even when planning already finished successfully.
+    let mode = prepare_finder_selection(&f.state, vec![new.clone()]);
+    let show = f.state.presentation.lock().unwrap().request(mode);
+    let reply = command_reply(&f.state, 1, outcome, stats);
+    assert!(reply.generation.is_none());
+    assert!(reply.scope.is_none());
+    clear_scope(&f.state, Some(reply.generation.unwrap_or(known_generation)));
+    assert_eq!(f.paths(), [new]);
+    assert_eq!(opening_for_request(&f.state, show.request_id).unwrap().scope.unwrap().count, 1);
+
+    let (first, stats) = plan_with_stats(&f.state, "move these to Documents".into(), HashMap::new(), 2, None);
+    let (latest, latest_stats) = plan_with_stats(&f.state, "move these to Documents".into(), HashMap::new(), 3, None);
+    assert!(command_reply(&f.state, 2, first, stats).generation.is_none());
+    assert_eq!(command_reply(&f.state, 3, latest, latest_stats).scope.unwrap().count, 1);
+}
+
+#[test]
 fn finder_handoff_before_setup_opens_welcome_without_a_scope() {
     let f = Fixture::new();
     let file = f.write("Downloads/report.pdf");

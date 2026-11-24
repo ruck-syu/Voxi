@@ -294,7 +294,8 @@ fn use_finder_selection(app: &AppHandle, urls: Vec<tauri::Url>) {
 fn prepare_finder_selection(state: &AppState, selected: Vec<PathBuf>) -> &'static str {
     // The selection replaces whatever was being planned: cancel it, so its
     // late reply can't arrive carrying this new list as its own.
-    if let Some((_, control)) = checked_state!(state.active_search.lock(), "command").take() {
+    let mut active = checked_state!(state.active_search.lock(), "command");
+    if let Some((_, control)) = active.take() {
         control.cancel();
     }
     let onboarded = checked_state!(state.settings.lock(), "command").onboarded;
@@ -494,16 +495,24 @@ fn plan_command(
     undo_entry_id: Option<u64>,
 ) -> CommandReply {
     let (outcome, search_stats) = plan_with_stats(&state, text, choices, request_id, undo_entry_id);
-    let context = checked_state!(
-        state.result_scope.lock(),
-        CommandReply {
-            outcome: Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() },
-            scope: None,
-            generation: 0,
-            search_stats,
-        }
-    );
-    CommandReply { outcome, scope: context.summary(), generation: context.generation, search_stats }
+    command_reply(&state, request_id, outcome, search_stats)
+}
+
+fn command_reply(state: &AppState, request_id: u64, outcome: Outcome, search_stats: search::Stats) -> CommandReply {
+    let unavailable = || CommandReply {
+        outcome: Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() },
+        scope: None,
+        generation: None,
+        search_stats,
+    };
+    // Hold the same lock used to cancel planning before publishing a Finder
+    // selection, so this reply can only claim a list while its request is active.
+    let active = checked_state!(state.active_search.lock(), unavailable());
+    if !active.as_ref().is_some_and(|(id, control)| *id == request_id && !control.is_cancelled()) {
+        return CommandReply { outcome, scope: None, generation: None, search_stats };
+    }
+    let context = checked_state!(state.result_scope.lock(), unavailable());
+    CommandReply { outcome, scope: context.summary(), generation: Some(context.generation), search_stats }
 }
 
 #[derive(serde::Serialize)]
@@ -511,8 +520,8 @@ struct CommandReply {
     outcome: Outcome,
     search_stats: search::Stats,
     scope: Option<scope::Summary>,
-    /// The results-list generation after this command.
-    generation: u64,
+    /// The results-list generation after this command, if it is still active.
+    generation: Option<u64>,
 }
 
 /// Clears the results list, but only the one at `generation` when given, so
@@ -2261,20 +2270,17 @@ pub fn run() {
         }
     };
     #[cfg(target_os = "macos")]
-    let mut pending_open = None;
+    let mut pending_open = Some(Vec::new());
     app.run(move |_app, _event| {
         #[cfg(target_os = "macos")]
         match _event {
             tauri::RunEvent::Opened { urls } => {
-                if _app.try_state::<AppState>().is_some() {
+                if let Some(urls) = finder_selection::opened_files(urls, &mut pending_open) {
                     use_finder_selection(_app, urls);
-                } else {
-                    // Launch Services can send openURLs before Tauri runs setup.
-                    pending_open = Some(urls);
                 }
             }
             tauri::RunEvent::Ready => {
-                if let Some(urls) = pending_open.take() {
+                if let Some(urls) = pending_open.take().filter(|urls| !urls.is_empty()) {
                     use_finder_selection(_app, urls);
                 }
             }

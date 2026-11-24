@@ -183,8 +183,12 @@ impl Roots {
         if has_parent_ref(p) || !p.is_absolute() {
             return false;
         }
-        let c = canonical(p);
-        self.allowed.iter().any(|root| c.starts_with(root)) && !self.exclusions.hides(&c)
+        self.is_allowed_canonical(&canonical(p))
+    }
+
+    /// Checks a path the caller has already canonicalized.
+    pub(crate) fn is_allowed_canonical(&self, p: &Path) -> bool {
+        self.allowed.iter().any(|root| p.starts_with(root)) && !self.exclusions.hides(p)
     }
 
     /// True when `p` is one of the allowed roots itself.

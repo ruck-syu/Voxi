@@ -17,35 +17,15 @@
   <array>
     <dict>
       <key>CFBundleTypeName</key>
-      <string>Finder Items</string>
+      <string>Files</string>
       <key>CFBundleTypeRole</key>
       <string>Viewer</string>
       <key>LSHandlerRank</key>
-      <string>Alternate</string>
+      <!-- Accept drops without becoming the default document handler. -->
+      <string>None</string>
       <key>LSItemContentTypes</key>
       <array>
-        <string>public.item</string>
-        <string>public.folder</string>
-        <!-- Finder lists concrete types and these narrower families in Open With. -->
-        <string>public.text</string>
-        <string>public.image</string>
-        <string>public.archive</string>
-        <string>public.audiovisual-content</string>
-        <string>public.composite-content</string>
-        <string>com.adobe.pdf</string>
-      </array>
-    </dict>
-    <dict>
-      <key>CFBundleTypeName</key>
-      <string>Other Files</string>
-      <key>CFBundleTypeRole</key>
-      <string>Viewer</string>
-      <key>LSHandlerRank</key>
-      <string>Alternate</string>
-      <!-- Wildcard extensions let Finder drop arbitrary files onto the app icon. -->
-      <key>CFBundleTypeExtensions</key>
-      <array>
-        <string>*</string>
+        <string>public.data</string>
       </array>
     </dict>
   </array>

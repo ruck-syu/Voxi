@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type SearchStats, type Settings } from "./api";
@@ -164,8 +164,8 @@ export default function App() {
       cancelClose();
       showId.current = requestId;
       setShowRequestId(requestId);
+      setSetupNotice(null);
       if (mode === "welcome") {
-        setSetupNotice(null);
         void api.openingContext(requestId).then((opening) => {
           if (!disposed && showId.current === requestId) setSetupNotice(opening?.notice ?? null);
         }).catch(() => {});
@@ -243,6 +243,7 @@ export default function App() {
         {view === "command" && <CommandView
             key={commandSession}
             showRequestId={showRequestId}
+            latestShowId={showId}
             open={open}
             onClose={close}
             onBusy={setBusy}
@@ -322,6 +323,7 @@ function useTypedPlaceholder(active: boolean): string {
 
 function CommandView({
   showRequestId,
+  latestShowId,
   open,
   onClose,
   onBusy,
@@ -329,6 +331,7 @@ function CommandView({
   onSettingsChanged,
 }: {
   showRequestId: number;
+  latestShowId: RefObject<number>;
   open: boolean;
   onClose: () => void;
   onBusy: (busy: boolean, executing?: boolean) => void;
@@ -456,8 +459,10 @@ function CommandView({
       try {
         const { outcome, scope, generation, search_stats: searchStats } = await api.plan(command, picked, request, undoEntryId);
         if (request !== requestId.current) return;
-        scopeGeneration.current = generation;
-        setResultScope(scope);
+        if (generation !== null && (scopeGeneration.current === null || generation >= scopeGeneration.current)) {
+          scopeGeneration.current = generation;
+          setResultScope(scope);
+        }
         setPhase({ k: "outcome", outcome, searchStats });
         if (outcome.status === "plan") planShownAt.current = performance.now();
         if (outcome.status === "not_understood") missed.current = { text: command.trim(), at: Date.now() };
@@ -509,7 +514,7 @@ function CommandView({
     setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
       const result = await api.confirm(plan.id, skipped);
-      const after = await api.openingContext(showRequestId).catch(() => null);
+      const after = await api.openingContext(latestShowId.current).catch(() => null);
       if (after && (scopeGeneration.current === null || after.generation >= scopeGeneration.current)) {
         scopeGeneration.current = after.generation;
         setResultScope(after.scope);
@@ -533,7 +538,7 @@ function CommandView({
     } finally {
       activeRun.current = null;
     }
-  }, [phase, focusInput, skip, showRequestId]);
+  }, [phase, focusInput, skip, latestShowId]);
 
   const stop = useCallback(async () => {
     const run = activeRun.current;

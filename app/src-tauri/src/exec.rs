@@ -4,9 +4,11 @@ use crate::fsx::{self, FileIdentity, Publication, PublishError, Roots, file_name
 use crate::history::Inverse;
 use crate::model::{Action, RunOutcome};
 use crate::{pdf, trash};
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::Read;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -499,50 +501,128 @@ fn mv_no_clobber(from: &Path, to: &Path) -> Publication {
     mv_no_clobber_with(from, to, || {})
 }
 
-/// Whether names that differ only by case are different files in `dir`.
-/// Unknown counts as not case-sensitive, the safer answer for a move.
-fn case_sensitive(dir: &Path) -> bool {
-    use std::os::unix::ffi::OsStrExt;
-    let Ok(path) = std::ffi::CString::new(dir.as_os_str().as_bytes()) else { return false };
-    // SAFETY: `path` is a valid NUL-terminated string for the whole call.
-    unsafe { libc::pathconf(path.as_ptr(), libc::_PC_CASE_SENSITIVE) == 1 }
+/// One item inside a folder being moved or copied, relative to its root.
+struct Item {
+    relative: PathBuf,
+    kind: ItemKind,
 }
 
-/// The first entry under `dir` whose name differs from a sibling's only by
-/// case. Links are not followed.
-fn case_collision(dir: &Path) -> Result<Option<PathBuf>, String> {
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(folder) = pending.pop() {
-        let mut seen = std::collections::HashSet::new();
-        for entry in fs::read_dir(&folder).map_err(io_err("read", &folder))? {
-            let entry = entry.map_err(io_err("read", &folder))?;
-            if !seen.insert(entry.file_name().to_string_lossy().to_lowercase()) {
-                return Ok(Some(entry.path()));
-            }
-            if entry.file_type().map_err(io_err("read", &entry.path()))?.is_dir() {
-                pending.push(entry.path());
-            }
+enum ItemKind {
+    Folder,
+    File { size: u64, identity: FileIdentity },
+    Link { target: PathBuf, identity: FileIdentity },
+}
+
+/// Everything under `root`, parents before their contents. Links are not followed.
+fn folder_manifest(root: &Path) -> Result<Vec<Item>, String> {
+    let mut items = Vec::new();
+    let mut pending = vec![PathBuf::new()];
+    while let Some(relative) = pending.pop() {
+        let folder = root.join(&relative);
+        let mut entries: Vec<_> =
+            fs::read_dir(&folder).map_err(io_err("read", &folder))?.collect::<Result<_, _>>().map_err(io_err("read", &folder))?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let relative = relative.join(entry.file_name());
+            let meta = entry.path().symlink_metadata().map_err(io_err("read", &entry.path()))?;
+            let identity = FileIdentity::from_metadata(&meta);
+            let kind = if meta.is_dir() {
+                pending.push(relative.clone());
+                ItemKind::Folder
+            } else if meta.file_type().is_symlink() {
+                ItemKind::Link { target: fs::read_link(entry.path()).map_err(io_err("read link", &entry.path()))?, identity }
+            } else {
+                ItemKind::File { size: meta.len(), identity }
+            };
+            items.push(Item { relative, kind });
         }
     }
-    Ok(None)
+    Ok(items)
+}
+
+/// Checks that `copy` holds exactly the items in `manifest`. A drive that
+/// treats two names as one ("Report.txt" and "report.txt", "Σ" and "ς") merges
+/// them, which shows up here as two items landing on the same file.
+fn verify_folder_copy(name: &str, manifest: &[Item], copy: &Path) -> Result<(), String> {
+    let mut landed: HashMap<(u64, u64), &Path> = HashMap::new();
+    for item in manifest {
+        let path = copy.join(&item.relative);
+        let meta = path.symlink_metadata().map_err(|_| format!("“{}” didn't arrive in the copy of {name}.", item.relative.display()))?;
+        let matches = match &item.kind {
+            ItemKind::Folder => meta.is_dir(),
+            ItemKind::File { size, .. } => meta.is_file() && meta.len() == *size,
+            ItemKind::Link { target, .. } => meta.file_type().is_symlink() && fs::read_link(&path).is_ok_and(|t| t == *target),
+        };
+        if !matches {
+            return Err(format!("“{}” didn't arrive intact in the copy of {name}.", item.relative.display()));
+        }
+        if let Some(other) = landed.insert((meta.dev(), meta.ino()), &item.relative) {
+            return Err(format!(
+                "The destination drive treats “{}” and “{}” in {name} as the same name, so one would be lost. Rename one of them first.",
+                other.display(),
+                item.relative.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Copies a folder to another drive and verifies the copy before publishing
+/// it, then removes only the source items that are still exactly as copied.
+/// Something added or changed in the source meanwhile is left where it is.
+fn move_folder_across_drives(from: &Path, to: &Path, before_publish: impl FnOnce()) -> Publication {
+    let manifest = folder_manifest(from).map_err(PublishError::Clean)?;
+    let name = file_name(from);
+    let mut before_publish = Some(before_publish);
+    let identity = fsx::staged_output(to, |out| {
+        tool("/usr/bin/ditto", &[from.as_os_str(), out.as_os_str()])?;
+        verify_folder_copy(&name, &manifest, out)?;
+        if let Some(hook) = before_publish.take() {
+            hook();
+        }
+        Ok(())
+    })?;
+    let mut kept = 0;
+    for item in manifest.iter().rev() {
+        let path = from.join(&item.relative);
+        let removed = match &item.kind {
+            ItemKind::Folder => fs::remove_dir(&path),
+            ItemKind::File { identity, .. } | ItemKind::Link { identity, .. } => {
+                if FileIdentity::read(&path).is_ok_and(|current| current == *identity) {
+                    fs::remove_file(&path)
+                } else {
+                    Err(io::Error::other("changed"))
+                }
+            }
+        };
+        if removed.is_err_and(|e| e.kind() != io::ErrorKind::NotFound) {
+            kept += 1;
+        }
+    }
+    if fs::remove_dir(from).is_err_and(|e| e.kind() != io::ErrorKind::NotFound) && kept == 0 {
+        kept += 1;
+    }
+    if kept > 0 {
+        return Err(PublishError::Published {
+            identity,
+            message: format!(
+                "Moved {name} to {}, but left {} in the original folder because {} changed during the move.",
+                to.display(),
+                if kept == 1 { "1 item".to_string() } else { format!("{kept} items") },
+                if kept == 1 { "it" } else { "they" }
+            ),
+        });
+    }
+    Ok(identity)
 }
 
 fn mv_no_clobber_with(from: &Path, to: &Path, before_mv: impl FnOnce()) -> Publication {
     fresh(to)?;
     let source_meta = fs::symlink_metadata(from).map_err(|e| PublishError::Clean(io_err("move", from)(e)))?;
-    // `mv` copies a folder to another drive and then deletes the original. If
-    // that drive ignores case, "Report.txt" and "report.txt" would become one
-    // file and the other would be lost, with `mv` still reporting success.
-    if source_meta.is_dir()
-        && !to.parent().is_some_and(case_sensitive)
-        && let Some(clash) = case_collision(from).map_err(PublishError::Clean)?
-    {
-        return Err(PublishError::Clean(format!(
-            "Can't move {} to {}: that drive treats “{}” and another name in the same folder as one file. Rename one of them first.",
-            file_name(from),
-            to.parent().map_or_else(|| to.display().to_string(), |p| p.display().to_string()),
-            file_name(&clash)
-        )));
+    // `mv` copies a folder to another drive and deletes the original without
+    // checking that every file arrived, so verify the copy ourselves.
+    if source_meta.is_dir() {
+        return move_folder_across_drives(from, to, before_mv);
     }
     let source_had_nested = source_meta.is_dir() && from.join(file_name(from)).symlink_metadata().is_ok();
     before_mv();
@@ -585,6 +665,10 @@ fn copy_path(from: &Path, to: &Path) -> Publication {
         if fs::symlink_metadata(from).map_err(io_err("copy", from))?.is_symlink() {
             let target = fs::read_link(from).map_err(io_err("read link", from))?;
             std::os::unix::fs::symlink(target, out).map_err(io_err("copy link", from))
+        } else if fs::symlink_metadata(from).map_err(io_err("copy", from))?.is_dir() {
+            let manifest = folder_manifest(from)?;
+            tool("/usr/bin/ditto", &[from.as_os_str(), out.as_os_str()])?;
+            verify_folder_copy(&file_name(from), &manifest, out)
         } else {
             tool("/usr/bin/ditto", &[from.as_os_str(), out.as_os_str()])
         }
@@ -1288,6 +1372,14 @@ mod tests {
         assert!(from.exists());
     }
 
+    /// Whether names that differ only by case are different files in `dir`.
+    fn case_sensitive(dir: &Path) -> bool {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).unwrap();
+        // SAFETY: `path` is a valid NUL-terminated string for the whole call.
+        unsafe { libc::pathconf(path.as_ptr(), libc::_PC_CASE_SENSITIVE) == 1 }
+    }
+
     /// A folder on a case-sensitive drive holding "Report.txt" and
     /// "report.txt" must not be moved to a drive that ignores case: `mv`
     /// would merge them and delete the original. Needs `hdiutil`.
@@ -1336,8 +1428,24 @@ mod tests {
         assert_eq!(fs::read(from.join("report.txt")).unwrap(), b"two");
         assert!(to.symlink_metadata().is_err(), "nothing was moved");
 
-        // Without the clash, the same move goes through.
+        // Lowercasing doesn't catch every pair a drive folds together.
         fs::remove_file(from.join("report.txt")).unwrap();
+        fs::write(from.join("Σ.txt"), b"sigma").unwrap();
+        fs::write(from.join("ς.txt"), b"final").unwrap();
+        let err = mv_no_clobber(&from, &to).unwrap_err();
+        assert!(matches!(&err, PublishError::Clean(m) if m.contains("Rename one of them first")), "{err:?}");
+        assert_eq!(fs::read(from.join("Σ.txt")).unwrap(), b"sigma");
+        assert_eq!(fs::read(from.join("ς.txt")).unwrap(), b"final");
+        assert!(to.symlink_metadata().is_err(), "nothing was moved");
+
+        // A copy would silently drop one of them too: refuse it, keep nothing.
+        let copy = dest.join("folder copy");
+        let err = copy_path(&from, &copy).unwrap_err();
+        assert!(matches!(&err, PublishError::Clean(m) if m.contains("Rename one of them first")), "{err:?}");
+        assert!(copy.symlink_metadata().is_err());
+
+        // Without a clash, the same move goes through.
+        fs::remove_file(from.join("ς.txt")).unwrap();
         mv_no_clobber(&from, &to).unwrap();
         assert_eq!(fs::read(to.join("Report.txt")).unwrap(), b"one");
         assert!(from.symlink_metadata().is_err());
@@ -1621,6 +1729,29 @@ mod tests {
         assert_eq!(fs::read(&upper).unwrap(), b"report");
     }
 
+    /// Files added or changed in the source while its folder is being copied
+    /// to another drive are left in place, never deleted with the original.
+    #[test]
+    fn cross_drive_folder_move_keeps_source_changes_made_during_the_copy() {
+        let (_d, roots) = setup();
+        let h = &roots.home;
+        let from = h.join("Downloads/proj");
+        let to = h.join("Documents/proj");
+        fs::create_dir_all(from.join("sub")).unwrap();
+        fs::write(from.join("a.txt"), b"a").unwrap();
+        fs::write(from.join("sub/b.txt"), b"b").unwrap();
+        let result = mv_no_clobber_with(&from, &to, || {
+            fs::write(from.join("sub/new.txt"), b"added during the move").unwrap();
+            fs::write(from.join("a.txt"), b"edited during the move").unwrap();
+        });
+        assert!(matches!(&result, Err(PublishError::Published { message, .. }) if message.contains("left")), "{result:?}");
+        assert_eq!(fs::read(to.join("a.txt")).unwrap(), b"a");
+        assert_eq!(fs::read(to.join("sub/b.txt")).unwrap(), b"b");
+        assert_eq!(fs::read(from.join("a.txt")).unwrap(), b"edited during the move");
+        assert_eq!(fs::read(from.join("sub/new.txt")).unwrap(), b"added during the move");
+        assert!(from.join("sub/b.txt").symlink_metadata().is_err(), "unchanged files are moved");
+    }
+
     #[test]
     fn mv_no_clobber_returns_uncertain_when_directory_appears_at_destination() {
         let (_d, roots) = setup();
@@ -1654,6 +1785,11 @@ mod tests {
             fs::create_dir(&dir_to).unwrap();
             fs::write(dir_to.join("keep.txt"), b"keep").unwrap();
         });
-        assert!(matches!(dir_result, Err(PublishError::Uncertain(_))), "expected Uncertain for dir race, got {dir_result:?}");
+        // A folder is copied and verified first, so the late folder simply
+        // blocks publication: nothing is merged and the source stays.
+        assert!(matches!(dir_result, Err(PublishError::Clean(_))), "expected a clean refusal for dir race, got {dir_result:?}");
+        assert_eq!(fs::read(dir_from.join("a.txt")).unwrap(), b"a");
+        assert_eq!(fs::read(dir_to.join("keep.txt")).unwrap(), b"keep");
+        assert!(dir_to.join("a.txt").symlink_metadata().is_err());
     }
 }

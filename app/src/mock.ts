@@ -3,7 +3,7 @@
 import type { Outcome, RecoveryStatus, RunResult, Settings, ScheduledTask } from "./api";
 
 let settings: Settings = {
-  hotkey: "Control+Alt+Space", extraFolders: [], excludedFolders: [], startAtLogin: false,
+  hotkey: "Control+Alt+Space", extraFolders: [], excludedFolders: [], startAtLogin: false, showMenuBarIcon: true,
   // ?welcome previews the first-run page.
   onboarded: !new URLSearchParams(location.search).has("welcome"),
   shortcuts: [{ phrase: "run my usuals", commands: ["move screenshots from today to Screenshots", "delete installers from Downloads"] }],

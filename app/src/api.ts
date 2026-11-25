@@ -43,7 +43,10 @@ export type Outcome =
 
 export type SeriesState = "active" | "paused" | "stopped" | "completed" | "failed" | "firstRunPending" | "needsReview";
 export type OccurrenceState = "waiting" | "running" | "finished" | "resultUnsaved";
-export type ScheduledTask = { id: number; command: string; due: string; series: SeriesState; occurrence: OccurrenceState; summary: string; repeat?: string | null };
+export type ScheduledTask = { id: number; command: string; due: string; series: SeriesState; occurrence: OccurrenceState; summary: string; repeat?: string | null; choices?: Record<string, string> };
+
+/** A needs-review scheduled task whose command is planned again for approval. */
+export type Review = { id: number; command: string; choices: Record<string, string> };
 
 export type RecoveryStatus =
   | { status: "clear" }
@@ -63,7 +66,7 @@ export type Shortcut = { phrase: string; commands: string[] };
 export type Nickname = { name: string; path: string };
 
 /** `excludedFolders` sit inside allowed ones; the deepest matching folder wins. */
-export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders: string[]; startAtLogin: boolean; onboarded: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
+export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders: string[]; startAtLogin: boolean; showMenuBarIcon: boolean; onboarded: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
 /** "This was wrong" reports, saved only on this Mac. */
 export type Reports = { count: number; path: string };
 export type ResultScope = { count: number; visible: number; label: string };
@@ -89,7 +92,9 @@ export const api = {
   cancelScheduledTask: (id: number) => invoke<void>("cancel_scheduled_task", { id }),
   pauseScheduledTask: (id: number) => invoke<void>("pause_scheduled_task", { id }),
   resumeScheduledTask: (id: number) => invoke<void>("resume_scheduled_task", { id }),
-  plan: (text: string, choices: Record<string, string>, requestId: number, undoEntryId?: number) => invoke<CommandReply>("plan_command", { text, choices, requestId, undoEntryId }),
+  /** `replaces` is a needs-review task the planned repeating task takes the place of once confirmed. */
+  plan: (text: string, choices: Record<string, string>, requestId: number, undoEntryId?: number, replaces?: number) =>
+    invoke<CommandReply>("plan_command", { text, choices, requestId, undoEntryId, replaces: replaces ?? null }),
   /** Clears the results list, only if it is still the one at `generation` when given. */
   clearResultScope: (generation?: number | null) => invoke<void>("clear_result_scope", { generation: generation ?? null }),
   resultScope: () => invoke<ResultScope | null>("result_scope"),

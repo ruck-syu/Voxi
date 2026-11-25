@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, errorMessage, installedHotkeyAfterSave, tildify, type RecoveryStatus, type Reports, type ScheduledTask, type Settings, type Shortcut } from "./api";
+import { api, errorMessage, installedHotkeyAfterSave, tildify, type RecoveryStatus, type Reports, type Review, type ScheduledTask, type Settings, type Shortcut } from "./api";
 import { appVersion, canCheckForUpdates, checkAndInstall, useUpdateState } from "./updates";
 import { Sheet, TOO_LONG, prettyHotkey, shortcutLengthIssue } from "./ui";
 
@@ -28,6 +28,7 @@ type TabContext = {
   shortcutEditor: ShortcutEditorState;
   setShortcutEditor: (editor: ShortcutEditorState) => void;
   activeTasks: number | null;
+  onReview: (task: Review) => void;
 };
 
 /** 16px line icons, drawn in the current text color. */
@@ -60,7 +61,7 @@ const TABS = [
   {
     id: "scheduled", label: "Scheduled", icon: "scheduled",
     badge: (c: TabContext) => c.activeTasks || null,
-    render: () => <ScheduledTab />,
+    render: (c: TabContext) => <ScheduledTab onReview={c.onReview} />,
   },
   {
     id: "shortcuts", label: "Shortcuts", icon: "shortcuts",
@@ -176,7 +177,7 @@ function RecoveryNotice() {
   </div>;
 }
 
-function ScheduledTab() {
+function ScheduledTab({ onReview }: { onReview: (task: Review) => void }) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [pollError, setPollError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -282,7 +283,7 @@ function ScheduledTab() {
             <span className="row-label task-command">{task.command}</span>
             <span className="row-desc">{when(task)}</span>
             {task.summary && <span className="row-desc task-summary">{task.summary}</span>}
-            {task.series === "needsReview" && <span className="row-desc">Schedule it again to keep this task</span>}
+            {task.series === "needsReview" && <span className="row-desc">{task.repeat ? "Review it to keep this task" : "Schedule it again to keep this task"}</span>}
             <span className="task-actions">
               {task.occurrence === "running" && task.series !== "firstRunPending" && <button type="button" className="link" disabled={stoppingRun === run} onClick={() => void stopRun(task, run)}>
                 {stoppingRun === run ? "Stopping…" : "Stop this run"}
@@ -291,6 +292,8 @@ function ScheduledTab() {
               {task.series === "paused" && button(task, "Resume", "Resuming…", api.resumeScheduledTask)}
               {(isWaitingTask(task) || task.series === "paused") && button(task, task.repeat ? "Stop repeating" : "Cancel task", "Stopping…", api.cancelScheduledTask)}
               {task.repeat && (task.series === "stopped" || task.series === "failed") && button(task, "Move to active", "Moving…", api.resumeScheduledTask)}
+              {task.series === "needsReview" && task.repeat && task.occurrence !== "running" &&
+                <button className="link" disabled={working !== null} onClick={() => onReview({ id: task.id, command: task.command, choices: task.choices ?? {} })}>Review</button>}
               {task.series === "needsReview" && task.occurrence !== "running" && button(task, "Remove", "Removing…", api.cancelScheduledTask)}
             </span>
           </div>
@@ -348,11 +351,14 @@ export function SettingsView({
   settings,
   onSaved,
   onClose,
+  onReview,
   beginOperation,
 }: {
   settings: Settings;
   onSaved: (s: Settings) => void;
   onClose: () => void;
+  /** Leaves Settings to preview a needs-review task's command again. */
+  onReview: (task: Review) => void;
   beginOperation: () => () => void;
 }) {
   const [tab, setTab] = useState<Tab>("general");
@@ -423,7 +429,7 @@ export function SettingsView({
     }
   };
 
-  const context: TabContext = { settings, persist, pickFolder, activeTasks, shortcutEditor, setShortcutEditor };
+  const context: TabContext = { settings, persist, pickFolder, activeTasks, shortcutEditor, setShortcutEditor, onReview };
   const current = TABS.find((t) => t.id === tab)!;
 
   return (
@@ -480,6 +486,19 @@ function GeneralTab({ settings, persist }: TabProps) {
           type="checkbox"
           checked={settings.startAtLogin}
           onChange={(e) => persist({ ...settings, startAtLogin: e.target.checked })}
+        />
+      </Row>
+      <Row icon="general" label="Show in menu bar" htmlFor="menu-bar-icon" description={settings.showMenuBarIcon
+        ? "Click the icon to open Voxi."
+        : `Use ${settings.hotkey ? prettyHotkey(settings.hotkey) : "your hotkey"} to open Voxi.`}>
+        <input
+          id="menu-bar-icon"
+          className="switch"
+          type="checkbox"
+          checked={settings.showMenuBarIcon}
+          // Hidden only while a hotkey can open Voxi; Voxi has no Dock icon.
+          disabled={!settings.hotkey && settings.showMenuBarIcon}
+          onChange={(e) => persist({ ...settings, showMenuBarIcon: e.target.checked })}
         />
       </Row>
     </Group>

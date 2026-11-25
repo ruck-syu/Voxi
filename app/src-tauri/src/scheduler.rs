@@ -308,14 +308,12 @@ impl Rule {
             None => settings.find_shortcut(&self.command).map_or(std::slice::from_ref(&self.command), |s| s.commands.as_slice()),
         };
         if self.approved_version < 2 && commands.iter().any(|text| crate::parse::names_subfolders(text)) {
-            return Err(format!("Skipped: Voxi now reads “subfolders” differently. Schedule “{command}” again to keep this task."));
+            return Err(format!("Skipped: Voxi now reads “subfolders” differently. Review “{command}” to keep this task."));
         }
         if self.approved_version < 1
             && commands.iter().any(|text| crate::parse::parse(text).is_ok_and(|intent| reads_modified_date(&intent)))
         {
-            return Err(format!(
-                "Skipped: “modified” now means the date a file was last edited. Schedule “{command}” again to keep this task."
-            ));
+            return Err(format!("Skipped: “modified” now means the date a file was last edited. Review “{command}” to keep this task."));
         }
         if let Some(approved) = &self.approved_nicknames {
             let current: Vec<(String, String)> = nickname_pairs(settings);
@@ -325,11 +323,11 @@ impl Rule {
             if let Some((name, _)) =
                 approved.iter().chain(current.iter()).find(|(name, _)| used(name) && meaning(approved, name) != meaning(&current, name))
             {
-                return Err(format!("The folder name “{name}” now means another folder. Schedule “{command}” again to keep this task."));
+                return Err(format!("The folder name “{name}” now means another folder. Review “{command}” to keep this task."));
             }
         }
         if self.approved_version > APPROVED_RULE_VERSION {
-            return Err("This task was approved in a newer version of Voxi. Schedule it again to keep this task.".into());
+            return Err("This task was approved in a newer version of Voxi. Review it to keep this task.".into());
         }
         match &self.approved_source {
             Some(RuleSource::Command) => Ok(()),
@@ -339,9 +337,9 @@ impl Rule {
                 Ok(())
             }
             Some(RuleSource::Shortcut { phrase, .. }) => {
-                Err(format!("The shortcut “{phrase}” was changed or removed. Schedule it again to keep this task."))
+                Err(format!("The shortcut “{phrase}” was changed or removed. Review it to keep this task."))
             }
-            None => Err("Voxi couldn't verify the original command or shortcut. Schedule it again to keep this task.".into()),
+            None => Err("Voxi couldn't verify the original command or shortcut. Review it to keep this task.".into()),
         }
     }
 
@@ -677,6 +675,10 @@ pub struct Job {
     anchor: Option<RepeatAnchor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<RecordedResult>,
+    /// A needs-review task this one takes the place of once it is saved, set
+    /// when the user reviews that task's command again. Never persisted.
+    #[serde(skip)]
+    pub replaces: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -746,6 +748,7 @@ impl From<SavedJob> for Job {
             repeat: saved.repeat,
             anchor: saved.anchor,
             result: saved.result,
+            replaces: None,
         }
     }
 }
@@ -784,6 +787,7 @@ impl Job {
             first_run: when.first_run,
             anchor: when.anchor,
             result: None,
+            replaces: None,
         }
     }
 
@@ -907,6 +911,7 @@ impl Job {
             first_run: FirstRunPolicy::OneTimeDeferred,
             anchor: None,
             result: None,
+            replaces: None,
         })
     }
     pub fn validate(&self) -> Result<(), String> {
@@ -930,6 +935,9 @@ pub struct Summary {
     pub summary: String,
     /// How often a repeating task runs, such as “every 3 days at 9:00 PM”.
     pub repeat: Option<String>,
+    /// Folder and file choices made when the task was scheduled, offered
+    /// again when the user reviews the task's command.
+    pub choices: HashMap<String, PathBuf>,
 }
 impl Job {
     pub fn summary(&self) -> Summary {
@@ -941,6 +949,7 @@ impl Job {
             occurrence: self.occurrence,
             summary: self.summary.clone(),
             repeat: self.repeat.as_ref().map(|rule| rule.describe(self.due)),
+            choices: self.repeat.as_ref().map(|rule| rule.choices.clone()).unwrap_or_default(),
         }
     }
 }
@@ -1059,15 +1068,27 @@ impl Store {
         Ok(())
     }
 
+    /// Saves `job` as a new task. When it replaces a needs-review task, the
+    /// old one is removed in the same save, so neither can exist without the
+    /// other being settled.
     pub fn add(&mut self, mut job: Job) -> Result<u64, String> {
         self.retry_results()?;
         let id = self.jobs.iter().map(|j| j.id).max().unwrap_or(0).checked_add(1).ok_or("Too many scheduled tasks.")?;
         job.id = id;
-        self.jobs.push(job);
-        if let Err(e) = self.save_jobs(&self.jobs) {
-            self.jobs.pop();
-            return Err(e);
+        let mut next = self.jobs.clone();
+        if let Some(old) = job.replaces.take() {
+            // A task removed meanwhile has nothing left to replace.
+            if let Some(index) = next.iter().position(|j| j.id == old) {
+                let reviewable = next[index].series == SeriesState::NeedsReview && next[index].occurrence != OccurrenceState::Running;
+                if !reviewable {
+                    return Err("That task changed while you reviewed it. Check Settings → Scheduled.".into());
+                }
+                next.remove(index);
+            }
         }
+        next.push(job);
+        self.save_jobs(&next)?;
+        self.jobs = next;
         Ok(id)
     }
 
@@ -1116,7 +1137,7 @@ impl Store {
     pub fn resume(&mut self, id: u64, now: DateTime<Local>) -> Result<(), String> {
         self.change(id, |job| {
             if job.series == SeriesState::NeedsReview {
-                return Err("Schedule it again to keep this task.".into());
+                return Err("Review it to keep this task.".into());
             }
             if !matches!(job.series, SeriesState::Paused | SeriesState::Stopped | SeriesState::Failed) {
                 return Err("Only paused, stopped or failed repeating tasks can be made active again.".into());
@@ -1425,13 +1446,54 @@ mod tests {
         assert_eq!(store.jobs[0].occurrence, OccurrenceState::Finished);
         assert!(store.jobs[0].summary.contains("Check your files and History"));
         assert!(store.claim(Local::now()).unwrap().is_none());
-        assert_eq!(store.resume(1, now()).unwrap_err(), "Schedule it again to keep this task.");
+        assert_eq!(store.resume(1, now()).unwrap_err(), "Review it to keep this task.");
         assert_eq!(store.jobs[0].repeat, Some(rule));
         assert_eq!(store.jobs[0].summary().repeat.as_deref(), Some("every hour"));
         // A task waiting for review can be removed, and then never runs.
         store.cancel(1).unwrap();
         assert_eq!(store.jobs[0].series, SeriesState::Stopped);
         assert!(store.claim(Local::now()).unwrap().is_none());
+    }
+    #[test]
+    fn reviewing_a_legacy_task_replaces_it_in_one_save() {
+        // A repeat saved before rules recorded their source, as an update finds it.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("jobs.json");
+        std::fs::write(
+            &path,
+            r#"{"version":1,"data":[{"id":1,"command":"sort downloads by type everyday","due":"2026-11-23T07:44:22+05:30",
+                "series":"needsReview","occurrence":"finished","summary":"","actions":[],"stamps":[],
+                "repeat":{"every":1,"unit":"days","time":"07:44:22","command":"sort downloads by type","choices":{},"approvedVersion":0},
+                "firstRun":"repeatLater"}]}"#,
+        )
+        .unwrap();
+        let mut store = Store::load(path.clone());
+        let legacy = store.jobs[0].repeat.clone().unwrap();
+        let err = legacy.check_approval(&crate::settings::Settings::default(), "sort downloads by type").unwrap_err();
+        assert!(err.contains("Review it to keep this task"), "{err}");
+
+        // Confirming the review's preview saves the new task and drops the old one together.
+        let rule = Rule { approved_version: APPROVED_RULE_VERSION, approved_source: Some(RuleSource::Command), ..legacy };
+        let mut job = Job::recurring_later("sort downloads by type everyday".into(), now(), rule);
+        job.replaces = Some(1);
+        let id = store.add(job.clone()).unwrap();
+        let reloaded = Store::load(path.clone());
+        assert_eq!(reloaded.jobs.len(), 1);
+        assert_eq!(reloaded.jobs[0].id, id);
+        assert_eq!(reloaded.jobs[0].series, SeriesState::Active);
+        assert!(reloaded.jobs[0].repeat.as_ref().unwrap().check_approval(&crate::settings::Settings::default(), "x").is_ok());
+
+        // A task that is no longer waiting for review is never replaced.
+        let mut again = job.clone();
+        again.replaces = Some(id);
+        assert!(store.add(again).is_err());
+        assert_eq!(Store::load(path.clone()).jobs.len(), 1);
+
+        // A reviewed task removed meanwhile leaves nothing to replace.
+        let mut gone = job;
+        gone.replaces = Some(99);
+        store.add(gone).unwrap();
+        assert_eq!(Store::load(path).jobs.len(), 2);
     }
     #[test]
     fn unreadable_schedule_data_is_preserved_without_blocking_startup() {

@@ -477,8 +477,13 @@ fn plan_command(
     choices: HashMap<String, String>,
     request_id: u64,
     undo_entry_id: Option<u64>,
+    replaces: Option<u64>,
 ) -> CommandReply {
     let (outcome, search_stats) = plan_with_stats(&state, text, choices, request_id, undo_entry_id);
+    let outcome = match replaces {
+        Some(old) => mark_replacement(&state, outcome, old),
+        None => outcome,
+    };
     let context = checked_state!(
         state.result_scope.lock(),
         CommandReply {
@@ -489,6 +494,28 @@ fn plan_command(
         }
     );
     CommandReply { outcome, scope: context.summary(), generation: context.generation, search_stats }
+}
+
+/// Reviewing a needs-review task plans its command again. The resulting
+/// repeating task replaces that one when confirmed; anything else (a plan
+/// that would run once, now) is refused, so a review never runs files by
+/// surprise or leaves the old task behind.
+fn mark_replacement(state: &AppState, outcome: Outcome, old: u64) -> Outcome {
+    let Outcome::Plan { id, .. } = &outcome else { return outcome };
+    let mut pending =
+        checked_state!(state.pending.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() });
+    match pending.as_mut().filter(|p| p.id == *id).and_then(|p| p.scheduled.as_mut()).filter(|job| job.repeat.is_some()) {
+        Some(job) => {
+            job.replaces = Some(old);
+            outcome
+        }
+        None => {
+            if pending.as_ref().is_some_and(|p| p.id == *id) {
+                *pending = None;
+            }
+            Outcome::Problem { message: "This command no longer plans a repeating task. Remove the old task and schedule it again.".into() }
+        }
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -1879,7 +1906,18 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     *current = settings.clone();
     context.clear();
     settings.hotkey = installed.clone();
+    show_menu_bar_icon(&app, settings.show_menu_bar_icon, !installed.is_empty());
     Ok(settings)
+}
+
+/// Shows or hides the menu bar icon. Voxi has no Dock icon, so the menu bar
+/// icon stays while no hotkey is installed: one of the two must open Voxi.
+fn show_menu_bar_icon(app: &AppHandle, wanted: bool, hotkey_installed: bool) {
+    if let Some(tray) = app.tray_by_id(tray_face::TRAY_ID)
+        && tray.set_visible(wanted || !hotkey_installed).is_err()
+    {
+        diagnostics::emit(Event::new(Code::Startup, Stage::Failed));
+    }
 }
 
 // ---- Learning ----------------------------------------------------------------
@@ -2148,6 +2186,7 @@ pub fn run() {
             if settings::set_hotkey(&handle, &mut installed, &settings.hotkey).is_err() {
                 diagnostics::emit(Event::new(Code::Startup, Stage::Failed));
             }
+            let hotkey_installed = !installed.is_empty();
             app.manage(InstalledHotkey(Mutex::new(installed)));
 
             let show = MenuItem::with_id(app, "show", "Show Voxi", true, None::<&str>)?;
@@ -2191,6 +2230,7 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+            show_menu_bar_icon(&handle, settings.show_menu_bar_icon, hotkey_installed);
 
             apply_glass(&handle);
             if !settings.onboarded {
@@ -2245,11 +2285,17 @@ pub fn run() {
             return;
         }
     };
-    app.run(|_, event| {
+    app.run(|app, event| {
         #[cfg(target_os = "macos")]
-        if matches!(event, tauri::RunEvent::Exit) {
-            outside_click::uninstall();
+        match event {
+            tauri::RunEvent::Exit => outside_click::uninstall(),
+            // Opening Voxi again from Finder, Spotlight or Launchpad always
+            // reaches Settings, even with the menu bar icon hidden.
+            tauri::RunEvent::Reopen { .. } => show_window(app, "settings"),
+            _ => {}
         }
+        #[cfg(not(target_os = "macos"))]
+        let _ = (app, event);
     });
 }
 

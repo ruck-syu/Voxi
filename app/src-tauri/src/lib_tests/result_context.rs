@@ -2094,7 +2094,7 @@ fn repeats_saved_before_modified_meant_last_edit_are_skipped_not_reread() {
     run_due_tasks(&f.state).unwrap();
     assert!(a.exists(), "an old rule must not run with the new meaning");
     let summary = f.state.schedules.lock().unwrap().jobs[0].summary.clone();
-    assert!(summary.contains("Schedule “trash files in Downloads modified today daily” again"), "{summary}");
+    assert!(summary.contains("Review “trash files in Downloads modified today daily” to keep this task"), "{summary}");
 
     f.state.schedules.lock().unwrap().add(job(true)).unwrap();
     run_due_tasks(&f.state).unwrap();

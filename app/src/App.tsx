@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type RunResult, type SearchStats, type Settings } from "./api";
+import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type Review, type RunResult, type SearchStats, type Settings } from "./api";
 import { readChoice } from "./choice";
 import examples from "./examples.json";
 import { AccessView } from "./access";
@@ -23,7 +23,7 @@ type Phase =
 
 /** Waiting for the answer to "which one?": the command being planned and
  *  the picks made so far (one command can need several). */
-type Asking = { command: string; choices: Record<string, string>; name: string; candidates: string[]; folders: boolean };
+type Asking = { command: string; choices: Record<string, string>; name: string; candidates: string[]; folders: boolean; replaces?: number };
 
 /** Something Voxi can learn from what just happened, offered once. */
 type Offer =
@@ -65,6 +65,7 @@ const CLOSE_MS = 140;
 
 export default function App() {
   const [view, setView] = useState<View>("command");
+  const [review, setReview] = useState<Review | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   // Settings that failed to load must not hold the window back forever.
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -238,6 +239,8 @@ export default function App() {
             onBusy={setBusy}
             onSettings={() => setView("settings")}
             onSettingsChanged={setSettings}
+            review={review}
+            onReviewStarted={() => setReview(null)}
           />}
         {view !== "command" && !settings && settingsError && (
           <section className="body">
@@ -249,6 +252,10 @@ export default function App() {
             settings={settings}
             onSaved={setSettings}
             onClose={() => setView("command")}
+            onReview={(task) => {
+              setReview(task);
+              setView("command");
+            }}
             beginOperation={beginOperation}
           />
         )}
@@ -315,12 +322,17 @@ function CommandView({
   onBusy,
   onSettings,
   onSettingsChanged,
+  review,
+  onReviewStarted,
 }: {
   open: boolean;
   onClose: () => void;
   onBusy: (busy: boolean, executing?: boolean) => void;
   onSettings: () => void;
   onSettingsChanged: (s: Settings) => void;
+  /** A scheduled task to preview again, planned as soon as this view opens. */
+  review: Review | null;
+  onReviewStarted: () => void;
 }) {
   const [text, setText] = useState("");
   const [phase, setPhase] = useState<Phase>({ k: "ready" });
@@ -432,7 +444,7 @@ function CommandView({
   }, [text]);
 
   const submit = useCallback(
-    async (command: string, picked: Record<string, string> = {}, undoEntryId?: number) => {
+    async (command: string, picked: Record<string, string> = {}, undoEntryId?: number, replaces?: number) => {
       if (!command.trim()) return;
       // Never send an oversized command, and never truncate one to fit: the
       // text stays in the box with an inline message until it is shortened.
@@ -450,7 +462,7 @@ function CommandView({
       setPhase({ k: "parsing" });
       setHeard(null);
       try {
-        const { outcome, scope, generation, search_stats: searchStats } = await api.plan(command, picked, request, undoEntryId);
+        const { outcome, scope, generation, search_stats: searchStats } = await api.plan(command, picked, request, undoEntryId, replaces);
         if (request !== requestId.current) return;
         scopeGeneration.current = generation;
         setResultScope(scope);
@@ -461,7 +473,7 @@ function CommandView({
         if (folderPick && (outcome.status === "plan" || outcome.status === "info")) setOffer({ k: "folder", ...folderPick });
         if (outcome.status === "ambiguous") {
           // The answer will be dictated too.
-          setAsking({ command, choices: picked, name: outcome.name, candidates: outcome.candidates, folders: outcome.folders });
+          setAsking({ command, choices: picked, name: outcome.name, candidates: outcome.candidates, folders: outcome.folders, replaces });
         } else {
           setAsking(null);
         }
@@ -484,10 +496,18 @@ function CommandView({
       const path = asking.candidates[index];
       if (!path) return;
       if (asking.folders) pickedFolder.current = { name: asking.name, path };
-      submit(asking.command, { ...asking.choices, [asking.name]: path });
+      submit(asking.command, { ...asking.choices, [asking.name]: path }, undefined, asking.replaces);
     },
     [asking, submit],
   );
+
+  // Reviewing a scheduled task previews its command as if it were typed
+  // again; confirming that preview replaces the task.
+  useEffect(() => {
+    if (!review) return;
+    onReviewStarted();
+    void submit(review.command, review.choices, undefined, review.id);
+  }, [review, onReviewStarted, submit]);
 
   const stopAsking = useCallback(() => {
     setAsking(null);

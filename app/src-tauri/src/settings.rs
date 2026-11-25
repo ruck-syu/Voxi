@@ -428,6 +428,9 @@ pub struct Settings {
     /// The user's own names for folders ("dev" for ~/Documents/Dev), learned
     /// from a folder they picked or added in Settings.
     pub nicknames: Vec<Nickname>,
+    /// Whether Voxi shows its icon in the menu bar. With it hidden, the
+    /// hotkey opens Voxi, and opening the app again shows Settings.
+    pub show_menu_bar_icon: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -559,6 +562,7 @@ impl Default for Settings {
             onboarded: false,
             shortcuts: Vec::new(),
             nicknames: Vec::new(),
+            show_menu_bar_icon: true,
         }
     }
 }
@@ -848,6 +852,15 @@ mod tests {
         assert_eq!(restored.extra_folders, vec!["/tmp"]);
         assert_eq!(restored.shortcuts[0].phrase, "tidy");
         assert!(!fs::read_to_string(path).unwrap().contains("appleDictationEnabled"));
+    }
+
+    #[test]
+    fn settings_saved_before_the_menu_bar_option_keep_the_icon() {
+        let old: Settings = serde_json::from_str(r#"{"hotkey":"Control+Alt+Space","startAtLogin":false,"onboarded":true}"#).unwrap();
+        assert!(old.show_menu_bar_icon);
+        let hidden: Settings = serde_json::from_str(r#"{"showMenuBarIcon":false}"#).unwrap();
+        assert!(!hidden.show_menu_bar_icon);
+        assert!(serde_json::to_string(&hidden).unwrap().contains("\"showMenuBarIcon\":false"));
     }
 
     fn with(phrase: &str, commands: &[&str]) -> Settings {

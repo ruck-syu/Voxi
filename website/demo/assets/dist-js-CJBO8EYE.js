@@ -1,0 +1,1 @@
+import{r as e}from"./index-CURAz-6P.js";async function t(){await e(`plugin:process|restart`)}export{t as relaunch};

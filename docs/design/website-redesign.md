@@ -8,7 +8,7 @@ Voxi is a small, local Mac file utility. The page should make the sentence → p
 
 Palette: cool paper `#f7f9fd`, white surface `#ffffff`, navy ink `#1b2a4a`, slate text `#59677f`, desktop blue `#dbe7f7`, coral `#c64037`. A matching dark palette follows system appearance or the saved theme choice.
 
-Typography: self-hosted Bricolage Grotesque for display and headings, Atkinson Hyperlegible for reading, system monospace for the Homebrew command. The display family also appears in the desktop app. Font license files ship with the fonts.
+Typography: self-hosted Geist for display, headings and reading, system monospace for the Homebrew command. The desktop app uses Geist too. Font license files ship with the fonts.
 
 Layout: centered introductory copy above a broad desktop demonstration; left-aligned content and purposeful file-operation illustrations below. The command reference uses a category sidebar on desktop, wrapping links on mobile. Installation is a numbered sequence beside a download and Homebrew panel.
 

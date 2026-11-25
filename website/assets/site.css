@@ -1,8 +1,8 @@
 @font-face {
-  font-family: "Bricolage Grotesque";
-  src: url("/assets/fonts/bricolage-grotesque.woff2") format("woff2");
+  font-family: "Geist";
+  src: url("/assets/fonts/geist.woff2") format("woff2");
   font-style: normal;
-  font-weight: 200 800;
+  font-weight: 100 900;
   font-display: swap;
 }
 
@@ -35,7 +35,7 @@
   --t-to: #2a6ad9;
   --t-when: #8a4fd6;
 
-  --sans: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont,
+  --sans: "Geist", -apple-system, BlinkMacSystemFont,
     "Helvetica Neue", Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   --gutter: clamp(16px, 4.5vw, 96px);

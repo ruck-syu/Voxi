@@ -94,16 +94,16 @@ jobs:
       - run: npm ci
 
       - name: Assign one release version to all manifests and lockfiles
-        # Next patch after the newest published v<SERIES>.N tag, or <SERIES>.0
+        # Next patch after the newest published v<SERIES>.N tag, or <SERIES>.1
         # if none. Release tags only exist once a release is published, so PR
         # runs and failed runs never use up a version. Bump SERIES for a new
         # minor/major line.
         env:
-          SERIES: "0.2"
+          SERIES: "0.0"
         run: |
           git fetch --force --tags --quiet origin
           LAST=$(git tag --list "v${SERIES}.*" | sed -nE "s/^v${SERIES//./\\.}\.([0-9]+)$/\1/p" | sort -n | tail -1)
-          VERSION="${SERIES}.$(( ${LAST:--1} + 1 ))"
+          VERSION="${SERIES}.$(( ${LAST:-0} + 1 ))"
           if git rev-parse -q --verify "refs/tags/v$VERSION" > /dev/null; then
             echo "::error::Tag v$VERSION already exists"
             exit 1

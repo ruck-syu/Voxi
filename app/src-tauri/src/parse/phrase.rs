@@ -171,6 +171,19 @@ pub fn split_arguments<'a>(text: &'a str, separators: &[&str]) -> Option<(&'a st
     (!left.is_empty() && !right.is_empty()).then_some((left, right))
 }
 
+/// A folder location has one unquoted separator and a single child name.
+pub(super) fn folder_location(text: &str) -> Result<Option<(&str, &str)>, super::RefusalReason> {
+    let outside = unquoted_text(text).ok_or(super::RefusalReason::MalformedInput)?;
+    if !outside.split_whitespace().any(|word| word.eq_ignore_ascii_case("in")) {
+        return Ok(None);
+    }
+    let (child, parent) = split_arguments(text, &["in"]).ok_or(super::RefusalReason::InvalidFolderLocation)?;
+    if child.contains('/') {
+        return Err(super::RefusalReason::InvalidFolderLocation);
+    }
+    Ok(Some((child, parent)))
+}
+
 pub(super) fn set_once<T>(slot: &mut Option<T>, value: T) -> Option<()> {
     if slot.is_some() {
         return None;

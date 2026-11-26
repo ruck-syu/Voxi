@@ -66,6 +66,29 @@ fn demo_sort_scopes_lookup_away_from_unreadable_pictures() {
 }
 
 #[test]
+fn malformed_folder_locations_suggest_quoting_or_a_single_path() {
+    use crate::{Outcome, result_context_tests::Fixture};
+
+    let fixture = Fixture::new();
+    fixture.write("Downloads/invoice.pdf");
+    fixture.write("Downloads/Voxi Demo/Receipts/photo.png");
+    fixture.write("Downloads/2026/Receipts/report.pdf");
+    for command in [
+        "move these to Receipts in Voxi Demo in Downloads",
+        "sort Receipts in Voxi Demo in Downloads by type",
+        "move invoice.pdf to 2026/Receipts in Downloads",
+        r#"move invoice.pdf to "2026/Receipts" in Downloads"#,
+        r#"sort "2026/Receipts" in Downloads by type"#,
+    ] {
+        let outcome = fixture.command(command);
+        assert!(
+            matches!(outcome, Outcome::Problem { message } if message.contains("Quote names") && message.contains("single path")),
+            "{command}"
+        );
+    }
+}
+
+#[test]
 fn demo_move_resolves_destination_in_named_parent() {
     demo_move_to_receipts("move these to Receipts in Voxi Demo");
 }

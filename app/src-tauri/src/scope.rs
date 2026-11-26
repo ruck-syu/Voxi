@@ -243,9 +243,9 @@ pub fn prepare(text: &str, snapshot: Option<&Snapshot>) -> Result<(Intent, bool)
         return Ok((intent, true));
     }
     // Same split as `parse::parse`, kept as a type instead of an echoed string.
-    let intent = parse::parse_classified(text).map_err(|failure| match failure {
-        parse::ParseFailure::HardRefusal(parse::RefusalReason::TooLong) => PrepareError::Problem("That command is too long.".to_string()),
-        _ => PrepareError::NotUnderstood(text.trim().to_string()),
+    let intent = parse::parse_classified(text).map_err(|failure| match failure.message() {
+        Some(message) => PrepareError::Problem(message.into()),
+        None => PrepareError::NotUnderstood(text.trim().to_string()),
     })?;
     let scoped = snapshot.is_some_and(|snapshot| match intent.source() {
         Some(Source::Set { folder: None, .. }) => true,

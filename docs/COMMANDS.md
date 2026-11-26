@@ -94,6 +94,10 @@ the Service is missing, turn it on in System Settings → Keyboard → Keyboard
 Shortcuts → Services (on macOS 12, System Preferences → Keyboard → Shortcuts →
 Services).
 
+For a folder inside another folder, say “move these to Receipts in Voxi Demo”
+or “move these to Voxi Demo/Receipts”. Quote “Receipts in Voxi Demo” if those
+words are a single folder name.
+
 ## Chaining commands
 
 Join up to eight folder-creation, move, copy, rename, or trash commands with

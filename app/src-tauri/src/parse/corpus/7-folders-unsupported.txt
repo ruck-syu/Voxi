@@ -33,3 +33,7 @@ move report.pdf => !miss
 to Documents => !miss
 sort Voxi Demo in Downloads by type => {"intent":"sort_by_type","folder":"Voxi Demo","parent":"Downloads"}
 sort "Trips in July" in "2026 Archive" by month => {"intent":"sort_by_month","folder":"Trips in July","parent":"2026 Archive"}
+move invoice.pdf to Receipts in Voxi Demo => {"intent":"move","src":{"kind":"item","name":"invoice.pdf"},"to":"Voxi Demo/Receipts"}
+move invoice.pdf to Voxi Demo/Receipts => {"intent":"move","src":{"kind":"item","name":"invoice.pdf"},"to":"Voxi Demo/Receipts"}
+copy invoice.pdf to "Receipts in July" in "Voxi Demo" => {"intent":"copy","src":{"kind":"item","name":"invoice.pdf"},"to":"Voxi Demo/Receipts in July"}
+move invoice.pdf to "Receipts in Voxi Demo" => {"intent":"move","src":{"kind":"item","name":"invoice.pdf"},"to":"Receipts in Voxi Demo"}

@@ -42,6 +42,14 @@ fn destination(text: &str) -> Option<String> {
             return None;
         }
     }
+    if let Some((child, parent)) = split_arguments(text, &["in"])
+        && !child.contains('/')
+    {
+        if bad_destination(child) || bad_destination(parent) {
+            return None;
+        }
+        return Some(format!("{}/{}", clean_name(parent), clean_name(child)));
+    }
     Some(name)
 }
 

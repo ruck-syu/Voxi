@@ -66,6 +66,36 @@ fn demo_sort_scopes_lookup_away_from_unreadable_pictures() {
 }
 
 #[test]
+fn demo_move_resolves_destination_in_named_parent() {
+    demo_move_to_receipts("move these to Receipts in Voxi Demo");
+}
+
+#[test]
+fn demo_move_accepts_relative_destination() {
+    demo_move_to_receipts("move these to Voxi Demo/Receipts");
+}
+
+fn demo_move_to_receipts(command: &str) {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let demo = roots.downloads().join("Voxi Demo");
+    let receipts = demo.join("Receipts");
+    fs::create_dir_all(&receipts).unwrap();
+    let selected = [demo.join("first.pdf"), demo.join("second.png")];
+    for path in &selected {
+        fs::write(path, b"demo").unwrap();
+    }
+    let (paths, _) = crate::finder_selection::accept(roots, selected.to_vec()).unwrap();
+    let snapshot = crate::scope::Snapshot::capture(paths, crate::finder_selection::LABEL.into()).unwrap();
+    let (intent, uses_selection) = crate::scope::prepare(command, Some(&snapshot)).unwrap();
+    assert!(uses_selection, "{command}");
+    let planned =
+        Planner::new(roots, &HashMap::new()).with_scope(Some(snapshot)).plan(&intent, &History::load(roots.home.join("history.json")));
+    let Ok(Planned::Steps { actions, .. }) = planned else { panic!("{command}: {:?}", planned.err()) };
+    assert_eq!(actions, selected.map(|from| Action::Move { to: receipts.join(from.file_name().unwrap()), from }), "{command}");
+}
+
+#[test]
 fn mixed_finder_selection_plans_only_the_selected_allowed_file() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();

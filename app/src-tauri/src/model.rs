@@ -224,6 +224,8 @@ pub enum Intent {
     },
     SortByType {
         folder: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<String>,
         /// Only "including subfolders" reaches into nested folders; by default
         /// a sort leaves the user's existing subfolders untouched.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -231,6 +233,8 @@ pub enum Intent {
     },
     SortByMonth {
         folder: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         include_subfolders: bool,
     },

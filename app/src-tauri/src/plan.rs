@@ -298,8 +298,10 @@ impl<'a> Planner<'a> {
             Intent::Lowercase { src } => self.batch_rename(src, "Lowercase", |name, _| Some(name.to_lowercase()))?,
             Intent::Number { src, base, width } => self.number(src, base, *width)?,
             Intent::CreateFolders { names, parent } => self.create_folders(names, parent.as_deref())?.0,
-            Intent::SortByType { folder, include_subfolders } => self.sort(folder, true, *include_subfolders)?,
-            Intent::SortByMonth { folder, include_subfolders } => self.sort(folder, false, *include_subfolders)?,
+            Intent::SortByType { folder, parent, include_subfolders } => self.sort(folder, parent.as_deref(), true, *include_subfolders)?,
+            Intent::SortByMonth { folder, parent, include_subfolders } => {
+                self.sort(folder, parent.as_deref(), false, *include_subfolders)?
+            }
             Intent::ConvertImage { src, format } => self.convert(src, *format)?,
             Intent::ResizeImage { src, width } => self.resize(src, *width)?,
             Intent::MergePdf { src, output } => self.merge(src, output)?,
@@ -412,35 +414,7 @@ impl<'a> Planner<'a> {
         } else if let Some(p) = self.roots.named(first) {
             p.clone()
         } else {
-            let roots = self.roots.search_roots();
-            let disk = self.search.isolated(self.search.remaining_time());
-            let (mut found, needs_confirmation) = match disk.nearest_dirs(&roots, first) {
-                search::NameLookup::Found { candidates, needs_confirmation } => (candidates, needs_confirmation),
-                search::NameLookup::NotFound(_) => (Vec::new(), false),
-                search::NameLookup::RetryPerRoot(mut candidates) => {
-                    candidates.extend(disk.scan_lookup_paths(&roots, search::LookupKind::Container));
-                    (Self::name_candidates(first, candidates, search::LookupKind::Container), disk.status().is_some())
-                }
-                search::NameLookup::Incomplete(message) => {
-                    disk.record_failure();
-                    return Err(Stop::SearchIncomplete(message));
-                }
-            };
-            if needs_confirmation {
-                found.retain(|path| path.is_dir() && self.check(path).is_ok());
-                return self.partial_lookup(first, found, &disk, disk.status());
-            }
-            if found.is_empty() && read_only && create_in.is_none() {
-                self.confirm_skipped_folder(&disk, first, &roots)?;
-            }
-            match found.len() {
-                1 => found.into_iter().next().unwrap(),
-                0 => match create_in {
-                    Some(parent) => parent.join(first),
-                    None => return problem(format!("Couldn't find a folder named “{first}”.")),
-                },
-                _ => return Err(ambiguous(first, found, false)),
-            }
+            self.lookup_folder(first, first, &self.roots.search_roots(), create_in, read_only)?
         };
         let full = match rest {
             Some(r) => base.join(r),
@@ -451,6 +425,44 @@ impl<'a> Planner<'a> {
             return problem(format!("Couldn't find a folder named “{name}”."));
         }
         Ok(full)
+    }
+
+    fn lookup_folder(
+        &self,
+        name: &str,
+        label: &str,
+        roots: &[PathBuf],
+        create_in: Option<&Path>,
+        read_only: bool,
+    ) -> Result<PathBuf, Stop> {
+        let disk = self.search.isolated(self.search.remaining_time());
+        let (mut found, needs_confirmation) = match disk.nearest_dirs(roots, name) {
+            search::NameLookup::Found { candidates, needs_confirmation } => (candidates, needs_confirmation),
+            search::NameLookup::NotFound(_) => (Vec::new(), false),
+            search::NameLookup::RetryPerRoot(mut candidates) => {
+                candidates.extend(disk.scan_lookup_paths(roots, search::LookupKind::Container));
+                (Self::name_candidates(name, candidates, search::LookupKind::Container), disk.status().is_some())
+            }
+            search::NameLookup::Incomplete(message) => {
+                disk.record_failure();
+                return Err(Stop::SearchIncomplete(message));
+            }
+        };
+        if needs_confirmation {
+            found.retain(|path| path.is_dir() && self.check(path).is_ok());
+            return self.partial_lookup(label, found, &disk, disk.status());
+        }
+        if found.is_empty() && read_only && create_in.is_none() {
+            self.confirm_skipped_folder(&disk, name, roots)?;
+        }
+        match found.len() {
+            1 => Ok(found.remove(0)),
+            0 => match create_in {
+                Some(parent) => Ok(parent.join(name)),
+                None => problem(format!("Couldn't find a folder named “{label}”.")),
+            },
+            _ => Err(ambiguous(label, found, false)),
+        }
     }
 
     fn confirm_skipped_folder(&self, disk: &search::Search, name: &str, dirs: &[PathBuf]) -> Result<(), Stop> {
@@ -1307,8 +1319,26 @@ impl<'a> Planner<'a> {
         Ok((format!("Create {what} in {}", file_name(&parent)), parent))
     }
 
-    fn sort(&mut self, folder: &str, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
-        let dir = self.resolve_folder(folder, None)?;
+    fn resolve_sort_folder(&self, folder: &str, parent: Option<&str>) -> Result<PathBuf, Stop> {
+        let Some(parent) = parent else { return self.resolve_folder(folder, None) };
+        let root = self.resolve_folder(parent, None)?;
+        let label = format!("{folder} in {parent}");
+        if let Some(path) = self.choices.get(&label) {
+            self.check(path)?;
+            let within_parent =
+                fsx::canonical(path).strip_prefix(fsx::canonical(&root)).is_ok_and(|relative| !relative.as_os_str().is_empty());
+            if !path.is_dir() || !within_parent {
+                return problem(format!("Choose a folder inside {}.", self.roots.display(&root)));
+            }
+            return Ok(path.clone());
+        }
+        let path = self.lookup_folder(folder, &label, &[root], None, false)?;
+        self.check(&path)?;
+        Ok(path)
+    }
+
+    fn sort(&mut self, folder: &str, parent: Option<&str>, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
+        let dir = self.resolve_sort_folder(folder, parent)?;
         let filter = Filter { file_type: Some(FileType::Files), include_subfolders, ..Default::default() };
         let src = Source::Set { folder: Some(dir.to_string_lossy().into()), filter };
         let ExpandedSource { paths, nested, .. } = self.expand_source(&src, Expansion::DirectChanges)?;

@@ -37,6 +37,35 @@ fn regression_noon() -> DateTime<Local> {
 }
 
 #[test]
+fn demo_sort_scopes_lookup_away_from_unreadable_pictures() {
+    let fixture = MessyMac::new();
+    let base = &fixture.roots().home;
+    let demo = base.join("Downloads/Voxi Demo");
+    let blocked = base.join("Pictures/Photo Booth Library");
+    fs::create_dir(&demo).unwrap();
+    fs::create_dir(&blocked).unwrap();
+    for name in ["invoice.pdf", "photo.png", "clip.mp4"] {
+        fs::write(demo.join(name), b"demo").unwrap();
+    }
+    let _locked = LockedDir::new(blocked.clone());
+    if fs::read_dir(&blocked).is_err_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied) {
+        assert!(matches!(fixture.plan_command("sort Voxi Demo by type", ENTRY_LIMIT),
+            Err(Stop::Ambiguous { candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note), .. })
+                if candidates == [demo.clone()] && note.contains("Photo Booth Library")));
+    }
+    for command in ["sort ~/Downloads/Voxi Demo by type", "sort Voxi Demo in Downloads by type"] {
+        let result = fixture.plan_command(command, ENTRY_LIMIT);
+        assert!(
+            matches!(&result, Ok(Planned::Steps { actions, .. })
+            if actions.iter().filter(|action| matches!(action, Action::Move { from, to }
+                if from.parent() == Some(demo.as_path()) && to.starts_with(&demo))).count() == 3),
+            "{command}: {:?}",
+            result.err()
+        );
+    }
+}
+
+#[test]
 fn mixed_finder_selection_plans_only_the_selected_allowed_file() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();
@@ -294,23 +323,21 @@ fn assert_direct_sources(roots: &Roots, command: &str, intent: &Intent, actions:
     if actions.is_empty() {
         return;
     }
-    let folder = match intent {
+    let choices = HashMap::new();
+    let planner = Planner::new(roots, &choices);
+    let direct_roots = match intent {
         Intent::Move { src, .. } | Intent::Copy { src, .. } | Intent::Trash { src } => match src {
-            Source::Set { folder, filter } if !Planner::includes_nested_files(folder.as_deref(), filter) => folder.as_deref(),
+            Source::Set { folder, filter } if !Planner::includes_nested_files(folder.as_deref(), filter) => match folder {
+                Some(name) => vec![planner.resolve_folder(name, None).unwrap()],
+                None => vec![roots.desktop(), roots.downloads()],
+            },
             _ => return,
         },
-        Intent::SortByType { folder, include_subfolders: false } | Intent::SortByMonth { folder, include_subfolders: false } => {
-            Some(folder.as_str())
+        Intent::SortByType { folder, parent, include_subfolders: false }
+        | Intent::SortByMonth { folder, parent, include_subfolders: false } => {
+            vec![planner.resolve_sort_folder(folder, parent.as_deref()).unwrap()]
         }
         _ => return,
-    };
-    let direct_roots = match folder {
-        Some(name) => vec![
-            Planner::new(roots, &HashMap::new())
-                .resolve_folder(name, None)
-                .unwrap_or_else(|err| panic!("{command:?}: couldn't resolve direct source folder {name:?}: {err:?}")),
-        ],
-        None => vec![roots.desktop(), roots.downloads()],
     };
     for action in actions {
         let source = match action {

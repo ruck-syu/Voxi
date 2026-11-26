@@ -11,6 +11,8 @@ deep. This applies to groups of files and to individual file or folder names;
 multiple matching names prompt you to choose. A folder name finds the nearest
 match first, so “create a folder in dev named test” works even when `dev` holds
 large projects; a same-named folder elsewhere at the same depth still asks.
+Use “sort Voxi Demo in Downloads by type” to look for the sort folder only
+inside Downloads.
 
 Hidden folders, symlinked folders, `_to_delete`, macOS packages (apps, Xcode
 projects, iWork and Photos libraries, and similar), and dependency or build

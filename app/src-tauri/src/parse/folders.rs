@@ -77,7 +77,15 @@ pub fn patterns() -> Vec<Pattern> {
                 if bad_destination(&raw) {
                     return None;
                 }
-                let folder = clean_name(&raw);
+                let (folder, parent) = match split_arguments(&raw, &["in"]) {
+                    Some((folder, parent)) if !folder.contains('/') => {
+                        if bad_destination(folder) || bad_destination(parent) {
+                            return None;
+                        }
+                        (clean_name(folder), Some(clean_name(parent)))
+                    }
+                    _ => (clean_name(&raw), None),
+                };
                 let by = cap(c, 2)?.to_ascii_lowercase();
                 let include_subfolders = c[0].to_ascii_lowercase().contains("subfolders")
                     || c[0].to_ascii_lowercase().contains("sub-folders")
@@ -85,9 +93,9 @@ pub fn patterns() -> Vec<Pattern> {
                     || c[0].to_ascii_lowercase().contains("nested folders")
                     || c[0].to_ascii_lowercase().contains("subdirectories");
                 Some(if by.starts_with("month") || by == "date" {
-                    Intent::SortByMonth { folder, include_subfolders }
+                    Intent::SortByMonth { folder, parent, include_subfolders }
                 } else {
-                    Intent::SortByType { folder, include_subfolders }
+                    Intent::SortByType { folder, parent, include_subfolders }
                 })
             },
         ),

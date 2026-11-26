@@ -31,3 +31,5 @@ what is in report.pdf => {"intent":"list","src":{"kind":"item","name":"report.pd
 move => !miss
 move report.pdf => !miss
 to Documents => !miss
+sort Voxi Demo in Downloads by type => {"intent":"sort_by_type","folder":"Voxi Demo","parent":"Downloads"}
+sort "Trips in July" in "2026 Archive" by month => {"intent":"sort_by_month","folder":"Trips in July","parent":"2026 Archive"}

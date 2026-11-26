@@ -254,6 +254,27 @@ fn transfer_with_a_named_parent_creates_only_the_leaf() {
 }
 
 #[test]
+fn folder_creation_hint_can_be_used_as_the_transfer_destination() {
+    let fixture = MessyMac::new();
+    let stuff = fixture.roots().downloads().join("Stuff");
+    fs::create_dir(&stuff).unwrap();
+    let Err(Stop::Problem(message)) = fixture.plan_command("move report.pdf to Receipts in Stuff", ENTRY_LIMIT) else {
+        panic!("expected a hint for creating Receipts");
+    };
+    let destination = message.split_once(", use ").unwrap().1.strip_suffix('.').unwrap();
+    let command = format!("move report.pdf to {destination}");
+    let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+    let receipts = stuff.join("Receipts");
+    assert_eq!(
+        actions,
+        [
+            Action::CreateFolder { path: receipts.clone() },
+            Action::Move { from: fixture.roots().desktop().join("report.pdf"), to: receipts.join("report.pdf") }
+        ]
+    );
+}
+
+#[test]
 fn literal_and_parent_scoped_folders_prompt_for_a_choice() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();

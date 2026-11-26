@@ -534,7 +534,7 @@ impl<'a> Planner<'a> {
                     problem(format!("A file named “{folder}” already exists in {}. Choose another folder name.", self.roots.display(&root)))
                 } else if existing_only {
                     problem(format!(
-                        "Couldn't find a folder named “{label}”. Quote “{folder}” to create it in {}.",
+                        "Couldn't find a folder named “{label}”. To create it in {}, use \"{folder}\" in \"{parent}\".",
                         self.roots.display(&root)
                     ))
                 } else {

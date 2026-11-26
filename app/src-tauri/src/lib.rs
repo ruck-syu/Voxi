@@ -228,7 +228,11 @@ fn fade_window(ns: &objc2_app_kit::NSWindow, visible: bool, animate: bool) {
 
 /// Shows the command window on the screen with the cursor and focuses it.
 /// `mode` tells the page which view to open (command, settings, welcome).
-fn show_window(app: &AppHandle, mode: &str) {
+fn show_window(app: &AppHandle, mode: &'static str) {
+    request_window(app, |_| mode);
+}
+
+fn request_window(app: &AppHandle, prepare: impl FnOnce(&AppState) -> &'static str) {
     let Some(w) = app.get_webview_window("main") else { return };
     if let Ok(cursor) = app.cursor_position()
         && let Ok(Some(m)) = app.monitor_from_point(cursor.x, cursor.y)
@@ -240,7 +244,9 @@ fn show_window(app: &AppHandle, mode: &str) {
     }
     let state = app.state::<AppState>();
     let mut presentation = checked_state!(state.presentation.lock(), ());
-    let request = presentation.request(mode);
+    // Publish the handoff and change the request ID together. An outgoing
+    // view asking for its opening context must never acquire the new scope.
+    let request = presentation.request(prepare(&state));
     if presentation.ready {
         let _ = w.emit("voxi://shown", request);
     }
@@ -277,32 +283,37 @@ fn request_hide(app: &AppHandle) {
     }
 }
 
-/// Files handed over by "Organize with Voxi" in Finder become the results
-/// list, then the window opens so the user can say what to do with them.
-pub(crate) fn use_finder_selection(app: &AppHandle, selected: Vec<PathBuf>) {
-    let state = app.state::<AppState>();
+/// Both Finder entry points replace the results list and open the command window.
+#[cfg(target_os = "macos")]
+fn use_finder_selection(app: &AppHandle, urls: Vec<tauri::Url>) {
+    let paths = finder_selection::paths_from_urls(urls);
+    request_window(app, |state| prepare_finder_selection(state, paths));
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn prepare_finder_selection(state: &AppState, selected: Vec<PathBuf>) -> &'static str {
     // The selection replaces whatever was being planned: cancel it, so its
     // late reply can't arrive carrying this new list as its own.
-    if let Some((_, control)) = checked_state!(state.active_search.lock(), ()).take() {
+    let mut active = checked_state!(state.active_search.lock(), "command");
+    if let Some((_, control)) = active.take() {
         control.cancel();
     }
-    let onboarded = checked_state!(state.settings.lock(), ()).onboarded;
+    let onboarded = checked_state!(state.settings.lock(), "command").onboarded;
     let notice = if onboarded {
-        let (generation, notice) = take_selection(&state, selected);
+        let (generation, notice) = take_selection(state, selected);
         notice.map(|n| (Some(generation), n))
     } else {
         // Finishing setup rebuilds the allowed folders and clears the list.
-        Some((None, "Finish setting up Voxi, then choose Organize with Voxi in Finder again.".into()))
+        Some((None, "Finish setting up Voxi, then send your selection from Finder again.".into()))
     };
-    *checked_state!(state.selection_notice.lock(), ()) = notice;
-    show_window(app, "command");
-    // An open command view (one kept through a run, say) reads the new list.
-    let _ = app.emit("voxi://selection", ());
+    *checked_state!(state.selection_notice.lock(), "command") = notice;
+    if onboarded { "command" } else { "welcome" }
 }
 
 /// Publishes the selection as the results list. Returns the list's new
 /// generation and the notice to show: what was left out, or why nothing
 /// could be used.
+#[cfg(any(target_os = "macos", test))]
 fn take_selection(state: &AppState, selected: Vec<PathBuf>) -> (u64, Option<String>) {
     let unavailable = || (0, Some("Voxi state is unavailable. Restart the app.".into()));
     let Ok(roots) = state.roots.read().map(|r| r.clone()) else { return unavailable() };
@@ -337,8 +348,13 @@ struct Opening {
 }
 
 #[tauri::command]
-fn opening_context(state: State<AppState>) -> Opening {
-    opening(&state)
+fn opening_context(state: State<AppState>, request_id: u64) -> Option<Opening> {
+    opening_for_request(&state, request_id)
+}
+
+fn opening_for_request(state: &AppState, request_id: u64) -> Option<Opening> {
+    let presentation = checked_state!(state.presentation.lock(), None);
+    presentation.is_current(request_id).then(|| opening(state))
 }
 
 fn opening(state: &AppState) -> Opening {
@@ -484,16 +500,24 @@ fn plan_command(
         Some(old) => mark_replacement(&state, outcome, old),
         None => outcome,
     };
-    let context = checked_state!(
-        state.result_scope.lock(),
-        CommandReply {
-            outcome: Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() },
-            scope: None,
-            generation: 0,
-            search_stats,
-        }
-    );
-    CommandReply { outcome, scope: context.summary(), generation: context.generation, search_stats }
+    command_reply(&state, request_id, outcome, search_stats)
+}
+
+fn command_reply(state: &AppState, request_id: u64, outcome: Outcome, search_stats: search::Stats) -> CommandReply {
+    let unavailable = || CommandReply {
+        outcome: Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() },
+        scope: None,
+        generation: None,
+        search_stats,
+    };
+    // Hold the same lock used to cancel planning before publishing a Finder
+    // selection, so this reply can only claim a list while its request is active.
+    let active = checked_state!(state.active_search.lock(), unavailable());
+    if !active.as_ref().is_some_and(|(id, control)| *id == request_id && !control.is_cancelled()) {
+        return CommandReply { outcome, scope: None, generation: None, search_stats };
+    }
+    let context = checked_state!(state.result_scope.lock(), unavailable());
+    CommandReply { outcome, scope: context.summary(), generation: Some(context.generation), search_stats }
 }
 
 /// Reviewing a needs-review task plans its command again. The resulting
@@ -523,8 +547,8 @@ struct CommandReply {
     outcome: Outcome,
     search_stats: search::Stats,
     scope: Option<scope::Summary>,
-    /// The results-list generation after this command.
-    generation: u64,
+    /// The results-list generation after this command, if it is still active.
+    generation: Option<u64>,
 }
 
 /// Clears the results list, but only the one at `generation` when given, so
@@ -947,7 +971,7 @@ fn plan_input_routed(
         match &work {
             Work::Shortcut(phrase, commands) => planner.plan_shortcut(phrase, commands, &history),
             Work::Command(intent) => planner.plan(intent, &history),
-            Work::UndoEntry(id) => history.undoable(*id).map_err(Stop::Problem).and_then(plan::plan_undo),
+            Work::UndoEntry(id) => history.undoable(*id).map_err(Stop::Problem).and_then(|entry| plan::plan_undo(entry, &roots)),
         }
     };
     #[cfg(feature = "tiny-model")]
@@ -1056,8 +1080,9 @@ fn plan_input_routed(
                     Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }
                 );
                 if context.generation == scope_generation {
-                    match listed.and_then(|(paths, label)| {
-                        scope::Snapshot::capture(paths, previous_scope.as_ref().filter(|_| use_scope).map_or(label, |s| s.label.clone()))
+                    match listed.and_then(|plan::Listed { paths, label, folder }| {
+                        let label = previous_scope.as_ref().filter(|_| use_scope).map_or(label, |s| s.label.clone());
+                        scope::Snapshot::capture_list(paths, label, folder)
                     }) {
                         Some(snapshot) => {
                             context.publish(snapshot);
@@ -1850,7 +1875,19 @@ fn get_settings(app: AppHandle, state: State<AppState>) -> Result<Settings, Stri
 }
 
 #[tauri::command]
-fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings) -> Result<Settings, settings::SaveError> {
+fn save_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<Settings, settings::SaveError> {
+    let saved = write_settings(&app, &state, settings)?;
+    // Saved from the Settings window, so the user has seen their folders:
+    // tasks held back while settings were unreadable can run again.
+    if let Ok(mut schedules) = state.schedules.lock() {
+        schedules.resume_runs();
+    }
+    Ok(saved)
+}
+
+/// Saves settings. Shortcuts taught from the command box and remembered
+/// folders use this too, without resuming paused scheduled tasks.
+fn write_settings(app: &AppHandle, state: &AppState, mut settings: Settings) -> Result<Settings, settings::SaveError> {
     state.ensure_settings_writable()?;
     settings.validate_shortcuts()?;
     settings.validate_nicknames(&home())?;
@@ -1880,7 +1917,7 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
         &mut installed,
         &requested_hotkey,
         os_before,
-        |actual, wanted| settings::set_hotkey(&app, actual, wanted),
+        |actual, wanted| settings::set_hotkey(app, actual, wanted),
         |enabled| {
             let result = if enabled { al.enable() } else { al.disable() };
             let accepted = result
@@ -1905,6 +1942,8 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut settings: Settings)
     *roots = build_roots(&settings);
     *current = settings.clone();
     context.clear();
+    // The list's notice goes with it, including a pre-setup "Finish setting up" one.
+    *state.selection_notice.lock().map_err(|_| "Results unavailable. Restart Voxi.")? = None;
     settings.hotkey = installed.clone();
     show_menu_bar_icon(&app, settings.show_menu_bar_icon, !installed.is_empty());
     Ok(settings)
@@ -1960,7 +1999,7 @@ fn reveal_reports(state: State<AppState>) -> Result<(), String> {
 fn teach_phrase(app: AppHandle, state: State<AppState>, phrase: String, command: String) -> Result<Settings, String> {
     let current = get_settings(app.clone(), state.clone())?;
     let next = learn::teach_phrase(&current, &phrase, &command)?;
-    save_settings(app, state, next).map_err(|e| e.message)
+    write_settings(&app, &state, next).map_err(|e| e.message)
 }
 
 /// Remembers a folder the user picked as their name for it. Only folders
@@ -1975,7 +2014,7 @@ fn remember_folder(app: AppHandle, state: State<AppState>, name: String, path: S
     }
     let current = get_settings(app.clone(), state.clone())?;
     let next = learn::add_nickname(&current, &name, &folder, &home())?;
-    save_settings(app, state, next).map_err(|e| e.message)
+    write_settings(&app, &state, next).map_err(|e| e.message)
 }
 
 /// A fixed destination; the frontend cannot ask this command to open arbitrary URLs.
@@ -2091,6 +2130,10 @@ pub fn run() {
             let settings_path = config_dir.join("settings.json");
             let (settings, settings_warning) = Settings::load_with_warning(&settings_path);
             let settings_blocked = settings_warning.as_ref().filter(|w| w.write_blocked).map(|w| w.message.clone());
+            // Unreadable settings load as defaults, without the user's folder
+            // exclusions, so scheduled tasks wait instead of running against them.
+            let settings_unreadable = settings_warning.is_some();
+            let settings_unwritable = settings_blocked.is_some();
             let (mut history, history_warning) = History::load_with_warning(data_dir.join("history.json"));
             let mut storage_notices: Vec<String> = [settings_warning, history_warning]
                 .into_iter()
@@ -2122,7 +2165,17 @@ pub fn run() {
                 pending: Mutex::new(None),
                 settings: Mutex::new(settings.clone()),
                 settings_blocked,
-                schedules: Mutex::new(scheduler::Store::load(data_dir.join("schedules.json"))),
+                schedules: Mutex::new({
+                    let mut store = scheduler::Store::load(data_dir.join("schedules.json"));
+                    if settings_unreadable {
+                        store.suspend_runs(if settings_unwritable {
+                            "Scheduled tasks are paused because Voxi can't read or save its settings. Quit and reopen Voxi; the notice in Settings says what went wrong.".into()
+                        } else {
+                            "Scheduled tasks are paused because Voxi couldn't read its settings. Check Settings → Folders, then save to resume them.".into()
+                        });
+                    }
+                    store
+                }),
                 execution: Mutex::new(()),
                 active_runs: Mutex::new(HashMap::new()),
                 settings_path,
@@ -2285,9 +2338,21 @@ pub fn run() {
             return;
         }
     };
-    app.run(|app, event| {
+    #[cfg(target_os = "macos")]
+    let mut pending_open = Some(Vec::new());
+    app.run(move |app, event| {
         #[cfg(target_os = "macos")]
         match event {
+            tauri::RunEvent::Opened { urls } => {
+                if let Some(urls) = finder_selection::opened_files(urls, &mut pending_open) {
+                    use_finder_selection(app, urls);
+                }
+            }
+            tauri::RunEvent::Ready => {
+                if let Some(urls) = pending_open.take().filter(|urls| !urls.is_empty()) {
+                    use_finder_selection(app, urls);
+                }
+            }
             tauri::RunEvent::Exit => outside_click::uninstall(),
             // Opening Voxi again from Finder, Spotlight or Launchpad always
             // reaches Settings, even with the menu bar icon hidden.

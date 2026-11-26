@@ -44,6 +44,7 @@ jobs:
       - run: npm ci
       - run: node scripts/check-versions.mjs
       - run: npm run lint
+      - run: npm run test:finder-handoff
       - run: npm run build
       # Unset (rather than empty) model env vars for the no-weights feature suite.
       - name: Default tests

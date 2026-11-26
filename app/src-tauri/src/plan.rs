@@ -101,13 +101,19 @@ pub enum Planned {
         summary: String,
         rows: Vec<InfoRow>,
         total: usize,
-        listed: Option<(Vec<PathBuf>, String)>,
+        listed: Option<Listed>,
     },
     /// Read-only, runs right away without a preview.
     Direct {
         action: Action,
         title: String,
     },
+}
+
+pub struct Listed {
+    pub paths: Vec<PathBuf>,
+    pub label: String,
+    pub folder: Option<PathBuf>,
 }
 
 pub struct Planner<'a> {
@@ -148,6 +154,7 @@ enum Expansion {
 struct ExpandedSource {
     paths: Vec<PathBuf>,
     label: String,
+    folder: Option<PathBuf>,
     nested: usize,
     skipped_note: String,
 }
@@ -269,6 +276,7 @@ impl<'a> Planner<'a> {
     }
 
     fn step(&mut self, intent: &Intent, history: &History) -> Result<Step, Stop> {
+        let start = self.actions.len();
         let title = match intent {
             Intent::Chain { commands } => self.chain(commands, history)?,
             Intent::Move { src, to } => self.transfer(src, to, false)?,
@@ -313,9 +321,14 @@ impl<'a> Planner<'a> {
             Intent::RecentActions => return Ok(Step::Finished(recent(history, self.roots))),
             Intent::Undo => {
                 let Some(entry) = history.last_undoable() else { return problem("Nothing to undo.") };
-                return plan_undo(entry).map(Step::Finished);
+                return plan_undo(entry, self.roots).map(Step::Finished);
             }
         };
+        if !matches!(intent, Intent::Chain { .. }) {
+            for action in &self.actions[start..] {
+                self.roots.check_whole_tree_exclusions(action).map_err(Stop::Problem)?;
+            }
+        }
         Ok(Step::Changes(title))
     }
 
@@ -733,31 +746,48 @@ impl<'a> Planner<'a> {
                 let kind = if read_only { search::LookupKind::ReadOnly } else { search::LookupKind::Item };
                 let p = self.resolve_named_item(name, folder.as_deref(), kind, expansion == Expansion::Transfer)?;
                 let label = file_name(&p);
-                Ok(ExpandedSource { paths: vec![p], label, nested: 0, skipped_note: String::new() })
+                Ok(ExpandedSource { paths: vec![p], label, folder: None, nested: 0, skipped_note: String::new() })
             }
             Source::Set { folder, filter } => {
+                let contains = filter.name_contains.as_deref().map(NameNeedle::new).transpose()?;
+                let starts = filter.name_starts_with.as_deref().map(NameNeedle::new).transpose()?;
+                if filter.ext.as_ref().is_some_and(|exts| exts.is_empty() || exts.iter().any(|ext| ext.trim().is_empty())) {
+                    return problem("Enter a file extension for the filter, such as .txt.");
+                }
                 if let Some(scope) = &self.scope {
                     if folder.is_some() {
                         return problem("An explicit source folder starts a new search.");
                     }
-                    if direct_by_default && filter.only_subfolders {
-                        return problem("“From subfolders” works on a named folder, not on the current list.");
-                    }
+                    let boundary = filter
+                        .only_subfolders
+                        .then(|| crate::scope::subfolder_boundary(scope.folder.as_deref()))
+                        .transpose()
+                        .map_err(Stop::Problem)?;
                     let mut paths = Vec::new();
                     for path in scope.paths() {
                         self.check(&path)?;
-                        if matches(&path, filter, self.now) {
+                        if boundary.is_none_or(|folder| crate::scope::is_nested_in(&path, folder))
+                            && matches_prepared(&path, filter, self.now, contains.as_ref(), starts.as_ref())
+                        {
                             if !read_only && path.parent().is_some_and(|parent| self.in_package(parent)) {
                                 return problem("File sets can't change items inside a macOS package.");
                             }
                             paths.push(path);
                         }
                     }
+                    let folder = scope.folder.clone();
                     self.note_dates(filter);
-                    return Ok(ExpandedSource { paths, label: "the previous results".into(), nested: 0, skipped_note: String::new() });
+                    return Ok(ExpandedSource {
+                        paths,
+                        label: "the previous results".into(),
+                        folder,
+                        nested: 0,
+                        skipped_note: String::new(),
+                    });
                 }
                 let (dirs, label) = self.set_folders(folder.as_deref(), filter, read_only)?;
                 let direct = direct_by_default && !Self::includes_nested_files(folder.as_deref(), filter);
+                let folder = folder.as_ref().and_then(|_| dirs.first()).map(|dir| fsx::canonical(dir));
                 if !read_only
                     && !direct
                     && let Some(d) = dirs.iter().find(|d| self.in_hidden_tree(d) || self.in_package(d))
@@ -771,14 +801,12 @@ impl<'a> Planner<'a> {
                 let top_level: HashSet<_> =
                     dirs.iter().filter(|_| direct_by_default && filter.only_subfolders).map(|d| fsx::canonical(d)).collect();
                 let now = self.now;
-                let contains = filter.name_contains.as_deref().map(normalized_name);
-                let starts = filter.name_starts_with.as_deref().map(normalized_name);
                 let inspect = filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some() || has_date_filter(filter);
                 let matches_file = |p: &Path| {
                     if inspect && fs::metadata(p).is_err() {
                         return None;
                     }
-                    Some(matches_prepared(p, filter, now, contains.as_deref(), starts.as_deref()))
+                    Some(matches_prepared(p, filter, now, contains.as_ref(), starts.as_ref()))
                 };
                 let query = self.search.isolated(self.search.remaining_time());
                 let mut out = Vec::new();
@@ -824,7 +852,7 @@ impl<'a> Planner<'a> {
                 }
                 out.sort_by_key(|p| file_name(p).to_lowercase());
                 self.note_dates(filter);
-                Ok(ExpandedSource { paths: out, label, nested, skipped_note })
+                Ok(ExpandedSource { paths: out, label, folder, nested, skipped_note })
             }
         }
     }
@@ -897,6 +925,14 @@ impl<'a> Planner<'a> {
 
     // ---- Planners ----------------------------------------------------------
 
+    /// "Trash", "the bin", "Recycle Bin": a destination that names the Trash
+    /// itself rather than a folder path.
+    fn names_the_trash(to: &str) -> bool {
+        let to = to.trim().to_lowercase();
+        let to = to.strip_prefix("the ").unwrap_or(&to).trim();
+        !to.contains(['/', '~']) && matches!(to, "trash" | "bin" | "recycle bin")
+    }
+
     fn transfer(&mut self, src: &Source, to: &str, copy: bool) -> Result<String, Stop> {
         let src_dir = match src {
             Source::Set { folder: Some(folder), .. } => Some(self.resolve_folder(folder, None)?),
@@ -914,8 +950,10 @@ impl<'a> Planner<'a> {
         // A filter after "to Trash" ("move files ... to Trash between 10 and
         // 50 MB") parses as a Move, not the delete phrasing. Never create a
         // folder called Trash: apply the same checks as a delete command.
+        // Only a bare "Trash" means the Trash: "Documents/Trash" or "~/bin" is
+        // an ordinary folder path, even when that folder doesn't exist yet.
         if let Ok(dest) = &dest
-            && matches!(file_name(dest).to_ascii_lowercase().as_str(), "trash" | "bin" | "recycle bin")
+            && Self::names_the_trash(to)
             && !dest.exists()
             && !self.planned_dirs.contains(dest)
         {
@@ -924,7 +962,7 @@ impl<'a> Planner<'a> {
             }
             return self.trash(src);
         }
-        let ExpandedSource { paths, label, nested, skipped_note } = self.expand_source(src, Expansion::Transfer)?;
+        let ExpandedSource { paths, label, nested, skipped_note, .. } = self.expand_source(src, Expansion::Transfer)?;
         if paths.is_empty() {
             return Err(Self::no_matching_files(&label, nested, &skipped_note));
         }
@@ -960,6 +998,7 @@ impl<'a> Planner<'a> {
                 return problem(format!("Can't put {} inside itself.", file_name(p)));
             }
             let (to, note) = self.target(&dest, &file_name(p));
+            self.check(&to)?;
             let a = if copy { Action::Copy { from: p.clone(), to } } else { Action::Move { from: p.clone(), to } };
             self.push(a, note);
         }
@@ -1511,7 +1550,7 @@ impl<'a> Planner<'a> {
                 return problem("To be safe, clean-up needs a filter, like “older than 90 days”, “installers”, or “larger than 500 MB”.");
             }
         }
-        let ExpandedSource { paths, label, nested, skipped_note } = self.expand_source(src, Expansion::DirectChanges)?;
+        let ExpandedSource { paths, label, nested, skipped_note, .. } = self.expand_source(src, Expansion::DirectChanges)?;
         if paths.is_empty() {
             return Err(Self::no_matching_files(&label, nested, &skipped_note));
         }
@@ -1543,7 +1582,7 @@ impl<'a> Planner<'a> {
     }
 
     fn list(&mut self, src: &Source) -> Result<Planned, Stop> {
-        let ExpandedSource { mut paths, label, skipped_note, .. } = self.expand_source(src, Expansion::ReadOnly)?;
+        let ExpandedSource { mut paths, label, folder, skipped_note, .. } = self.expand_source(src, Expansion::ReadOnly)?;
         let by_size = matches!(src, Source::Set { filter, .. } if filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some());
         let modified = reads_modified(src);
         if by_size {
@@ -1554,7 +1593,7 @@ impl<'a> Planner<'a> {
         let total_bytes: u64 = paths.iter().map(|p| fs::metadata(p).map_or(0, |m| m.len())).sum();
         let rows = paths.iter().take(200).map(|p| self.file_row(p, modified)).collect();
         Ok(Planned::Info {
-            listed: Some((paths.clone(), label.clone())),
+            listed: Some(Listed { paths: paths.clone(), label: label.clone(), folder }),
             // A single named file's label is its own name; title it by its folder instead.
             title: match paths.as_slice() {
                 [one] if file_name(one) == label => format!("{label} in {}", one.parent().map_or_else(|| label.clone(), file_name)),
@@ -1702,8 +1741,11 @@ fn skipped_trees_suffix(note: &str) -> String {
     if note.is_empty() { String::new() } else { format!(" {note}") }
 }
 
-pub(crate) fn plan_undo(entry: &Entry) -> Result<Planned, Stop> {
+pub(crate) fn plan_undo(entry: &Entry, roots: &Roots) -> Result<Planned, Stop> {
     crate::history::validate_inverses(entry.inverses()).map_err(Stop::Problem)?;
+    for inverse in entry.inverses() {
+        roots.check_whole_tree_exclusions(&inverse.action).map_err(Stop::Problem)?;
+    }
     let actions: Vec<_> = entry.inverses().iter().map(|inverse| inverse.action.clone()).collect();
     Ok(Planned::Steps {
         title: format!("Undo “{}”", entry.command),
@@ -1852,13 +1894,42 @@ fn date_note(f: &Filter) -> Option<&'static str> {
     })
 }
 
-pub fn matches(p: &Path, f: &Filter, now: DateTime<Local>) -> bool {
-    let contains = f.name_contains.as_deref().map(normalized_name);
-    let starts = f.name_starts_with.as_deref().map(normalized_name);
-    matches_prepared(p, f, now, contains.as_deref(), starts.as_deref())
+enum NameNeedle<'a> {
+    Literal(&'a str),
+    Normalized(String),
 }
 
-fn matches_prepared(p: &Path, f: &Filter, now: DateTime<Local>, contains: Option<&str>, starts: Option<&str>) -> bool {
+impl<'a> NameNeedle<'a> {
+    fn new(needle: &'a str) -> Result<Self, Stop> {
+        if !needle.trim().is_empty() {
+            // Punctuation alone is meaningful exactly as entered. For
+            // example, "-." must not become "." and match every extension.
+            if !needle.chars().any(char::is_alphanumeric) {
+                return Ok(Self::Literal(needle));
+            }
+            let normalized = normalized_name(needle);
+            if !normalized.is_empty() {
+                return Ok(Self::Normalized(normalized));
+            }
+        }
+        problem("Enter a filename filter with a letter, number, or punctuation mark.")
+    }
+
+    fn matches(&self, filename: &str, normalized: &str, check: impl FnOnce(&str, &str) -> bool) -> bool {
+        match self {
+            Self::Literal(needle) => check(filename, needle),
+            Self::Normalized(needle) => check(normalized, needle),
+        }
+    }
+}
+
+fn matches_prepared(
+    p: &Path,
+    f: &Filter,
+    now: DateTime<Local>,
+    contains: Option<&NameNeedle<'_>>,
+    starts: Option<&NameNeedle<'_>>,
+) -> bool {
     let e = ext_of(p);
     let type_ok = match f.file_type {
         None => true,
@@ -1872,8 +1943,11 @@ fn matches_prepared(p: &Path, f: &Filter, now: DateTime<Local>, contains: Option
         return false;
     }
     if contains.is_some() || starts.is_some() {
-        let name = normalized_name(&file_name(p));
-        if contains.is_some_and(|needle| !name.contains(needle)) || starts.is_some_and(|needle| !name.starts_with(needle)) {
+        let filename = file_name(p);
+        let normalized = normalized_name(&filename);
+        if contains.is_some_and(|needle| !needle.matches(&filename, &normalized, |name, n| name.contains(n)))
+            || starts.is_some_and(|needle| !needle.matches(&filename, &normalized, |name, n| name.starts_with(n)))
+        {
             return false;
         }
     }

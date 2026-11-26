@@ -189,6 +189,9 @@ static RULES: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         // "move the PDFs into a new folder called Bills on the Desktop" -> "move the PDFs to Desktop/Bills".
         // Moving and copying make a missing destination, so "a new folder" needs no extra step.
         (r"(?i)^(move|copy|put|send|shift|transfer)\s+(.+?)\s+(?:to|into|in)\s+(?:a\s+)?(?:brand\s+)?(?:new\s+)?folder\s+(?:called|named)\s+(.+?)\s+(?:on|in|inside)\s+(?:the\s+|my\s+)?(\S+?)(?:\s+folder)?$", "$1 $2 to $4/$3"),
+        // "move x to a new folder called Trash" makes a folder named Trash: keep
+        // the name quoted so it isn't read as the Trash itself.
+        (r#"(?i)^(move|copy|put|send|shift|transfer)\s+(.+?)\s+(?:to|into|in)\s+(?:a\s+)?(?:brand\s+)?(?:new\s+)?folder\s+(?:called|named)\s+"?(trash|bin|recycle\s+bin)"?$"#, r#"$1 $2 to "$3""#),
         // "move every pdf in Downloads to a new folder called PDFs" -> "move every pdf in Downloads to PDFs"
         (r"(?i)^(move|copy|put|send|shift|transfer)\s+(.+?)\s+(?:to|into|in)\s+(?:a\s+)?(?:brand\s+)?(?:new\s+)?folder\s+(?:called|named)\s+(.+)$", "$1 $2 to $3"),
         // "make a zip archive from Project called Project.zip" -> "zip Project into Project.zip"

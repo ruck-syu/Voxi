@@ -529,7 +529,10 @@ mod tests {
 
     #[test]
     fn published_move_and_staging_cleanup_failures_are_undoable() {
-        use crate::fsx::{STAGE_CLEANUP_FAILURE, UNLINK_FAILURE};
+        use crate::fsx::{FORCE_LINK_FALLBACK, STAGE_CLEANUP_FAILURE, UNLINK_FAILURE};
+        // A failed source cleanup only happens on volumes without no-replace
+        // renames, where a move links the file and then removes the source.
+        FORCE_LINK_FALLBACK.with(|force| force.set(true));
         for (injection, move_file) in [(&UNLINK_FAILURE, true), (&STAGE_CLEANUP_FAILURE, false)] {
             let dir = tempfile::tempdir().unwrap();
             let documents = dir.path().join("Documents");
@@ -564,6 +567,7 @@ mod tests {
             assert_eq!(std::fs::read(&source).unwrap(), b"original");
             assert_eq!(std::fs::read(dir.path().join(".Trash/b")).unwrap(), b"original");
         }
+        FORCE_LINK_FALLBACK.with(|force| force.set(false));
     }
 
     #[test]

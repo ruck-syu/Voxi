@@ -19,7 +19,7 @@ use std::{
 static SUFFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^\s+(?:(after|in)\s+(.+?)\s+(hours?|hrs?|minutes?|mins?)|at\s+(.+?))\s*[.!]?\s*$").unwrap());
 static CLOCK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^(?:(today|tomorrow)\s+)?(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?(?:\s+(today|tomorrow))?$").unwrap()
+    Regex::new(r"(?i)^(?:(today|tomorrow)\s+)?([0-9]{1,2})(?::([0-9]{2}))?\s*(a\.?m\.?|p\.?m\.?)?(?:\s+(today|tomorrow))?$").unwrap()
 });
 
 static CLAUSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s+(?:at|after|in)\b").unwrap());
@@ -136,8 +136,9 @@ pub fn extract(text: &str, now: DateTime<Local>) -> Result<(String, Option<DateT
         if [clock.get(1).is_some(), clock.get(5).is_some(), lead_day.is_some()].into_iter().filter(|b| *b).count() > 1 {
             return Err("Mention today or tomorrow once.".into());
         }
-        let mut hour: u32 = clock[2].parse().unwrap();
-        let minute: u32 = clock.get(3).map_or("0", |m| m.as_str()).parse().unwrap();
+        let digits = |text: &str| text.parse::<u32>().map_err(|_| "Use a time such as “at 9:40 pm” or “at 21:40”.".to_string());
+        let mut hour = digits(&clock[2])?;
+        let minute = digits(clock.get(3).map_or("0", |m| m.as_str()))?;
         if let Some(period) = clock.get(4) {
             if !(1..=12).contains(&hour) {
                 return Err("Use an hour from 1 to 12 with am or pm.".into());
@@ -214,6 +215,10 @@ pub struct Rule {
 }
 
 pub const APPROVED_RULE_VERSION: u32 = 2;
+
+/// Why a repeating task saved before approvals were recorded was stopped.
+const LEGACY_UNVERIFIED: &str =
+    "This task was saved by an older version of Voxi, which didn't record what you approved. Schedule it again to keep it.";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -339,7 +344,11 @@ impl Rule {
             Some(RuleSource::Shortcut { phrase, .. }) => {
                 Err(format!("The shortcut “{phrase}” was changed or removed. Review it to keep this task."))
             }
-            None => Err("Voxi couldn't verify the original command or shortcut. Review it to keep this task.".into()),
+            // Saved before Voxi recorded approvals. The text may have been a
+            // shortcut since removed or a nickname since changed, and older
+            // versions let a shortcut win over a built-in command of the same
+            // words, so there is no safe way to tell what was approved.
+            None => Err(LEGACY_UNVERIFIED.into()),
         }
     }
 
@@ -411,7 +420,8 @@ fn clock_time(value: &str) -> Result<NaiveTime, String> {
 }
 
 fn weekday(name: &str) -> Option<Weekday> {
-    Some(match &name.to_ascii_lowercase()[..3] {
+    // `get` rather than slicing: the name may start with a multi-byte character.
+    Some(match name.to_ascii_lowercase().get(..3)? {
         "mon" => Weekday::Mon,
         "tue" => Weekday::Tue,
         "wed" => Weekday::Wed,
@@ -963,6 +973,9 @@ pub struct Store {
     /// state is kept, and this warning shown.
     durability: std::cell::RefCell<Option<String>>,
     unavailable: Option<String>,
+    /// Why due tasks are held back without being changed, such as settings
+    /// that couldn't be read (their folder exclusions would be missing).
+    suspended: Option<String>,
 }
 
 impl Store {
@@ -976,9 +989,10 @@ impl Store {
                 notice: None,
                 durability: Default::default(),
                 unavailable: Some(format!("{} Scheduling is unavailable; original data has been kept.", warning.message)),
+                suspended: None,
             };
         }
-        let mut store = Self { path, jobs, dirty: true, notice: None, durability: Default::default(), unavailable: None };
+        let mut store = Self { path, jobs, dirty: true, notice: None, durability: Default::default(), unavailable: None, suspended: None };
         for job in &mut store.jobs {
             if job.occurrence == OccurrenceState::ResultUnsaved && job.result.is_some() {
                 continue;
@@ -1008,7 +1022,20 @@ impl Store {
     }
 
     pub fn notice(&self) -> Option<String> {
-        self.unavailable.clone().or_else(|| self.notice.clone()).or_else(|| self.durability.borrow().clone())
+        self.unavailable
+            .clone()
+            .or_else(|| self.suspended.clone())
+            .or_else(|| self.notice.clone())
+            .or_else(|| self.durability.borrow().clone())
+    }
+
+    /// Hold due tasks back (they stay as they are) until `resume_runs`.
+    pub fn suspend_runs(&mut self, reason: String) {
+        self.suspended = Some(reason);
+    }
+
+    pub fn resume_runs(&mut self) {
+        self.suspended = None;
     }
 
     fn save_jobs(&self, jobs: &[Job]) -> Result<(), String> {
@@ -1209,6 +1236,9 @@ impl Store {
 
     pub fn claim(&mut self, now: DateTime<Local>) -> Result<Option<Job>, String> {
         self.retry_results()?;
+        if self.suspended.is_some() {
+            return Ok(None);
+        }
         let job = self
             .jobs
             .iter()
@@ -1470,7 +1500,7 @@ mod tests {
         let mut store = Store::load(path.clone());
         let legacy = store.jobs[0].repeat.clone().unwrap();
         let err = legacy.check_approval(&crate::settings::Settings::default(), "sort downloads by type").unwrap_err();
-        assert!(err.contains("Review it to keep this task"), "{err}");
+        assert_eq!(err, LEGACY_UNVERIFIED);
 
         // Confirming the review's preview saves the new task and drops the old one together.
         let rule = Rule { approved_version: APPROVED_RULE_VERSION, approved_source: Some(RuleSource::Command), ..legacy };
@@ -1642,6 +1672,70 @@ mod tests {
             assert!(saved.get("modifiedDates").is_none());
             assert!(saved.get("subfolderOptIn").is_none());
             assert!(saved.get("modelIntent").is_none());
+        }
+    }
+
+    /// Repeating tasks saved before approvals were recorded are never run:
+    /// Voxi can't tell whether the text was a shortcut or used a nickname.
+    #[test]
+    fn legacy_tasks_without_an_approval_record_stay_for_review() {
+        let rule: Rule = serde_json::from_value(serde_json::json!({
+            "every": 1, "unit": "days", "time": "07:44:22", "command": "sort downloads by type", "choices": {}, "approvedVersion": 0,
+        }))
+        .unwrap();
+        assert!(rule.approved_source.is_none());
+        let err = rule.check_approval(&crate::settings::Settings::default(), "sort downloads by type everyday").unwrap_err();
+        assert!(err.contains("older version of Voxi"), "{err}");
+    }
+
+    /// While settings can't be read, their folder exclusions are missing, so
+    /// due tasks must wait rather than run against the defaults.
+    #[test]
+    fn suspended_runs_wait_until_resumed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::load(dir.path().join("schedules.json"));
+        let rule = Rule {
+            every: 1,
+            unit: Unit::Hours,
+            time: None,
+            command: "move a.pdf to Documents".into(),
+            choices: HashMap::new(),
+            model_intent: None,
+            approved_version: APPROVED_RULE_VERSION,
+            approved_source: Some(RuleSource::Command),
+            approved_nicknames: None,
+        };
+        store.add(Job::recurring_later("move a.pdf to Documents hourly".into(), now(), rule)).unwrap();
+        store.suspend_runs("Settings couldn't be read.".into());
+        assert!(store.claim(now() + Duration::days(2)).unwrap().is_none());
+        assert_eq!(store.notice().as_deref(), Some("Settings couldn't be read."));
+        assert_eq!(store.jobs[0].series, SeriesState::Active, "the task itself is unchanged");
+        store.resume_runs();
+        assert!(store.claim(now() + Duration::days(2)).unwrap().is_some());
+    }
+
+    /// Digits from other scripts used to match the clock and then panic
+    /// when parsed, closing Voxi.
+    #[test]
+    fn non_ascii_clock_digits_are_refused_not_a_crash() {
+        for command in ["move pdfs to Archive at ٩ pm", "move pdfs to Archive at 9:٣٠", "move pdfs to Archive at ９pm"] {
+            assert!(extract(command, now()).is_err(), "{command}");
+        }
+        assert!(extract("move pdfs to Archive at 9 pm", now()).unwrap().1.is_some());
+        // Dates, delays and repeats too: refused or read as text, never a crash.
+        for command in [
+            "move pdfs to Archive on ٢٠٢٦-١-١ at 9 pm",
+            "move pdfs to Archive on ٢٠٢٦-١-١",
+            "move pdfs to Archive next ٢day",
+            "move pdfs to Archive in ٥ minutes",
+            "move pdfs to Archive after ١ hours and ٥ minutes",
+            "move pdfs to Archive every ٢ days",
+            "move pdfs to Archive every morning at ٩",
+            "move pdfs to Archive on March ٣",
+            "move pdfs to Archive on ééé",
+        ] {
+            let _ = extract(command, now());
+            let _ = extract_schedule(command, now());
         }
     }
 

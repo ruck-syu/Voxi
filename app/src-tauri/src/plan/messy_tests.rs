@@ -102,30 +102,6 @@ fn incomplete_literal_lookup_requires_confirmation_for_a_known_match() {
 }
 
 #[test]
-fn malformed_folder_locations_suggest_quoting_or_a_single_path() {
-    use crate::{Outcome, result_context_tests::Fixture};
-
-    let fixture = Fixture::new();
-    fixture.write("Downloads/invoice.pdf");
-    fixture.write("Downloads/Voxi Demo/Receipts/photo.png");
-    fixture.write("Downloads/2026/Receipts/report.pdf");
-    for command in [
-        "move these to Receipts in Voxi Demo in Downloads",
-        "sort Receipts in Voxi Demo in Downloads by type",
-        "move invoice.pdf to 2026/Receipts in Downloads",
-        r#"move invoice.pdf to "2026/Receipts" in Downloads"#,
-        r#"sort "2026/Receipts" in Downloads by type"#,
-        r#"move invoice.pdf to "Receipts" folder in Downloads"#,
-    ] {
-        let outcome = fixture.command(command);
-        assert!(
-            matches!(outcome, Outcome::Problem { message } if message.contains("Quote names") && message.contains("single path")),
-            "{command}"
-        );
-    }
-}
-
-#[test]
 fn quoted_folder_location_parts_keep_command_words() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();
@@ -134,22 +110,17 @@ fn quoted_folder_location_parts_keep_command_words() {
         let dest = roots.downloads().join(folder);
         fs::create_dir(&dest).unwrap();
         let command = format!(r#"move invoice.pdf to "{folder}" in Downloads"#);
-        let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+        let actions = action_plan(&fixture, &command, ENTRY_LIMIT);
         assert_eq!(actions, [Action::Move { from: from.clone(), to: dest.join("invoice.pdf") }]);
     }
     let quoted_parent = roots.downloads().join("Items called Misc/Receipts");
     fs::create_dir(&quoted_parent).unwrap();
-    let Planned::Steps { actions, .. } = complete_plan(&fixture, r#"copy invoice.pdf to Receipts in "Items called Misc""#, ENTRY_LIMIT)
-    else {
-        panic!("expected a copy plan for the quoted parent")
-    };
+    let actions = action_plan(&fixture, r#"copy invoice.pdf to Receipts in "Items called Misc""#, ENTRY_LIMIT);
     assert_eq!(actions, [Action::Copy { from, to: quoted_parent.join("invoice.pdf") }]);
 
     let path = roots.downloads().join("Receipts by Month/report.pdf");
     fs::write(&path, b"pdf").unwrap();
-    let Planned::Steps { actions, .. } = complete_plan(&fixture, r#"sort "Receipts by Month" in Downloads by type"#, ENTRY_LIMIT) else {
-        panic!("expected a sort plan for the quoted child")
-    };
+    let actions = action_plan(&fixture, r#"sort "Receipts by Month" in Downloads by type"#, ENTRY_LIMIT);
     assert!(matches!(actions.last(), Some(Action::Move { from, to }) if *from == path && to.starts_with(path.parent().unwrap())));
 }
 
@@ -166,13 +137,13 @@ fn unquoted_folder_location_uses_an_existing_literal_name() {
         let folder = roots.home.join("Documents").join(name);
         fs::create_dir(&folder).unwrap();
         let command = format!("move report.pdf to {name}");
-        let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+        let actions = action_plan(&fixture, &command, ENTRY_LIMIT);
         assert_eq!(actions, [Action::Move { from: from.clone(), to: folder.join("report.pdf") }]);
 
         let photo = folder.join("photo.png");
         fs::write(&photo, b"photo").unwrap();
         for command in [format!("sort {name} by type"), format!(r#"sort "{name}" by type"#)] {
-            let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+            let actions = action_plan(&fixture, &command, ENTRY_LIMIT);
             assert!(matches!(actions.last(), Some(Action::Move { from, to }) if *from == photo && to.starts_with(&folder)));
         }
     }
@@ -198,7 +169,7 @@ fn chain_binds_a_located_destination_to_the_folder_it_creates() {
     let roots = fixture.roots();
     let folder = roots.home.join("Documents/Archive in 2024");
     let command = r#"create a folder called "Archive in 2024" in Documents and move report.pdf to Archive in 2024"#;
-    let Planned::Steps { actions, .. } = complete_plan(&fixture, command, ENTRY_LIMIT) else { panic!("{command}") };
+    let actions = action_plan(&fixture, command, ENTRY_LIMIT);
     assert_eq!(
         actions,
         [
@@ -216,9 +187,7 @@ fn literal_located_destination_uses_a_configured_nickname() {
     fs::create_dir(fixture.roots().downloads().join("Progress")).unwrap();
     fixture.roots = fixture.roots.with_nicknames(vec![("work in progress".into(), wip.clone())]);
 
-    let Planned::Steps { actions, .. } = complete_plan(&fixture, "move report.pdf to work in progress", ENTRY_LIMIT) else {
-        panic!("expected a move to the nicknamed folder")
-    };
+    let actions = action_plan(&fixture, "move report.pdf to work in progress", ENTRY_LIMIT);
     assert_eq!(actions, [Action::Move { from: fixture.roots().desktop().join("report.pdf"), to: wip.join("report.pdf") }]);
 }
 
@@ -230,43 +199,54 @@ fn literal_located_destination_uses_an_extra_root() {
     fs::create_dir_all(&extra).unwrap();
     fixture.roots = Roots::new(home, None, std::slice::from_ref(&extra)).with_exclusions(&[home.join("Documents/Private")]);
 
-    let Planned::Steps { actions, .. } = complete_plan(&fixture, "move report.pdf to Things in Progress", ENTRY_LIMIT) else {
-        panic!("expected a move to the extra root")
-    };
+    let actions = action_plan(&fixture, "move report.pdf to Things in Progress", ENTRY_LIMIT);
     assert_eq!(actions, [Action::Move { from: fixture.roots().desktop().join("report.pdf"), to: extra.join("report.pdf") }]);
 }
 
 #[test]
-fn transfer_with_a_named_parent_creates_only_the_leaf() {
+fn finder_transfers_resolve_existing_folders_and_create_only_the_leaf() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();
     let demo = roots.downloads().join("Voxi Demo");
     fs::create_dir(&demo).unwrap();
     let from = roots.desktop().join("report.pdf");
-    let selection = crate::scope::Snapshot::capture(vec![from.clone()], "Finder".into()).unwrap();
+    let snapshot = crate::scope::Snapshot::capture(vec![from.clone()], "Finder".into()).unwrap();
     let choices = HashMap::new();
     let history = History::load(roots.home.join("history.json"));
-    let plan = |command| {
-        let (intent, uses_selection) = crate::scope::prepare(command, Some(&selection)).unwrap();
-        assert!(uses_selection);
-        Planner::new(roots, &choices).with_scope(Some(selection.clone())).plan(&intent, &history)
+    let plan = |command: &str, snapshot: &crate::scope::Snapshot| {
+        let (intent, uses_selection) = crate::scope::prepare(command, Some(snapshot)).unwrap();
+        assert!(uses_selection, "{command}");
+        Planner::new(roots, &choices).with_scope(Some(snapshot.clone())).plan(&intent, &history)
     };
-    assert!(matches!(
-        plan("move these to Receipts in Voxi Demoo"),
-        Err(Stop::Problem(message)) if message == "Couldn't find a folder named “Voxi Demoo”."
-    ));
-    assert!(matches!(
-        plan("move these to Receipts in Downloads/Voxi Demoo"),
-        Err(Stop::Problem(message)) if message == "Couldn't find a folder named “Downloads/Voxi Demoo”."
-    ));
-    assert!(matches!(
-        plan("move these to Receipts in ~/Downloads/Voxi Demoo"),
-        Err(Stop::Problem(message)) if message == "Couldn't find a folder named “~/Downloads/Voxi Demoo”."
-    ));
+    for parent in ["Voxi Demoo", "Downloads/Voxi Demoo", "~/Downloads/Voxi Demoo"] {
+        let command = format!("move these to Receipts in {parent}");
+        assert!(
+            matches!(
+                plan(&command, &snapshot),
+                Err(Stop::Problem(message)) if message == format!("Couldn't find a folder named “{parent}”.")
+            ),
+            "{command}"
+        );
+    }
 
-    let Ok(Planned::Steps { actions, .. }) = plan("move these to Receipts in Voxi Demo") else { panic!("expected a move plan") };
+    let named = "move these to Receipts in Voxi Demo";
+    let Ok(Planned::Steps { actions, .. }) = plan(named, &snapshot) else { panic!("expected a move plan") };
     let receipts = demo.join("Receipts");
     assert_eq!(actions, [Action::CreateFolder { path: receipts.clone() }, Action::Move { from, to: receipts.join("report.pdf") }]);
+
+    fs::create_dir(&receipts).unwrap();
+    let selected = [demo.join("first.pdf"), demo.join("second.png")];
+    for path in &selected {
+        fs::write(path, b"demo").unwrap();
+    }
+    let (paths, _) = crate::finder_selection::accept(roots, selected.to_vec()).unwrap();
+    let snapshot = crate::scope::Snapshot::capture(paths, crate::finder_selection::LABEL.into()).unwrap();
+    let expected = selected.map(|from| Action::Move { to: receipts.join(from.file_name().unwrap()), from });
+    for command in [named, "move these to Voxi Demo/Receipts"] {
+        let planned = plan(command, &snapshot);
+        let Ok(Planned::Steps { actions, .. }) = planned else { panic!("{command}: {:?}", planned.err()) };
+        assert_eq!(actions, expected, "{command}");
+    }
 }
 
 #[test]
@@ -279,7 +259,7 @@ fn folder_creation_hint_can_be_used_as_the_transfer_destination() {
     };
     let destination = message.split_once(", use ").unwrap().1.strip_suffix('.').unwrap();
     let command = format!("move report.pdf to {destination}");
-    let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+    let actions = action_plan(&fixture, &command, ENTRY_LIMIT);
     let receipts = stuff.join("Receipts");
     assert_eq!(
         actions,
@@ -291,12 +271,13 @@ fn folder_creation_hint_can_be_used_as_the_transfer_destination() {
 }
 
 #[test]
-fn literal_and_parent_scoped_folders_prompt_for_a_choice() {
+fn literal_and_parent_scoped_folders_support_choices_and_quoting() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();
-    let scoped = roots.downloads().join("Progress/Things");
-    let literal = roots.home.join("Documents/Things in Progress");
-    for folder in [&scoped, &literal] {
+    let [literal, scoped, quoted_literal, quoted_scoped] =
+        ["Documents/Things in Progress", "Downloads/Progress/Things", "Documents/Receipts in Voxi Demo", "Downloads/Voxi Demo/Receipts"]
+            .map(|path| roots.home.join(path));
+    for folder in [&literal, &scoped, &quoted_literal, &quoted_scoped] {
         fs::create_dir_all(folder).unwrap();
         fs::write(folder.join("photo.png"), b"photo").unwrap();
     }
@@ -317,25 +298,14 @@ fn literal_and_parent_scoped_folders_prompt_for_a_choice() {
             assert!(matches!(actions.last(), Some(Action::Move { to, .. }) if to.starts_with(path)));
         }
     }
-}
 
-#[test]
-fn quoting_selects_the_intended_folder_when_both_readings_exist() {
-    let fixture = MessyMac::new();
-    let roots = fixture.roots();
-    let literal = roots.home.join("Documents/Receipts in Voxi Demo");
-    let scoped = roots.downloads().join("Voxi Demo/Receipts");
-    for folder in [&literal, &scoped] {
-        fs::create_dir_all(folder).unwrap();
-        fs::write(folder.join("photo.png"), b"photo").unwrap();
-    }
     for (command, folder) in [
-        (r#"move report.pdf to "Receipts in Voxi Demo""#, &literal),
-        (r#"move report.pdf to Receipts in "Voxi Demo""#, &scoped),
-        (r#"sort "Receipts in Voxi Demo" by type"#, &literal),
-        (r#"sort Receipts in "Voxi Demo" by type"#, &scoped),
+        (r#"move report.pdf to "Receipts in Voxi Demo""#, &quoted_literal),
+        (r#"move report.pdf to Receipts in "Voxi Demo""#, &quoted_scoped),
+        (r#"sort "Receipts in Voxi Demo" by type"#, &quoted_literal),
+        (r#"sort Receipts in "Voxi Demo" by type"#, &quoted_scoped),
     ] {
-        let Planned::Steps { actions, .. } = complete_plan(&fixture, command, ENTRY_LIMIT) else { panic!("{command}") };
+        let actions = action_plan(&fixture, command, ENTRY_LIMIT);
         assert!(matches!(actions.last(), Some(Action::Move { to, .. }) if to.starts_with(folder)), "{command}");
     }
 }
@@ -381,30 +351,6 @@ fn scoped_sort_rejects_a_choice_outside_its_parent() {
 }
 
 #[test]
-fn scoped_folder_choices_are_not_offered_as_nicknames() {
-    use crate::{Outcome, result_context_tests::Fixture};
-
-    let fixture = Fixture::new();
-    fixture.write("Downloads/Work/First/Voxi Demo/one.pdf");
-    fixture.write("Downloads/Work/Second/Voxi Demo/two.pdf");
-    fixture.write("Downloads/First/Voxi Demo/one.pdf");
-    fixture.write("Downloads/Second/Voxi Demo/two.pdf");
-    for (command, label) in [
-        ("sort Voxi Demo in Downloads by type", "Voxi Demo in Downloads"),
-        ("sort Voxi Demo in Downloads/Work by type", "Voxi Demo in Downloads/Work"),
-    ] {
-        assert!(matches!(
-            fixture.command(command),
-            Outcome::Ambiguous { name, remember_folder: false, candidates, .. } if name == label && candidates.len() >= 2
-        ));
-    }
-    assert!(matches!(
-        fixture.command("sort Voxi Demo by type"),
-        Outcome::Ambiguous { name, remember_folder: true, .. } if name == "Voxi Demo"
-    ));
-}
-
-#[test]
 fn archive_output_requires_a_filename_after_the_final_slash() {
     let fixture = MessyMac::new();
     assert!(matches!(
@@ -441,7 +387,7 @@ fn archive_output_adds_the_extension_to_the_filename_only() {
         ("foo.zip/bar", "Desktop/foo.zip/bar.zip"),
     ] {
         let command = format!("zip report.pdf as {name}");
-        let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+        let actions = action_plan(&fixture, &command, ENTRY_LIMIT);
         assert!(matches!(actions.last(), Some(Action::Zip { output, .. }) if *output == fixture.roots().home.join(relative)), "{command}");
     }
 }
@@ -455,64 +401,11 @@ fn merge_output_accepts_a_pdf_filename_with_spaces() {
         fs::write(receipts.join(name), b"pdf").unwrap();
     }
     let command = "merge PDFs in Downloads/Receipts into March receipts.pdf";
-    let Planned::Steps { actions, .. } = complete_plan(&fixture, command, ENTRY_LIMIT) else { panic!("{command}") };
+    let actions = action_plan(&fixture, command, ENTRY_LIMIT);
     assert!(
         matches!(actions.as_slice(), [Action::MergePdf { output, .. }] if *output == receipts.join("March receipts.pdf")),
         "{actions:?}"
     );
-}
-
-#[test]
-fn demo_move_resolves_destination_in_named_parent() {
-    demo_move_to_receipts("move these to Receipts in Voxi Demo");
-}
-
-#[test]
-fn demo_move_accepts_relative_destination() {
-    demo_move_to_receipts("move these to Voxi Demo/Receipts");
-}
-
-fn demo_move_to_receipts(command: &str) {
-    let fixture = MessyMac::new();
-    let roots = fixture.roots();
-    let demo = roots.downloads().join("Voxi Demo");
-    let receipts = demo.join("Receipts");
-    fs::create_dir_all(&receipts).unwrap();
-    let selected = [demo.join("first.pdf"), demo.join("second.png")];
-    for path in &selected {
-        fs::write(path, b"demo").unwrap();
-    }
-    let (paths, _) = crate::finder_selection::accept(roots, selected.to_vec()).unwrap();
-    let snapshot = crate::scope::Snapshot::capture(paths, crate::finder_selection::LABEL.into()).unwrap();
-    let (intent, uses_selection) = crate::scope::prepare(command, Some(&snapshot)).unwrap();
-    assert!(uses_selection, "{command}");
-    let planned =
-        Planner::new(roots, &HashMap::new()).with_scope(Some(snapshot)).plan(&intent, &History::load(roots.home.join("history.json")));
-    let Ok(Planned::Steps { actions, .. }) = planned else { panic!("{command}: {:?}", planned.err()) };
-    assert_eq!(actions, selected.map(|from| Action::Move { to: receipts.join(from.file_name().unwrap()), from }), "{command}");
-}
-
-#[test]
-fn demo_finder_selection_preview_uses_its_own_notice() {
-    use crate::{Outcome, result_context_tests::Fixture, take_selection};
-
-    let fixture = Fixture::new();
-    let first = fixture.write("Downloads/Voxi Demo/first.pdf");
-    let second = fixture.write("Downloads/Voxi Demo/second.png");
-    fixture.write("Downloads/Voxi Demo/Receipts/existing.txt");
-    assert!(take_selection(&fixture.state, vec![first, second]).1.is_none());
-    let Outcome::Plan { total: 2, scope_notice, warnings, .. } = fixture.command("move these to Receipts") else {
-        panic!("expected a preview for the two Finder files");
-    };
-    assert_eq!(scope_notice.as_deref(), Some("Using your Finder selection."));
-    assert!(!warnings.iter().any(|warning| warning.contains("previous searched list")), "{warnings:?}");
-
-    assert!(matches!(fixture.command("list files in Downloads/Voxi Demo"), Outcome::Info { .. }));
-    let Outcome::Plan { scope_notice, warnings, .. } = fixture.command("move these to Documents") else {
-        panic!("expected a preview for the search results");
-    };
-    assert!(scope_notice.is_none());
-    assert!(warnings.iter().any(|warning| warning == "Using files from the previous searched list."), "{warnings:?}");
 }
 
 #[test]

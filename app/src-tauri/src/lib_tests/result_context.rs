@@ -2,14 +2,14 @@ use super::*;
 #[cfg(feature = "tiny-model")]
 use plan_model::RoutingMode::{Fallback, Legacy};
 use std::{cell::Cell, fs};
-pub(crate) struct Fixture {
+struct Fixture {
     _temp: tempfile::TempDir,
     home: PathBuf,
-    pub(crate) state: AppState,
+    state: AppState,
     request: Cell<u64>,
 }
 impl Fixture {
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
         let home = fsx::canonical(temp.path());
         for folder in ["Downloads", "Desktop", "Documents", "Pictures"] {
@@ -34,13 +34,13 @@ impl Fixture {
         };
         Self { _temp: temp, home, state, request: Cell::new(0) }
     }
-    pub(crate) fn write(&self, path: &str) -> PathBuf {
+    fn write(&self, path: &str) -> PathBuf {
         let path = self.home.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"data").unwrap();
         path
     }
-    pub(crate) fn command(&self, text: &str) -> Outcome {
+    fn command(&self, text: &str) -> Outcome {
         self.request.set(self.request.get() + 1);
         plan_input(&self.state, text.into(), HashMap::new(), self.request.get())
     }
@@ -1975,6 +1975,50 @@ fn unscoped_search_says_which_folders_it_searched_and_skips_the_others() {
 }
 
 #[test]
+fn malformed_folder_locations_suggest_quoting_or_a_single_path() {
+    let fixture = Fixture::new();
+    fixture.write("Downloads/invoice.pdf");
+    fixture.write("Downloads/Voxi Demo/Receipts/photo.png");
+    fixture.write("Downloads/2026/Receipts/report.pdf");
+    for command in [
+        "move these to Receipts in Voxi Demo in Downloads",
+        "sort Receipts in Voxi Demo in Downloads by type",
+        "move invoice.pdf to 2026/Receipts in Downloads",
+        r#"move invoice.pdf to "2026/Receipts" in Downloads"#,
+        r#"sort "2026/Receipts" in Downloads by type"#,
+        r#"move invoice.pdf to "Receipts" folder in Downloads"#,
+    ] {
+        let outcome = fixture.command(command);
+        assert!(
+            matches!(outcome, Outcome::Problem { message } if message.contains("Quote names") && message.contains("single path")),
+            "{command}"
+        );
+    }
+}
+
+#[test]
+fn scoped_folder_choices_are_not_offered_as_nicknames() {
+    let fixture = Fixture::new();
+    fixture.write("Downloads/Work/First/Voxi Demo/one.pdf");
+    fixture.write("Downloads/Work/Second/Voxi Demo/two.pdf");
+    fixture.write("Downloads/First/Voxi Demo/one.pdf");
+    fixture.write("Downloads/Second/Voxi Demo/two.pdf");
+    for (command, label) in [
+        ("sort Voxi Demo in Downloads by type", "Voxi Demo in Downloads"),
+        ("sort Voxi Demo in Downloads/Work by type", "Voxi Demo in Downloads/Work"),
+    ] {
+        assert!(matches!(
+            fixture.command(command),
+            Outcome::Ambiguous { name, remember_folder: false, candidates, .. } if name == label && candidates.len() >= 2
+        ));
+    }
+    assert!(matches!(
+        fixture.command("sort Voxi Demo by type"),
+        Outcome::Ambiguous { name, remember_folder: true, .. } if name == "Voxi Demo"
+    ));
+}
+
+#[test]
 fn sorting_is_top_level_unless_subfolders_are_requested() {
     let f = Fixture::new();
     let nested = f.write("Downloads/Project/a.pdf");
@@ -2062,6 +2106,27 @@ fn a_finder_selection_becomes_the_list_that_these_refers_to() {
     // Nothing usable clears the list rather than leaving an older one in place.
     assert!(take_selection(&f.state, vec![stray]).1.unwrap().contains("outside the folders"));
     assert!(f.state.result_scope.lock().unwrap().current.is_none());
+}
+
+#[test]
+fn demo_finder_selection_preview_uses_its_own_notice() {
+    let fixture = Fixture::new();
+    let first = fixture.write("Downloads/Voxi Demo/first.pdf");
+    let second = fixture.write("Downloads/Voxi Demo/second.png");
+    fixture.write("Downloads/Voxi Demo/Receipts/existing.txt");
+    assert!(take_selection(&fixture.state, vec![first, second]).1.is_none());
+    let Outcome::Plan { total: 2, scope_notice, warnings, .. } = fixture.command("move these to Receipts") else {
+        panic!("expected a preview for the two Finder files");
+    };
+    assert_eq!(scope_notice.as_deref(), Some("Using your Finder selection."));
+    assert!(!warnings.iter().any(|warning| warning.contains("previous searched list")), "{warnings:?}");
+
+    assert!(matches!(fixture.command("list files in Downloads/Voxi Demo"), Outcome::Info { .. }));
+    let Outcome::Plan { scope_notice, warnings, .. } = fixture.command("move these to Documents") else {
+        panic!("expected a preview for the search results");
+    };
+    assert!(scope_notice.is_none());
+    assert!(warnings.iter().any(|warning| warning == "Using files from the previous searched list."), "{warnings:?}");
 }
 
 #[test]

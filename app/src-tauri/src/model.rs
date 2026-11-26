@@ -203,6 +203,18 @@ impl Destination {
     }
 }
 
+impl PartialEq<str> for Destination {
+    fn eq(&self, other: &str) -> bool {
+        self.path() == Some(other)
+    }
+}
+
+impl PartialEq<&str> for Destination {
+    fn eq(&self, other: &&str) -> bool {
+        self.eq(*other)
+    }
+}
+
 impl From<String> for Destination {
     fn from(path: String) -> Self {
         Self::Path(path)

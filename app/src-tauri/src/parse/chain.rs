@@ -238,7 +238,7 @@ mod tests {
             let Intent::Chain { commands } = parse(&text).unwrap() else { panic!() };
             assert_eq!(commands.len(), 2);
             assert!(matches!(&commands[1], Intent::Move { src: Source::Set { folder: None, filter }, to }
-                if filter.file_type == Some(FileType::Pdfs) && to.path() == Some("downloads/PDFS")));
+                if filter.file_type == Some(FileType::Pdfs) && to == "downloads/PDFS"));
         }
     }
 
@@ -251,7 +251,7 @@ mod tests {
         };
         assert!(matches!(&commands[0], Intent::CreateFolders { names, .. } if names == &["R&D and move notes"]));
         assert!(matches!(&commands[1], Intent::Copy { src: Source::Set { folder: Some(folder), .. }, to }
-            if folder == "Downloads" && to.path() == Some("Documents/R&D and move notes")));
+            if folder == "Downloads" && to == "Documents/R&D and move notes"));
         assert!(!matches!(parse("create folders named \"Alpha and move Beta\" in Documents").unwrap(), Intent::Chain { .. }));
         // Mixed quoted folder lists are a pre-existing grammar miss. Chain
         // splitting must preserve that refusal instead of losing a member.
@@ -267,7 +267,7 @@ mod tests {
         let Intent::Chain { commands } = parse("create a folder named Backup and move it to Documents").unwrap() else { panic!() };
         assert!(matches!(&commands[1], Intent::Move { src: Source::Item { name, folder: None }, .. } if name == "\0chain-output"));
         let Intent::Chain { commands } = parse("create a folder called Atlas in Documents then create a folder called Boreal in Documents then copy a.pdf from Downloads into Atlas").unwrap() else { panic!() };
-        assert!(matches!(&commands[2], Intent::Copy { to, .. } if to.path() == Some("Documents/Atlas")));
+        assert!(matches!(&commands[2], Intent::Copy { to, .. } if to == "Documents/Atlas"));
         assert!(parse("create a folder called Atlas in Documents then create a folder called Atlas in Downloads then copy a.pdf from Desktop into Atlas").is_err());
         // A quoted literal named "it" must never become an output reference.
         let Intent::Chain { commands } = parse("copy a.pdf from Downloads to Desktop then zip \"it\"").unwrap() else { panic!() };

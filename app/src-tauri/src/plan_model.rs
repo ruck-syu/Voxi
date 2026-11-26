@@ -856,7 +856,7 @@ mod tests {
             matches!(&commands[0], Intent::CreateFolders { names, parent: Some(parent) } if names == &["PDFS"] && parent == "downloads")
         );
         assert!(
-            matches!(&commands[1], Intent::Move { src: Source::Set { folder: Some(folder), .. }, to } if folder == "downloads" && to.path() == Some("downloads/PDFS"))
+            matches!(&commands[1], Intent::Move { src: Source::Set { folder: Some(folder), .. }, to } if folder == "downloads" && to == "downloads/PDFS")
         );
         // A genuinely different name is still refused, not silently repaired.
         for invented in ["Other", "Documents"] {

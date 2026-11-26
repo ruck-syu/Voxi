@@ -105,7 +105,7 @@ fn destination_references_bind_with_or_without_the() {
         assert_eq!(commands.len(), 2, "{command}");
         assert!(
             matches!(&commands[1], Intent::Copy { src: Source::Item { name, folder: None }, to }
-            if name == "notes.pdf" && to.path() == Some("Desktop/Backup")),
+            if name == "notes.pdf" && to == "Desktop/Backup"),
             "{command}: {:?}",
             commands[1]
         );
@@ -119,7 +119,7 @@ fn unscoped_chain_sources_keep_the_single_command_default_scope() {
         matches!(&commands[1], Intent::Move {
         src: Source::Set { folder: None, filter },
         to,
-    } if filter.file_type == Some(FileType::Pdfs) && to.path() == Some("Desktop/Archive")),
+    } if filter.file_type == Some(FileType::Pdfs) && to == "Desktop/Archive"),
         "{:?}",
         commands[1]
     );
@@ -141,7 +141,7 @@ fn unscoped_chain_sources_keep_the_single_command_default_scope() {
 fn comma_before_an_action_verb_splits_the_chain() {
     let Intent::Chain { commands } = parse("move notes.pdf to Archive, delete old.pdf").unwrap() else { panic!() };
     assert_eq!(commands.len(), 2);
-    assert!(matches!(&commands[0], Intent::Move { to, .. } if to.path() == Some("Archive")));
+    assert!(matches!(&commands[0], Intent::Move { to, .. } if to == "Archive"));
     assert!(matches!(&commands[1], Intent::Trash { src: Source::Item { name, .. } } if name == "old.pdf"));
 
     let Intent::Chain { commands } = parse("rename a.pdf to b.pdf, delete c.pdf").unwrap() else { panic!() };
@@ -396,7 +396,7 @@ fn named_folder_in_all_or_the_subfolders_opts_in() {
         Intent::Copy {
             src: Source::Set { folder: Some(folder), filter },
             to,
-        } if folder == "Downloads" && filter.include_subfolders && to.path() == Some("Desktop/Backup")
+        } if folder == "Downloads" && filter.include_subfolders && to == "Desktop/Backup"
     ));
 }
 

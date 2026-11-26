@@ -179,6 +179,42 @@ impl ImageFormat {
     }
 }
 
+/// A transfer can name a path or a folder inside an existing parent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Destination {
+    Path(String),
+    InFolder {
+        folder: String,
+        parent: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        literal: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        existing_only: bool,
+    },
+}
+
+impl Destination {
+    pub fn path(&self) -> Option<&str> {
+        match self {
+            Self::Path(path) => Some(path),
+            Self::InFolder { .. } => None,
+        }
+    }
+}
+
+impl From<String> for Destination {
+    fn from(path: String) -> Self {
+        Self::Path(path)
+    }
+}
+
+impl From<&str> for Destination {
+    fn from(path: &str) -> Self {
+        path.to_string().into()
+    }
+}
+
 /// The parser's output: what the user asked for, with names still unresolved.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "intent", rename_all = "snake_case")]
@@ -188,11 +224,11 @@ pub enum Intent {
     },
     Move {
         src: Source,
-        to: String,
+        to: Destination,
     },
     Copy {
         src: Source,
-        to: String,
+        to: Destination,
     },
     Rename {
         src: Source,
@@ -226,6 +262,8 @@ pub enum Intent {
         folder: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        literal: Option<String>,
         /// Only "including subfolders" reaches into nested folders; by default
         /// a sort leaves the user's existing subfolders untouched.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -235,6 +273,8 @@ pub enum Intent {
         folder: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        literal: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         include_subfolders: bool,
     },

@@ -117,6 +117,129 @@ fn quoted_folder_location_parts_keep_command_words() {
 }
 
 #[test]
+fn unquoted_folder_location_uses_an_existing_literal_name() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let from = roots.desktop().join("report.pdf");
+    for name in ["Things in Progress", "Archive in 2024"] {
+        let folder = roots.home.join("Documents").join(name);
+        fs::create_dir(&folder).unwrap();
+        let command = format!("move report.pdf to {name}");
+        let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+        assert_eq!(actions, [Action::Move { from: from.clone(), to: folder.join("report.pdf") }]);
+
+        let photo = folder.join("photo.png");
+        fs::write(&photo, b"photo").unwrap();
+        for command in [format!("sort {name} by type"), format!(r#"sort "{name}" by type"#)] {
+            let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+            assert!(matches!(actions.last(), Some(Action::Move { from, to }) if *from == photo && to.starts_with(&folder)));
+        }
+    }
+}
+
+#[test]
+fn transfer_with_a_named_parent_creates_only_the_leaf() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let demo = roots.downloads().join("Voxi Demo");
+    fs::create_dir(&demo).unwrap();
+    let from = roots.desktop().join("report.pdf");
+    let selection = crate::scope::Snapshot::capture(vec![from.clone()], "Finder".into()).unwrap();
+    let choices = HashMap::new();
+    let history = History::load(roots.home.join("history.json"));
+    let plan = |command| {
+        let (intent, uses_selection) = crate::scope::prepare(command, Some(&selection)).unwrap();
+        assert!(uses_selection);
+        Planner::new(roots, &choices).with_scope(Some(selection.clone())).plan(&intent, &history)
+    };
+    assert!(matches!(
+        plan("move these to Receipts in Voxi Demoo"),
+        Err(Stop::Problem(message)) if message == "Couldn't find a folder named “Voxi Demoo”."
+    ));
+    assert!(matches!(
+        plan("move these to Receipts in Downloads/Voxi Demoo"),
+        Err(Stop::Problem(message)) if message == "Couldn't find a folder named “Downloads/Voxi Demoo”."
+    ));
+    assert!(matches!(
+        plan("move these to Receipts in ~/Downloads/Voxi Demoo"),
+        Err(Stop::Problem(message)) if message == "Couldn't find a folder named “~/Downloads/Voxi Demoo”."
+    ));
+
+    let Ok(Planned::Steps { actions, .. }) = plan("move these to Receipts in Voxi Demo") else { panic!("expected a move plan") };
+    let receipts = demo.join("Receipts");
+    assert_eq!(actions, [Action::CreateFolder { path: receipts.clone() }, Action::Move { from, to: receipts.join("report.pdf") }]);
+}
+
+#[test]
+fn literal_and_parent_scoped_folders_prompt_for_a_choice() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let scoped = roots.downloads().join("Progress/Things");
+    let literal = roots.home.join("Documents/Things in Progress");
+    for folder in [&scoped, &literal] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("photo.png"), b"photo").unwrap();
+    }
+    let history = History::load(roots.home.join("history.json"));
+    let label = "Things in Progress";
+    for command in ["move report.pdf to Things in Progress", "sort Things in Progress by type"] {
+        let Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::MultipleMatches, .. }) =
+            fixture.plan_command(command, ENTRY_LIMIT)
+        else {
+            panic!("{command}: expected a choice")
+        };
+        assert_eq!(name, label);
+        assert_eq!(candidates, [literal.clone(), scoped.clone()]);
+        for path in &candidates {
+            let choices = HashMap::from([(label.to_string(), path.clone())]);
+            let result = Planner::new(roots, &choices).plan(&parse(command).unwrap(), &history);
+            let Ok(Planned::Steps { actions, .. }) = result else { panic!("{command}: {path:?}: {:?}", result.err()) };
+            assert!(matches!(actions.last(), Some(Action::Move { to, .. }) if to.starts_with(path)));
+        }
+    }
+}
+
+#[test]
+fn scoped_sort_reports_unreadable_folders_inside_its_parent() {
+    let fixture = MessyMac::new();
+    let downloads = fixture.roots().downloads();
+    let blocked = downloads.join("Blocked");
+    let candidate = downloads.join("Voxi Demo");
+    fs::create_dir(&blocked).unwrap();
+    fs::create_dir(&candidate).unwrap();
+    let _locked = LockedDir::new(blocked.clone());
+    if fs::read_dir(&blocked).is_err_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied) {
+        assert!(matches!(
+            fixture.plan_command("sort Voxi Demo in Downloads by type", ENTRY_LIMIT),
+            Err(Stop::Ambiguous { candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note), .. })
+                if candidates == [candidate] && note.contains("Blocked")
+        ));
+    }
+}
+
+#[test]
+fn scoped_sort_rejects_a_choice_outside_its_parent() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let outside = roots.home.join("Documents/Voxi Demo");
+    for folder in [outside.clone(), roots.downloads().join("First/Voxi Demo"), roots.downloads().join("Second/Voxi Demo")] {
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("photo.png"), b"photo").unwrap();
+    }
+    let label = "Voxi Demo in Downloads";
+    let command = "sort Voxi Demo in Downloads by type";
+    let Err(Stop::Ambiguous { candidates, .. }) = fixture.plan_command(command, ENTRY_LIMIT) else { panic!("expected a choice") };
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.iter().all(|path| path.starts_with(roots.downloads())));
+    let history = History::load(roots.home.join("history.json"));
+    let choices = HashMap::from([(label.to_string(), outside)]);
+    assert!(matches!(
+        Planner::new(roots, &choices).plan(&parse(command).unwrap(), &history),
+        Err(Stop::Problem(message)) if message.contains("Choose one of the matching folders")
+    ));
+}
+
+#[test]
 fn demo_move_resolves_destination_in_named_parent() {
     demo_move_to_receipts("move these to Receipts in Voxi Demo");
 }
@@ -437,9 +560,9 @@ fn assert_direct_sources(roots: &Roots, command: &str, intent: &Intent, actions:
             },
             _ => return,
         },
-        Intent::SortByType { folder, parent, include_subfolders: false }
-        | Intent::SortByMonth { folder, parent, include_subfolders: false } => {
-            vec![planner.resolve_sort_folder(folder, parent.as_deref()).unwrap()]
+        Intent::SortByType { folder, parent, literal, include_subfolders: false }
+        | Intent::SortByMonth { folder, parent, literal, include_subfolders: false } => {
+            vec![planner.resolve_sort_folder(folder, parent.as_deref(), literal.as_deref()).unwrap()]
         }
         _ => return,
     };

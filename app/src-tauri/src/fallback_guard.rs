@@ -84,7 +84,7 @@ fn bounded_transfer(text: &str) -> Option<Intent> {
             ..Default::default()
         },
     };
-    Some(if operation == "move" { Intent::Move { src, to: destination } } else { Intent::Copy { src, to: destination } })
+    Some(if operation == "move" { Intent::Move { src, to: destination.into() } } else { Intent::Copy { src, to: destination.into() } })
 }
 
 static CREATE: LazyLock<Regex> = LazyLock::new(|| {

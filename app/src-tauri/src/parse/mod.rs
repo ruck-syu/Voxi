@@ -499,11 +499,17 @@ mod catalog_tests {
     }
     #[test]
     fn r17_sort_type() {
-        assert_eq!(p("sort Downloads by type"), SortByType { folder: "Downloads".into(), parent: None, include_subfolders: false });
+        assert_eq!(
+            p("sort Downloads by type"),
+            SortByType { folder: "Downloads".into(), parent: None, literal: None, include_subfolders: false }
+        );
     }
     #[test]
     fn r18_sort_month() {
-        assert_eq!(p("sort Screenshots by month"), SortByMonth { folder: "Screenshots".into(), parent: None, include_subfolders: false });
+        assert_eq!(
+            p("sort Screenshots by month"),
+            SortByMonth { folder: "Screenshots".into(), parent: None, literal: None, include_subfolders: false }
+        );
     }
     #[test]
     fn r19_convert_one() {

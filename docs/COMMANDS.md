@@ -11,8 +11,6 @@ deep. This applies to groups of files and to individual file or folder names;
 multiple matching names prompt you to choose. A folder name finds the nearest
 match first, so “create a folder in dev named test” works even when `dev` holds
 large projects; a same-named folder elsewhere at the same depth still asks.
-Use “sort Voxi Demo in Downloads by type” to look for the sort folder only
-inside Downloads.
 
 Hidden folders, symlinked folders, `_to_delete`, macOS packages (apps, Xcode
 projects, iWork and Photos libraries, and similar), and dependency or build
@@ -75,6 +73,15 @@ names containing command words, for example
 as “one”. Size filters require units; contradictory or repeated bounds are
 refused rather than silently discarded.
 
+Use `move these to Receipts in Voxi Demo` or `sort Voxi Demo in Downloads by type`
+to name a folder and its parent. The parent must exist. A move or copy can
+create the destination folder inside it. If the whole unquoted phrase also
+names an existing folder, Voxi uses it or asks you to choose when both folders
+exist. Quote the whole name to use it literally, as in
+`sort "Things in Progress" by type`. Quote either part to make the parent
+explicit, as in `move these to "Receipts by Month" in Downloads`, or use one
+path such as `Downloads/Voxi Demo/Receipts`.
+
 Use “undo last” for the newest change; selecting an earlier move or delete by
 its operation type isn't supported.
 
@@ -93,10 +100,6 @@ out, and Voxi says which. The files are checked again before anything runs. If
 the Service is missing, turn it on in System Settings → Keyboard → Keyboard
 Shortcuts → Services (on macOS 12, System Preferences → Keyboard → Shortcuts →
 Services).
-
-For a folder inside another folder, say “move these to Receipts in Voxi Demo”
-or “move these to Voxi Demo/Receipts”. Quote “Receipts in Voxi Demo” if those
-words are a single folder name.
 
 ## Chaining commands
 

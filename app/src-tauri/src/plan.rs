@@ -5,8 +5,8 @@
 use crate::fsx::{self, Roots, file_name, human_size, split_name, unique_path};
 use crate::history::{Entry, EntryState, History};
 use crate::model::{
-    ARCHIVE_EXTS, AUDIO_EXTS, Action, AmbiguityReason, DOC_EXTS, DateField, DayRef, FileType, Filter, IMAGE_EXTS, INSTALLER_EXTS,
-    ImageFormat, InfoRow, Intent, Source, VIDEO_EXTS,
+    ARCHIVE_EXTS, AUDIO_EXTS, Action, AmbiguityReason, DOC_EXTS, DateField, DayRef, Destination, FileType, Filter, IMAGE_EXTS,
+    INSTALLER_EXTS, ImageFormat, InfoRow, Intent, Source, VIDEO_EXTS,
 };
 use crate::{pdf, search};
 use chrono::{DateTime, Datelike, Local, NaiveDate};
@@ -53,6 +53,11 @@ fn ambiguous(name: &str, candidates: Vec<PathBuf>, incomplete: bool) -> Stop {
         AmbiguityReason::MultipleMatches
     };
     Stop::Ambiguous { name: name.into(), candidates, reason, note: None }
+}
+
+enum LocatedFolderUse {
+    Sort,
+    Transfer { existing_only: bool },
 }
 
 /// Conservative path overlap used by the chain/shortcut dependency guard.
@@ -298,9 +303,13 @@ impl<'a> Planner<'a> {
             Intent::Lowercase { src } => self.batch_rename(src, "Lowercase", |name, _| Some(name.to_lowercase()))?,
             Intent::Number { src, base, width } => self.number(src, base, *width)?,
             Intent::CreateFolders { names, parent } => self.create_folders(names, parent.as_deref())?.0,
-            Intent::SortByType { folder, parent, include_subfolders } => self.sort(folder, parent.as_deref(), true, *include_subfolders)?,
-            Intent::SortByMonth { folder, parent, include_subfolders } => {
-                self.sort(folder, parent.as_deref(), false, *include_subfolders)?
+            Intent::SortByType { folder, parent, literal, include_subfolders } => {
+                let dir = self.resolve_sort_folder(folder, parent.as_deref(), literal.as_deref())?;
+                self.sort(dir, true, *include_subfolders)?
+            }
+            Intent::SortByMonth { folder, parent, literal, include_subfolders } => {
+                let dir = self.resolve_sort_folder(folder, parent.as_deref(), literal.as_deref())?;
+                self.sort(dir, false, *include_subfolders)?
             }
             Intent::ConvertImage { src, format } => self.convert(src, *format)?,
             Intent::ResizeImage { src, width } => self.resize(src, *width)?,
@@ -373,9 +382,13 @@ impl<'a> Planner<'a> {
         if let Some(parent) = dir.parent() {
             self.ensure_dir(parent)?;
         }
+        self.add_folder_step(dir);
+        Ok(())
+    }
+
+    fn add_folder_step(&mut self, dir: &Path) {
         self.planned_dirs.insert(dir.to_path_buf());
         self.push(Action::CreateFolder { path: dir.to_path_buf() }, Some("New folder".into()));
-        Ok(())
     }
 
     // ---- Name resolution -------------------------------------------------
@@ -436,6 +449,18 @@ impl<'a> Planner<'a> {
         read_only: bool,
     ) -> Result<PathBuf, Stop> {
         let disk = self.search.isolated(self.search.remaining_time());
+        self.lookup_folder_with_search(name, label, roots, create_in, read_only, &disk)
+    }
+
+    fn lookup_folder_with_search(
+        &self,
+        name: &str,
+        label: &str,
+        roots: &[PathBuf],
+        create_in: Option<&Path>,
+        read_only: bool,
+        disk: &search::Search,
+    ) -> Result<PathBuf, Stop> {
         let (mut found, needs_confirmation) = match disk.nearest_dirs(roots, name) {
             search::NameLookup::Found { candidates, needs_confirmation } => (candidates, needs_confirmation),
             search::NameLookup::NotFound(_) => (Vec::new(), false),
@@ -450,10 +475,10 @@ impl<'a> Planner<'a> {
         };
         if needs_confirmation {
             found.retain(|path| path.is_dir() && self.check(path).is_ok());
-            return self.partial_lookup(label, found, &disk, disk.status());
+            return self.partial_lookup(label, found, disk, disk.status());
         }
         if found.is_empty() && read_only && create_in.is_none() {
-            self.confirm_skipped_folder(&disk, name, roots)?;
+            self.confirm_skipped_folder(disk, name, roots)?;
         }
         match found.len() {
             1 => Ok(found.remove(0)),
@@ -462,6 +487,81 @@ impl<'a> Planner<'a> {
                 None => problem(format!("Couldn't find a folder named “{label}”.")),
             },
             _ => Err(ambiguous(label, found, false)),
+        }
+    }
+
+    fn resolve_located_folder(&self, folder: &str, parent: &str, literal: Option<&str>, usage: LocatedFolderUse) -> Result<PathBuf, Stop> {
+        if folder.contains('/') || matches!(folder, "" | "." | "..") {
+            return problem(format!("“{folder}” isn't a valid folder name."));
+        }
+        let label = literal.map(str::to_owned).unwrap_or_else(|| format!("{folder} in {parent}"));
+        // The optional global lookup must leave time for the explicit scope.
+        let literal_lookup = literal.map(|name| {
+            let probe = self.search.isolated(self.search.remaining_time() / 4);
+            self.lookup_folder_with_search(name, &label, &self.roots.search_roots(), None, false, &probe)
+        });
+        let root = self
+            .resolve_folder(parent, None)
+            .and_then(|path| if path.is_dir() { Ok(path) } else { problem(format!("Couldn't find a folder named “{parent}”.")) });
+        // A parent pick uses its own name, so it can be resolved before
+        // asking which of the literal and parent-scoped matches to use.
+        if matches!(root, Err(Stop::Ambiguous { .. })) {
+            return root;
+        }
+        let scoped = root.and_then(|root| match usage {
+            LocatedFolderUse::Sort => self.lookup_folder(folder, &label, &[root], None, false),
+            LocatedFolderUse::Transfer { existing_only } => {
+                let path = root.join(folder);
+                self.check(&path)?;
+                if path.is_dir() {
+                    if !fsx::canonical(&path).starts_with(fsx::canonical(&root)) {
+                        return problem(format!("“{folder}” leads outside {}.", self.roots.display(&root)));
+                    }
+                    Ok(path)
+                } else if path.exists() {
+                    problem(format!("A file named “{folder}” already exists in {}. Choose another folder name.", self.roots.display(&root)))
+                } else if existing_only {
+                    problem(format!(
+                        "Couldn't find a folder named “{label}”. Quote “{folder}” to create it in {}.",
+                        self.roots.display(&root)
+                    ))
+                } else {
+                    Ok(path)
+                }
+            }
+        });
+
+        let mut candidates = Vec::new();
+        let mut incomplete = None;
+        for result in literal_lookup.iter().chain(std::iter::once(&scoped)) {
+            match result {
+                Ok(path) if path.is_dir() => candidates.push(path.clone()),
+                Err(Stop::Ambiguous { candidates: found, reason, note, .. }) => {
+                    candidates.extend(found.iter().cloned());
+                    if *reason == AmbiguityReason::IncompleteSearch {
+                        incomplete = Some(note.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        if self.search.control.is_cancelled() {
+            return problem("Search cancelled.");
+        }
+        let mut seen = HashSet::new();
+        candidates.retain(|p| seen.insert(fsx::canonical(p)));
+        if let Some(picked) = self.choices.get(&label) {
+            self.check(picked)?;
+            let Some(path) = candidates.into_iter().find(|path| path == picked) else {
+                return problem(format!("Choose one of the matching folders for “{label}”."));
+            };
+            return Ok(path);
+        }
+        match (candidates.len(), incomplete) {
+            (0, _) => scoped,
+            (1, None) => self.pick_exact(&label, candidates),
+            (_, None) => Err(ambiguous(&label, candidates, false)),
+            (_, Some(note)) => Err(Stop::Ambiguous { name: label, candidates, reason: AmbiguityReason::IncompleteSearch, note }),
         }
     }
 
@@ -945,13 +1045,22 @@ impl<'a> Planner<'a> {
         !to.contains(['/', '~']) && matches!(to, "trash" | "bin" | "recycle bin")
     }
 
-    fn transfer(&mut self, src: &Source, to: &str, copy: bool) -> Result<String, Stop> {
+    fn transfer(&mut self, src: &Source, to: &Destination, copy: bool) -> Result<String, Stop> {
         let src_dir = match src {
             Source::Set { folder: Some(folder), .. } => Some(self.resolve_folder(folder, None)?),
             _ => None,
         };
         let parent_for_new = src_dir.unwrap_or_else(|| self.roots.desktop());
-        let dest = self.resolve_folder(to, Some(&parent_for_new)).and_then(|dest| {
+        let destination = match to {
+            Destination::Path(path) => self.resolve_folder(path, Some(&parent_for_new)),
+            Destination::InFolder { folder, parent, literal, existing_only } => self.resolve_located_folder(
+                folder,
+                parent,
+                literal.as_deref(),
+                LocatedFolderUse::Transfer { existing_only: *existing_only },
+            ),
+        };
+        let dest = destination.and_then(|dest| {
             if matches!(src, Source::Set { folder, filter } if Self::includes_nested_files(folder.as_deref(), filter))
                 && (self.in_package(&dest) || self.in_hidden_tree(&dest))
             {
@@ -965,7 +1074,7 @@ impl<'a> Planner<'a> {
         // Only a bare "Trash" means the Trash: "Documents/Trash" or "~/bin" is
         // an ordinary folder path, even when that folder doesn't exist yet.
         if let Ok(dest) = &dest
-            && Self::names_the_trash(to)
+            && to.path().is_some_and(Self::names_the_trash)
             && !dest.exists()
             && !self.planned_dirs.contains(dest)
         {
@@ -980,7 +1089,17 @@ impl<'a> Planner<'a> {
         }
         let dest = dest?;
         self.note_nested(nested);
-        self.ensure_dir(&dest)?;
+        match to {
+            Destination::Path(_) => self.ensure_dir(&dest)?,
+            Destination::InFolder { .. } if !dest.is_dir() && !self.planned_dirs.contains(&dest) => {
+                self.check(&dest)?;
+                if !dest.parent().is_some_and(Path::is_dir) {
+                    return problem(format!("The parent of {} is no longer available.", self.roots.display(&dest)));
+                }
+                self.add_folder_step(&dest);
+            }
+            Destination::InFolder { .. } => {}
+        }
         // A destination inside the source may already hold previous results.
         let canonical_dest = fsx::canonical(&dest);
         let destination_in_source = match src {
@@ -1319,26 +1438,14 @@ impl<'a> Planner<'a> {
         Ok((format!("Create {what} in {}", file_name(&parent)), parent))
     }
 
-    fn resolve_sort_folder(&self, folder: &str, parent: Option<&str>) -> Result<PathBuf, Stop> {
-        let Some(parent) = parent else { return self.resolve_folder(folder, None) };
-        let root = self.resolve_folder(parent, None)?;
-        let label = format!("{folder} in {parent}");
-        if let Some(path) = self.choices.get(&label) {
-            self.check(path)?;
-            let within_parent =
-                fsx::canonical(path).strip_prefix(fsx::canonical(&root)).is_ok_and(|relative| !relative.as_os_str().is_empty());
-            if !path.is_dir() || !within_parent {
-                return problem(format!("Choose a folder inside {}.", self.roots.display(&root)));
-            }
-            return Ok(path.clone());
+    fn resolve_sort_folder(&self, folder: &str, parent: Option<&str>, literal: Option<&str>) -> Result<PathBuf, Stop> {
+        match parent {
+            Some(parent) => self.resolve_located_folder(folder, parent, literal, LocatedFolderUse::Sort),
+            None => self.resolve_folder(folder, None),
         }
-        let path = self.lookup_folder(folder, &label, &[root], None, false)?;
-        self.check(&path)?;
-        Ok(path)
     }
 
-    fn sort(&mut self, folder: &str, parent: Option<&str>, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
-        let dir = self.resolve_sort_folder(folder, parent)?;
+    fn sort(&mut self, dir: PathBuf, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
         let filter = Filter { file_type: Some(FileType::Files), include_subfolders, ..Default::default() };
         let src = Source::Set { folder: Some(dir.to_string_lossy().into()), filter };
         let ExpandedSource { paths, nested, .. } = self.expand_source(&src, Expansion::DirectChanges)?;

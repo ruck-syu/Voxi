@@ -178,10 +178,22 @@ pub(super) fn folder_location(text: &str) -> Result<Option<(&str, &str)>, super:
         return Ok(None);
     }
     let (child, parent) = split_arguments(text, &["in"]).ok_or(super::RefusalReason::InvalidFolderLocation)?;
-    if child.contains('/') {
+    if child.contains('/') || [child, parent].iter().any(|part| quoted_ranges(part).is_ok_and(|ranges| !ranges.is_empty()) && !quoted(part))
+    {
         return Err(super::RefusalReason::InvalidFolderLocation);
     }
     Ok(Some((child, parent)))
+}
+
+/// The whole unquoted phrase can still name an existing folder, even when
+/// a word like "Things" makes a part too vague to use for creating a folder.
+pub(super) fn located_folder(raw: &str, child: &str, parent: &str) -> Option<(String, String, Option<String>, bool)> {
+    let literal = (!raw.contains('/') && quoted_ranges(raw).is_ok_and(|ranges| ranges.is_empty())).then(|| clean_name(raw));
+    let existing_only = bad_destination(child) || bad_destination(parent);
+    if existing_only && (literal.is_none() || bad_destination_syntax(child) || bad_destination_syntax(parent)) {
+        return None;
+    }
+    Some((clean_name(child), clean_name(parent), literal, existing_only))
 }
 
 pub(super) fn set_once<T>(slot: &mut Option<T>, value: T) -> Option<()> {
@@ -1504,9 +1516,12 @@ pub fn bad_destination(to: &str) -> bool {
     if quoted(to) {
         return clean_name(to).is_empty();
     }
+    vague(to) || bad_destination_syntax(to)
+}
+
+fn bad_destination_syntax(to: &str) -> bool {
     let lower = to.to_lowercase();
     to.trim().is_empty()
-        || vague(to)
         || ["the", "a", "an", "in", "on", "from", "to", "into", "file", "folder", "before", "after", "since", "until", "size"]
             .contains(&lower.trim())
         || excludes(to)

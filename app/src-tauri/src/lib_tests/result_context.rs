@@ -1840,7 +1840,7 @@ fn empty_lists_stay_bounded_and_destinations_are_never_references() {
     assert!(scope::parse_followup("move a.pdf to last", &snapshot).unwrap().is_none());
     let (intent, used) = scope::prepare("move a.pdf to \"last\"", Some(&snapshot)).unwrap();
     assert!(used);
-    assert!(matches!(intent,model::Intent::Move{to,..} if to=="last"));
+    assert!(matches!(intent,model::Intent::Move{to,..} if to.path() == Some("last")));
 }
 #[test]
 fn ambiguous_names_only_offer_current_results_and_reject_outside_choices() {

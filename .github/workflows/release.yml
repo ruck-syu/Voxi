@@ -1,11 +1,18 @@
 name: Release
 
+# Docs and website-only changes skip CI. The audits that read docs/testing are #[ignore] tests CI never runs.
 on:
   pull_request:
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "**.md"
+      - ".claude/**"
   push:
     branches: [main]
     paths-ignore:
       - "website/**"
+      - "docs/**"
       - "**.md"
       - ".claude/**"
   workflow_dispatch:

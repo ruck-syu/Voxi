@@ -29,8 +29,8 @@ in their folders.
 
 ### Scan limits and progress
 
-Searches reuse one folder scan per command. The window shows progress, and you
-can cancel with Esc or Cancel. If a scan reaches its depth, entry, or time
+Searches reuse cached folder listings within a command. The window shows progress,
+and you can cancel with Esc or Cancel. If a required scan reaches its depth, entry, or time
 limit, or cannot read a folder, commands that change files stop with a message
 naming the folder that caused it and how to fix it (name a smaller folder, or
 exclude a subfolder with − in Settings → Folders); read-only results are marked

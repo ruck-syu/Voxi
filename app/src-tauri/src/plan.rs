@@ -491,14 +491,23 @@ impl<'a> Planner<'a> {
         }
     }
 
-    fn resolve_located_folder(&self, folder: &str, parent: &str, literal: Option<&str>, usage: LocatedFolderUse) -> Result<PathBuf, Stop> {
+    fn resolve_located_folder(
+        &mut self,
+        folder: &str,
+        parent: &str,
+        literal: Option<&str>,
+        usage: LocatedFolderUse,
+    ) -> Result<PathBuf, Stop> {
         if folder.contains('/') || matches!(folder, "" | "." | "..") {
             return problem(format!("“{folder}” isn't a valid folder name."));
         }
         let label = literal.map(str::to_owned).unwrap_or_else(|| format!("{folder} in {parent}"));
+        if literal.is_some() {
+            self.search.reuse_directory_reads();
+        }
         // The optional global lookup must leave time for the explicit scope.
         let literal_lookup = literal.map(|name| {
-            let probe = self.search.isolated(self.search.remaining_time() / 4);
+            let probe = self.search.probe(self.search.remaining_time() / 4);
             self.lookup_folder_with_search(name, &label, &self.roots.search_roots(), None, false, &probe)
         });
         let root = self
@@ -561,6 +570,13 @@ impl<'a> Planner<'a> {
                 Err(error)
             }
         };
+        // A known literal can't settle the result if a required scoped
+        // lookup failed before it could rule out another match.
+        match &scoped {
+            Err(Stop::SearchIncomplete(note)) => incomplete = Some(Some(note.clone())),
+            Err(Stop::Ambiguous { reason: AmbiguityReason::IncompleteSearch, note, .. }) => incomplete = Some(note.clone()),
+            _ => {}
+        }
         if self.search.control.is_cancelled() {
             return problem("Search cancelled.");
         }
@@ -1459,7 +1475,7 @@ impl<'a> Planner<'a> {
         Ok((format!("Create {what} in {}", file_name(&parent)), parent))
     }
 
-    fn resolve_sort_folder(&self, folder: &str, parent: Option<&str>, literal: Option<&str>) -> Result<PathBuf, Stop> {
+    fn resolve_sort_folder(&mut self, folder: &str, parent: Option<&str>, literal: Option<&str>) -> Result<PathBuf, Stop> {
         match parent {
             Some(parent) => self.resolve_located_folder(folder, parent, literal, LocatedFolderUse::Sort),
             None => self.resolve_folder(folder, None),

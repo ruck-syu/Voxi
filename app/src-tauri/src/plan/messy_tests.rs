@@ -54,7 +54,8 @@ fn demo_sort_scopes_lookup_away_from_unreadable_pictures() {
                 if candidates == [demo.clone()] && note.contains("Photo Booth Library")));
     }
     for command in ["sort ~/Downloads/Voxi Demo by type", "sort Voxi Demo in Downloads by type"] {
-        let result = fixture.plan_command(command, ENTRY_LIMIT);
+        let control = search::Control::default();
+        let result = fixture.plan_with_control(command, control.clone());
         assert!(
             matches!(&result, Ok(Planned::Steps { actions, .. })
             if actions.iter().filter(|action| matches!(action, Action::Move { from, to }
@@ -62,6 +63,41 @@ fn demo_sort_scopes_lookup_away_from_unreadable_pictures() {
             "{command}: {:?}",
             result.err()
         );
+        assert!(!control.failed_with(search::Failure::Unreadable));
+        assert_eq!(control.stats(Duration::ZERO).unreadable, 0);
+    }
+}
+
+#[test]
+fn located_sort_reuses_directory_reads_for_both_names_and_file_expansion() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let demo = roots.downloads().join("Work Bench/Batch/Voxi Demo");
+    fs::create_dir_all(&demo).unwrap();
+    fs::write(demo.join("photo.png"), b"photo").unwrap();
+
+    let baseline = search::Search::default().with_roots(roots);
+    assert!(matches!(baseline.nearest_dirs(&roots.search_roots(), "Voxi Demo in Work Bench"), search::NameLookup::NotFound(_)));
+    let control = search::Control::default();
+    let result = fixture.plan_with_control("sort Voxi Demo in Work Bench by type", control.clone());
+    assert!(matches!(result, Ok(Planned::Steps { .. })));
+    assert_eq!(control.stats(Duration::ZERO).visited, baseline.control.stats(Duration::ZERO).visited);
+}
+
+#[test]
+fn incomplete_literal_lookup_requires_confirmation_for_a_known_match() {
+    let fixture = MessyMac::new();
+    let literal = fixture.roots().home.join("Documents/Voxi Demo in Downloads");
+    let blocked = fixture.roots().home.join("Pictures/Photo Booth Library");
+    fs::create_dir(&literal).unwrap();
+    fs::create_dir(&blocked).unwrap();
+    let _locked = LockedDir::new(blocked.clone());
+    if fs::read_dir(&blocked).is_err_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied) {
+        assert!(matches!(
+            fixture.plan_command("sort Voxi Demo in Downloads by type", ENTRY_LIMIT),
+            Err(Stop::Ambiguous { candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note), .. })
+                if candidates == [literal] && note.contains("Photo Booth Library")
+        ));
     }
 }
 
@@ -522,6 +558,13 @@ impl MessyMac {
         let _date = pin_regression_date();
         self.plan(&parse(command).unwrap(), limit, &mut Vec::new())
     }
+
+    fn plan_with_control(&self, command: &str, control: search::Control) -> Result<Planned, Stop> {
+        let choices = HashMap::new();
+        let mut planner = Planner::new(self.roots(), &choices).with_control(control);
+        planner.search.limit = ENTRY_LIMIT;
+        planner.plan(&parse(command).unwrap(), &History::load(self.roots().home.join("history.json")))
+    }
 }
 
 fn assert_in_scope(roots: &Roots, command: &str, path: &Path, allow_explicit_package: bool, internal_backup: Option<&Path>) {
@@ -624,7 +667,7 @@ fn assert_direct_sources(roots: &Roots, command: &str, intent: &Intent, actions:
         return;
     }
     let choices = HashMap::new();
-    let planner = Planner::new(roots, &choices);
+    let mut planner = Planner::new(roots, &choices);
     let direct_roots = match intent {
         Intent::Move { src, .. } | Intent::Copy { src, .. } | Intent::Trash { src } => match src {
             Source::Set { folder, filter } if !Planner::includes_nested_files(folder.as_deref(), filter) => match folder {

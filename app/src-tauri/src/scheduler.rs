@@ -218,7 +218,7 @@ pub const APPROVED_RULE_VERSION: u32 = 2;
 
 /// Why a repeating task saved before approvals were recorded was stopped.
 const LEGACY_UNVERIFIED: &str =
-    "This task was saved by an older version of Voxi, which didn't record what you approved. Schedule it again to keep it.";
+    "This task was saved by an older version of Voxi, which didn't record what you approved. Review it to keep this task.";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1500,7 +1500,10 @@ mod tests {
         let mut store = Store::load(path.clone());
         let legacy = store.jobs[0].repeat.clone().unwrap();
         let err = legacy.check_approval(&crate::settings::Settings::default(), "sort downloads by type").unwrap_err();
-        assert_eq!(err, LEGACY_UNVERIFIED);
+        assert_eq!(
+            err,
+            "This task was saved by an older version of Voxi, which didn't record what you approved. Review it to keep this task."
+        );
 
         // Confirming the review's preview saves the new task and drops the old one together.
         let rule = Rule { approved_version: APPROVED_RULE_VERSION, approved_source: Some(RuleSource::Command), ..legacy };

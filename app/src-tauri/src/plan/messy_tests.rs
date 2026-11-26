@@ -79,6 +79,7 @@ fn malformed_folder_locations_suggest_quoting_or_a_single_path() {
         "move invoice.pdf to 2026/Receipts in Downloads",
         r#"move invoice.pdf to "2026/Receipts" in Downloads"#,
         r#"sort "2026/Receipts" in Downloads by type"#,
+        r#"move invoice.pdf to "Receipts" folder in Downloads"#,
     ] {
         let outcome = fixture.command(command);
         assert!(
@@ -121,6 +122,10 @@ fn unquoted_folder_location_uses_an_existing_literal_name() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();
     let from = roots.desktop().join("report.pdf");
+    // An ambiguous parent name with no matching child still lets the
+    // literal folder win.
+    fs::create_dir(roots.downloads().join("2024")).unwrap();
+    fs::create_dir(roots.home.join("Pictures/2024")).unwrap();
     for name in ["Things in Progress", "Archive in 2024"] {
         let folder = roots.home.join("Documents").join(name);
         fs::create_dir(&folder).unwrap();
@@ -134,6 +139,20 @@ fn unquoted_folder_location_uses_an_existing_literal_name() {
             let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
             assert!(matches!(actions.last(), Some(Action::Move { from, to }) if *from == photo && to.starts_with(&folder)));
         }
+    }
+
+    let scoped = roots.home.join("Pictures/2024/Archive");
+    let literal = roots.home.join("Documents/Archive in 2024");
+    fs::create_dir(&scoped).unwrap();
+    for command in ["move report.pdf to Archive in 2024", "sort Archive in 2024 by type"] {
+        assert!(
+            matches!(
+                fixture.plan_command(command, ENTRY_LIMIT),
+                Err(Stop::Ambiguous { name, candidates, .. })
+                    if name == "Archive in 2024" && candidates == [literal.clone(), scoped.clone()]
+            ),
+            "{command}"
+        );
     }
 }
 
@@ -196,6 +215,27 @@ fn literal_and_parent_scoped_folders_prompt_for_a_choice() {
             let Ok(Planned::Steps { actions, .. }) = result else { panic!("{command}: {path:?}: {:?}", result.err()) };
             assert!(matches!(actions.last(), Some(Action::Move { to, .. }) if to.starts_with(path)));
         }
+    }
+}
+
+#[test]
+fn quoting_selects_the_intended_folder_when_both_readings_exist() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let literal = roots.home.join("Documents/Receipts in Voxi Demo");
+    let scoped = roots.downloads().join("Voxi Demo/Receipts");
+    for folder in [&literal, &scoped] {
+        fs::create_dir_all(folder).unwrap();
+        fs::write(folder.join("photo.png"), b"photo").unwrap();
+    }
+    for (command, folder) in [
+        (r#"move report.pdf to "Receipts in Voxi Demo""#, &literal),
+        (r#"move report.pdf to Receipts in "Voxi Demo""#, &scoped),
+        (r#"sort "Receipts in Voxi Demo" by type"#, &literal),
+        (r#"sort Receipts in "Voxi Demo" by type"#, &scoped),
+    ] {
+        let Planned::Steps { actions, .. } = complete_plan(&fixture, command, ENTRY_LIMIT) else { panic!("{command}") };
+        assert!(matches!(actions.last(), Some(Action::Move { to, .. }) if to.starts_with(folder)), "{command}");
     }
 }
 

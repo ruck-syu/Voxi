@@ -133,12 +133,12 @@ pub fn check_length(text: &str) -> Result<(), ParseFailure> {
     if text.len() > MAX_COMMAND_BYTES { Err(ParseFailure::HardRefusal(RefusalReason::TooLong)) } else { Ok(()) }
 }
 
-/// Parses a command. `Err` carries the raw text for "Didn't understand",
-/// except oversized commands receive a bounded, explicit refusal message.
+/// Parses a command. `Err` carries a specific refusal message when available
+/// or the raw text for "Didn't understand".
 /// A misspelled verb is corrected only when the command can't be read as
 /// typed, so a real word ("take that back") is never turned into another.
 pub fn parse(text: &str) -> Result<Intent, String> {
-    parse_classified(text).map_err(|failure| failure.message().unwrap_or_else(|| text.trim()).to_string())
+    parse_classified(text).map_err(|failure| failure.message().unwrap_or(text.trim()).to_string())
 }
 
 /// The policy-aware parser entry point for fallback callers. `parse` retains

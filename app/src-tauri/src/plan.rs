@@ -504,12 +504,7 @@ impl<'a> Planner<'a> {
         let root = self
             .resolve_folder(parent, None)
             .and_then(|path| if path.is_dir() { Ok(path) } else { problem(format!("Couldn't find a folder named “{parent}”.")) });
-        // A parent pick uses its own name, so it can be resolved before
-        // asking which of the literal and parent-scoped matches to use.
-        if matches!(root, Err(Stop::Ambiguous { .. })) {
-            return root;
-        }
-        let scoped = root.and_then(|root| match usage {
+        let lookup_inside = |root: PathBuf| match usage {
             LocatedFolderUse::Sort => self.lookup_folder(folder, &label, &[root], None, false),
             LocatedFolderUse::Transfer { existing_only } => {
                 let path = root.join(folder);
@@ -530,22 +525,42 @@ impl<'a> Planner<'a> {
                     Ok(path)
                 }
             }
-        });
+        };
 
         let mut candidates = Vec::new();
         let mut incomplete = None;
-        for result in literal_lookup.iter().chain(std::iter::once(&scoped)) {
-            match result {
-                Ok(path) if path.is_dir() => candidates.push(path.clone()),
-                Err(Stop::Ambiguous { candidates: found, reason, note, .. }) => {
-                    candidates.extend(found.iter().cloned());
-                    if *reason == AmbiguityReason::IncompleteSearch {
-                        incomplete = Some(note.clone());
+        let mut collect_matches = |result: &Result<PathBuf, Stop>| match result {
+            Ok(path) if path.is_dir() => candidates.push(path.clone()),
+            Err(Stop::Ambiguous { candidates: found, reason, note, .. }) => {
+                candidates.extend(found.iter().filter(|path| path.is_dir()).cloned());
+                if *reason == AmbiguityReason::IncompleteSearch {
+                    incomplete = Some(note.clone());
+                }
+            }
+            _ => {}
+        };
+        if let Some(result) = &literal_lookup {
+            collect_matches(result);
+        }
+        let scoped = match root {
+            Ok(root) => {
+                let result = lookup_inside(root);
+                collect_matches(&result);
+                result
+            }
+            Err(error) => {
+                // If a literal match exists, only known child matches in the
+                // other parents should compete with it.
+                if matches!(&literal_lookup, Some(Ok(_) | Err(Stop::Ambiguous { .. })))
+                    && let Stop::Ambiguous { candidates: parents, .. } = &error
+                {
+                    for parent in parents {
+                        collect_matches(&lookup_inside(parent.clone()));
                     }
                 }
-                _ => {}
+                Err(error)
             }
-        }
+        };
         if self.search.control.is_cancelled() {
             return problem("Search cancelled.");
         }

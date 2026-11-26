@@ -16,6 +16,16 @@ on:
       - "**.md"
       - ".claude/**"
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump (auto derives from commits since the last tag)"
+        type: choice
+        default: auto
+        options:
+          - auto
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: read
@@ -50,6 +60,7 @@ jobs:
           components: clippy, rustfmt
       - run: npm ci
       - run: node scripts/check-versions.mjs
+      - run: node --test scripts/next-version.test.mjs
       - run: npm run lint
       - run: npm run test:finder-handoff
       - run: npm run build
@@ -76,37 +87,38 @@ jobs:
         working-directory: app/src-tauri
         run: cargo clippy --locked --all-targets --features tiny-model -- -D warnings
 
-  # Release only when shipped code changed since the last release tag.
-  # Workflow, docs and other repo-only edits pass CI without a new version.
-  # A manual run (workflow_dispatch) always releases.
+  # Release only when shipped code changed since the last release tag (and not
+  # marked [skip release]). Workflow, docs and other repo-only edits pass CI
+  # without a new version. A manual run (workflow_dispatch) always releases.
   changes:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
-      app: ${{ steps.diff.outputs.app }}
+      release: ${{ steps.plan.outputs.should_release }}
+      version: ${{ steps.plan.outputs.version }}
+      bump: ${{ steps.plan.outputs.bump }}
+      previous_tag: ${{ steps.plan.outputs.previous_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - id: diff
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: plan
         env:
-          SERIES: "0.0"
           EVENT: ${{ github.event_name }}
+          BUMP: ${{ inputs.bump }}
         run: |
           git fetch --force --tags --quiet origin
-          LAST=$(git tag --list "v${SERIES}.*" | sed -nE "s/^v${SERIES//./\\.}\.([0-9]+)$/\1/p" | sort -n | tail -1)
-          if [[ "$EVENT" == workflow_dispatch || -z "$LAST" ]]; then
-            echo "app=true" >> "$GITHUB_OUTPUT"
-          elif git diff --quiet "v${SERIES}.$LAST" HEAD -- app crates; then
-            echo "No app/ or crates/ changes since v${SERIES}.$LAST; skipping release."
-            echo "app=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "app=true" >> "$GITHUB_OUTPUT"
-          fi
+          node app/scripts/next-version.mjs \
+            --event "$EVENT" \
+            --bump "$BUMP" \
+            --github-output "$GITHUB_OUTPUT"
 
   release:
     needs: [quality, changes]
-    if: needs.changes.outputs.app == 'true'
+    if: needs.changes.outputs.release == 'true'
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:
@@ -130,21 +142,27 @@ jobs:
       - run: npm ci
 
       - name: Assign one release version to all manifests and lockfiles
-        # Next patch after the newest published v<SERIES>.N tag, or <SERIES>.1
-        # if none. Release tags only exist once a release is published, so PR
-        # runs and failed runs never use up a version. Bump SERIES for a new
-        # minor/major line.
+        id: version
+        # Single source of truth in app/scripts/next-version.mjs. Release tags
+        # only exist once a release is published, so PR runs and failed runs
+        # never use up a version.
         env:
-          SERIES: "0.0"
+          EVENT: ${{ github.event_name }}
+          BUMP: ${{ inputs.bump }}
         run: |
           git fetch --force --tags --quiet origin
-          LAST=$(git tag --list "v${SERIES}.*" | sed -nE "s/^v${SERIES//./\\.}\.([0-9]+)$/\1/p" | sort -n | tail -1)
-          VERSION="${SERIES}.$(( ${LAST:-0} + 1 ))"
-          if git rev-parse -q --verify "refs/tags/v$VERSION" > /dev/null; then
-            echo "::error::Tag v$VERSION already exists"
-            exit 1
-          fi
-          echo "Releasing $VERSION (previous ${LAST:+v${SERIES}.$LAST}${LAST:-none in $SERIES})"
+          node scripts/next-version.mjs \
+            --event "$EVENT" \
+            --bump "$BUMP" \
+            --require-release \
+            --repository "$GITHUB_REPOSITORY" \
+            --github-output "$GITHUB_OUTPUT" \
+            --write-notes "$RUNNER_TEMP/voxi-release-notes.md" \
+            --write-updater-notes "$RUNNER_TEMP/voxi-updater-notes.md"
+      - name: Stamp release version across manifests and lockfiles
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
           node scripts/check-versions.mjs --set "$VERSION"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
@@ -304,23 +322,18 @@ jobs:
           cmp "$UPDATE_APP/Contents/MacOS/voxi" "$BUNDLE/macos/Voxi.app/Contents/MacOS/voxi"
           python3 - <<'PY'
           import datetime, json, os, pathlib
-          assets = pathlib.Path(os.environ['RUNNER_TEMP']) / 'voxi-release'
+          temp = pathlib.Path(os.environ['RUNNER_TEMP'])
+          assets = temp / 'voxi-release'
           signature = (assets / 'Voxi.app.tar.gz.sig').read_text().strip()
           assert signature, 'Updater signature missing'
+          notes = (temp / 'voxi-updater-notes.md').read_text().strip()
+          assert notes, 'Updater release notes missing'
           url = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/v{os.environ['VERSION']}/Voxi.app.tar.gz"
-          manifest = {'version': os.environ['VERSION'], 'notes': 'See the GitHub release notes.',
+          manifest = {'version': os.environ['VERSION'], 'notes': notes,
                       'pub_date': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
                       'platforms': {f'darwin-{arch}': {'signature': signature, 'url': url} for arch in ('aarch64', 'x86_64')}}
           (assets / 'latest.json').write_text(json.dumps(manifest, indent=2) + '\n')
           PY
-          PREV=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || true)
-          RANGE=${PREV:+$PREV..}HEAD
-          git log --no-merges --pretty='- %s' "$RANGE" > "$RUNNER_TEMP/voxi-release-notes.md"
-          cat >> "$RUNNER_TEMP/voxi-release-notes.md" <<NOTES
-
-          Download Voxi_${VERSION}_universal.dmg and drag Voxi to Applications.
-          Existing users can use Settings → Check for updates.
-          NOTES
           if [[ "$NOTARIZE" != true ]]; then
             printf '\nThis build is not notarized yet. The first time you open it, right-click Voxi in Applications and choose Open.\n' >> "$RUNNER_TEMP/voxi-release-notes.md"
           fi

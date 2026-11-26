@@ -26,12 +26,21 @@ Pushes that only touch `website/` or `docs/` don't build a new app.
 
 ## Versioning
 
-Versions are `0.2.N`: each release is one past the newest published `v0.2.N`
-tag, so pull request runs and failed runs never use up a number. Change `SERIES`
-in the workflow to start a new line.
+[`app/scripts/next-version.mjs`](../app/scripts/next-version.mjs) is the single source of truth for release gating, SemVer bumping, and release notes:
+
+- **Guard:** pushes to `main` skip the release unless `app/` or `crates/` changed since the newest published `vX.Y.Z` tag (and the change is not marked `[skip release]`).
+- **Automatic bump:** computed from PR titles (first line of GitHub merge commit bodies) and direct commits since the newest `vX.Y.Z` tag:
+  - Default (any unprefixed or `fix:` / `chore:` / etc. title): **patch** (`0.0.3` → `0.0.4`)
+  - `feat:` or `feat(scope):`: **minor** (`0.0.3` → `0.1.0`)
+  - `<type>!:` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer: **major** (`0.0.3` → `1.0.0`)
+  - `[skip release]` in the PR title or commit message: skips publishing on that push
+- **Manual trigger:** running the workflow via `workflow_dispatch` always releases and accepts an optional `bump` input (`auto`, `patch`, `minor`, or `major`).
+- **Monotonicity & failed runs:** release tags are only created when a release is published, so pull request runs and failed runs never burn a version.
+- **Release notes:** generated once from the PR titles / commits since the previous tag and used for both the GitHub release body and the in-app updater's `latest.json` `notes` field.
 
 The manifests in the repository stay at `0.0.0`, so a local build is never
-mistaken for a release; only the release job writes the real version.
+mistaken for a release; only the release job writes the real version via
+`node app/scripts/check-versions.mjs --set "$VERSION"`.
 
 ## Signing and notarization
 

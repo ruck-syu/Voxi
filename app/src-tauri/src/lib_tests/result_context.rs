@@ -2,14 +2,14 @@ use super::*;
 #[cfg(feature = "tiny-model")]
 use plan_model::RoutingMode::{Fallback, Legacy};
 use std::{cell::Cell, fs};
-struct Fixture {
+pub(crate) struct Fixture {
     _temp: tempfile::TempDir,
     home: PathBuf,
-    state: AppState,
+    pub(crate) state: AppState,
     request: Cell<u64>,
 }
 impl Fixture {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
         let home = fsx::canonical(temp.path());
         for folder in ["Downloads", "Desktop", "Documents", "Pictures"] {
@@ -34,13 +34,13 @@ impl Fixture {
         };
         Self { _temp: temp, home, state, request: Cell::new(0) }
     }
-    fn write(&self, path: &str) -> PathBuf {
+    pub(crate) fn write(&self, path: &str) -> PathBuf {
         let path = self.home.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"data").unwrap();
         path
     }
-    fn command(&self, text: &str) -> Outcome {
+    pub(crate) fn command(&self, text: &str) -> Outcome {
         self.request.set(self.request.get() + 1);
         plan_input(&self.state, text.into(), HashMap::new(), self.request.get())
     }

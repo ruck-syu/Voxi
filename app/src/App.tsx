@@ -1134,6 +1134,7 @@ function Body(props: {
             </p>
           )}
           {o.firstRun === "runNowAndRepeat" && <p className="quiet">{o.repeats}</p>}
+          {o.scopeNotice && <p className="quiet">{o.scopeNotice}</p>}
           {o.warnings.map((warning, index) => (
             <p key={`${index}-${warning}`} className="quiet warn">
               {warning}

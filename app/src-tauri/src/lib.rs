@@ -1123,7 +1123,11 @@ fn plan_input_routed(
                     .cloned(),
             );
             let id = state.next_plan.fetch_add(1, Ordering::SeqCst);
-            if use_scope {
+            let scope_notice = scoped_snapshot
+                .as_ref()
+                .filter(|scope| scope.label == finder_selection::LABEL)
+                .map(|_| "Using your Finder selection.".to_string());
+            if use_scope && scope_notice.is_none() {
                 warnings.insert(0, "Using files from the previous searched list.".into());
             }
             let source = PreviewSource::new(&actions, notes, &roots, undo_of.is_none() && scheduled.is_none());
@@ -1154,6 +1158,7 @@ fn plan_input_routed(
                 total,
                 items,
                 noted,
+                scope_notice,
                 warnings,
                 model_interpreted: used_model,
                 is_undo: undo_of.is_some(),

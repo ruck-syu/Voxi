@@ -499,6 +499,8 @@ pub enum Outcome {
         items: Vec<PreviewItem>,
         /// How many steps carry a note, such as a name changed to avoid a clash.
         noted: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scope_notice: Option<String>,
         warnings: Vec<String>,
         model_interpreted: bool,
         is_undo: bool,

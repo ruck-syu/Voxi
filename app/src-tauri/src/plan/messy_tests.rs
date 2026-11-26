@@ -96,6 +96,29 @@ fn demo_move_to_receipts(command: &str) {
 }
 
 #[test]
+fn demo_finder_selection_preview_uses_its_own_notice() {
+    use crate::{Outcome, result_context_tests::Fixture, take_selection};
+
+    let fixture = Fixture::new();
+    let first = fixture.write("Downloads/Voxi Demo/first.pdf");
+    let second = fixture.write("Downloads/Voxi Demo/second.png");
+    fixture.write("Downloads/Voxi Demo/Receipts/existing.txt");
+    assert!(take_selection(&fixture.state, vec![first, second]).1.is_none());
+    let Outcome::Plan { total: 2, scope_notice, warnings, .. } = fixture.command("move these to Receipts") else {
+        panic!("expected a preview for the two Finder files");
+    };
+    assert_eq!(scope_notice.as_deref(), Some("Using your Finder selection."));
+    assert!(!warnings.iter().any(|warning| warning.contains("previous searched list")), "{warnings:?}");
+
+    assert!(matches!(fixture.command("list files in Downloads/Voxi Demo"), Outcome::Info { .. }));
+    let Outcome::Plan { scope_notice, warnings, .. } = fixture.command("move these to Documents") else {
+        panic!("expected a preview for the search results");
+    };
+    assert!(scope_notice.is_none());
+    assert!(warnings.iter().any(|warning| warning == "Using files from the previous searched list."), "{warnings:?}");
+}
+
+#[test]
 fn mixed_finder_selection_plans_only_the_selected_allowed_file() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();

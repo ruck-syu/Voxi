@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/readme/banner-dark.png" />
-    <img src="docs/readme/banner-light.png" width="640" alt="Voxi: a smiling face whose smile is a sound wave, next to the words: organize your Mac's files by saying what you want." />
+    <img src="docs/readme/banner-light.png" width="640" alt="Voxi: a smiling face whose smile is a sound wave, next to the words: organize your Mac's files in plain English." />
   </picture>
 </p>
 

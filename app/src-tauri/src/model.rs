@@ -179,7 +179,7 @@ impl ImageFormat {
     }
 }
 
-/// A transfer can name a path or a folder inside an existing parent.
+/// A path or a folder inside an existing parent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Destination {
@@ -259,22 +259,14 @@ pub enum Intent {
         parent: Option<String>,
     },
     SortByType {
-        folder: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parent: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        literal: Option<String>,
+        folder: Destination,
         /// Only "including subfolders" reaches into nested folders; by default
         /// a sort leaves the user's existing subfolders untouched.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         include_subfolders: bool,
     },
     SortByMonth {
-        folder: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        parent: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        literal: Option<String>,
+        folder: Destination,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         include_subfolders: bool,
     },

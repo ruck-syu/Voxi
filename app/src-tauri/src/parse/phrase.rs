@@ -2,7 +2,7 @@
 //! that names what to act on, e.g. "PDFs larger than 5 MB from Downloads".
 
 use super::dates;
-use crate::model::{DateField, DayRef, FileType, Filter, Source};
+use crate::model::{DateField, DayRef, Destination, FileType, Filter, Source};
 use chrono::{Duration, NaiveDate};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -172,28 +172,24 @@ pub fn split_arguments<'a>(text: &'a str, separators: &[&str]) -> Option<(&'a st
 }
 
 /// A folder location has one unquoted separator and a single child name.
-pub(super) fn folder_location(text: &str) -> Result<Option<(&str, &str)>, super::RefusalReason> {
+pub(super) fn folder_target(text: &str) -> Result<Option<Destination>, super::RefusalReason> {
     let outside = unquoted_text(text).ok_or(super::RefusalReason::MalformedInput)?;
     if !outside.split_whitespace().any(|word| word.eq_ignore_ascii_case("in")) {
-        return Ok(None);
+        return Ok((!bad_destination(text)).then(|| clean_name(text).into()));
     }
     let (child, parent) = split_arguments(text, &["in"]).ok_or(super::RefusalReason::InvalidFolderLocation)?;
     if child.contains('/') || [child, parent].iter().any(|part| quoted_ranges(part).is_ok_and(|ranges| !ranges.is_empty()) && !quoted(part))
     {
         return Err(super::RefusalReason::InvalidFolderLocation);
     }
-    Ok(Some((child, parent)))
-}
-
-/// The whole unquoted phrase can still name an existing folder, even when
-/// a word like "Things" makes a part too vague to use for creating a folder.
-pub(super) fn located_folder(raw: &str, child: &str, parent: &str) -> Option<(String, String, Option<String>, bool)> {
-    let literal = (!raw.contains('/') && quoted_ranges(raw).is_ok_and(|ranges| ranges.is_empty())).then(|| clean_name(raw));
+    // The unquoted phrase may name an existing folder even when a part
+    // is too vague to use for creating one.
+    let literal = (!text.contains('/') && quoted_ranges(text).is_ok_and(|ranges| ranges.is_empty())).then(|| clean_name(text));
     let existing_only = bad_destination(child) || bad_destination(parent);
     if existing_only && (literal.is_none() || bad_destination_syntax(child) || bad_destination_syntax(parent)) {
-        return None;
+        return Ok(None);
     }
-    Some((clean_name(child), clean_name(parent), literal, existing_only))
+    Ok(Some(Destination::InFolder { folder: clean_name(child), parent: clean_name(parent), literal, existing_only }))
 }
 
 pub(super) fn set_once<T>(slot: &mut Option<T>, value: T) -> Option<()> {

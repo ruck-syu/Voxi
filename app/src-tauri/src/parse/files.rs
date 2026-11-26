@@ -2,14 +2,14 @@
 
 use super::{
     Pattern, RefusalReason, cap, checked_pat,
-    phrase::{bad_destination, clean_name, folder_location, located_folder, parse_source, split_arguments, split_destination_filter},
+    phrase::{folder_target, parse_source, split_arguments, split_destination_filter},
 };
 use crate::model::{Destination, Intent, Source};
 
 fn transfer(source: &str, target: &str, copy: bool) -> Option<Result<Intent, RefusalReason>> {
     let (target, filter_tail) = split_destination_filter(target).unwrap_or((target, ""));
-    let location = match folder_location(target) {
-        Ok(location) => location,
+    let to = match folder_target(target) {
+        Ok(to) => to?,
         Err(reason) => return Some(Err(reason)),
     };
     let source = if filter_tail.is_empty() { source.to_string() } else { format!("{source} {filter_tail}") };
@@ -17,19 +17,12 @@ fn transfer(source: &str, target: &str, copy: bool) -> Option<Result<Intent, Ref
     if !filter_tail.is_empty() && !matches!(parsed, Source::Set { .. }) {
         return None;
     }
-    let to = destination(target, location)?;
+    let to = transfer_target(target, to)?;
     Some(Ok(if copy { Intent::Copy { src: parsed, to } } else { Intent::Move { src: parsed, to } }))
 }
 
-fn destination(text: &str, location: Option<(&str, &str)>) -> Option<Destination> {
-    if let Some((child, parent)) = location {
-        let (folder, parent, literal, existing_only) = located_folder(text, child, parent)?;
-        return Some(Destination::InFolder { folder, parent, literal, existing_only });
-    }
-    if bad_destination(text) {
-        return None;
-    }
-    let name = clean_name(text);
+fn transfer_target(text: &str, to: Destination) -> Option<Destination> {
+    let Destination::Path(name) = &to else { return Some(to) };
     // A quoted "Trash" or "bin" names a folder, not the Trash: the trailing
     // slash keeps it a folder path, which the planner never reads as the Trash.
     if text.trim().starts_with(['"', '\'']) && matches!(name.to_lowercase().as_str(), "trash" | "bin" | "recycle bin") {
@@ -48,7 +41,7 @@ fn destination(text: &str, location: Option<(&str, &str)>) -> Option<Destination
             return None;
         }
     }
-    Some(name.into())
+    Some(to)
 }
 
 pub fn patterns() -> Vec<Pattern> {

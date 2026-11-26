@@ -56,11 +56,6 @@ fn ambiguous(name: &str, candidates: Vec<PathBuf>, incomplete: bool) -> Stop {
     Stop::Ambiguous { name: name.into(), candidates, reason, note: None, remember_folder: true }
 }
 
-enum LocatedFolderUse {
-    Sort,
-    Transfer { existing_only: bool },
-}
-
 /// Conservative path overlap used by the chain/shortcut dependency guard.
 fn overlaps(a: &Path, b: &Path) -> bool {
     // Conservative on case-sensitive volumes too: a preview must not
@@ -304,14 +299,8 @@ impl<'a> Planner<'a> {
             Intent::Lowercase { src } => self.batch_rename(src, "Lowercase", |name, _| Some(name.to_lowercase()))?,
             Intent::Number { src, base, width } => self.number(src, base, *width)?,
             Intent::CreateFolders { names, parent } => self.create_folders(names, parent.as_deref())?.0,
-            Intent::SortByType { folder, parent, literal, include_subfolders } => {
-                let dir = self.resolve_sort_folder(folder, parent.as_deref(), literal.as_deref())?;
-                self.sort(dir, true, *include_subfolders)?
-            }
-            Intent::SortByMonth { folder, parent, literal, include_subfolders } => {
-                let dir = self.resolve_sort_folder(folder, parent.as_deref(), literal.as_deref())?;
-                self.sort(dir, false, *include_subfolders)?
-            }
+            Intent::SortByType { folder, include_subfolders } => self.sort(folder, true, *include_subfolders)?,
+            Intent::SortByMonth { folder, include_subfolders } => self.sort(folder, false, *include_subfolders)?,
             Intent::ConvertImage { src, format } => self.convert(src, *format)?,
             Intent::ResizeImage { src, width } => self.resize(src, *width)?,
             Intent::MergePdf { src, output } => self.merge(src, output)?,
@@ -491,14 +480,12 @@ impl<'a> Planner<'a> {
         }
     }
 
-    fn resolve_located_folder(
-        &mut self,
-        folder: &str,
-        parent: &str,
-        literal: Option<&str>,
-        usage: LocatedFolderUse,
-    ) -> Result<PathBuf, Stop> {
-        if folder.contains('/') || matches!(folder, "" | "." | "..") {
+    fn resolve_destination(&mut self, to: &Destination, create_in: Option<&Path>) -> Result<PathBuf, Stop> {
+        let (folder, parent, literal, existing_only) = match to {
+            Destination::Path(path) => return self.resolve_folder(path, create_in),
+            Destination::InFolder { folder, parent, literal, existing_only } => (folder, parent, literal.as_deref(), *existing_only),
+        };
+        if folder.contains('/') || matches!(folder.as_str(), "" | "." | "..") {
             return problem(format!("“{folder}” isn't a valid folder name."));
         }
         let label = literal.map(str::to_owned).unwrap_or_else(|| format!("{folder} in {parent}"));
@@ -520,26 +507,26 @@ impl<'a> Planner<'a> {
         let root = self
             .resolve_folder(parent, None)
             .and_then(|path| if path.is_dir() { Ok(path) } else { problem(format!("Couldn't find a folder named “{parent}”.")) });
-        let lookup_inside = |root: PathBuf| match usage {
-            LocatedFolderUse::Sort => self.lookup_folder(folder, &label, &[root], None, false),
-            LocatedFolderUse::Transfer { existing_only } => {
-                let path = root.join(folder);
-                self.check(&path)?;
-                if path.is_dir() {
-                    if !fsx::canonical(&path).starts_with(fsx::canonical(&root)) {
-                        return problem(format!("“{folder}” leads outside {}.", self.roots.display(&root)));
-                    }
-                    Ok(path)
-                } else if path.exists() {
-                    problem(format!("A file named “{folder}” already exists in {}. Choose another folder name.", self.roots.display(&root)))
-                } else if existing_only {
-                    problem(format!(
-                        "Couldn't find a folder named “{label}”. To create it in {}, use \"{folder}\" in \"{parent}\".",
-                        self.roots.display(&root)
-                    ))
-                } else {
-                    Ok(path)
+        let lookup_inside = |root: PathBuf| {
+            if create_in.is_none() {
+                return self.lookup_folder(folder, &label, &[root], None, false);
+            }
+            let path = root.join(folder);
+            self.check(&path)?;
+            if path.is_dir() {
+                if !fsx::canonical(&path).starts_with(fsx::canonical(&root)) {
+                    return problem(format!("“{folder}” leads outside {}.", self.roots.display(&root)));
                 }
+                Ok(path)
+            } else if path.exists() {
+                problem(format!("A file named “{folder}” already exists in {}. Choose another folder name.", self.roots.display(&root)))
+            } else if existing_only {
+                problem(format!(
+                    "Couldn't find a folder named “{label}”. To create it in {}, use \"{folder}\" in \"{parent}\".",
+                    self.roots.display(&root)
+                ))
+            } else {
+                Ok(path)
             }
         };
 
@@ -1095,16 +1082,7 @@ impl<'a> Planner<'a> {
             _ => None,
         };
         let parent_for_new = src_dir.unwrap_or_else(|| self.roots.desktop());
-        let destination = match to {
-            Destination::Path(path) => self.resolve_folder(path, Some(&parent_for_new)),
-            Destination::InFolder { folder, parent, literal, existing_only } => self.resolve_located_folder(
-                folder,
-                parent,
-                literal.as_deref(),
-                LocatedFolderUse::Transfer { existing_only: *existing_only },
-            ),
-        };
-        let dest = destination.and_then(|dest| {
+        let dest = self.resolve_destination(to, Some(&parent_for_new)).and_then(|dest| {
             if matches!(src, Source::Set { folder, filter } if Self::includes_nested_files(folder.as_deref(), filter))
                 && (self.in_package(&dest) || self.in_hidden_tree(&dest))
             {
@@ -1482,14 +1460,8 @@ impl<'a> Planner<'a> {
         Ok((format!("Create {what} in {}", file_name(&parent)), parent))
     }
 
-    fn resolve_sort_folder(&mut self, folder: &str, parent: Option<&str>, literal: Option<&str>) -> Result<PathBuf, Stop> {
-        match parent {
-            Some(parent) => self.resolve_located_folder(folder, parent, literal, LocatedFolderUse::Sort),
-            None => self.resolve_folder(folder, None),
-        }
-    }
-
-    fn sort(&mut self, dir: PathBuf, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
+    fn sort(&mut self, folder: &Destination, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
+        let dir = self.resolve_destination(folder, None)?;
         let filter = Filter { file_type: Some(FileType::Files), include_subfolders, ..Default::default() };
         let src = Source::Set { folder: Some(dir.to_string_lossy().into()), filter };
         let ExpandedSource { paths, nested, .. } = self.expand_source(&src, Expansion::DirectChanges)?;

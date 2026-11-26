@@ -2,7 +2,7 @@
 
 use super::{
     Pattern, cap, checked_pat, pat,
-    phrase::{bad_destination, clean_name, folder_location, located_folder, split_arguments, unquoted_text},
+    phrase::{bad_destination, clean_name, folder_target, split_arguments, unquoted_text},
 };
 use crate::model::Intent;
 use regex::Regex;
@@ -74,17 +74,9 @@ pub fn patterns() -> Vec<Pattern> {
             r"^(?:sort|organize|organise|group|tidy\s+up|clean\s*up)\s+(.+?)\s+(?:by|into)\s+(type|types|kind|file\s+type|extension|month|months|date)(?:\s+folders?)?(?:\s+(?:including|with|and|plus)\s+(?:the\s+)?(?:sub-?folders?|nested\s+folders?|subdirectories|sub\s+folders))?$",
             |c| {
                 let raw = cap(c, 1)?;
-                let location = match folder_location(&raw) {
-                    Ok(location) => location,
+                let folder = match folder_target(&raw) {
+                    Ok(folder) => folder?,
                     Err(reason) => return Some(Err(reason)),
-                };
-                let (folder, parent, literal) = match location {
-                    Some((child, parent)) => {
-                        let (folder, parent, literal, _) = located_folder(&raw, child, parent)?;
-                        (folder, Some(parent), literal)
-                    }
-                    None if !bad_destination(&raw) => (clean_name(&raw), None, None),
-                    None => return None,
                 };
                 let by = cap(c, 2)?.to_ascii_lowercase();
                 let include_subfolders = c[0].to_ascii_lowercase().contains("subfolders")
@@ -93,9 +85,9 @@ pub fn patterns() -> Vec<Pattern> {
                     || c[0].to_ascii_lowercase().contains("nested folders")
                     || c[0].to_ascii_lowercase().contains("subdirectories");
                 Some(Ok(if by.starts_with("month") || by == "date" {
-                    Intent::SortByMonth { folder, parent, literal, include_subfolders }
+                    Intent::SortByMonth { folder, include_subfolders }
                 } else {
-                    Intent::SortByType { folder, parent, literal, include_subfolders }
+                    Intent::SortByType { folder, include_subfolders }
                 }))
             },
         ),

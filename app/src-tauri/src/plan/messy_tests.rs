@@ -790,9 +790,8 @@ fn assert_direct_sources(roots: &Roots, command: &str, intent: &Intent, actions:
             },
             _ => return,
         },
-        Intent::SortByType { folder, parent, literal, include_subfolders: false }
-        | Intent::SortByMonth { folder, parent, literal, include_subfolders: false } => {
-            vec![planner.resolve_sort_folder(folder, parent.as_deref(), literal.as_deref()).unwrap()]
+        Intent::SortByType { folder, include_subfolders: false } | Intent::SortByMonth { folder, include_subfolders: false } => {
+            vec![planner.resolve_destination(folder, None).unwrap()]
         }
         _ => return,
     };

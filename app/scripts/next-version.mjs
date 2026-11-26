@@ -143,7 +143,7 @@ export function buildReleaseNotes({
   if (!notarized) {
     lines.push(
       '',
-      'This build is not notarized yet. The first time you open it, right-click Voxi in Applications and choose Open.',
+      'This build is not notarized yet. The first time you open it, macOS will block it: open System Settings → Privacy & Security, scroll down and click Open Anyway next to the Voxi message.',
     );
   }
   if (previousTag && repository) {
@@ -305,10 +305,15 @@ export function computeReleasePlan({
     }
   }
 
-  const chosenBump =
+  // Before 1.0, breaking changes bump the minor version (0.x semver
+  // convention). Only an explicit manual `major` bump reaches 1.0.0.
+  let chosenBump =
     requestedBump === 'auto'
       ? maxBump(entries.map((entry) => entry.classification.bump))
       : requestedBump;
+  if (requestedBump === 'auto' && chosenBump === 'major' && (latest?.major ?? 0) === 0) {
+    chosenBump = 'minor';
+  }
   const version = bumpVersion(latest, chosenBump);
   const tag = `v${version}`;
 

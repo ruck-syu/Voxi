@@ -161,7 +161,7 @@ Pushes to `main` automatically publish a release whenever `app/` or `crates/` ch
 
 - **Patch (default):** normal PR titles and commits (`0.0.3` → `0.0.4`)
 - **Minor:** prefix the PR title with `feat:` or `feat(scope):` (`0.0.3` → `0.1.0`)
-- **Major:** prefix with `<type>!:` (e.g. `feat!:`) or add a `BREAKING CHANGE:` line (`0.0.3` → `1.0.0`)
+- **Breaking:** prefix with `<type>!:` (e.g. `feat!:`) or add a `BREAKING CHANGE:` line. Before 1.0 this bumps the minor version (`0.1.4` → `0.2.0`); from 1.0 on it bumps major. To cut 1.0.0, run the workflow manually with `major`.
 - **Skip a release:** include `[skip release]` in the PR title (or commit message)
 - **Manual release / override:** run the **Release** workflow manually (`workflow_dispatch`) and pick `auto`, `patch`, `minor`, or `major`
 

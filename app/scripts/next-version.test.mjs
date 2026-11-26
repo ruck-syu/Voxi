@@ -150,7 +150,7 @@ test('releases patch by default for plain-English PR merges touching app/ or cra
   assert.match(plan.releaseNotes, /compare\/v0\.0\.3\.\.\.v0\.0\.4/);
 });
 
-test('bumps minor for feat: PR title and major for feat!: or BREAKING CHANGE', (t) => {
+test('bumps minor for feat:, minor for breaking changes before 1.0, major after', (t) => {
   const repo = makeRepo(t);
   repo.writeAndCommit({ 'app/src/main.ts': 'v1\n' }, 'Initial app');
   repo.tag('v0.0.3');
@@ -175,10 +175,24 @@ test('bumps minor for feat: PR title and major for feat!: or BREAKING CHANGE', (
     commits: [{ files: { 'app/src/main.ts': 'v3\n' }, message: 'Finalize grammar' }],
   });
 
+  const breakingPlan = computeReleasePlan({ repoDir: repo.dir });
+  assert.equal(breakingPlan.shouldRelease, true);
+  assert.equal(breakingPlan.bump, 'minor');
+  assert.equal(breakingPlan.version, '0.2.0');
+
+  const manualMajor = computeReleasePlan({ repoDir: repo.dir, event: 'workflow_dispatch', bump: 'major' });
+  assert.equal(manualMajor.version, '1.0.0');
+
+  repo.tag('v1.0.0');
+  repo.mergePr({
+    branch: 'feat/v2',
+    prNumber: 27,
+    prTitle: 'feat!: replace the command grammar',
+    commits: [{ files: { 'app/src/main.ts': 'v4\n' }, message: 'New grammar' }],
+  });
   const majorPlan = computeReleasePlan({ repoDir: repo.dir });
-  assert.equal(majorPlan.shouldRelease, true);
   assert.equal(majorPlan.bump, 'major');
-  assert.equal(majorPlan.version, '1.0.0');
+  assert.equal(majorPlan.version, '2.0.0');
 });
 
 test('honors [skip release] without blocking subsequent app PRs', (t) => {

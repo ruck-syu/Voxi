@@ -335,7 +335,7 @@ jobs:
           (assets / 'latest.json').write_text(json.dumps(manifest, indent=2) + '\n')
           PY
           if [[ "$NOTARIZE" != true ]]; then
-            printf '\nThis build is not notarized yet. The first time you open it, right-click Voxi in Applications and choose Open.\n' >> "$RUNNER_TEMP/voxi-release-notes.md"
+            printf '\nThis build is not notarized yet. The first time you open it, macOS will block it: open System Settings → Privacy & Security, scroll down and click Open Anyway next to the Voxi message.\n' >> "$RUNNER_TEMP/voxi-release-notes.md"
           fi
 
       # This is the first step permitted to create/upload/publish a GitHub release.

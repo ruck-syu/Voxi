@@ -32,7 +32,7 @@ Pushes that only touch `website/` or `docs/` don't build a new app.
 - **Automatic bump:** computed from PR titles (first line of GitHub merge commit bodies) and direct commits since the newest `vX.Y.Z` tag:
   - Default (any unprefixed or `fix:` / `chore:` / etc. title): **patch** (`0.0.3` → `0.0.4`)
   - `feat:` or `feat(scope):`: **minor** (`0.0.3` → `0.1.0`)
-  - `<type>!:` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer: **major** (`0.0.3` → `1.0.0`)
+  - `<type>!:` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer: **major** from 1.0 on; before 1.0 it bumps **minor** (`0.1.4` → `0.2.0`). Cut 1.0.0 with a manual `major` run.
   - `[skip release]` in the PR title or commit message: skips publishing on that push
 - **Manual trigger:** running the workflow via `workflow_dispatch` always releases and accepts an optional `bump` input (`auto`, `patch`, `minor`, or `major`).
 - **Monotonicity & failed runs:** release tags are only created when a release is published, so pull request runs and failed runs never burn a version.

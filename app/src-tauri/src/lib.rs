@@ -190,6 +190,22 @@ impl AppState {
         }
         Ok(())
     }
+
+    /// Records that a command has run, so the command box stops cycling
+    /// examples. Best effort: a failed save only means examples show again.
+    fn note_first_command(&self) {
+        if self.ensure_settings_writable().is_err() {
+            return;
+        }
+        let Ok(mut settings) = self.settings.lock() else { return };
+        if settings.ran_first_command {
+            return;
+        }
+        settings.ran_first_command = true;
+        if let Err(e) = settings.save(&self.settings_path) {
+            eprintln!("Couldn't record the first command: {e}");
+        }
+    }
 }
 
 fn home() -> PathBuf {
@@ -1180,7 +1196,11 @@ fn confirm_plan(state: State<AppState>, id: u64, skip: Option<Vec<usize>>) -> Re
 }
 
 fn confirm_reporting(state: &AppState, id: u64, skip: &[usize]) -> Result<RunResult, ConfirmError> {
-    confirm_trimmed(state, id, skip).map_err(|message| {
+    let result = confirm_trimmed(state, id, skip);
+    if result.is_ok() {
+        state.note_first_command();
+    }
+    result.map_err(|message| {
         // A refusal before the preview was taken (a trim or a changed file)
         // leaves it confirmable once fixed; anything later used it up. A
         // Stop pressed during the refused attempt belonged to that attempt,
@@ -1903,6 +1923,7 @@ fn write_settings(app: &AppHandle, state: &AppState, mut settings: Settings) -> 
     let mut installed = hotkey.0.lock().map_err(|_| "Hotkey state unavailable. Restart Voxi.")?;
     let mut roots = state.roots.write().map_err(|_| "Folders unavailable. Restart Voxi.")?;
     let mut context = state.result_scope.lock().map_err(|_| "Results unavailable. Restart Voxi.")?;
+    settings.ran_first_command |= current.ran_first_command;
     let requested_hotkey = settings.hotkey.clone();
     // Preserve the configured preference when the app has no live binding
     // and the user saves an unrelated setting.

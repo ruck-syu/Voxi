@@ -250,6 +250,8 @@ export default function App() {
             onBusy={setBusy}
             onSettings={() => setView("settings")}
             onSettingsChanged={setSettings}
+            showExamples={settings ? !settings.ranFirstCommand : false}
+            onFirstCommand={() => setSettings((s) => (s && !s.ranFirstCommand ? { ...s, ranFirstCommand: true } : s))}
             review={review}
             onReviewStarted={() => setReview(null)}
           />}
@@ -289,7 +291,8 @@ export default function App() {
 }
 
 /** Cycles example commands through the placeholder, typed out like a
- *  person would, while the box is empty. */
+ *  person would, while the box is empty. Shown only until the first command
+ *  runs; inactive, it is the fixed "Type or dictate a command". */
 function useTypedPlaceholder(active: boolean): string {
   const base = "Type or dictate a command";
   const [shown, setShown] = useState(base);
@@ -336,6 +339,8 @@ function CommandView({
   onBusy,
   onSettings,
   onSettingsChanged,
+  showExamples,
+  onFirstCommand,
   review,
   onReviewStarted,
 }: {
@@ -346,6 +351,10 @@ function CommandView({
   onBusy: (busy: boolean, executing?: boolean) => void;
   onSettings: () => void;
   onSettingsChanged: (s: Settings) => void;
+  /** Cycle example commands in the empty box: only until the first command runs. */
+  showExamples: boolean;
+  /** The backend records the first run; this keeps the open window in step. */
+  onFirstCommand: () => void;
   /** A scheduled task to preview again, planned as soon as this view opens. */
   review: Review | null;
   onReviewStarted: () => void;
@@ -541,6 +550,7 @@ function CommandView({
         setSelectionNotice(after.notice);
       }
       setPhase({ k: "done", result, wasUndo: plan.isUndo, searchStats });
+      onFirstCommand();
       // A phrase Voxi missed, followed soon by a command that worked, can
       // be taught: next time the phrase runs this command.
       const miss = missed.current;
@@ -558,7 +568,7 @@ function CommandView({
     } finally {
       activeRun.current = null;
     }
-  }, [phase, focusInput, skip, latestShowId]);
+  }, [phase, focusInput, skip, latestShowId, onFirstCommand]);
 
   const stop = useCallback(async () => {
     const run = activeRun.current;
@@ -709,7 +719,7 @@ function CommandView({
     onBusy(busy, executing);
     return () => onBusy(false);
   }, [busy, executing, onBusy]);
-  const placeholder = useTypedPlaceholder(open && phase.k === "ready" && text === "");
+  const placeholder = useTypedPlaceholder(showExamples && open && phase.k === "ready" && text === "");
 
   return (
     <>

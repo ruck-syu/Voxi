@@ -1,5 +1,6 @@
 //! Allowed folders, path safety checks, and small filesystem helpers.
 
+use crate::model::Action;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -183,8 +184,12 @@ impl Roots {
         if has_parent_ref(p) || !p.is_absolute() {
             return false;
         }
-        let c = canonical(p);
-        self.allowed.iter().any(|root| c.starts_with(root)) && !self.exclusions.hides(&c)
+        self.is_allowed_canonical(&canonical(p))
+    }
+
+    /// Checks a path the caller has already canonicalized.
+    pub(crate) fn is_allowed_canonical(&self, p: &Path) -> bool {
+        self.allowed.iter().any(|root| p.starts_with(root)) && !self.exclusions.hides(p)
     }
 
     /// True when `p` is one of the allowed roots itself.
@@ -197,6 +202,80 @@ impl Roots {
     /// whose parent is outside the allowed folders.
     pub(crate) fn is_allowed_entry(&self, p: &Path) -> bool {
         self.is_allowed(p) && (p.parent().is_none_or(|parent| self.is_allowed(parent)) || self.is_configured_root(p))
+    }
+
+    pub(crate) fn check_whole_tree_exclusions(&self, action: &Action) -> Result<(), String> {
+        if self.exclusions.is_empty() {
+            return Ok(());
+        }
+        let renamed;
+        let (source, destination) = match action {
+            Action::Move { from, to } | Action::Copy { from, to } | Action::RestoreFromTrash { from, to } => (from, Some(to)),
+            Action::Rename { path, new_name } => {
+                renamed = path.with_file_name(new_name);
+                if *path == renamed {
+                    return Ok(());
+                }
+                (path, Some(&renamed))
+            }
+            Action::Trash { path } => (path, None),
+            Action::Zip { path, .. } => {
+                // ditto follows a link supplied as a source argument.
+                return self.check_excluded_descendants(path, Some(path));
+            }
+            Action::ResizeImage { path, backup, .. } => (path, Some(backup)),
+            Action::Restore { from, to } => {
+                if fs::symlink_metadata(to).is_ok_and(|meta| meta.is_dir()) {
+                    self.check_excluded_descendants(to, Some(to))?;
+                }
+                (from, Some(to))
+            }
+            Action::Unzip { destination, .. } => return self.check_excluded_descendants(destination, None),
+            _ => return Ok(()),
+        };
+        // Moving or copying a symlink operates on the link itself.
+        if fs::symlink_metadata(source).is_ok_and(|meta| meta.is_dir()) {
+            let checked = self
+                .check_excluded_descendants(source, Some(source))
+                .and_then(|()| destination.map_or(Ok(()), |destination| self.check_excluded_descendants(destination, Some(source))));
+            // Exclusions are saved by path, so a rename would quietly drop one.
+            if matches!(action, Action::Rename { .. }) {
+                return checked.map_err(|message| {
+                    message.replace(
+                        "Name the files to include, or remove the exclusion.",
+                        "Renaming it would stop that exclusion from working. Remove the exclusion first, then rename it and exclude the folder again.",
+                    )
+                });
+            }
+            checked?;
+        }
+        Ok(())
+    }
+
+    fn check_excluded_descendants(&self, folder: &Path, contents: Option<&Path>) -> Result<(), String> {
+        let canonical_folder = canonical(folder);
+        for excluded in &self.exclusions.excluded {
+            let Some(relative) = strip_prefix_ignoring_case(excluded, &canonical_folder) else { continue };
+            if relative.as_os_str().is_empty() {
+                continue;
+            }
+            // Check configured paths directly, including inside trees skipped
+            // by searches. Missing paths do not count, and unreadable ones
+            // may still contain excluded entries.
+            if let Some(contents) = contents
+                && matches!(fs::symlink_metadata(contents.join(&relative)),
+                    Err(e) if matches!(e.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory))
+            {
+                continue;
+            }
+            let relation = if contents == Some(folder) { "contains" } else { "would include" };
+            return Err(format!(
+                "“{}” {relation} “{}”, which is excluded in Settings → Folders. Name the files to include, or remove the exclusion.",
+                file_name(folder),
+                relative.display()
+            ));
+        }
+        Ok(())
     }
 
     /// Match the original directory entry, resolving case via the filesystem
@@ -415,9 +494,39 @@ pub(crate) fn rename_exclusive(from: &Path, to: &Path) -> Publication {
     revalidate_parent(to, &parent)?;
     let meta = fs::symlink_metadata(from).map_err(|e| e.to_string())?;
     let identity = FileIdentity::from_metadata(&meta);
+    #[cfg(test)]
+    run_hook(&BEFORE_PUBLISH);
     if meta.is_dir() || same_entry_rename(from, to) {
-        rename_no_replace(from, to).map_err(|error| rename_error(to, error))?;
-    } else if let Err(error) = fs::hard_link(from, to) {
+        rename_without_replacing(from, to).map_err(|error| rename_error(to, error))?;
+        return Ok(identity);
+    }
+    // One no-replace rename moves whatever file is at `from` and never
+    // deletes anything. Linking and then unlinking the source by name would
+    // delete a newer version saved over it in between.
+    #[cfg(test)]
+    let renamed = if FORCE_LINK_FALLBACK.with(|force| force.get()) {
+        Err(std::io::Error::from_raw_os_error(libc::ENOTSUP))
+    } else {
+        rename_no_replace(from, to)
+    };
+    #[cfg(not(test))]
+    let renamed = rename_no_replace(from, to);
+    match renamed {
+        Ok(()) => {
+            return if FileIdentity::read(to).is_ok_and(|current| current == identity) {
+                Ok(identity)
+            } else {
+                Err(PublishError::Uncertain(format!(
+                    "{} changed while it was being moved. The current version is at {}.",
+                    from.display(),
+                    to.display()
+                )))
+            };
+        }
+        Err(error) if !rename_flag_unsupported(&error) => return Err(rename_error(to, error)),
+        Err(_) => {}
+    }
+    if let Err(error) = fs::hard_link(from, to) {
         rename_after_link_failure(from, to, error)?;
     } else {
         // A source replaced after publication must never be unlinked.
@@ -446,6 +555,12 @@ pub(crate) fn rename_exclusive(from: &Path, to: &Path) -> Publication {
     Ok(identity)
 }
 
+/// Some volumes (older formats, some network shares) don't support the
+/// rename flags; the caller then falls back to a checked alternative.
+fn rename_flag_unsupported(error: &std::io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EINVAL))
+}
+
 fn unlink_published_source(from: &Path) -> std::io::Result<()> {
     #[cfg(test)]
     if UNLINK_FAILURE.with(|failure| failure.get()) {
@@ -455,8 +570,23 @@ fn unlink_published_source(from: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
+type Hook = std::cell::RefCell<Option<Box<dyn FnOnce()>>>;
+
+/// Runs a test's simulated concurrent change, such as an editor saving.
+#[cfg(test)]
+fn run_hook(hook: &'static std::thread::LocalKey<Hook>) {
+    if let Some(change) = hook.with(|hook| hook.borrow_mut().take()) {
+        change();
+    }
+}
+
+#[cfg(test)]
 thread_local! {
+    pub(crate) static BEFORE_PUBLISH: Hook = const { std::cell::RefCell::new(None) };
+    pub(crate) static BEFORE_REPLACE: Hook = const { std::cell::RefCell::new(None) };
     pub(crate) static UNLINK_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Act as if the volume lacks no-replace renames, to test the fallback.
+    pub(crate) static FORCE_LINK_FALLBACK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     pub(crate) static STAGE_CLEANUP_FAILURE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
@@ -487,9 +617,24 @@ fn rename_after_link_failure(from: &Path, to: &Path, error: std::io::Error) -> R
         || matches!(error.raw_os_error(), Some(libc::ENOTSUP | libc::EPERM | libc::EMLINK))
         || (error.kind() == std::io::ErrorKind::AlreadyExists && same_entry_rename(from, to))
     {
-        return rename_no_replace(from, to).map_err(|error| rename_error(to, error));
+        return rename_without_replacing(from, to).map_err(|error| rename_error(to, error));
     }
     Err(rename_error(to, error))
+}
+
+/// A no-replace rename. Drives without that option (ExFAT, FAT32) get a
+/// plain rename after checking the destination is free; a plain rename
+/// still can't replace a folder that has anything in it.
+fn rename_without_replacing(from: &Path, to: &Path) -> std::io::Result<()> {
+    match rename_no_replace(from, to) {
+        Err(error) if rename_flag_unsupported(&error) => {
+            if to.symlink_metadata().is_ok() {
+                return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
+            }
+            fs::rename(from, to)
+        }
+        result => result,
+    }
 }
 
 fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -504,6 +649,32 @@ fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let result = -1;
     if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+/// Atomically exchanges two directory entries.
+fn rename_swap(a: &Path, b: &Path) -> std::io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let a = CString::new(a.as_os_str().as_bytes())?;
+    let b = CString::new(b.as_os_str().as_bytes())?;
+    // SAFETY: both C strings are live and NUL-terminated.
+    #[cfg(target_os = "macos")]
+    let result = unsafe { libc::renamex_np(a.as_ptr(), b.as_ptr(), libc::RENAME_SWAP) };
+    #[cfg(target_os = "linux")]
+    let result = unsafe { libc::renameat2(libc::AT_FDCWD, a.as_ptr(), libc::AT_FDCWD, b.as_ptr(), libc::RENAME_EXCHANGE) };
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let result = {
+        let _ = (a, b);
+        -1
+    };
+    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+/// A free name beside `path`, such as "photo (edited during resize).png".
+fn sibling_name(path: &Path, label: &str, n: usize) -> PathBuf {
+    let stem = path.file_stem().map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let number = if n == 0 { String::new() } else { format!(" {}", n + 1) };
+    path.with_file_name(format!("{stem} ({label}{number}){ext}"))
 }
 
 /// An exclusive mode-0700 directory in the output's parent. Writers may
@@ -547,7 +718,7 @@ impl Staging {
             if before.dev() != now.dev() || before.ino() != now.ino() {
                 return Err("staging directory moved or replaced".into());
             }
-            fs::remove_dir_all(&self.dir).map_err(|e| e.to_string())
+            remove_private_tree(&self.dir).map_err(|e| e.to_string())
         })();
         let Err(error) = cleanup else { return result };
         let append = |message: &str| format!("{message}; staging cleanup failed at {}: {error}", self.dir.display());
@@ -569,8 +740,47 @@ impl Staging {
             return Err(format!("Stopped: {} changed while preparing the replacement.", output.display()).into());
         }
         let identity = FileIdentity::read(&self.path).map_err(|e| e.to_string())?;
-        fs::rename(&self.path, output).map_err(|e| format!("Cannot replace {}: {e}", output.display()))?;
-        Ok(identity)
+        #[cfg(test)]
+        run_hook(&BEFORE_REPLACE);
+        // Swap rather than rename over the output, so the file that was there
+        // is never discarded unseen: if it isn't the one checked above (an app
+        // saved over it), keep it beside the result.
+        match rename_swap(&self.path, output) {
+            Ok(()) if FileIdentity::read(&self.path).is_ok_and(|displaced| displaced == *expected) => Ok(identity),
+            Ok(()) => self.keep_displaced(output, identity),
+            Err(error) if rename_flag_unsupported(&error) => {
+                fs::rename(&self.path, output).map_err(|e| format!("Cannot replace {}: {e}", output.display()))?;
+                Ok(identity)
+            }
+            Err(error) => Err(format!("Cannot replace {}: {error}", output.display()).into()),
+        }
+    }
+
+    /// After a swap, the staging path holds a newer version someone saved
+    /// over the output. Move it out of staging (which is deleted) next to it.
+    fn keep_displaced(&self, output: &Path, identity: FileIdentity) -> Publication {
+        for n in 0..1000 {
+            let kept = sibling_name(output, "edited during resize", n);
+            match rename_no_replace(&self.path, &kept) {
+                Ok(()) => {
+                    return Err(PublishError::Published {
+                        identity,
+                        message: format!(
+                            "{} changed while Voxi was resizing it. Your newer version was kept as “{}”.",
+                            file_name(output),
+                            file_name(&kept)
+                        ),
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(_) => break,
+            }
+        }
+        // Nowhere to keep it: swap back, leaving the newer version in place.
+        rename_swap(&self.path, output).map_err(|e| {
+            PublishError::Uncertain(format!("{} changed while Voxi was resizing it, and Voxi couldn't keep both: {e}", output.display()))
+        })?;
+        Err(format!("Stopped: {} changed while Voxi was resizing it. It was left as it is.", file_name(output)).into())
     }
 
     fn validate_parent(&self, output: &Path) -> Result<(), String> {
@@ -590,9 +800,41 @@ impl Drop for Staging {
             && before.dev() == now.dev()
             && before.ino() == now.ino()
         {
-            let _ = fs::remove_dir_all(&self.dir);
+            let _ = remove_private_tree(&self.dir);
         }
     }
+}
+
+/// `path` relative to `prefix`, comparing names without regard to case: a
+/// folder that doesn't exist yet keeps the spelling typed, while the drive
+/// usually treats "project" and "Project" as one folder.
+fn strip_prefix_ignoring_case(path: &Path, prefix: &Path) -> Option<PathBuf> {
+    let mut rest = path.components();
+    for wanted in prefix.components() {
+        let got = rest.next()?;
+        if got.as_os_str().to_string_lossy().to_lowercase() != wanted.as_os_str().to_string_lossy().to_lowercase() {
+            return None;
+        }
+    }
+    Some(rest.as_path().to_path_buf())
+}
+
+/// Removes Voxi's own staging tree. A copied read-only folder (mode 0555)
+/// can't have its contents deleted, so make folders writable first.
+fn remove_private_tree(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(folder) = pending.pop() {
+        if let Ok(meta) = fs::symlink_metadata(&folder)
+            && meta.is_dir()
+        {
+            let _ = fs::set_permissions(&folder, fs::Permissions::from_mode(meta.permissions().mode() | 0o700));
+            if let Ok(entries) = fs::read_dir(&folder) {
+                pending.extend(entries.flatten().map(|entry| entry.path()));
+            }
+        }
+    }
+    fs::remove_dir_all(dir)
 }
 
 /// Generate privately, then publish with a no-replace claim.
@@ -619,6 +861,64 @@ pub fn available_space(path: &Path) -> Result<u64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An editor's atomic save: write a new file, then rename it over `path`.
+    fn save_over(path: &Path, bytes: &'static [u8]) -> Box<dyn FnOnce()> {
+        let path = path.to_path_buf();
+        Box::new(move || {
+            let temp = path.with_file_name(".editor-save.tmp");
+            fs::write(&temp, bytes).unwrap();
+            fs::rename(&temp, &path).unwrap();
+        })
+    }
+
+    #[test]
+    fn a_save_during_a_move_is_moved_not_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = canonical(dir.path());
+        let (from, to) = (base.join("notes.txt"), base.join("moved.txt"));
+        fs::write(&from, b"old").unwrap();
+        BEFORE_PUBLISH.with(|hook| *hook.borrow_mut() = Some(save_over(&from, b"newer")));
+        let result = rename_exclusive(&from, &to);
+        assert!(matches!(&result, Err(PublishError::Uncertain(m)) if m.contains("changed while it was being moved")), "{result:?}");
+        assert_eq!(fs::read(&to).unwrap(), b"newer", "the newer save survives at the destination");
+        assert!(from.symlink_metadata().is_err());
+
+        // Without a concurrent save the move is clean.
+        let other = base.join("other.txt");
+        fs::write(&other, b"data").unwrap();
+        rename_exclusive(&other, &base.join("other moved.txt")).unwrap();
+        assert_eq!(fs::read(base.join("other moved.txt")).unwrap(), b"data");
+    }
+
+    #[test]
+    fn a_save_during_a_replace_is_kept_beside_the_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = canonical(dir.path());
+        let output = base.join("photo.png");
+        fs::write(&output, b"original").unwrap();
+        let expected = FileIdentity::read(&output).unwrap();
+        let stage = Staging::new(&output).unwrap();
+        fs::write(&stage.path, b"resized").unwrap();
+        BEFORE_REPLACE.with(|hook| *hook.borrow_mut() = Some(save_over(&output, b"newer edit")));
+        let result = stage.finish(stage.replace(&output, &expected));
+        assert!(
+            matches!(&result, Err(PublishError::Published { message, .. }) if message.contains("newer version was kept")),
+            "{result:?}"
+        );
+        assert_eq!(fs::read(&output).unwrap(), b"resized");
+        assert_eq!(fs::read(base.join("photo (edited during resize).png")).unwrap(), b"newer edit");
+
+        // Without a concurrent save, the replacement leaves nothing beside it.
+        let clean = base.join("clean.png");
+        fs::write(&clean, b"original").unwrap();
+        let expected = FileIdentity::read(&clean).unwrap();
+        let stage = Staging::new(&clean).unwrap();
+        fs::write(&stage.path, b"resized").unwrap();
+        stage.finish(stage.replace(&clean, &expected)).unwrap();
+        assert_eq!(fs::read(&clean).unwrap(), b"resized");
+        assert!(base.join("clean (edited during resize).png").symlink_metadata().is_err());
+    }
 
     /// ~/Documents/Archive excluded, ~/Documents/Archive/Keep added back,
     /// ~/Downloads excluded outright.

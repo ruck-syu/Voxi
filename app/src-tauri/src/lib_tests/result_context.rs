@@ -238,7 +238,7 @@ fn model_routing_keeps_trash_commands_on_the_rule_path() {
     let f = Fixture::new();
     let path = f.write("Downloads/report.pdf");
     for mode in [Fallback, Legacy] {
-        for command in ["send to the trash all files in Downloads", r#"move files from Downloads to "Trash""#] {
+        for command in ["send to the trash all files in Downloads", "move files from Downloads to Trash"] {
             let outcome = f.command_with_model(command, mode, unexpected_inference);
             assert!(matches!(&outcome, Outcome::Problem { message } if message.starts_with("To be safe")), "{command}: {outcome:?}");
             assert!(f.state.pending.lock().unwrap().is_none());
@@ -1975,6 +1975,50 @@ fn unscoped_search_says_which_folders_it_searched_and_skips_the_others() {
 }
 
 #[test]
+fn malformed_folder_locations_suggest_quoting_or_a_single_path() {
+    let fixture = Fixture::new();
+    fixture.write("Downloads/invoice.pdf");
+    fixture.write("Downloads/Voxi Demo/Receipts/photo.png");
+    fixture.write("Downloads/2026/Receipts/report.pdf");
+    for command in [
+        "move these to Receipts in Voxi Demo in Downloads",
+        "sort Receipts in Voxi Demo in Downloads by type",
+        "move invoice.pdf to 2026/Receipts in Downloads",
+        r#"move invoice.pdf to "2026/Receipts" in Downloads"#,
+        r#"sort "2026/Receipts" in Downloads by type"#,
+        r#"move invoice.pdf to "Receipts" folder in Downloads"#,
+    ] {
+        let outcome = fixture.command(command);
+        assert!(
+            matches!(outcome, Outcome::Problem { message } if message.contains("Quote names") && message.contains("single path")),
+            "{command}"
+        );
+    }
+}
+
+#[test]
+fn scoped_folder_choices_are_not_offered_as_nicknames() {
+    let fixture = Fixture::new();
+    fixture.write("Downloads/Work/First/Voxi Demo/one.pdf");
+    fixture.write("Downloads/Work/Second/Voxi Demo/two.pdf");
+    fixture.write("Downloads/First/Voxi Demo/one.pdf");
+    fixture.write("Downloads/Second/Voxi Demo/two.pdf");
+    for (command, label) in [
+        ("sort Voxi Demo in Downloads by type", "Voxi Demo in Downloads"),
+        ("sort Voxi Demo in Downloads/Work by type", "Voxi Demo in Downloads/Work"),
+    ] {
+        assert!(matches!(
+            fixture.command(command),
+            Outcome::Ambiguous { name, folders: false, candidates, .. } if name == label && candidates.len() >= 2
+        ));
+    }
+    assert!(matches!(
+        fixture.command("sort Voxi Demo by type"),
+        Outcome::Ambiguous { name, folders: true, .. } if name == "Voxi Demo"
+    ));
+}
+
+#[test]
 fn sorting_is_top_level_unless_subfolders_are_requested() {
     let f = Fixture::new();
     let nested = f.write("Downloads/Project/a.pdf");
@@ -2062,6 +2106,103 @@ fn a_finder_selection_becomes_the_list_that_these_refers_to() {
     // Nothing usable clears the list rather than leaving an older one in place.
     assert!(take_selection(&f.state, vec![stray]).1.unwrap().contains("outside the folders"));
     assert!(f.state.result_scope.lock().unwrap().current.is_none());
+}
+
+#[test]
+fn demo_finder_selection_preview_uses_its_own_notice() {
+    let fixture = Fixture::new();
+    let first = fixture.write("Downloads/Voxi Demo/first.pdf");
+    let second = fixture.write("Downloads/Voxi Demo/second.png");
+    fixture.write("Downloads/Voxi Demo/Receipts/existing.txt");
+    assert!(take_selection(&fixture.state, vec![first, second]).1.is_none());
+    let Outcome::Plan { total: 2, scope_notice, warnings, .. } = fixture.command("move these to Receipts") else {
+        panic!("expected a preview for the two Finder files");
+    };
+    assert_eq!(scope_notice.as_deref(), Some("Using your Finder selection."));
+    assert!(!warnings.iter().any(|warning| warning.contains("previous searched list")), "{warnings:?}");
+
+    assert!(matches!(fixture.command("list files in Downloads/Voxi Demo"), Outcome::Info { .. }));
+    let Outcome::Plan { scope_notice, warnings, .. } = fixture.command("move these to Documents") else {
+        panic!("expected a preview for the search results");
+    };
+    assert!(scope_notice.is_none());
+    assert!(warnings.iter().any(|warning| warning == "Using files from the previous searched list."), "{warnings:?}");
+}
+
+#[test]
+fn finder_handoff_keeps_the_latest_batch_for_its_own_window_request() {
+    let f = Fixture::new();
+    f.state.settings.lock().unwrap().onboarded = true;
+    let first = f.write("Downloads/first.pdf");
+    let second = f.write("Downloads/second file #1.pdf");
+    let missing = f.home.join("Downloads/gone.pdf");
+    let url = |path: &PathBuf| tauri::Url::from_file_path(path).unwrap();
+    let previous = f.state.presentation.lock().unwrap().request("command");
+    let previous_generation = opening_for_request(&f.state, previous.request_id).unwrap().generation;
+    let first_mode = prepare_finder_selection(&f.state, finder_selection::paths_from_urls(vec![url(&first)]));
+    let first_show = f.state.presentation.lock().unwrap().request(first_mode);
+    let paths = finder_selection::paths_from_urls(vec![
+        tauri::Url::parse("https://example.com/report.pdf").unwrap(),
+        url(&second),
+        url(&missing),
+        url(&second),
+        url(&missing),
+    ]);
+    assert_eq!(paths, [second.clone(), missing]);
+    let latest_mode = prepare_finder_selection(&f.state, paths);
+    let latest_show = f.state.presentation.lock().unwrap().request(latest_mode);
+
+    // A cold webview can miss both notifications and still open the latest batch.
+    let mut presentation = f.state.presentation.lock().unwrap();
+    assert!(!presentation.ready);
+    assert_eq!(presentation.pending().unwrap().request_id, latest_show.request_id);
+    presentation.ready = true;
+    drop(presentation);
+    assert!(opening_for_request(&f.state, previous.request_id).is_none());
+    assert!(opening_for_request(&f.state, first_show.request_id).is_none());
+    clear_scope(&f.state, Some(previous_generation));
+    let latest = opening_for_request(&f.state, latest_show.request_id).unwrap();
+    assert_eq!(latest.scope.unwrap().count, 1);
+    assert_eq!(f.paths(), [second]);
+    assert_eq!(latest.notice.as_deref(), Some("1 item could no longer be found: “gone.pdf”."));
+}
+
+#[test]
+fn a_plan_reply_cannot_claim_the_finder_list_that_cancelled_it() {
+    let f = Fixture::new();
+    f.state.settings.lock().unwrap().onboarded = true;
+    let old = f.write("Downloads/old.pdf");
+    let new = f.write("Downloads/new.pdf");
+    let (known_generation, _) = take_selection(&f.state, vec![old]);
+    let (outcome, stats) = plan_with_stats(&f.state, "move these to Documents".into(), HashMap::new(), 1, None);
+    assert!(matches!(outcome, Outcome::Plan { .. }));
+    // The handoff can interrupt between computing the outcome and building
+    // the IPC reply, even when planning already finished successfully.
+    let mode = prepare_finder_selection(&f.state, vec![new.clone()]);
+    let show = f.state.presentation.lock().unwrap().request(mode);
+    let reply = command_reply(&f.state, 1, outcome, stats);
+    assert!(reply.generation.is_none());
+    assert!(reply.scope.is_none());
+    clear_scope(&f.state, Some(reply.generation.unwrap_or(known_generation)));
+    assert_eq!(f.paths(), [new]);
+    assert_eq!(opening_for_request(&f.state, show.request_id).unwrap().scope.unwrap().count, 1);
+
+    let (first, stats) = plan_with_stats(&f.state, "move these to Documents".into(), HashMap::new(), 2, None);
+    let (latest, latest_stats) = plan_with_stats(&f.state, "move these to Documents".into(), HashMap::new(), 3, None);
+    assert!(command_reply(&f.state, 2, first, stats).generation.is_none());
+    assert_eq!(command_reply(&f.state, 3, latest, latest_stats).scope.unwrap().count, 1);
+}
+
+#[test]
+fn finder_handoff_before_setup_opens_welcome_without_a_scope() {
+    let f = Fixture::new();
+    let file = f.write("Downloads/report.pdf");
+    let mode = prepare_finder_selection(&f.state, vec![file]);
+    assert_eq!(mode, "welcome");
+    let request = f.state.presentation.lock().unwrap().request(mode);
+    let opening = opening_for_request(&f.state, request.request_id).unwrap();
+    assert!(opening.scope.is_none());
+    assert!(opening.notice.unwrap().starts_with("Finish setting up Voxi"));
 }
 #[test]
 fn repeats_saved_before_modified_meant_last_edit_are_skipped_not_reread() {

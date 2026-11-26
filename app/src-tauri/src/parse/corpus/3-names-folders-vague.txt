@@ -1,6 +1,16 @@
 # 6. Names
 list files named budget in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"budget"}}}
 list files containing quarterly report in Documents => {"intent":"list","src":{"kind":"set","folder":"Documents","filter":{"type":"files","nameContains":"quarterly report"}}}
+delete files in Downloads containing "-" => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"-"}}}
+delete files in Downloads starting with "-" => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameStartsWith":"-"}}}
+delete files in Downloads containing "_" => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"_"}}}
+delete files in Downloads containing "-." => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"-."}}}
+delete files in Downloads named "_" => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"_"}}}
+delete files in Downloads called "-" => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameContains":"-"}}}
+delete files in Downloads ending with .txt => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","ext":["txt"]}}}
+delete files in Downloads ending with "-" => !
+delete files in Downloads ending with "." => !
+delete files in Downloads containing "" => !hard
 find files called Final Draft.docx => {"intent":"list","src":{"kind":"item","name":"Final Draft.docx"}}
 list everything with 'draft' in the name => {"intent":"list","src":{"kind":"set","filter":{"type":"files","nameContains":"draft"}}}
 delete files that start with invoice from Downloads => {"intent":"trash","src":{"kind":"set","folder":"Downloads","filter":{"type":"files","nameStartsWith":"invoice"}}}

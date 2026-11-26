@@ -13,6 +13,22 @@
   <string>Voxi organizes files in Downloads when you ask it to.</string>
   <key>NSRemovableVolumesUsageDescription</key>
   <string>Voxi moves files to external drives when you ask it to.</string>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Files</string>
+      <key>CFBundleTypeRole</key>
+      <string>Viewer</string>
+      <key>LSHandlerRank</key>
+      <!-- Accept drops without becoming the default document handler. -->
+      <string>None</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.data</string>
+      </array>
+    </dict>
+  </array>
   <!-- "Organize with Voxi" for files selected in Finder. -->
   <key>NSServices</key>
   <array>

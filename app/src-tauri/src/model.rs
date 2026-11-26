@@ -179,6 +179,54 @@ impl ImageFormat {
     }
 }
 
+/// A path or a folder inside an existing parent.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Destination {
+    Path(String),
+    InFolder {
+        folder: String,
+        parent: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        literal: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        existing_only: bool,
+    },
+}
+
+impl Destination {
+    pub fn path(&self) -> Option<&str> {
+        match self {
+            Self::Path(path) => Some(path),
+            Self::InFolder { .. } => None,
+        }
+    }
+}
+
+impl PartialEq<str> for Destination {
+    fn eq(&self, other: &str) -> bool {
+        self.path() == Some(other)
+    }
+}
+
+impl PartialEq<&str> for Destination {
+    fn eq(&self, other: &&str) -> bool {
+        self.eq(*other)
+    }
+}
+
+impl From<String> for Destination {
+    fn from(path: String) -> Self {
+        Self::Path(path)
+    }
+}
+
+impl From<&str> for Destination {
+    fn from(path: &str) -> Self {
+        path.to_string().into()
+    }
+}
+
 /// The parser's output: what the user asked for, with names still unresolved.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "intent", rename_all = "snake_case")]
@@ -188,11 +236,11 @@ pub enum Intent {
     },
     Move {
         src: Source,
-        to: String,
+        to: Destination,
     },
     Copy {
         src: Source,
-        to: String,
+        to: Destination,
     },
     Rename {
         src: Source,
@@ -223,14 +271,14 @@ pub enum Intent {
         parent: Option<String>,
     },
     SortByType {
-        folder: String,
+        folder: Destination,
         /// Only "including subfolders" reaches into nested folders; by default
         /// a sort leaves the user's existing subfolders untouched.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         include_subfolders: bool,
     },
     SortByMonth {
-        folder: String,
+        folder: Destination,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         include_subfolders: bool,
     },
@@ -495,6 +543,8 @@ pub enum Outcome {
         items: Vec<PreviewItem>,
         /// How many steps carry a note, such as a name changed to avoid a clash.
         noted: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        scope_notice: Option<String>,
         warnings: Vec<String>,
         model_interpreted: bool,
         is_undo: bool,
@@ -504,8 +554,7 @@ pub enum Outcome {
         repeats: Option<String>,
     },
     /// A name needs a choice before the command can be planned again.
-    /// `folders` is true when every candidate is a folder, so the pick can be
-    /// remembered as the user's name for it.
+    /// `folders` is true when the pick can be saved as a folder nickname.
     Ambiguous {
         name: String,
         candidates: Vec<String>,

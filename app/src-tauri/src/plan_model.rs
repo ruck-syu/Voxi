@@ -81,10 +81,12 @@ fn only_file_type(filter: &Filter) -> bool {
 fn model_can_express(intent: &Intent) -> bool {
     match intent {
         Intent::Trash { .. } => false,
-        Intent::Move { src, to } | Intent::Copy { src, to } if !trash_destination(Path::new(to)) => match src {
-            Source::Set { filter, .. } => only_file_type(filter),
-            Source::Item { .. } => false,
-        },
+        Intent::Move { src, to } | Intent::Copy { src, to } if to.path().is_some_and(|path| !trash_destination(Path::new(path))) => {
+            match src {
+                Source::Set { filter, .. } => only_file_type(filter),
+                Source::Item { .. } => false,
+            }
+        }
         Intent::Move { .. } | Intent::Copy { .. } => false,
         Intent::Chain { commands } => commands.iter().all(model_can_express),
         // CreateFolders and Rename map directly onto schema steps.
@@ -270,6 +272,7 @@ pub fn accounts_for(base: &str, intent: &Intent, missing_item: Option<&str>) -> 
                 )
             }
             Intent::Move { src, to } | Intent::Copy { src, to } => {
+                let Some(to) = to.path() else { return false };
                 let Source::Set { folder: Some(folder), filter } = src else { return false };
                 if !only_file_type(filter) {
                     return false;
@@ -394,10 +397,12 @@ pub fn phrase_like_missing_name(name: &str, text: &str) -> bool {
 
 pub fn recoverable_intent(intent: &Intent, missing: &str) -> bool {
     match intent {
-        Intent::Move { src, to } | Intent::Copy { src, to } if !trash_destination(Path::new(to)) => match src {
-            Source::Item { name, .. } => name == missing,
-            Source::Set { filter, .. } => supported_type(filter),
-        },
+        Intent::Move { src, to } | Intent::Copy { src, to } if to.path().is_some_and(|path| !trash_destination(Path::new(path))) => {
+            match src {
+                Source::Item { name, .. } => name == missing,
+                Source::Set { filter, .. } => supported_type(filter),
+            }
+        }
         Intent::Chain { commands } => {
             let mut created = false;
             commands.iter().all(|step| {
@@ -606,7 +611,7 @@ impl Prepared {
                         return Err(MODEL_TRASH_REFUSAL.into());
                     }
                     let src = Source::Set { folder: Some(folder), filter: Filter { file_type: Some(kind), ..Default::default() } };
-                    if op == "move" { Intent::Move { src, to } } else { Intent::Copy { src, to } }
+                    if op == "move" { Intent::Move { src, to: to.into() } } else { Intent::Copy { src, to: to.into() } }
                 }
                 ("rename", 4) => Intent::Rename { src: Source::Item { name: lit(1)?, folder: Some(lit(2)?) }, new_name: lit(3)? },
                 ("trash", _) => return Err(MODEL_TRASH_REFUSAL.into()),

@@ -35,7 +35,7 @@ export type InfoRow = { name: string; detail: string };
 export type FirstRunPolicy = "immediate" | "oneTimeDeferred" | "repeatLater" | "runNowAndRepeat";
 
 export type Outcome =
-  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; warnings: string[]; modelInterpreted: boolean; isUndo: boolean; firstRun: FirstRunPolicy; scheduledFor?: string | null; repeats?: string | null }
+  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; scopeNotice?: string; warnings: string[]; modelInterpreted: boolean; isUndo: boolean; firstRun: FirstRunPolicy; scheduledFor?: string | null; repeats?: string | null }
   | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean; reason: "multiple_matches" | "suggested_match" | "incomplete_search"; note?: string }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
@@ -77,8 +77,8 @@ export type SearchStats = {
   unreadable: number;
   elapsed_ms_bucket: "under100" | "under1000" | "under5000" | "at_least5000";
 };
-/** `generation` names the results list after the command, for clearing only that one. */
-export type CommandReply = { outcome: Outcome; scope: ResultScope | null; generation: number; search_stats?: SearchStats };
+/** A null generation leaves the view's results list alone. */
+export type CommandReply = { outcome: Outcome; scope: ResultScope | null; generation: number | null; search_stats?: SearchStats };
 /** What a newly opened command view starts from; reading it twice gives the same answer. */
 export type Opening = { scope: ResultScope | null; generation: number; notice: string | null };
 
@@ -98,7 +98,7 @@ export const api = {
   /** Clears the results list, only if it is still the one at `generation` when given. */
   clearResultScope: (generation?: number | null) => invoke<void>("clear_result_scope", { generation: generation ?? null }),
   resultScope: () => invoke<ResultScope | null>("result_scope"),
-  openingContext: () => invoke<Opening>("opening_context"),
+  openingContext: (requestId: number) => invoke<Opening | null>("opening_context", { requestId }),
   searchProgress: (requestId: number) => invoke<number>("search_progress", { requestId }),
   openHex: () => inTauri ? invoke<void>("open_hex") : Promise.resolve(window.open("https://anoma.ly/hex/", "_blank", "noopener,noreferrer")).then(() => {}),
   /** Runs the pending plan, leaving out the 0-based steps in `skip`. */

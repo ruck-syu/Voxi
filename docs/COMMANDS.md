@@ -29,8 +29,8 @@ in their folders.
 
 ### Scan limits and progress
 
-Searches reuse one folder scan per command. The window shows progress, and you
-can cancel with Esc or Cancel. If a scan reaches its depth, entry, or time
+Searches reuse cached folder listings within a command. The window shows progress,
+and you can cancel with Esc or Cancel. If a required scan reaches its depth, entry, or time
 limit, or cannot read a folder, commands that change files stop with a message
 naming the folder that caused it and how to fix it (name a smaller folder, or
 exclude a subfolder with − in Settings → Folders); read-only results are marked
@@ -73,18 +73,29 @@ names containing command words, for example
 as “one”. Size filters require units; contradictory or repeated bounds are
 refused rather than silently discarded.
 
+Use `move these to Receipts in Voxi Demo` or `sort Voxi Demo in Downloads by type`
+to name a folder inside an existing parent. Move and copy can create the child.
+Voxi uses an existing folder named by the whole unquoted phrase and asks you to
+choose if both readings match. Quote the whole name, as in `sort "Things in Progress" by type`,
+or quote either part to select the parent, as in `move these to "Receipts by Month" in Downloads`.
+You can also use a single path such as `Downloads/Voxi Demo/Receipts`.
+
 Use “undo last” for the newest change; selecting an earlier move or delete by
 its operation type isn't supported.
 
 ## From Finder
 
 Select files in Finder, right-click, and choose **Organize with Voxi** (under
-Quick Actions or Services). Voxi opens with those files as the ones “these”
-and “them” refer to, so you can say “move these to Receipts”.
+Quick Actions or Services). To use **Open With**, choose **Other… → All
+Applications** and select Voxi. You can also send files by dropping them onto
+the Voxi app icon or with `open -a Voxi file1 file2`.
+Voxi opens with those files as the ones “these” and “them” refer to, so you
+can say “move these to Receipts”. Sending another selection replaces the
+current list.
 
 Folders, symbolic links, and anything outside the folders Voxi may use are left
 out, and Voxi says which. The files are checked again before anything runs. If
-the item is missing, turn it on in System Settings → Keyboard → Keyboard
+the Service is missing, turn it on in System Settings → Keyboard → Keyboard
 Shortcuts → Services (on macOS 12, System Preferences → Keyboard → Shortcuts →
 Services).
 

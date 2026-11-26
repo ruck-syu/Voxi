@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type Review, type RunResult, type SearchStats, type Settings } from "./api";
@@ -71,6 +71,8 @@ export default function App() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [open, setOpen] = useState(!inTauri);
   const [pendingShow, setPendingShow] = useState<number | null>(null);
+  const [showRequestId, setShowRequestId] = useState(0);
+  const [setupNotice, setSetupNotice] = useState<string | null>(null);
   const [commandSession, setCommandSession] = useState(0);
   const [fontsReady, setFontsReady] = useState(false);
   const [height, setHeight] = useState<number | null>(null);
@@ -162,6 +164,13 @@ export default function App() {
       const { mode, requestId } = e.payload;
       cancelClose();
       showId.current = requestId;
+      setShowRequestId(requestId);
+      setSetupNotice(null);
+      if (mode === "welcome") {
+        void api.openingContext(requestId).then((opening) => {
+          if (!disposed && showId.current === requestId) setSetupNotice(opening?.notice ?? null);
+        }).catch(() => {});
+      }
       awaitingShow.current = requestId;
       // Keep the confirmation and Stop control if the window is reopened mid-run,
       // and don't unmount Settings/Access while a folder picker or save is pending.
@@ -234,6 +243,8 @@ export default function App() {
       <div className="card-inner" ref={innerRef}>
         {view === "command" && <CommandView
             key={commandSession}
+            showRequestId={showRequestId}
+            latestShowId={showId}
             open={open}
             onClose={close}
             onBusy={setBusy}
@@ -263,6 +274,7 @@ export default function App() {
           <AccessView
             settings={settings}
             firstRun
+            notice={setupNotice}
             beginOperation={beginOperation}
             onDone={async () => {
               const s = await api.saveSettings({ ...settings, onboarded: true });
@@ -317,6 +329,8 @@ function useTypedPlaceholder(active: boolean): string {
 // ---- Command -----------------------------------------------------------------
 
 function CommandView({
+  showRequestId,
+  latestShowId,
   open,
   onClose,
   onBusy,
@@ -325,6 +339,8 @@ function CommandView({
   review,
   onReviewStarted,
 }: {
+  showRequestId: number;
+  latestShowId: RefObject<number>;
   open: boolean;
   onClose: () => void;
   onBusy: (busy: boolean, executing?: boolean) => void;
@@ -344,33 +360,24 @@ function CommandView({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const ruleRef = useRef<HTMLSpanElement>(null);
   const planShownAt = useRef(0);
-  // Files sent from Finder ("Organize with Voxi") arrive as the results list.
+  // Files sent from Finder arrive as the new window request's results list.
   const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
   // The results list this view knows, so closing it clears only that list
   // and never one that arrived after (a new Finder selection).
   const scopeGeneration = useRef<number | null>(null);
   useEffect(() => {
+    // The native webview starts hidden. Wait for the request that opens it.
+    if (inTauri && showRequestId === 0) return;
     let live = true;
-    let latest = 0;
-    const read = () => {
-      const ask = ++latest;
-      void api.openingContext().then((o) => {
-        // Only the newest read counts, and never one older than a list this
-        // view already knows: replies can arrive out of order.
-        if (!live || ask !== latest || (scopeGeneration.current !== null && o.generation < scopeGeneration.current)) return;
-        scopeGeneration.current = o.generation;
-        setResultScope(o.scope);
-        setSelectionNotice(o.notice);
-      }).catch(() => {});
-    };
-    read();
-    // A Finder selection can arrive while this view stays open.
-    const unlisten = inTauri ? listen("voxi://selection", read) : null;
-    return () => {
-      live = false;
-      void unlisten?.then((stop) => stop());
-    };
-  }, []);
+    void api.openingContext(showRequestId).then((o) => {
+      // A command or a newer show request may already have replaced this list.
+      if (!live || !o || (scopeGeneration.current !== null && o.generation < scopeGeneration.current)) return;
+      scopeGeneration.current = o.generation;
+      setResultScope(o.scope);
+      setSelectionNotice(o.notice);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [showRequestId]);
   const fromFinder = resultScope?.label === FINDER_LABEL;
   const activeRun = useRef<{ id: number; canStop: boolean; stopping: boolean } | null>(null);
   const requestId = useRef(0);
@@ -464,8 +471,10 @@ function CommandView({
       try {
         const { outcome, scope, generation, search_stats: searchStats } = await api.plan(command, picked, request, undoEntryId, replaces);
         if (request !== requestId.current) return;
-        scopeGeneration.current = generation;
-        setResultScope(scope);
+        if (generation !== null && (scopeGeneration.current === null || generation >= scopeGeneration.current)) {
+          scopeGeneration.current = generation;
+          setResultScope(scope);
+        }
         setPhase({ k: "outcome", outcome, searchStats });
         if (outcome.status === "plan") planShownAt.current = performance.now();
         if (outcome.status === "not_understood") missed.current = { text: command.trim(), at: Date.now() };
@@ -525,10 +534,12 @@ function CommandView({
     setPhase({ k: "running", title: plan.title, canStop, stopping: false });
     try {
       const result = await api.confirm(plan.id, skipped);
-      const after = await api.openingContext().catch(() => null);
-      if (after) scopeGeneration.current = after.generation;
-      setResultScope(after?.scope ?? null);
-      setSelectionNotice(after?.notice ?? null);
+      const after = await api.openingContext(latestShowId.current).catch(() => null);
+      if (after && (scopeGeneration.current === null || after.generation >= scopeGeneration.current)) {
+        scopeGeneration.current = after.generation;
+        setResultScope(after.scope);
+        setSelectionNotice(after.notice);
+      }
       setPhase({ k: "done", result, wasUndo: plan.isUndo, searchStats });
       // A phrase Voxi missed, followed soon by a command that worked, can
       // be taught: next time the phrase runs this command.
@@ -547,7 +558,7 @@ function CommandView({
     } finally {
       activeRun.current = null;
     }
-  }, [phase, focusInput, skip]);
+  }, [phase, focusInput, skip, latestShowId]);
 
   const stop = useCallback(async () => {
     const run = activeRun.current;
@@ -1123,6 +1134,7 @@ function Body(props: {
             </p>
           )}
           {o.firstRun === "runNowAndRepeat" && <p className="quiet">{o.repeats}</p>}
+          {o.scopeNotice && <p className="quiet">{o.scopeNotice}</p>}
           {o.warnings.map((warning, index) => (
             <p key={`${index}-${warning}`} className="quiet warn">
               {warning}

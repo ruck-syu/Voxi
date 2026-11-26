@@ -4,9 +4,11 @@ use crate::fsx::{self, FileIdentity, Publication, PublishError, Roots, file_name
 use crate::history::Inverse;
 use crate::model::{Action, RunOutcome};
 use crate::{pdf, trash};
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::Read;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -499,9 +501,183 @@ fn mv_no_clobber(from: &Path, to: &Path) -> Publication {
     mv_no_clobber_with(from, to, || {})
 }
 
+/// One item inside a folder being moved or copied, relative to its root.
+struct Item {
+    relative: PathBuf,
+    kind: ItemKind,
+    identity: FileIdentity,
+}
+
+enum ItemKind {
+    Folder,
+    File { size: u64, apple_double: bool },
+    Link { target: PathBuf },
+}
+
+/// "._name" beside "name": where macOS keeps a file's extra attributes on
+/// drives that can't store them (ExFAT, FAT32). Copying to a drive that can
+/// folds it into "name", so it may not arrive as a file of its own.
+fn is_apple_double(path: &Path, name: &std::ffi::OsStr) -> bool {
+    let name = name.to_string_lossy();
+    let Some(base) = name.strip_prefix("._").filter(|base| !base.is_empty()) else { return false };
+    if path.with_file_name(base).symlink_metadata().is_err() {
+        return false;
+    }
+    let mut magic = [0; 4];
+    fs::File::open(path).and_then(|mut file| file.read_exact(&mut magic)).is_ok() && magic == [0x00, 0x05, 0x16, 0x07]
+}
+
+/// Everything under `root`, parents before their contents. Links are not followed.
+fn folder_manifest(root: &Path) -> Result<Vec<Item>, String> {
+    let mut items = Vec::new();
+    let mut pending = vec![PathBuf::new()];
+    while let Some(relative) = pending.pop() {
+        let folder = root.join(&relative);
+        let mut entries: Vec<_> =
+            fs::read_dir(&folder).map_err(io_err("read", &folder))?.collect::<Result<_, _>>().map_err(io_err("read", &folder))?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let relative = relative.join(entry.file_name());
+            let path = entry.path();
+            let meta = path.symlink_metadata().map_err(io_err("read", &path))?;
+            let identity = FileIdentity::from_metadata(&meta);
+            let kind = if meta.is_dir() {
+                pending.push(relative.clone());
+                ItemKind::Folder
+            } else if meta.file_type().is_symlink() {
+                ItemKind::Link { target: fs::read_link(&path).map_err(io_err("read link", &path))? }
+            } else {
+                ItemKind::File { size: meta.len(), apple_double: is_apple_double(&path, &entry.file_name()) }
+            };
+            items.push(Item { relative, kind, identity });
+        }
+    }
+    Ok(items)
+}
+
+/// Checks that `copy` holds exactly the items in `manifest`. A drive that
+/// treats two names as one ("Report.txt" and "report.txt", "Σ" and "ς") merges
+/// them, which shows up as a folder with fewer entries than the source had.
+/// Hard links (two names, one file) still arrive as two entries.
+fn verify_folder_copy(name: &str, manifest: &[Item], copy: &Path) -> Result<(), String> {
+    let mut expected: HashMap<PathBuf, Vec<&Item>> = HashMap::from([(PathBuf::new(), Vec::new())]);
+    for item in manifest {
+        if matches!(item.kind, ItemKind::Folder) {
+            expected.entry(item.relative.clone()).or_default();
+        }
+        expected.entry(item.relative.parent().map(Path::to_path_buf).unwrap_or_default()).or_default().push(item);
+    }
+    for (folder, children) in &expected {
+        let (mut arrived, mut problem) = (0, None);
+        for item in children {
+            let path = copy.join(&item.relative);
+            let Ok(meta) = path.symlink_metadata() else {
+                if !matches!(item.kind, ItemKind::File { apple_double: true, .. }) {
+                    problem.get_or_insert_with(|| format!("“{}” didn't arrive in the copy of {name}.", item.relative.display()));
+                }
+                continue;
+            };
+            arrived += 1;
+            let intact = match &item.kind {
+                ItemKind::Folder => meta.is_dir(),
+                ItemKind::File { size, .. } => meta.is_file() && meta.len() == *size,
+                ItemKind::Link { target } => meta.file_type().is_symlink() && fs::read_link(&path).is_ok_and(|t| t == *target),
+            };
+            if !intact {
+                problem.get_or_insert_with(|| format!("“{}” didn't arrive intact in the copy of {name}.", item.relative.display()));
+            }
+        }
+        let dir = copy.join(folder);
+        let listed = fs::read_dir(&dir).map_err(io_err("check the copy of", &dir))?.count();
+        if let Some(problem) = problem.filter(|_| listed >= arrived) {
+            return Err(problem);
+        }
+        if listed < arrived {
+            // Two names now resolve to one entry: name a pair that did.
+            let mut landed: HashMap<(u64, u64), &Path> = HashMap::new();
+            let mut pair = None;
+            for item in children {
+                if let Ok(meta) = copy.join(&item.relative).symlink_metadata()
+                    && let Some(other) = landed.insert((meta.dev(), meta.ino()), &item.relative)
+                {
+                    pair = Some((other, &item.relative));
+                    break;
+                }
+            }
+            let names = pair.map_or_else(String::new, |(a, b)| format!(" (“{}” and “{}”)", a.display(), b.display()));
+            return Err(format!(
+                "The destination drive treats some names in {name} as the same name{names}, so one would be lost. Rename one of them first."
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Copies a folder to another drive and verifies the copy before publishing
+/// it, then removes only the source items that are still exactly as copied.
+/// Something added or changed in the source meanwhile is left where it is.
+fn move_folder_across_drives(from: &Path, to: &Path, before_publish: impl FnOnce()) -> Publication {
+    let source = FileIdentity::read(from).map_err(|e| PublishError::Clean(io_err("move", from)(e)))?;
+    let manifest = folder_manifest(from).map_err(PublishError::Clean)?;
+    let name = file_name(from);
+    let mut before_publish = Some(before_publish);
+    let identity = fsx::staged_output(to, |out| {
+        tool("/usr/bin/ditto", &[from.as_os_str(), out.as_os_str()])?;
+        verify_folder_copy(&name, &manifest, out)?;
+        if let Some(hook) = before_publish.take() {
+            hook();
+        }
+        Ok(())
+    })?;
+    let (mut removed, mut changed, mut locked) = (0, 0, 0);
+    let mut remove = |path: &Path, recorded: &FileIdentity, folder: bool| {
+        let result = match FileIdentity::read(path) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return,
+            Ok(current) if (folder && current.same_object(recorded)) || current == *recorded => {
+                if folder {
+                    fs::remove_dir(path)
+                } else {
+                    fs::remove_file(path)
+                }
+            }
+            _ => Err(io::Error::other("changed")),
+        };
+        match result {
+            Ok(()) => removed += 1,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => locked += 1,
+            // A folder that still holds something kept is counted by that item.
+            Err(_) if folder => {}
+            Err(_) => changed += 1,
+        }
+    };
+    for item in manifest.iter().rev() {
+        remove(&from.join(&item.relative), &item.identity, matches!(item.kind, ItemKind::Folder));
+    }
+    remove(from, &source, true);
+    if changed + locked == 0 {
+        return Ok(identity);
+    }
+    let count = |n: usize| if n == 1 { "1 item".to_string() } else { format!("{n} items") };
+    let reasons = [
+        (changed > 0).then(|| format!("{} changed during the move", count(changed))),
+        (locked > 0).then(|| format!("{} couldn't be removed (no permission)", count(locked))),
+    ];
+    let reasons = reasons.into_iter().flatten().collect::<Vec<_>>().join(" and ");
+    let message = format!("Copied {name} to {}, but {reasons}, so they were left in the original folder.", to.display());
+    // Nothing removed: the source is whole, so this was simply a copy. Some
+    // removed: neither side is whole, so undo can't safely put it back.
+    Err(if removed == 0 { PublishError::Published { identity, message } } else { PublishError::Uncertain(message) })
+}
+
 fn mv_no_clobber_with(from: &Path, to: &Path, before_mv: impl FnOnce()) -> Publication {
     fresh(to)?;
     let source_meta = fs::symlink_metadata(from).map_err(|e| PublishError::Clean(io_err("move", from)(e)))?;
+    // `mv` copies a folder to another drive and deletes the original without
+    // checking that every file arrived, so verify the copy ourselves.
+    if source_meta.is_dir() {
+        return move_folder_across_drives(from, to, before_mv);
+    }
     let source_had_nested = source_meta.is_dir() && from.join(file_name(from)).symlink_metadata().is_ok();
     before_mv();
     tool("/bin/mv", &["-n".as_ref(), from.as_os_str(), to.as_os_str()]).map_err(PublishError::Uncertain)?;
@@ -543,6 +719,10 @@ fn copy_path(from: &Path, to: &Path) -> Publication {
         if fs::symlink_metadata(from).map_err(io_err("copy", from))?.is_symlink() {
             let target = fs::read_link(from).map_err(io_err("read link", from))?;
             std::os::unix::fs::symlink(target, out).map_err(io_err("copy link", from))
+        } else if fs::symlink_metadata(from).map_err(io_err("copy", from))?.is_dir() {
+            let manifest = folder_manifest(from)?;
+            tool("/usr/bin/ditto", &[from.as_os_str(), out.as_os_str()])?;
+            verify_folder_copy(&file_name(from), &manifest, out)
         } else {
             tool("/usr/bin/ditto", &[from.as_os_str(), out.as_os_str()])
         }
@@ -664,6 +844,7 @@ fn restore(a: &Action, from: &Path, to: &Path, roots: &Roots) -> Result<Effect, 
 /// Runs one step and captures the identities of the files its inverse can touch.
 pub(crate) fn step(a: &Action, roots: &Roots, is_cancelled: &dyn Fn() -> bool) -> Result<Effect, StepError> {
     check_cancel(is_cancelled)?;
+    roots.check_whole_tree_exclusions(a)?;
     match a {
         Action::Move { from, to } => {
             guard(roots, &[from, to])?;
@@ -1245,6 +1426,85 @@ mod tests {
         assert!(from.exists());
     }
 
+    /// Whether names that differ only by case are different files in `dir`.
+    fn case_sensitive(dir: &Path) -> bool {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(dir.as_os_str().as_bytes()).unwrap();
+        // SAFETY: `path` is a valid NUL-terminated string for the whole call.
+        unsafe { libc::pathconf(path.as_ptr(), libc::_PC_CASE_SENSITIVE) == 1 }
+    }
+
+    /// A folder on a case-sensitive drive holding "Report.txt" and
+    /// "report.txt" must not be moved to a drive that ignores case: `mv`
+    /// would merge them and delete the original. Needs `hdiutil`.
+    #[test]
+    fn cross_volume_folder_move_refuses_names_that_differ_only_by_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = fsx::canonical(dir.path());
+        if case_sensitive(&dest) {
+            eprintln!("skipped: the temp folder's drive is case-sensitive");
+            return;
+        }
+        let image = dest.join("cs.dmg");
+        let mount = dest.join("mnt");
+        fs::create_dir(&mount).unwrap();
+        let made = std::process::Command::new("/usr/bin/hdiutil")
+            .args(["create", "-quiet", "-size", "8m", "-fs", "Case-sensitive APFS", "-volname", "VoxiCaseTest"])
+            .arg(&image)
+            .status()
+            .is_ok_and(|s| s.success())
+            && std::process::Command::new("/usr/bin/hdiutil")
+                .args(["attach", "-quiet", "-nobrowse", "-mountpoint"])
+                .arg(&mount)
+                .arg(&image)
+                .status()
+                .is_ok_and(|s| s.success());
+        if !made {
+            eprintln!("skipped: couldn't mount a case-sensitive disk image");
+            return;
+        }
+        struct Detach(PathBuf);
+        impl Drop for Detach {
+            fn drop(&mut self) {
+                let _ = std::process::Command::new("/usr/bin/hdiutil").args(["detach", "-quiet", "-force"]).arg(&self.0).status();
+            }
+        }
+        let _detach = Detach(mount.clone());
+        let from = mount.join("folder");
+        fs::create_dir(&from).unwrap();
+        fs::write(from.join("Report.txt"), b"one").unwrap();
+        fs::write(from.join("report.txt"), b"two").unwrap();
+        let to = dest.join("folder");
+
+        let err = mv_no_clobber(&from, &to).unwrap_err();
+        assert!(matches!(&err, PublishError::Clean(m) if m.contains("Rename one of them first")), "{err:?}");
+        assert_eq!(fs::read(from.join("Report.txt")).unwrap(), b"one");
+        assert_eq!(fs::read(from.join("report.txt")).unwrap(), b"two");
+        assert!(to.symlink_metadata().is_err(), "nothing was moved");
+
+        // Lowercasing doesn't catch every pair a drive folds together.
+        fs::remove_file(from.join("report.txt")).unwrap();
+        fs::write(from.join("Σ.txt"), b"sigma").unwrap();
+        fs::write(from.join("ς.txt"), b"final").unwrap();
+        let err = mv_no_clobber(&from, &to).unwrap_err();
+        assert!(matches!(&err, PublishError::Clean(m) if m.contains("Rename one of them first")), "{err:?}");
+        assert_eq!(fs::read(from.join("Σ.txt")).unwrap(), b"sigma");
+        assert_eq!(fs::read(from.join("ς.txt")).unwrap(), b"final");
+        assert!(to.symlink_metadata().is_err(), "nothing was moved");
+
+        // A copy would silently drop one of them too: refuse it, keep nothing.
+        let copy = dest.join("folder copy");
+        let err = copy_path(&from, &copy).unwrap_err();
+        assert!(matches!(&err, PublishError::Clean(m) if m.contains("Rename one of them first")), "{err:?}");
+        assert!(copy.symlink_metadata().is_err());
+
+        // Without a clash, the same move goes through.
+        fs::remove_file(from.join("ς.txt")).unwrap();
+        mv_no_clobber(&from, &to).unwrap();
+        assert_eq!(fs::read(to.join("Report.txt")).unwrap(), b"one");
+        assert!(from.symlink_metadata().is_err());
+    }
+
     #[test]
     fn moving_and_copying_a_symlink_to_a_folder_moves_the_link() {
         let (_d, roots) = setup();
@@ -1523,6 +1783,144 @@ mod tests {
         assert_eq!(fs::read(&upper).unwrap(), b"report");
     }
 
+    /// Files added or changed in the source while its folder is being copied
+    /// to another drive are left in place, never deleted with the original.
+    #[test]
+    fn cross_drive_folder_move_keeps_source_changes_made_during_the_copy() {
+        let (_d, roots) = setup();
+        let h = &roots.home;
+        let from = h.join("Downloads/proj");
+        let to = h.join("Documents/proj");
+        fs::create_dir_all(from.join("sub")).unwrap();
+        fs::write(from.join("a.txt"), b"a").unwrap();
+        fs::write(from.join("sub/b.txt"), b"b").unwrap();
+        let result = mv_no_clobber_with(&from, &to, || {
+            fs::write(from.join("sub/new.txt"), b"added during the move").unwrap();
+            fs::write(from.join("a.txt"), b"edited during the move").unwrap();
+        });
+        // Some originals were removed and some kept, so neither side is whole:
+        // this needs review rather than an undo that trashes the copy.
+        assert!(matches!(&result, Err(PublishError::Uncertain(m)) if m.contains("changed during the move")), "{result:?}");
+        assert_eq!(fs::read(to.join("a.txt")).unwrap(), b"a");
+        assert_eq!(fs::read(to.join("sub/b.txt")).unwrap(), b"b");
+        assert_eq!(fs::read(from.join("a.txt")).unwrap(), b"edited during the move");
+        assert_eq!(fs::read(from.join("sub/new.txt")).unwrap(), b"added during the move");
+        assert!(from.join("sub/b.txt").symlink_metadata().is_err(), "unchanged files are moved");
+    }
+
+    /// Hard links (two names for one file, common in caches and backups)
+    /// arrive as two entries and must not be mistaken for merged names.
+    #[test]
+    fn folders_with_hard_links_copy_and_move() {
+        let (_d, roots) = setup();
+        let h = &roots.home;
+        let from = h.join("Downloads/cache");
+        fs::create_dir(&from).unwrap();
+        fs::write(from.join("a.txt"), b"shared").unwrap();
+        fs::hard_link(from.join("a.txt"), from.join("b.txt")).unwrap();
+        copy_path(&from, &h.join("Documents/cache copy")).unwrap();
+        assert_eq!(fs::read(h.join("Documents/cache copy/b.txt")).unwrap(), b"shared");
+        mv_no_clobber(&from, &h.join("Documents/cache")).unwrap();
+        assert_eq!(fs::read(h.join("Documents/cache/a.txt")).unwrap(), b"shared");
+        assert_eq!(fs::read(h.join("Documents/cache/b.txt")).unwrap(), b"shared");
+        assert!(from.symlink_metadata().is_err());
+    }
+
+    /// A read-only subfolder: its file can't be removed from the source, which
+    /// is reported as a permission problem, and failed copies leave no staging.
+    #[test]
+    fn read_only_subfolders_are_reported_and_cleaned_up() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, roots) = setup();
+        let h = &roots.home;
+        let from = h.join("Downloads/mods");
+        let locked = from.join("locked");
+        fs::create_dir_all(&locked).unwrap();
+        fs::write(from.join("a.txt"), b"a").unwrap();
+        fs::write(locked.join("b.txt"), b"b").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+        let to = h.join("Documents/mods");
+        let result = mv_no_clobber(&from, &to);
+        assert!(matches!(&result, Err(PublishError::Uncertain(m)) if m.contains("no permission")), "{result:?}");
+        assert_eq!(fs::read(to.join("locked/b.txt")).unwrap(), b"b");
+        assert_eq!(fs::read(locked.join("b.txt")).unwrap(), b"b");
+
+        // A copy that fails verification cleans up its read-only staging.
+        let documents = h.join("Documents");
+        let before: Vec<_> = fs::read_dir(&documents).unwrap().flatten().map(|e| e.file_name()).collect();
+        let clash = h.join("Downloads/clash");
+        fs::create_dir_all(clash.join("ro")).unwrap();
+        fs::write(clash.join("ro/x.txt"), b"x").unwrap();
+        fs::set_permissions(clash.join("ro"), fs::Permissions::from_mode(0o555)).unwrap();
+        let manifest = folder_manifest(&clash).unwrap();
+        let result = fsx::staged_output(&documents.join("clash"), |out| {
+            tool("/usr/bin/ditto", &[clash.as_os_str(), out.as_os_str()])?;
+            verify_folder_copy("clash", &manifest, out)?;
+            Err("simulated failure after copying".into())
+        });
+        assert!(matches!(&result, Err(PublishError::Clean(m)) if !m.contains("cleanup failed")), "{result:?}");
+        let after: Vec<_> = fs::read_dir(&documents).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(after, before, "no staging folder was left behind");
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(clash.join("ro"), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(to.join("locked"), fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// ExFAT (common on USB drives) has no no-replace rename and keeps extra
+    /// attributes in "._name" files. Folders must move onto it and off it.
+    #[test]
+    fn folders_move_onto_and_off_an_exfat_drive() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = fsx::canonical(dir.path());
+        let (image, mount) = (base.join("usb.dmg"), base.join("usb"));
+        fs::create_dir(&mount).unwrap();
+        let made = std::process::Command::new("/usr/bin/hdiutil")
+            .args(["create", "-quiet", "-size", "16m", "-fs", "ExFAT", "-volname", "VoxiUSB"])
+            .arg(&image)
+            .status()
+            .is_ok_and(|s| s.success())
+            && std::process::Command::new("/usr/bin/hdiutil")
+                .args(["attach", "-quiet", "-nobrowse", "-mountpoint"])
+                .arg(&mount)
+                .arg(&image)
+                .status()
+                .is_ok_and(|s| s.success());
+        if !made {
+            eprintln!("skipped: couldn't mount an ExFAT disk image");
+            return;
+        }
+        struct Detach(PathBuf);
+        impl Drop for Detach {
+            fn drop(&mut self) {
+                let _ = std::process::Command::new("/usr/bin/hdiutil").args(["detach", "-quiet", "-force"]).arg(&self.0).status();
+            }
+        }
+        let _detach = Detach(mount.clone());
+
+        // Onto the drive.
+        let local = base.join("local");
+        fs::create_dir_all(local.join("sub")).unwrap();
+        fs::write(local.join("doc.txt"), b"doc").unwrap();
+        fs::write(local.join("sub/inner.txt"), b"inner").unwrap();
+        let onto = mount.join("local");
+        mv_no_clobber(&local, &onto).unwrap();
+        assert_eq!(fs::read(onto.join("sub/inner.txt")).unwrap(), b"inner");
+        assert!(local.symlink_metadata().is_err());
+
+        // Off the drive, with a tagged file stored as "._doc.txt" there.
+        let tagged = std::process::Command::new("/usr/bin/xattr")
+            .args(["-w", "com.apple.metadata:_kMDItemUserTags", "Red"])
+            .arg(onto.join("doc.txt"))
+            .status()
+            .is_ok_and(|s| s.success());
+        assert!(tagged);
+        assert!(onto.join("._doc.txt").symlink_metadata().is_ok(), "ExFAT keeps the tag in ._doc.txt");
+        let back = base.join("back");
+        mv_no_clobber(&onto, &back).unwrap();
+        assert_eq!(fs::read(back.join("doc.txt")).unwrap(), b"doc");
+        assert!(onto.symlink_metadata().is_err());
+    }
+
     #[test]
     fn mv_no_clobber_returns_uncertain_when_directory_appears_at_destination() {
         let (_d, roots) = setup();
@@ -1556,6 +1954,11 @@ mod tests {
             fs::create_dir(&dir_to).unwrap();
             fs::write(dir_to.join("keep.txt"), b"keep").unwrap();
         });
-        assert!(matches!(dir_result, Err(PublishError::Uncertain(_))), "expected Uncertain for dir race, got {dir_result:?}");
+        // A folder is copied and verified first, so the late folder simply
+        // blocks publication: nothing is merged and the source stays.
+        assert!(matches!(dir_result, Err(PublishError::Clean(_))), "expected a clean refusal for dir race, got {dir_result:?}");
+        assert_eq!(fs::read(dir_from.join("a.txt")).unwrap(), b"a");
+        assert_eq!(fs::read(dir_to.join("keep.txt")).unwrap(), b"keep");
+        assert!(dir_to.join("a.txt").symlink_metadata().is_err());
     }
 }

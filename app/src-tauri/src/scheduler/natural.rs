@@ -24,7 +24,7 @@ pub(super) fn normalize(text: &str) -> Result<String, String> {
     static ACTION: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"(?i)\b(move|copy|create|make|rename|delete|trash|list|find|sort|organize|zip|unzip)\b").unwrap());
     static PREFIX: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)^(?:in\s+\d|after\s+|at\s+|tomorrow\b|today\b|tonight\b|this\s+(?:morning|evening|afternoon)\b|every\b|everyday\b|daily\b|weekly\b|monthly\b|on\s+|next\s+)").unwrap()
+        Regex::new(r"(?i)^(?:in\s+[0-9]|after\s+|at\s+|tomorrow\b|today\b|tonight\b|this\s+(?:morning|evening|afternoon)\b|every\b|everyday\b|daily\b|weekly\b|monthly\b|on\s+|next\s+)").unwrap()
     });
     if PREFIX.is_match(masked.trim_start())
         && let Some(action) = ACTION.find(&masked)
@@ -39,7 +39,7 @@ pub(super) fn normalize(text: &str) -> Result<String, String> {
     }
     let masked = crate::parse::phrase::unquoted_text(&result).ok_or("Close the quotation marks first.")?;
     static PERIOD: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"(?i)\bevery\s+(morning|evening|afternoon)(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?\s*[.!]?$").unwrap()
+        Regex::new(r"(?i)\bevery\s+(morning|evening|afternoon)(?:\s+at\s+([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)?)?\s*[.!]?$").unwrap()
     });
     if let Some(c) = PERIOD.captures(&masked) {
         let hour = c.get(2).ok_or("Include a time, such as every morning at 8 am.")?.as_str();
@@ -73,7 +73,7 @@ pub(super) fn check_residual(text: &str) -> Result<(), String> {
         Regex::new(r"(?i)(?:\b(?:to|into|called|named)\s+|\b(?:create|make|add)\s+(?:a\s+)?(?:new\s+)?folders?\s+)(.+)").unwrap()
     });
     static TIME: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(&format!(r"(?i)\b(?:{WD}|today|tomorrow|yesterday|tonight|morning|evening|afternoon|(?:next|last)\s+\w+|(?:in|after)\s+-?\d+\s+(?:min\w*|hour\w*|hr\w*)|\d{{4}}-\d{{1,2}}-\d{{1,2}}|on\s+\w*day|at\s+\d{{1,2}}(?:\s|:|[ap]|$))\b")).unwrap()
+        Regex::new(&format!(r"(?i)\b(?:{WD}|today|tomorrow|yesterday|tonight|morning|evening|afternoon|(?:next|last)\s+\w+|(?:in|after)\s+-?[0-9]+\s+(?:min\w*|hour\w*|hr\w*)|[0-9]{{4}}-[0-9]{{1,2}}-[0-9]{{1,2}}|on\s+\w*day|at\s+[0-9]{{1,2}}(?:\s|:|[ap]|$))\b")).unwrap()
     });
     if DEST.captures(&masked).is_some_and(|c| TIME.is_match(&c[1])) {
         return Err(UNCLEAR.into());
@@ -84,8 +84,9 @@ pub(super) fn check_residual(text: &str) -> Result<(), String> {
 type OneTime = Option<(String, Option<DateTime<Local>>)>;
 pub(super) fn one_time(text: &str, now: DateTime<Local>) -> Result<OneTime, String> {
     let masked = crate::parse::phrase::unquoted_text(text).ok_or("Close the quotation marks first.")?;
-    static COMPOUND: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?i)\s+(?:in|after)\s+(\d+)\s+(?:hours?|hrs?)\s+and\s+(\d+)\s+(?:minutes?|mins?)\s*[.!]?$").unwrap());
+    static COMPOUND: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i)\s+(?:in|after)\s+([0-9]+)\s+(?:hours?|hrs?)\s+and\s+([0-9]+)\s+(?:minutes?|mins?)\s*[.!]?$").unwrap()
+    });
     if let Some(c) = COMPOUND.captures(&masked) {
         let hours: i64 = c[1].parse().map_err(|_| UNCLEAR)?;
         let mins: i64 = c[2].parse().map_err(|_| UNCLEAR)?;
@@ -97,7 +98,7 @@ pub(super) fn one_time(text: &str, now: DateTime<Local>) -> Result<OneTime, Stri
         return Ok(Some((text[..c.get(0).unwrap().start()].trim().into(), Some(now + Duration::minutes(total)))));
     }
     static CALENDAR: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(&format!(r"(?i)\s+(?P<date>today|tomorrow|yesterday|tonight|this\s+(?:morning|evening|afternoon)|(?:on|next)\s+(?:{WD})|on\s+(?:\d{{4}}-\d{{1,2}}-\d{{1,2}}|(?:{MONTH})\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s+\d{{4}})?))(?:\s+at\s+(?P<time>.+?))?\s*[.!]?$" )).unwrap()
+        Regex::new(&format!(r"(?i)\s+(?P<date>today|tomorrow|yesterday|tonight|this\s+(?:morning|evening|afternoon)|(?:on|next)\s+(?:{WD})|on\s+(?:[0-9]{{4}}-[0-9]{{1,2}}-[0-9]{{1,2}}|(?:{MONTH})\s+[0-9]{{1,2}}(?:st|nd|rd|th)?(?:,?\s+[0-9]{{4}})?))(?:\s+at\s+(?P<time>.+?))?\s*[.!]?$" )).unwrap()
     });
     let Some(c) = CALENDAR.captures(&masked) else { return Ok(None) };
     let whole = c.get(0).unwrap();
@@ -110,7 +111,7 @@ pub(super) fn one_time(text: &str, now: DateTime<Local>) -> Result<OneTime, Stri
     // The legacy clock grammar also accepts "at 12 am tomorrow".
     if c.name("time").is_none() && matches!(date_phrase.as_str(), "today" | "tomorrow") {
         static TRAILING_CLOCK: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"(?i)\bat\s+\d{1,2}(?::\d{2})?\s*(?:[ap]\.?m\.?)?$").unwrap());
+            LazyLock::new(|| Regex::new(r"(?i)\bat\s+[0-9]{1,2}(?::[0-9]{2})?\s*(?:[ap]\.?m\.?)?$").unwrap());
         if TRAILING_CLOCK.is_match(command) {
             return Ok(None);
         }
@@ -135,7 +136,7 @@ pub(super) fn one_time(text: &str, now: DateTime<Local>) -> Result<OneTime, Stri
         return Err("That time has already passed.".into());
     }
     let value = c.name("time").ok_or("Include a time, such as on Friday at 9 am.")?.as_str();
-    static BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{1,2}(?::\d{2})?$").unwrap());
+    static BARE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9]{1,2}(?::[0-9]{2})?$").unwrap());
     let implied = if date_phrase.contains("morning") {
         Some("am")
     } else if date_phrase.contains("evening") || date_phrase.contains("afternoon") || date_phrase == "tonight" {
@@ -168,7 +169,7 @@ fn parse_date(value: &str, year: i32) -> Option<NaiveDate> {
     if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
         return Some(date);
     }
-    static DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\w+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$").unwrap());
+    static DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\w+)\s+([0-9]{1,2})(?:st|nd|rd|th)?(?:,?\s+([0-9]{4}))?$").unwrap());
     let c = DATE.captures(value)?;
     let month = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
         .iter()

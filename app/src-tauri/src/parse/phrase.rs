@@ -2,7 +2,7 @@
 //! that names what to act on, e.g. "PDFs larger than 5 MB from Downloads".
 
 use super::dates;
-use crate::model::{DateField, DayRef, FileType, Filter, Source};
+use crate::model::{DateField, DayRef, Destination, FileType, Filter, Source};
 use chrono::{Duration, NaiveDate};
 use regex::Regex;
 use std::sync::LazyLock;
@@ -169,6 +169,27 @@ pub fn split_arguments<'a>(text: &'a str, separators: &[&str]) -> Option<(&'a st
     let (start, end) = found?;
     let (left, right) = (text[..start].trim(), text[end..].trim());
     (!left.is_empty() && !right.is_empty()).then_some((left, right))
+}
+
+/// A folder location has one unquoted separator and a single child name.
+pub(super) fn folder_target(text: &str) -> Result<Option<Destination>, super::RefusalReason> {
+    let outside = unquoted_text(text).ok_or(super::RefusalReason::MalformedInput)?;
+    if !outside.split_whitespace().any(|word| word.eq_ignore_ascii_case("in")) {
+        return Ok((!bad_destination(text)).then(|| clean_name(text).into()));
+    }
+    let (child, parent) = split_arguments(text, &["in"]).ok_or(super::RefusalReason::InvalidFolderLocation)?;
+    if child.contains('/') || [child, parent].iter().any(|part| quoted_ranges(part).is_ok_and(|ranges| !ranges.is_empty()) && !quoted(part))
+    {
+        return Err(super::RefusalReason::InvalidFolderLocation);
+    }
+    // The unquoted phrase may name an existing folder even when a part
+    // is too vague to use for creating one.
+    let literal = (!text.contains('/') && quoted_ranges(text).is_ok_and(|ranges| ranges.is_empty())).then(|| clean_name(text));
+    let existing_only = bad_destination(child) || bad_destination(parent);
+    if existing_only && (literal.is_none() || bad_destination_syntax(child) || bad_destination_syntax(parent)) {
+        return Ok(None);
+    }
+    Ok(Some(Destination::InFolder { folder: clean_name(child), parent: clean_name(parent), literal, existing_only }))
 }
 
 pub(super) fn set_once<T>(slot: &mut Option<T>, value: T) -> Option<()> {
@@ -1491,9 +1512,12 @@ pub fn bad_destination(to: &str) -> bool {
     if quoted(to) {
         return clean_name(to).is_empty();
     }
+    vague(to) || bad_destination_syntax(to)
+}
+
+fn bad_destination_syntax(to: &str) -> bool {
     let lower = to.to_lowercase();
     to.trim().is_empty()
-        || vague(to)
         || ["the", "a", "an", "in", "on", "from", "to", "into", "file", "folder", "before", "after", "since", "until", "size"]
             .contains(&lower.trim())
         || excludes(to)

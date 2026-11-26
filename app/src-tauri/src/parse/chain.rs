@@ -1,7 +1,7 @@
 //! Parse each clause independently; a malformed clause never becomes a partial
 //! plan or a model fallback. Separators inside quoted names stay literal.
 use super::{ParseFailure, RefusalReason, parse_single_classified, phrase};
-use crate::model::{Intent, Source};
+use crate::model::{Destination, Intent, Source};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -171,14 +171,16 @@ pub(super) fn parse(text: &str) -> Option<Result<Intent, ParseFailure>> {
             }
             // Bare destinations matching a folder created in this chain bind
             // to its full planned path, regardless of the transfer's source.
-            if let Intent::Move { to, .. } | Intent::Copy { to, .. } = &mut intent {
+            if let Intent::Move { to, .. } | Intent::Copy { to, .. } = &mut intent
+                && let Destination::Path(name) | Destination::InFolder { literal: Some(name), .. } = &*to
+            {
                 let matches: Vec<_> =
-                    named_folders.iter().filter(|folder| to.eq_ignore_ascii_case(folder.rsplit('/').next().unwrap())).collect();
+                    named_folders.iter().filter(|folder| name.eq_ignore_ascii_case(folder.rsplit('/').next().unwrap())).collect();
                 if let Some(folder) = matches.first() {
                     if matches.iter().any(|other| !other.eq_ignore_ascii_case(folder)) {
                         return Err(refused());
                     }
-                    *to = (*folder).clone();
+                    *to = Destination::Path((*folder).clone());
                 }
             }
             if reference.is_some() && !matches!(intent, Intent::Move { .. } | Intent::Copy { .. }) {

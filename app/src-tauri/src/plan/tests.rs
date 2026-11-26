@@ -909,7 +909,7 @@ fn cross_root_spotlight_rescues_partial_name_lookup_and_requires_confirmation() 
     };
     assert!(matches!(plan(&choices, false), Err(Stop::SearchIncomplete(message)) if message.contains("nested too deeply")));
     assert!(
-        matches!(plan(&choices, true), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note) })
+        matches!(plan(&choices, true), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note), .. })
         if name == "report.pdf" && candidates == vec![candidate.clone()]
             && note.contains("~/Documents/Deep") && note.contains("Settings → Folders"))
     );
@@ -1072,8 +1072,11 @@ fn moving_to_trash_with_a_filter_plans_trash_without_creating_a_folder() {
 #[test]
 fn moving_unfiltered_files_to_trash_requires_a_filter_even_when_the_source_is_empty() {
     let h = home();
-    assert!(matches!(plan(&h, r#"move files from Downloads to "Trash""#),
+    assert!(matches!(plan(&h, "move files from Downloads to Trash"),
         Err(Stop::Problem(message)) if message.starts_with("To be safe")));
+    // Quoted, it names a folder called Trash: a normal move, never the Trash.
+    assert!(!matches!(plan(&h, r#"move files from Downloads to "Trash""#),
+        Ok(Planned::Steps { actions, .. }) if actions.iter().any(|a| matches!(a, Action::Trash { .. }))));
 }
 
 #[test]
@@ -1741,7 +1744,7 @@ fn recursive_preview_reports_skipped_trees_and_still_scans_ordinary_subfolders()
     let invoice = docs.join("Reference/vendor/invoice.pdf");
     fs::write(&guide, b"a").unwrap();
     fs::write(&invoice, b"b").unwrap();
-    for cmd in ["delete PDFs in Documents including subfolders", r#"move PDFs from Documents to "Trash" including subfolders"#] {
+    for cmd in ["delete PDFs in Documents including subfolders", "move PDFs from Documents to Trash including subfolders"] {
         let Ok(Planned::Steps { actions, warnings, .. }) = plan_with_limit(&h, cmd, 12) else { panic!("expected recursive preview") };
         assert_eq!(trash_paths(&actions), vec![invoice.clone(), guide.clone()]);
         assert_eq!(warnings.len(), 1);

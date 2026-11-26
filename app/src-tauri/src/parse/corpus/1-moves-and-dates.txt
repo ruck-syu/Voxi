@@ -57,3 +57,7 @@ list screenshots taken before 2026 => {"intent":"list","src":{"kind":"set","filt
 show the screenshots I took today => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","day":"today"}}}
 list the files I downloaded yesterday => {"intent":"list","src":{"kind":"set","filter":{"type":"files","day":"yesterday"}}}
 list screenshots taken in July, 2026 => {"intent":"list","src":{"kind":"set","filter":{"type":"screenshots","month":7,"year":2026}}}
+move report.pdf to "Trash" => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Trash/"}
+move report.pdf to "bin" => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"bin/"}
+move report.pdf to a new folder called Trash => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Trash/"}
+copy report.pdf to a folder named "bin" => {"intent":"copy","src":{"kind":"item","name":"report.pdf"},"to":"bin/"}

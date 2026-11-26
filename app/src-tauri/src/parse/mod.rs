@@ -47,13 +47,23 @@ use std::sync::LazyLock;
 /// and the expansion at eight commands before parsing any command (T5).
 pub const MAX_COMMAND_BYTES: usize = 16_384;
 
+type Build = dyn Fn(&Captures) -> Option<Result<Intent, RefusalReason>> + Send + Sync;
+
 pub struct Pattern {
     pub re: Regex,
-    pub build: fn(&Captures) -> Option<Intent>,
+    build: Box<Build>,
 }
 
 pub fn pat(name: &'static str, re: &str, build: fn(&Captures) -> Option<Intent>) -> Pattern {
-    Pattern { re: Regex::new(&format!("(?i){re}")).expect(name), build }
+    checked_pat(name, re, move |caps| build(caps).map(Ok))
+}
+
+fn checked_pat(
+    name: &str,
+    re: &str,
+    build: impl Fn(&Captures) -> Option<Result<Intent, RefusalReason>> + Send + Sync + 'static,
+) -> Pattern {
+    Pattern { re: Regex::new(&format!("(?i){re}")).expect(name), build: Box::new(build) }
 }
 
 static PATTERNS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
@@ -89,6 +99,7 @@ pub enum RefusalReason {
     UnsupportedFilter,
     MultipleActions,
     InvalidConstraints,
+    InvalidFolderLocation,
     /// A clause points at "it", "the original", "the copy" and the like
     /// without a clean earlier item to bind to.
     UnresolvedReference,
@@ -101,6 +112,16 @@ pub enum ParseFailure {
 }
 
 impl ParseFailure {
+    pub(crate) fn message(self) -> Option<&'static str> {
+        match self {
+            Self::HardRefusal(RefusalReason::TooLong) => Some("That command is too long."),
+            Self::HardRefusal(RefusalReason::InvalidFolderLocation) => Some(
+                "Use one folder name before “in”. Quote names that contain “in”, or use a single path such as Downloads/2026/Receipts.",
+            ),
+            _ => None,
+        }
+    }
+
     #[cfg(test)]
     pub fn allows_fallback(self) -> bool {
         matches!(self, Self::GrammarMiss)
@@ -114,15 +135,12 @@ pub fn check_length(text: &str) -> Result<(), ParseFailure> {
     if text.len() > MAX_COMMAND_BYTES { Err(ParseFailure::HardRefusal(RefusalReason::TooLong)) } else { Ok(()) }
 }
 
-/// Parses a command. `Err` carries the raw text for "Didn't understand",
-/// except oversized commands receive a bounded, explicit refusal message.
+/// Parses a command. `Err` carries a specific refusal message when available
+/// or the raw text for "Didn't understand".
 /// A misspelled verb is corrected only when the command can't be read as
 /// typed, so a real word ("take that back") is never turned into another.
 pub fn parse(text: &str) -> Result<Intent, String> {
-    parse_classified(text).map_err(|failure| match failure {
-        ParseFailure::HardRefusal(RefusalReason::TooLong) => "That command is too long.".to_string(),
-        _ => text.trim().to_string(),
-    })
+    parse_classified(text).map_err(|failure| failure.message().unwrap_or(text.trim()).to_string())
 }
 
 /// The policy-aware parser entry point for fallback callers. `parse` retains
@@ -279,7 +297,7 @@ fn parse_canonical(cleaned: &str) -> Result<Option<Intent>, ParseFailure> {
         if let Some(caps) = p.re.captures(cleaned)
             && let Some(intent) = (p.build)(&caps)
         {
-            return Ok(Some(intent));
+            return intent.map(Some).map_err(ParseFailure::HardRefusal);
         }
     }
     if let Some(c) = LEADING_SCOPE.captures(cleaned)

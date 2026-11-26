@@ -1,29 +1,33 @@
 //! Move and copy.
 
 use super::{
-    Pattern, cap, pat,
-    phrase::{bad_destination, clean_name, parse_source, split_arguments, split_destination_filter},
+    Pattern, RefusalReason, cap, checked_pat,
+    phrase::{folder_target, parse_source, split_arguments, split_destination_filter},
 };
-use crate::model::{Intent, Source};
+use crate::model::{Destination, Intent, Source};
 
-fn transfer_source_and_target<'a>(source: &'a str, target: &'a str) -> Option<(Source, String)> {
+fn transfer(source: &str, target: &str, copy: bool) -> Option<Result<Intent, RefusalReason>> {
     let (target, filter_tail) = split_destination_filter(target).unwrap_or((target, ""));
-    if bad_destination(target) {
-        return None;
-    }
+    let to = match folder_target(target) {
+        Ok(to) => to?,
+        Err(reason) => return Some(Err(reason)),
+    };
     let source = if filter_tail.is_empty() { source.to_string() } else { format!("{source} {filter_tail}") };
     let parsed = parse_source(&source)?;
     if !filter_tail.is_empty() && !matches!(parsed, Source::Set { .. }) {
         return None;
     }
-    Some((parsed, target.to_string()))
+    let to = transfer_target(target, to)?;
+    Some(Ok(if copy { Intent::Copy { src: parsed, to } } else { Intent::Move { src: parsed, to } }))
 }
 
-fn destination(text: &str) -> Option<String> {
-    if bad_destination(text) {
-        return None;
+fn transfer_target(text: &str, to: Destination) -> Option<Destination> {
+    let Destination::Path(name) = &to else { return Some(to) };
+    // A quoted "Trash" or "bin" names a folder, not the Trash: the trailing
+    // slash keeps it a folder path, which the planner never reads as the Trash.
+    if text.trim().starts_with(['"', '\'']) && matches!(name.to_lowercase().as_str(), "trash" | "bin" | "recycle bin") {
+        return Some(format!("{name}/").into());
     }
-    let name = clean_name(text);
     // A delivery request must never silently become a local folder creation.
     // Quoted names and explicit paths still let users name a real email folder.
     if !text.starts_with(['"', '\'']) && !name.contains('/') {
@@ -37,12 +41,12 @@ fn destination(text: &str) -> Option<String> {
             return None;
         }
     }
-    Some(name)
+    Some(to)
 }
 
 pub fn patterns() -> Vec<Pattern> {
     vec![
-        pat("put_in", r"^put\s+(.+)$", |c| {
+        checked_pat("put_in", r"^put\s+(.+)$", |c| {
             let text = cap(c, 1)?;
             // "put X in Downloads to Archive": "in" names where X is, so the
             // move pattern below reads it.
@@ -54,20 +58,17 @@ pub fn patterns() -> Vec<Pattern> {
             if syntax.contains(" as ") || syntax.contains("together") {
                 return None;
             }
-            let (src, to) = transfer_source_and_target(source, target)?;
-            Some(Intent::Move { src, to: destination(&to)? })
+            transfer(source, target, false)
         }),
-        pat("copy", r"^(?:copy|duplicate)\s+(.+)$", |c| {
+        checked_pat("copy", r"^(?:copy|duplicate)\s+(.+)$", |c| {
             let text = cap(c, 1)?;
             let (source, target) = split_arguments(&text, &["to", "into"])?;
-            let (src, to) = transfer_source_and_target(source, target)?;
-            Some(Intent::Copy { src, to: destination(&to)? })
+            transfer(source, target, true)
         }),
-        pat("move", r"^(?:move|put|send|drop|transfer|shift|relocate|stash|store|file)\s+(.+)$", |c| {
+        checked_pat("move", r"^(?:move|put|send|drop|transfer|shift|relocate|stash|store|file)\s+(.+)$", |c| {
             let text = cap(c, 1)?;
             let (source, target) = split_arguments(&text, &["to", "into"])?;
-            let (src, to) = transfer_source_and_target(source, target)?;
-            Some(Intent::Move { src, to: destination(&to)? })
+            transfer(source, target, false)
         }),
     ]
 }

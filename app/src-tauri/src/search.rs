@@ -3,8 +3,10 @@ use crate::fsx;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
@@ -502,6 +504,17 @@ struct Walk {
     remaining: usize,
 }
 
+#[derive(Clone)]
+struct DirectoryEntry {
+    name: OsString,
+    file_type: Option<fs::FileType>,
+}
+
+struct DirectoryCache {
+    listings: HashMap<PathBuf, Rc<Vec<Option<DirectoryEntry>>>>,
+    remaining: usize,
+}
+
 #[derive(Default)]
 struct FolderIssues {
     count: usize,
@@ -531,6 +544,7 @@ impl FolderIssues {
 
 pub struct Search {
     cache: RefCell<HashMap<PathBuf, Arc<Scan>>>,
+    directories: Option<Rc<RefCell<DirectoryCache>>>,
     skipped_folders: RefCell<Vec<PathBuf>>,
     issues: RefCell<Vec<String>>,
     entry_limit: RefCell<FolderIssues>,
@@ -562,6 +576,7 @@ impl Search {
     pub fn new(control: Control) -> Self {
         Self {
             cache: RefCell::new(HashMap::new()),
+            directories: None,
             skipped_folders: RefCell::new(Vec::new()),
             issues: RefCell::new(Vec::new()),
             entry_limit: Default::default(),
@@ -590,10 +605,15 @@ impl Search {
         self
     }
 
-    /// Separate completeness and caches, with the command's cancellation,
-    /// progress and deadline. A caller can reserve time for later work.
+    pub fn reuse_directory_reads(&mut self) {
+        self.directories.get_or_insert_with(|| Rc::new(RefCell::new(DirectoryCache { listings: HashMap::new(), remaining: MAX_ENTRIES })));
+    }
+
+    /// Separate completeness and query results, with the command's cancellation,
+    /// progress, deadline and any shared directory listings.
     pub fn isolated(&self, time_limit: Duration) -> Self {
         Self {
+            directories: self.directories.clone(),
             depth: self.depth,
             limit: self.limit,
             started: self.started,
@@ -607,7 +627,7 @@ impl Search {
         }
     }
 
-    fn probe(&self, time_limit: Duration) -> Self {
+    pub fn probe(&self, time_limit: Duration) -> Self {
         // Keep progress and cancellation shared while counting only required scan issues.
         Self { track_issue_stats: false, ..self.isolated(time_limit) }
     }
@@ -631,6 +651,9 @@ impl Search {
     }
 
     pub(crate) fn record_failure(&self) {
+        if !self.track_issue_stats {
+            return;
+        }
         let mut flags = 0;
         for (present, code) in [
             (self.entry_limit.borrow().count > 0, Failure::Limit),
@@ -833,6 +856,42 @@ impl Search {
         fs::canonicalize(path).is_ok_and(|target| self.within_roots(&target) && !self.exclusions.hides(&target))
     }
 
+    /// Share directory reads across lookups without sharing their scope or
+    /// completeness. Keep only whole listings, within a command-wide memory
+    /// bound. Each query still applies its own depth and entry limits.
+    fn directory_entries(&self, dir: &Path, canon: &Path) -> std::io::Result<impl Iterator<Item = (Option<DirectoryEntry>, bool)>> {
+        let cached = self.directories.as_ref().and_then(|cache| cache.borrow().listings.get(canon).cloned());
+        let mut reader = if cached.is_none() { Some(fs::read_dir(dir)?) } else { None };
+        let mut index = 0;
+        let capacity = self.directories.as_ref().map_or(0, |cache| cache.borrow().remaining);
+        let mut pending = (cached.is_none() && capacity > 0).then(Vec::new);
+        Ok(std::iter::from_fn(move || {
+            if let Some(listing) = &cached {
+                let entry = listing.get(index)?.clone();
+                index += 1;
+                return Some((entry, false));
+            }
+            if let Some(entry) = reader.as_mut()?.next() {
+                let entry = entry.ok().map(|entry| DirectoryEntry { name: entry.file_name(), file_type: entry.file_type().ok() });
+                if let Some(listing) = &mut pending {
+                    if listing.len() + 1 < capacity {
+                        listing.push(entry.clone());
+                    } else {
+                        pending = None;
+                    }
+                }
+                return Some((entry, true));
+            }
+            reader = None;
+            if let (Some(listing), Some(cache)) = (pending.take(), &self.directories) {
+                let mut cache = cache.borrow_mut();
+                cache.remaining -= listing.len() + 1;
+                cache.listings.insert(canon.to_path_buf(), Rc::new(listing));
+            }
+            None
+        }))
+    }
+
     /// Check each level before searching deeper. Container lookups skip
     /// matched trees, and Finder/size only check their immediate files for a
     /// name collision. Item lookups keep searching inside matched folders.
@@ -905,33 +964,35 @@ impl Search {
                     self.too_deep(dir);
                     continue;
                 }
-                let Ok(rd) = fs::read_dir(dir) else {
+                let Ok(rd) = self.directory_entries(dir, canon) else {
                     self.unreadable(dir);
                     continue;
                 };
                 let mut relevant = Vec::new();
                 let mut truncated_here = false;
                 let keep_for_fuzzy = kind != LookupKind::Container && found.is_empty();
-                for entry in rd {
+                for (entry, fresh) in rd {
                     if stopped() {
                         break 'levels;
                     }
-                    self.control.visited.fetch_add(1, Ordering::Relaxed);
+                    if fresh {
+                        self.control.visited.fetch_add(1, Ordering::Relaxed);
+                    }
                     let capture = keep_for_fuzzy && fuzzy_budget[*root_index] > 0;
                     if keep_for_fuzzy {
                         truncated_here |= !capture;
                         fuzzy_budget[*root_index] = fuzzy_budget[*root_index].saturating_sub(1);
                     }
-                    let Ok(entry) = entry else {
+                    let Some(entry) = entry else {
                         self.unreadable(dir);
                         continue;
                     };
-                    let path = entry.path();
+                    let path = dir.join(&entry.name);
                     let hidden_entry = fsx::is_hidden_or_internal(&path);
                     if hidden_entry && !is_virtual_env(&path) {
                         continue;
                     }
-                    let Ok(file_type) = entry.file_type() else {
+                    let Some(file_type) = entry.file_type else {
                         self.unreadable(dir);
                         continue;
                     };
@@ -946,7 +1007,7 @@ impl Search {
                     if !is_dir && !matches && !capture {
                         continue;
                     }
-                    let canon_path = canon.join(entry.file_name());
+                    let canon_path = canon.join(entry.name);
                     let hidden = self.exclusions.hides(&canon_path);
                     if hidden && (!is_dir || self.exclusions.prunes(&canon_path)) {
                         continue;
@@ -1160,7 +1221,7 @@ impl Search {
         if self.stopped() {
             return;
         }
-        let rd = match fs::read_dir(dir) {
+        let rd = match self.directory_entries(dir, canon) {
             Ok(rd) => rd,
             Err(_) => {
                 self.unreadable(dir);
@@ -1168,20 +1229,20 @@ impl Search {
             }
         };
         let mut entries = Vec::new();
-        for entry in rd {
+        for (entry, fresh) in rd {
             if self.stopped() {
                 return;
             }
             match entry {
-                Ok(entry) => entries.push(entry),
-                Err(_) => self.unreadable(dir),
+                Some(entry) => entries.push((entry, fresh)),
+                None => self.unreadable(dir),
             }
             if entries.len() > walk.remaining {
                 break;
             }
         }
-        entries.sort_by_key(|e| e.file_name());
-        for e in entries {
+        entries.sort_by(|(a, _), (b, _)| a.name.cmp(&b.name));
+        for (entry, fresh) in entries {
             if self.stopped() {
                 return;
             }
@@ -1190,22 +1251,24 @@ impl Search {
                 return;
             }
             walk.remaining -= 1;
-            self.control.visited.fetch_add(1, Ordering::Relaxed);
-            let path = e.path();
+            if fresh {
+                self.control.visited.fetch_add(1, Ordering::Relaxed);
+            }
+            let path = dir.join(&entry.name);
             let hidden_entry = fsx::is_hidden_or_internal(&path);
             // Only recursive scans consider hidden virtual environment dirs.
             if hidden_entry && (depth.is_none() || !is_virtual_env(&path)) {
                 continue;
             }
-            let ft = match e.file_type() {
-                Ok(ft) => ft,
-                Err(_) => {
+            let ft = match entry.file_type {
+                Some(ft) => ft,
+                None => {
                     self.unreadable(dir);
                     continue;
                 }
             };
             let is_dir = ft.is_dir();
-            let canon_path = canon.join(e.file_name());
+            let canon_path = canon.join(entry.name);
             let hidden = !self.exclusions.is_empty() && self.exclusions.hides(&canon_path);
             if !is_dir {
                 if !hidden && !hidden_entry && (!ft.is_symlink() || self.allowed_link(&path)) {

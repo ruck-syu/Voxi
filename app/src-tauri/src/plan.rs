@@ -5,8 +5,8 @@
 use crate::fsx::{self, Roots, file_name, human_size, split_name, unique_path};
 use crate::history::{Entry, EntryState, History};
 use crate::model::{
-    ARCHIVE_EXTS, AUDIO_EXTS, Action, AmbiguityReason, DOC_EXTS, DateField, DayRef, FileType, Filter, IMAGE_EXTS, INSTALLER_EXTS,
-    ImageFormat, InfoRow, Intent, Source, VIDEO_EXTS,
+    ARCHIVE_EXTS, AUDIO_EXTS, Action, AmbiguityReason, DOC_EXTS, DateField, DayRef, Destination, FileType, Filter, IMAGE_EXTS,
+    INSTALLER_EXTS, ImageFormat, InfoRow, Intent, Source, VIDEO_EXTS,
 };
 use crate::{pdf, search};
 use chrono::{DateTime, Datelike, Local, NaiveDate};
@@ -29,6 +29,7 @@ pub enum Stop {
         candidates: Vec<PathBuf>,
         reason: AmbiguityReason,
         note: Option<String>,
+        remember_folder: bool,
     },
     MissingTransferItem {
         #[cfg_attr(not(feature = "tiny-model"), expect(dead_code))]
@@ -52,7 +53,7 @@ fn ambiguous(name: &str, candidates: Vec<PathBuf>, incomplete: bool) -> Stop {
     } else {
         AmbiguityReason::MultipleMatches
     };
-    Stop::Ambiguous { name: name.into(), candidates, reason, note: None }
+    Stop::Ambiguous { name: name.into(), candidates, reason, note: None, remember_folder: true }
 }
 
 /// Conservative path overlap used by the chain/shortcut dependency guard.
@@ -101,13 +102,19 @@ pub enum Planned {
         summary: String,
         rows: Vec<InfoRow>,
         total: usize,
-        listed: Option<(Vec<PathBuf>, String)>,
+        listed: Option<Listed>,
     },
     /// Read-only, runs right away without a preview.
     Direct {
         action: Action,
         title: String,
     },
+}
+
+pub struct Listed {
+    pub paths: Vec<PathBuf>,
+    pub label: String,
+    pub folder: Option<PathBuf>,
 }
 
 pub struct Planner<'a> {
@@ -148,6 +155,7 @@ enum Expansion {
 struct ExpandedSource {
     paths: Vec<PathBuf>,
     label: String,
+    folder: Option<PathBuf>,
     nested: usize,
     skipped_note: String,
 }
@@ -269,6 +277,7 @@ impl<'a> Planner<'a> {
     }
 
     fn step(&mut self, intent: &Intent, history: &History) -> Result<Step, Stop> {
+        let start = self.actions.len();
         let title = match intent {
             Intent::Chain { commands } => self.chain(commands, history)?,
             Intent::Move { src, to } => self.transfer(src, to, false)?,
@@ -313,9 +322,14 @@ impl<'a> Planner<'a> {
             Intent::RecentActions => return Ok(Step::Finished(recent(history, self.roots))),
             Intent::Undo => {
                 let Some(entry) = history.last_undoable() else { return problem("Nothing to undo.") };
-                return plan_undo(entry).map(Step::Finished);
+                return plan_undo(entry, self.roots).map(Step::Finished);
             }
         };
+        if !matches!(intent, Intent::Chain { .. }) {
+            for action in &self.actions[start..] {
+                self.roots.check_whole_tree_exclusions(action).map_err(Stop::Problem)?;
+            }
+        }
         Ok(Step::Changes(title))
     }
 
@@ -358,9 +372,13 @@ impl<'a> Planner<'a> {
         if let Some(parent) = dir.parent() {
             self.ensure_dir(parent)?;
         }
+        self.add_folder_step(dir);
+        Ok(())
+    }
+
+    fn add_folder_step(&mut self, dir: &Path) {
         self.planned_dirs.insert(dir.to_path_buf());
         self.push(Action::CreateFolder { path: dir.to_path_buf() }, Some("New folder".into()));
-        Ok(())
     }
 
     // ---- Name resolution -------------------------------------------------
@@ -399,35 +417,8 @@ impl<'a> Planner<'a> {
         } else if let Some(p) = self.roots.named(first) {
             p.clone()
         } else {
-            let roots = self.roots.search_roots();
             let disk = self.search.isolated(self.search.remaining_time());
-            let (mut found, needs_confirmation) = match disk.nearest_dirs(&roots, first) {
-                search::NameLookup::Found { candidates, needs_confirmation } => (candidates, needs_confirmation),
-                search::NameLookup::NotFound(_) => (Vec::new(), false),
-                search::NameLookup::RetryPerRoot(mut candidates) => {
-                    candidates.extend(disk.scan_lookup_paths(&roots, search::LookupKind::Container));
-                    (Self::name_candidates(first, candidates, search::LookupKind::Container), disk.status().is_some())
-                }
-                search::NameLookup::Incomplete(message) => {
-                    disk.record_failure();
-                    return Err(Stop::SearchIncomplete(message));
-                }
-            };
-            if needs_confirmation {
-                found.retain(|path| path.is_dir() && self.check(path).is_ok());
-                return self.partial_lookup(first, found, &disk, disk.status());
-            }
-            if found.is_empty() && read_only && create_in.is_none() {
-                self.confirm_skipped_folder(&disk, first, &roots)?;
-            }
-            match found.len() {
-                1 => found.into_iter().next().unwrap(),
-                0 => match create_in {
-                    Some(parent) => parent.join(first),
-                    None => return problem(format!("Couldn't find a folder named “{first}”.")),
-                },
-                _ => return Err(ambiguous(first, found, false)),
-            }
+            self.lookup_folder(first, first, &self.roots.search_roots(), create_in, read_only, &disk)?
         };
         let full = match rest {
             Some(r) => base.join(r),
@@ -438,6 +429,161 @@ impl<'a> Planner<'a> {
             return problem(format!("Couldn't find a folder named “{name}”."));
         }
         Ok(full)
+    }
+
+    fn lookup_folder(
+        &self,
+        name: &str,
+        label: &str,
+        roots: &[PathBuf],
+        create_in: Option<&Path>,
+        read_only: bool,
+        disk: &search::Search,
+    ) -> Result<PathBuf, Stop> {
+        let (mut found, needs_confirmation) = match disk.nearest_dirs(roots, name) {
+            search::NameLookup::Found { candidates, needs_confirmation } => (candidates, needs_confirmation),
+            search::NameLookup::NotFound(_) => (Vec::new(), false),
+            search::NameLookup::RetryPerRoot(mut candidates) => {
+                candidates.extend(disk.scan_lookup_paths(roots, search::LookupKind::Container));
+                (Self::name_candidates(name, candidates, search::LookupKind::Container), disk.status().is_some())
+            }
+            search::NameLookup::Incomplete(message) => {
+                disk.record_failure();
+                return Err(Stop::SearchIncomplete(message));
+            }
+        };
+        if needs_confirmation {
+            found.retain(|path| path.is_dir() && self.check(path).is_ok());
+            return self.partial_lookup(label, found, disk, disk.status());
+        }
+        if found.is_empty() && read_only && create_in.is_none() {
+            self.confirm_skipped_folder(disk, name, roots)?;
+        }
+        match found.len() {
+            1 => Ok(found.remove(0)),
+            0 => match create_in {
+                Some(parent) => Ok(parent.join(name)),
+                None => problem(format!("Couldn't find a folder named “{label}”.")),
+            },
+            _ => Err(ambiguous(label, found, false)),
+        }
+    }
+
+    fn resolve_destination(&mut self, to: &Destination, create_in: Option<&Path>) -> Result<PathBuf, Stop> {
+        let (folder, parent, literal, existing_only) = match to {
+            Destination::Path(path) => return self.resolve_folder(path, create_in),
+            Destination::InFolder { folder, parent, literal, existing_only } => (folder, parent, literal.as_deref(), *existing_only),
+        };
+        if folder.contains('/') || matches!(folder.as_str(), "" | "." | "..") {
+            return problem(format!("“{folder}” isn't a valid folder name."));
+        }
+        let label = literal.map(str::to_owned).unwrap_or_else(|| format!("{folder} in {parent}"));
+        let literal_lookup = match literal.and_then(|name| self.roots.named(name)) {
+            Some(path) => {
+                self.check(path)?;
+                if !path.is_dir() {
+                    return problem(format!("Couldn't find a folder named “{label}”."));
+                }
+                Some(Ok(path.clone()))
+            }
+            None => literal.map(|name| {
+                self.search.reuse_directory_reads();
+                // The optional global lookup must leave time for the explicit scope.
+                let probe = self.search.probe(self.search.remaining_time() / 4);
+                self.lookup_folder(name, &label, &self.roots.search_roots(), None, false, &probe)
+            }),
+        };
+        let root = self
+            .resolve_folder(parent, None)
+            .and_then(|path| if path.is_dir() { Ok(path) } else { problem(format!("Couldn't find a folder named “{parent}”.")) });
+        let lookup_inside = |root: PathBuf| {
+            if create_in.is_none() {
+                let disk = self.search.isolated(self.search.remaining_time());
+                return self.lookup_folder(folder, &label, &[root], None, false, &disk);
+            }
+            let path = root.join(folder);
+            self.check(&path)?;
+            if path.is_dir() {
+                if !fsx::canonical(&path).starts_with(fsx::canonical(&root)) {
+                    return problem(format!("“{folder}” leads outside {}.", self.roots.display(&root)));
+                }
+                Ok(path)
+            } else if path.exists() {
+                problem(format!("A file named “{folder}” already exists in {}. Choose another folder name.", self.roots.display(&root)))
+            } else if existing_only {
+                problem(format!(
+                    "Couldn't find a folder named “{label}”. To create it in {}, use \"{folder}\" in \"{parent}\".",
+                    self.roots.display(&root)
+                ))
+            } else {
+                Ok(path)
+            }
+        };
+
+        let mut candidates = Vec::new();
+        let mut incomplete = None;
+        let mut collect_matches = |result: &Result<PathBuf, Stop>| match result {
+            Ok(path) if path.is_dir() => candidates.push(path.clone()),
+            Err(Stop::Ambiguous { candidates: found, reason, note, .. }) => {
+                candidates.extend(found.iter().filter(|path| path.is_dir()).cloned());
+                if *reason == AmbiguityReason::IncompleteSearch {
+                    incomplete = Some(note.clone());
+                }
+            }
+            _ => {}
+        };
+        if let Some(result) = &literal_lookup {
+            collect_matches(result);
+        }
+        let scoped = match root {
+            Ok(root) => {
+                let result = lookup_inside(root);
+                collect_matches(&result);
+                result
+            }
+            Err(error) => {
+                // If a literal match exists, only known child matches in the
+                // other parents should compete with it.
+                if matches!(&literal_lookup, Some(Ok(_) | Err(Stop::Ambiguous { .. })))
+                    && let Stop::Ambiguous { candidates: parents, .. } = &error
+                {
+                    for parent in parents {
+                        collect_matches(&lookup_inside(parent.clone()));
+                    }
+                }
+                Err(error)
+            }
+        };
+        // A known literal can't settle the result if a required scoped
+        // lookup failed before it could rule out another match.
+        match &scoped {
+            Err(Stop::SearchIncomplete(note)) => incomplete = Some(Some(note.clone())),
+            Err(Stop::Ambiguous { reason: AmbiguityReason::IncompleteSearch, note, .. }) => incomplete = Some(note.clone()),
+            _ => {}
+        }
+        if self.search.control.is_cancelled() {
+            return problem("Search cancelled.");
+        }
+        let mut seen = HashSet::new();
+        candidates.retain(|p| seen.insert(fsx::canonical(p)));
+        if let Some(picked) = self.choices.get(&label) {
+            self.check(picked)?;
+            let Some(path) = candidates.into_iter().find(|path| path == picked) else {
+                return problem(format!("Choose one of the matching folders for “{label}”."));
+            };
+            return Ok(path);
+        }
+        match (candidates.len(), incomplete) {
+            (0, _) => scoped,
+            (1, None) => self.pick_exact(&label, candidates),
+            (_, incomplete) => Err(Stop::Ambiguous {
+                name: label,
+                candidates,
+                reason: if incomplete.is_some() { AmbiguityReason::IncompleteSearch } else { AmbiguityReason::MultipleMatches },
+                note: incomplete.flatten(),
+                remember_folder: false,
+            }),
+        }
     }
 
     fn confirm_skipped_folder(&self, disk: &search::Search, name: &str, dirs: &[PathBuf]) -> Result<(), Stop> {
@@ -615,7 +761,7 @@ impl<'a> Planner<'a> {
         if candidates.is_empty() {
             return Err(Stop::SearchIncomplete(note.unwrap_or_else(|| "Search incomplete. Try a smaller folder.".into())));
         }
-        Err(Stop::Ambiguous { name: name.into(), candidates, reason: AmbiguityReason::IncompleteSearch, note })
+        Err(Stop::Ambiguous { name: name.into(), candidates, reason: AmbiguityReason::IncompleteSearch, note, remember_folder: true })
     }
 
     fn name_candidates(name: &str, paths: Vec<PathBuf>, kind: search::LookupKind) -> Vec<PathBuf> {
@@ -733,31 +879,48 @@ impl<'a> Planner<'a> {
                 let kind = if read_only { search::LookupKind::ReadOnly } else { search::LookupKind::Item };
                 let p = self.resolve_named_item(name, folder.as_deref(), kind, expansion == Expansion::Transfer)?;
                 let label = file_name(&p);
-                Ok(ExpandedSource { paths: vec![p], label, nested: 0, skipped_note: String::new() })
+                Ok(ExpandedSource { paths: vec![p], label, folder: None, nested: 0, skipped_note: String::new() })
             }
             Source::Set { folder, filter } => {
+                let contains = filter.name_contains.as_deref().map(NameNeedle::new).transpose()?;
+                let starts = filter.name_starts_with.as_deref().map(NameNeedle::new).transpose()?;
+                if filter.ext.as_ref().is_some_and(|exts| exts.is_empty() || exts.iter().any(|ext| ext.trim().is_empty())) {
+                    return problem("Enter a file extension for the filter, such as .txt.");
+                }
                 if let Some(scope) = &self.scope {
                     if folder.is_some() {
                         return problem("An explicit source folder starts a new search.");
                     }
-                    if direct_by_default && filter.only_subfolders {
-                        return problem("“From subfolders” works on a named folder, not on the current list.");
-                    }
+                    let boundary = filter
+                        .only_subfolders
+                        .then(|| crate::scope::subfolder_boundary(scope.folder.as_deref()))
+                        .transpose()
+                        .map_err(Stop::Problem)?;
                     let mut paths = Vec::new();
                     for path in scope.paths() {
                         self.check(&path)?;
-                        if matches(&path, filter, self.now) {
+                        if boundary.is_none_or(|folder| crate::scope::is_nested_in(&path, folder))
+                            && matches_prepared(&path, filter, self.now, contains.as_ref(), starts.as_ref())
+                        {
                             if !read_only && path.parent().is_some_and(|parent| self.in_package(parent)) {
                                 return problem("File sets can't change items inside a macOS package.");
                             }
                             paths.push(path);
                         }
                     }
+                    let folder = scope.folder.clone();
                     self.note_dates(filter);
-                    return Ok(ExpandedSource { paths, label: "the previous results".into(), nested: 0, skipped_note: String::new() });
+                    return Ok(ExpandedSource {
+                        paths,
+                        label: "the previous results".into(),
+                        folder,
+                        nested: 0,
+                        skipped_note: String::new(),
+                    });
                 }
                 let (dirs, label) = self.set_folders(folder.as_deref(), filter, read_only)?;
                 let direct = direct_by_default && !Self::includes_nested_files(folder.as_deref(), filter);
+                let folder = folder.as_ref().and_then(|_| dirs.first()).map(|dir| fsx::canonical(dir));
                 if !read_only
                     && !direct
                     && let Some(d) = dirs.iter().find(|d| self.in_hidden_tree(d) || self.in_package(d))
@@ -771,14 +934,12 @@ impl<'a> Planner<'a> {
                 let top_level: HashSet<_> =
                     dirs.iter().filter(|_| direct_by_default && filter.only_subfolders).map(|d| fsx::canonical(d)).collect();
                 let now = self.now;
-                let contains = filter.name_contains.as_deref().map(normalized_name);
-                let starts = filter.name_starts_with.as_deref().map(normalized_name);
                 let inspect = filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some() || has_date_filter(filter);
                 let matches_file = |p: &Path| {
                     if inspect && fs::metadata(p).is_err() {
                         return None;
                     }
-                    Some(matches_prepared(p, filter, now, contains.as_deref(), starts.as_deref()))
+                    Some(matches_prepared(p, filter, now, contains.as_ref(), starts.as_ref()))
                 };
                 let query = self.search.isolated(self.search.remaining_time());
                 let mut out = Vec::new();
@@ -824,7 +985,7 @@ impl<'a> Planner<'a> {
                 }
                 out.sort_by_key(|p| file_name(p).to_lowercase());
                 self.note_dates(filter);
-                Ok(ExpandedSource { paths: out, label, nested, skipped_note })
+                Ok(ExpandedSource { paths: out, label, folder, nested, skipped_note })
             }
         }
     }
@@ -897,13 +1058,21 @@ impl<'a> Planner<'a> {
 
     // ---- Planners ----------------------------------------------------------
 
-    fn transfer(&mut self, src: &Source, to: &str, copy: bool) -> Result<String, Stop> {
+    /// "Trash", "the bin", "Recycle Bin": a destination that names the Trash
+    /// itself rather than a folder path.
+    fn names_the_trash(to: &str) -> bool {
+        let to = to.trim().to_lowercase();
+        let to = to.strip_prefix("the ").unwrap_or(&to).trim();
+        !to.contains(['/', '~']) && matches!(to, "trash" | "bin" | "recycle bin")
+    }
+
+    fn transfer(&mut self, src: &Source, to: &Destination, copy: bool) -> Result<String, Stop> {
         let src_dir = match src {
             Source::Set { folder: Some(folder), .. } => Some(self.resolve_folder(folder, None)?),
             _ => None,
         };
         let parent_for_new = src_dir.unwrap_or_else(|| self.roots.desktop());
-        let dest = self.resolve_folder(to, Some(&parent_for_new)).and_then(|dest| {
+        let dest = self.resolve_destination(to, Some(&parent_for_new)).and_then(|dest| {
             if matches!(src, Source::Set { folder, filter } if Self::includes_nested_files(folder.as_deref(), filter))
                 && (self.in_package(&dest) || self.in_hidden_tree(&dest))
             {
@@ -914,8 +1083,10 @@ impl<'a> Planner<'a> {
         // A filter after "to Trash" ("move files ... to Trash between 10 and
         // 50 MB") parses as a Move, not the delete phrasing. Never create a
         // folder called Trash: apply the same checks as a delete command.
+        // Only a bare "Trash" means the Trash: "Documents/Trash" or "~/bin" is
+        // an ordinary folder path, even when that folder doesn't exist yet.
         if let Ok(dest) = &dest
-            && matches!(file_name(dest).to_ascii_lowercase().as_str(), "trash" | "bin" | "recycle bin")
+            && to.path().is_some_and(Self::names_the_trash)
             && !dest.exists()
             && !self.planned_dirs.contains(dest)
         {
@@ -924,13 +1095,23 @@ impl<'a> Planner<'a> {
             }
             return self.trash(src);
         }
-        let ExpandedSource { paths, label, nested, skipped_note } = self.expand_source(src, Expansion::Transfer)?;
+        let ExpandedSource { paths, label, nested, skipped_note, .. } = self.expand_source(src, Expansion::Transfer)?;
         if paths.is_empty() {
             return Err(Self::no_matching_files(&label, nested, &skipped_note));
         }
         let dest = dest?;
         self.note_nested(nested);
-        self.ensure_dir(&dest)?;
+        match to {
+            Destination::Path(_) => self.ensure_dir(&dest)?,
+            Destination::InFolder { .. } if !dest.is_dir() && !self.planned_dirs.contains(&dest) => {
+                self.check(&dest)?;
+                if !dest.parent().is_some_and(Path::is_dir) {
+                    return problem(format!("The parent of {} is no longer available.", self.roots.display(&dest)));
+                }
+                self.add_folder_step(&dest);
+            }
+            Destination::InFolder { .. } => {}
+        }
         // A destination inside the source may already hold previous results.
         let canonical_dest = fsx::canonical(&dest);
         let destination_in_source = match src {
@@ -960,6 +1141,7 @@ impl<'a> Planner<'a> {
                 return problem(format!("Can't put {} inside itself.", file_name(p)));
             }
             let (to, note) = self.target(&dest, &file_name(p));
+            self.check(&to)?;
             let a = if copy { Action::Copy { from: p.clone(), to } } else { Action::Move { from: p.clone(), to } };
             self.push(a, note);
         }
@@ -1268,8 +1450,8 @@ impl<'a> Planner<'a> {
         Ok((format!("Create {what} in {}", file_name(&parent)), parent))
     }
 
-    fn sort(&mut self, folder: &str, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
-        let dir = self.resolve_folder(folder, None)?;
+    fn sort(&mut self, folder: &Destination, by_type: bool, include_subfolders: bool) -> Result<String, Stop> {
+        let dir = self.resolve_destination(folder, None)?;
         let filter = Filter { file_type: Some(FileType::Files), include_subfolders, ..Default::default() };
         let src = Source::Set { folder: Some(dir.to_string_lossy().into()), filter };
         let ExpandedSource { paths, nested, .. } = self.expand_source(&src, Expansion::DirectChanges)?;
@@ -1385,10 +1567,20 @@ impl<'a> Planner<'a> {
 
     /// Where a new output file goes: a bare name lands next to the inputs.
     fn output_path(&mut self, name: &str, next_to: &Path, ext: &str) -> Result<(PathBuf, Option<String>), Stop> {
-        let name = if split_name(name).1.is_some_and(|e| e.eq_ignore_ascii_case(ext)) { name.to_string() } else { format!("{name}.{ext}") };
-        let (dir, file) = match name.rsplit_once('/') {
-            Some((d, f)) => (self.resolve_folder(d, Some(next_to))?, f.to_string()),
-            None => (next_to.to_path_buf(), name),
+        if name.ends_with('/') {
+            return problem("Name the output file after the final “/”.");
+        }
+        let (parent, file) = name.rsplit_once('/').map_or((None, name), |(parent, file)| (Some(parent), file));
+        if file.trim().is_empty() {
+            return problem("Name the output file.");
+        }
+        if file.starts_with('.') {
+            return problem("Choose an output filename that doesn't start with “.”.");
+        }
+        let file = if split_name(file).1.is_some_and(|e| e.eq_ignore_ascii_case(ext)) { file.to_string() } else { format!("{file}.{ext}") };
+        let dir = match parent {
+            Some(dir) => self.resolve_folder(dir, Some(next_to))?,
+            None => next_to.to_path_buf(),
         };
         self.check(&dir.join(&file))?;
         self.ensure_dir(&dir)?;
@@ -1511,7 +1703,7 @@ impl<'a> Planner<'a> {
                 return problem("To be safe, clean-up needs a filter, like “older than 90 days”, “installers”, or “larger than 500 MB”.");
             }
         }
-        let ExpandedSource { paths, label, nested, skipped_note } = self.expand_source(src, Expansion::DirectChanges)?;
+        let ExpandedSource { paths, label, nested, skipped_note, .. } = self.expand_source(src, Expansion::DirectChanges)?;
         if paths.is_empty() {
             return Err(Self::no_matching_files(&label, nested, &skipped_note));
         }
@@ -1543,7 +1735,7 @@ impl<'a> Planner<'a> {
     }
 
     fn list(&mut self, src: &Source) -> Result<Planned, Stop> {
-        let ExpandedSource { mut paths, label, skipped_note, .. } = self.expand_source(src, Expansion::ReadOnly)?;
+        let ExpandedSource { mut paths, label, folder, skipped_note, .. } = self.expand_source(src, Expansion::ReadOnly)?;
         let by_size = matches!(src, Source::Set { filter, .. } if filter.larger_than_mb.is_some() || filter.smaller_than_mb.is_some());
         let modified = reads_modified(src);
         if by_size {
@@ -1554,7 +1746,7 @@ impl<'a> Planner<'a> {
         let total_bytes: u64 = paths.iter().map(|p| fs::metadata(p).map_or(0, |m| m.len())).sum();
         let rows = paths.iter().take(200).map(|p| self.file_row(p, modified)).collect();
         Ok(Planned::Info {
-            listed: Some((paths.clone(), label.clone())),
+            listed: Some(Listed { paths: paths.clone(), label: label.clone(), folder }),
             // A single named file's label is its own name; title it by its folder instead.
             title: match paths.as_slice() {
                 [one] if file_name(one) == label => format!("{label} in {}", one.parent().map_or_else(|| label.clone(), file_name)),
@@ -1702,8 +1894,11 @@ fn skipped_trees_suffix(note: &str) -> String {
     if note.is_empty() { String::new() } else { format!(" {note}") }
 }
 
-pub(crate) fn plan_undo(entry: &Entry) -> Result<Planned, Stop> {
+pub(crate) fn plan_undo(entry: &Entry, roots: &Roots) -> Result<Planned, Stop> {
     crate::history::validate_inverses(entry.inverses()).map_err(Stop::Problem)?;
+    for inverse in entry.inverses() {
+        roots.check_whole_tree_exclusions(&inverse.action).map_err(Stop::Problem)?;
+    }
     let actions: Vec<_> = entry.inverses().iter().map(|inverse| inverse.action.clone()).collect();
     Ok(Planned::Steps {
         title: format!("Undo “{}”", entry.command),
@@ -1852,13 +2047,42 @@ fn date_note(f: &Filter) -> Option<&'static str> {
     })
 }
 
-pub fn matches(p: &Path, f: &Filter, now: DateTime<Local>) -> bool {
-    let contains = f.name_contains.as_deref().map(normalized_name);
-    let starts = f.name_starts_with.as_deref().map(normalized_name);
-    matches_prepared(p, f, now, contains.as_deref(), starts.as_deref())
+enum NameNeedle<'a> {
+    Literal(&'a str),
+    Normalized(String),
 }
 
-fn matches_prepared(p: &Path, f: &Filter, now: DateTime<Local>, contains: Option<&str>, starts: Option<&str>) -> bool {
+impl<'a> NameNeedle<'a> {
+    fn new(needle: &'a str) -> Result<Self, Stop> {
+        if !needle.trim().is_empty() {
+            // Punctuation alone is meaningful exactly as entered. For
+            // example, "-." must not become "." and match every extension.
+            if !needle.chars().any(char::is_alphanumeric) {
+                return Ok(Self::Literal(needle));
+            }
+            let normalized = normalized_name(needle);
+            if !normalized.is_empty() {
+                return Ok(Self::Normalized(normalized));
+            }
+        }
+        problem("Enter a filename filter with a letter, number, or punctuation mark.")
+    }
+
+    fn matches(&self, filename: &str, normalized: &str, check: impl FnOnce(&str, &str) -> bool) -> bool {
+        match self {
+            Self::Literal(needle) => check(filename, needle),
+            Self::Normalized(needle) => check(normalized, needle),
+        }
+    }
+}
+
+fn matches_prepared(
+    p: &Path,
+    f: &Filter,
+    now: DateTime<Local>,
+    contains: Option<&NameNeedle<'_>>,
+    starts: Option<&NameNeedle<'_>>,
+) -> bool {
     let e = ext_of(p);
     let type_ok = match f.file_type {
         None => true,
@@ -1872,8 +2096,11 @@ fn matches_prepared(p: &Path, f: &Filter, now: DateTime<Local>, contains: Option
         return false;
     }
     if contains.is_some() || starts.is_some() {
-        let name = normalized_name(&file_name(p));
-        if contains.is_some_and(|needle| !name.contains(needle)) || starts.is_some_and(|needle| !name.starts_with(needle)) {
+        let filename = file_name(p);
+        let normalized = normalized_name(&filename);
+        if contains.is_some_and(|needle| !needle.matches(&filename, &normalized, |name, n| name.contains(n)))
+            || starts.is_some_and(|needle| !needle.matches(&filename, &normalized, |name, n| name.starts_with(n)))
+        {
             return false;
         }
     }

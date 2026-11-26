@@ -1500,10 +1500,8 @@ mod tests {
         let mut store = Store::load(path.clone());
         let legacy = store.jobs[0].repeat.clone().unwrap();
         let err = legacy.check_approval(&crate::settings::Settings::default(), "sort downloads by type").unwrap_err();
-        assert_eq!(
-            err,
-            "This task was saved by an older version of Voxi, which didn't record what you approved. Review it to keep this task."
-        );
+        assert_eq!(err, LEGACY_UNVERIFIED);
+        assert!(err.ends_with("Review it to keep this task."));
 
         // Confirming the review's preview saves the new task and drops the old one together.
         let rule = Rule { approved_version: APPROVED_RULE_VERSION, approved_source: Some(RuleSource::Command), ..legacy };

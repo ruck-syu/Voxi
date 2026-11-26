@@ -74,13 +74,11 @@ as “one”. Size filters require units; contradictory or repeated bounds are
 refused rather than silently discarded.
 
 Use `move these to Receipts in Voxi Demo` or `sort Voxi Demo in Downloads by type`
-to name a folder and its parent. The parent must exist. A move or copy can
-create the destination folder inside it. If the whole unquoted phrase also
-names an existing folder, Voxi uses it or asks you to choose when both folders
-exist. Quote the whole name to use it literally, as in
-`sort "Things in Progress" by type`. Quote either part to make the parent
-explicit, as in `move these to "Receipts by Month" in Downloads`, or use one
-path such as `Downloads/Voxi Demo/Receipts`.
+to name a folder inside an existing parent. Move and copy can create the child.
+Voxi uses an existing folder named by the whole unquoted phrase and asks you to
+choose if both readings match. Quote the whole name, as in `sort "Things in Progress" by type`,
+or quote either part to select the parent, as in `move these to "Receipts by Month" in Downloads`.
+You can also use a single path such as `Downloads/Voxi Demo/Receipts`.
 
 Use “undo last” for the newest change; selecting an earlier move or delete by
 its operation type isn't supported.

@@ -193,6 +193,22 @@ fn unquoted_folder_location_uses_an_existing_literal_name() {
 }
 
 #[test]
+fn chain_binds_a_located_destination_to_the_folder_it_creates() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let folder = roots.home.join("Documents/Archive in 2024");
+    let command = r#"create a folder called "Archive in 2024" in Documents and move report.pdf to Archive in 2024"#;
+    let Planned::Steps { actions, .. } = complete_plan(&fixture, command, ENTRY_LIMIT) else { panic!("{command}") };
+    assert_eq!(
+        actions,
+        [
+            Action::CreateFolder { path: folder.clone() },
+            Action::Move { from: roots.desktop().join("report.pdf"), to: folder.join("report.pdf") }
+        ]
+    );
+}
+
+#[test]
 fn literal_located_destination_uses_a_configured_nickname() {
     let mut fixture = MessyMac::new();
     let wip = fixture.roots().home.join("Documents/WIP");

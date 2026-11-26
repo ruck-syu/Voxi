@@ -53,6 +53,7 @@ move report.pdf to Things in Progress => {"intent":"move","src":{"kind":"item","
 move report.pdf to Receipts in Stuff => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":{"folder":"Receipts","parent":"Stuff","literal":"Receipts in Stuff","existing_only":true}}
 move report.pdf to "Receipts" in "Stuff" => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":{"folder":"Receipts","parent":"Stuff"}}
 move report.pdf to Archive in 2024 => {"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":{"folder":"Archive","parent":"2024","literal":"Archive in 2024"}}
+create a folder called "Archive in 2024" in Documents and move report.pdf to Archive in 2024 => {"intent":"chain","commands":[{"intent":"create_folders","names":["Archive in 2024"],"parent":"Documents"},{"intent":"move","src":{"kind":"item","name":"report.pdf"},"to":"Documents/Archive in 2024"}]}
 move invoice.pdf to Receipts in Voxi Demoo => {"intent":"move","src":{"kind":"item","name":"invoice.pdf"},"to":{"folder":"Receipts","parent":"Voxi Demoo","literal":"Receipts in Voxi Demoo"}}
 sort Things in Progress by type => {"intent":"sort_by_type","folder":"Things","parent":"Progress","literal":"Things in Progress"}
 move invoice.pdf to "Receipts" folder in Downloads => !hard

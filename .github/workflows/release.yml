@@ -76,9 +76,37 @@ jobs:
         working-directory: app/src-tauri
         run: cargo clippy --locked --all-targets --features tiny-model -- -D warnings
 
-  release:
-    needs: quality
+  # Release only when shipped code changed since the last release tag.
+  # Workflow, docs and other repo-only edits pass CI without a new version.
+  # A manual run (workflow_dispatch) always releases.
+  changes:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.diff.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          SERIES: "0.0"
+          EVENT: ${{ github.event_name }}
+        run: |
+          git fetch --force --tags --quiet origin
+          LAST=$(git tag --list "v${SERIES}.*" | sed -nE "s/^v${SERIES//./\\.}\.([0-9]+)$/\1/p" | sort -n | tail -1)
+          if [[ "$EVENT" == workflow_dispatch || -z "$LAST" ]]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "v${SERIES}.$LAST" HEAD -- app crates; then
+            echo "No app/ or crates/ changes since v${SERIES}.$LAST; skipping release."
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  release:
+    needs: [quality, changes]
+    if: needs.changes.outputs.app == 'true'
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:

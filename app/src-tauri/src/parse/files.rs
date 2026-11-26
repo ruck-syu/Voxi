@@ -22,6 +22,12 @@ fn transfer(source: &str, target: &str, copy: bool) -> Option<Result<Intent, Ref
 }
 
 fn destination(text: &str, location: Option<(&str, &str)>) -> Option<String> {
+    if let Some((child, parent)) = location {
+        if bad_destination(child) || bad_destination(parent) {
+            return None;
+        }
+        return Some(format!("{}/{}", clean_name(parent), clean_name(child)));
+    }
     if bad_destination(text) {
         return None;
     }
@@ -43,12 +49,6 @@ fn destination(text: &str, location: Option<(&str, &str)>) -> Option<String> {
         {
             return None;
         }
-    }
-    if let Some((child, parent)) = location {
-        if bad_destination(child) || bad_destination(parent) {
-            return None;
-        }
-        return Some(format!("{}/{}", clean_name(parent), clean_name(child)));
     }
     Some(name)
 }

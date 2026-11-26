@@ -78,9 +78,6 @@ pub fn patterns() -> Vec<Pattern> {
                     Ok(location) => location,
                     Err(reason) => return Some(Err(reason)),
                 };
-                if bad_destination(&raw) {
-                    return None;
-                }
                 let (folder, parent) = match location {
                     Some((folder, parent)) => {
                         if bad_destination(folder) || bad_destination(parent) {
@@ -88,7 +85,8 @@ pub fn patterns() -> Vec<Pattern> {
                         }
                         (clean_name(folder), Some(clean_name(parent)))
                     }
-                    None => (clean_name(&raw), None),
+                    None if !bad_destination(&raw) => (clean_name(&raw), None),
+                    None => return None,
                 };
                 let by = cap(c, 2)?.to_ascii_lowercase();
                 let include_subfolders = c[0].to_ascii_lowercase().contains("subfolders")

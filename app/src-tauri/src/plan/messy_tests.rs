@@ -89,6 +89,34 @@ fn malformed_folder_locations_suggest_quoting_or_a_single_path() {
 }
 
 #[test]
+fn quoted_folder_location_parts_keep_command_words() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let from = roots.home.join("Documents/invoice.pdf");
+    for folder in ["Receipts by Month", "My Stuff Here", "Q1 2nd Half", "Items called Misc"] {
+        let dest = roots.downloads().join(folder);
+        fs::create_dir(&dest).unwrap();
+        let command = format!(r#"move invoice.pdf to "{folder}" in Downloads"#);
+        let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+        assert_eq!(actions, [Action::Move { from: from.clone(), to: dest.join("invoice.pdf") }]);
+    }
+    let quoted_parent = roots.downloads().join("Items called Misc/Receipts");
+    fs::create_dir(&quoted_parent).unwrap();
+    let Planned::Steps { actions, .. } = complete_plan(&fixture, r#"copy invoice.pdf to Receipts in "Items called Misc""#, ENTRY_LIMIT)
+    else {
+        panic!("expected a copy plan for the quoted parent")
+    };
+    assert_eq!(actions, [Action::Copy { from, to: quoted_parent.join("invoice.pdf") }]);
+
+    let path = roots.downloads().join("Receipts by Month/report.pdf");
+    fs::write(&path, b"pdf").unwrap();
+    let Planned::Steps { actions, .. } = complete_plan(&fixture, r#"sort "Receipts by Month" in Downloads by type"#, ENTRY_LIMIT) else {
+        panic!("expected a sort plan for the quoted child")
+    };
+    assert!(matches!(actions.last(), Some(Action::Move { from, to }) if *from == path && to.starts_with(path.parent().unwrap())));
+}
+
+#[test]
 fn demo_move_resolves_destination_in_named_parent() {
     demo_move_to_receipts("move these to Receipts in Voxi Demo");
 }

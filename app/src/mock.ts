@@ -6,6 +6,8 @@ let settings: Settings = {
   hotkey: "Control+Alt+Space", extraFolders: [], excludedFolders: [], startAtLogin: false, showMenuBarIcon: true,
   // ?welcome previews the first-run page.
   onboarded: !new URLSearchParams(location.search).has("welcome"),
+  // ?examples previews the example commands a new user sees.
+  ranFirstCommand: !new URLSearchParams(location.search).has("examples"),
   shortcuts: [{ phrase: "run my usuals", commands: ["move screenshots from today to Screenshots", "delete installers from Downloads"] }],
   nicknames: [{ name: "dev", path: "~/Documents/Dev" }],
 };
@@ -184,6 +186,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
       if (args.id !== activePlan) throw { message: "That preview expired. Press Enter to plan it again.", previewKept: false };
       activePlan = null;
       if (!recoveryReviewed && mockScenario?.startsWith("recovery")) throw new Error("Open Settings → Scheduled, check the files, then choose Mark as reviewed.");
+      settings = { ...settings, ranFirstCommand: true };
       if (pendingSchedule) {
         const { runNow, total = 3, intervalMs } = pendingSchedule;
         if (runNow) pendingSchedule.due = new Date(Date.now() + intervalMs!).toISOString();

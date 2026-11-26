@@ -431,6 +431,9 @@ pub struct Settings {
     /// Whether Voxi shows its icon in the menu bar. With it hidden, the
     /// hotkey opens Voxi, and opening the app again shows Settings.
     pub show_menu_bar_icon: bool,
+    /// Set after the first command runs. Until then the command box cycles
+    /// example commands; afterwards it shows plain placeholder text.
+    pub ran_first_command: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -563,6 +566,7 @@ impl Default for Settings {
             shortcuts: Vec::new(),
             nicknames: Vec::new(),
             show_menu_bar_icon: true,
+            ran_first_command: false,
         }
     }
 }

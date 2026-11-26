@@ -2522,3 +2522,18 @@ fn daily_create_then_delete_contents_creates_now_and_empties_later() {
     assert!(!old.exists());
     assert!(f.home.join("Downloads/test1").is_dir());
 }
+#[test]
+fn the_first_successful_command_stops_the_example_placeholder() {
+    let f = Fixture::new();
+    f.write("Downloads/a.pdf");
+    assert!(!f.state.settings.lock().unwrap().ran_first_command);
+    let Outcome::Plan { id, .. } = f.command("move PDFs from Downloads to Documents") else { panic!("expected a plan") };
+    // A refused confirm is not a first command.
+    assert!(confirm_reporting(&f.state, id, &[99]).is_err());
+    assert!(!f.state.settings.lock().unwrap().ran_first_command);
+    assert!(confirm_reporting(&f.state, id, &[]).unwrap().error.is_none());
+    assert!(f.state.settings.lock().unwrap().ran_first_command);
+    // Saved, so it survives a restart.
+    let (saved, _) = Settings::load_with_warning(&f.state.settings_path);
+    assert!(saved.ran_first_command);
+}

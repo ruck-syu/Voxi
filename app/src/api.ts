@@ -66,7 +66,7 @@ export type Shortcut = { phrase: string; commands: string[] };
 export type Nickname = { name: string; path: string };
 
 /** `excludedFolders` sit inside allowed ones; the deepest matching folder wins. */
-export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders: string[]; startAtLogin: boolean; showMenuBarIcon: boolean; onboarded: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
+export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders: string[]; startAtLogin: boolean; showMenuBarIcon: boolean; onboarded: boolean; ranFirstCommand: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
 /** "This was wrong" reports, saved only on this Mac. */
 export type Reports = { count: number; path: string };
 export type ResultScope = { count: number; visible: number; label: string };

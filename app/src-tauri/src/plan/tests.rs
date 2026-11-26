@@ -909,7 +909,7 @@ fn cross_root_spotlight_rescues_partial_name_lookup_and_requires_confirmation() 
     };
     assert!(matches!(plan(&choices, false), Err(Stop::SearchIncomplete(message)) if message.contains("nested too deeply")));
     assert!(
-        matches!(plan(&choices, true), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note) })
+        matches!(plan(&choices, true), Err(Stop::Ambiguous { name, candidates, reason: AmbiguityReason::IncompleteSearch, note: Some(note), .. })
         if name == "report.pdf" && candidates == vec![candidate.clone()]
             && note.contains("~/Documents/Deep") && note.contains("Settings → Folders"))
     );

@@ -240,6 +240,30 @@ fn scoped_sort_rejects_a_choice_outside_its_parent() {
 }
 
 #[test]
+fn scoped_folder_choices_are_not_offered_as_nicknames() {
+    use crate::{Outcome, result_context_tests::Fixture};
+
+    let fixture = Fixture::new();
+    fixture.write("Downloads/Work/First/Voxi Demo/one.pdf");
+    fixture.write("Downloads/Work/Second/Voxi Demo/two.pdf");
+    fixture.write("Downloads/First/Voxi Demo/one.pdf");
+    fixture.write("Downloads/Second/Voxi Demo/two.pdf");
+    for (command, label) in [
+        ("sort Voxi Demo in Downloads by type", "Voxi Demo in Downloads"),
+        ("sort Voxi Demo in Downloads/Work by type", "Voxi Demo in Downloads/Work"),
+    ] {
+        assert!(matches!(
+            fixture.command(command),
+            Outcome::Ambiguous { name, remember_folder: false, candidates, .. } if name == label && candidates.len() >= 2
+        ));
+    }
+    assert!(matches!(
+        fixture.command("sort Voxi Demo by type"),
+        Outcome::Ambiguous { name, remember_folder: true, .. } if name == "Voxi Demo"
+    ));
+}
+
+#[test]
 fn demo_move_resolves_destination_in_named_parent() {
     demo_move_to_receipts("move these to Receipts in Voxi Demo");
 }

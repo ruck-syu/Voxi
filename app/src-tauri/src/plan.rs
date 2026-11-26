@@ -29,6 +29,7 @@ pub enum Stop {
         candidates: Vec<PathBuf>,
         reason: AmbiguityReason,
         note: Option<String>,
+        remember_folder: bool,
     },
     MissingTransferItem {
         #[cfg_attr(not(feature = "tiny-model"), expect(dead_code))]
@@ -52,7 +53,7 @@ fn ambiguous(name: &str, candidates: Vec<PathBuf>, incomplete: bool) -> Stop {
     } else {
         AmbiguityReason::MultipleMatches
     };
-    Stop::Ambiguous { name: name.into(), candidates, reason, note: None }
+    Stop::Ambiguous { name: name.into(), candidates, reason, note: None, remember_folder: true }
 }
 
 enum LocatedFolderUse {
@@ -560,8 +561,13 @@ impl<'a> Planner<'a> {
         match (candidates.len(), incomplete) {
             (0, _) => scoped,
             (1, None) => self.pick_exact(&label, candidates),
-            (_, None) => Err(ambiguous(&label, candidates, false)),
-            (_, Some(note)) => Err(Stop::Ambiguous { name: label, candidates, reason: AmbiguityReason::IncompleteSearch, note }),
+            (_, incomplete) => Err(Stop::Ambiguous {
+                name: label,
+                candidates,
+                reason: if incomplete.is_some() { AmbiguityReason::IncompleteSearch } else { AmbiguityReason::MultipleMatches },
+                note: incomplete.flatten(),
+                remember_folder: false,
+            }),
         }
     }
 
@@ -740,7 +746,7 @@ impl<'a> Planner<'a> {
         if candidates.is_empty() {
             return Err(Stop::SearchIncomplete(note.unwrap_or_else(|| "Search incomplete. Try a smaller folder.".into())));
         }
-        Err(Stop::Ambiguous { name: name.into(), candidates, reason: AmbiguityReason::IncompleteSearch, note })
+        Err(Stop::Ambiguous { name: name.into(), candidates, reason: AmbiguityReason::IncompleteSearch, note, remember_folder: true })
     }
 
     fn name_candidates(name: &str, paths: Vec<PathBuf>, kind: search::LookupKind) -> Vec<PathBuf> {

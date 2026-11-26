@@ -1060,10 +1060,10 @@ fn plan_input_routed(
             | Stop::SearchIncomplete(message)
             | Stop::NothingToChange(message),
         ) => Outcome::Problem { message },
-        Err(Stop::Ambiguous { name, candidates, reason, note }) => Outcome::Ambiguous {
+        Err(Stop::Ambiguous { name, candidates, reason, note, remember_folder }) => Outcome::Ambiguous {
             note,
             name,
-            folders: !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
+            remember_folder: remember_folder && !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
             reason,
         },

@@ -550,12 +550,11 @@ pub enum Outcome {
         repeats: Option<String>,
     },
     /// A name needs a choice before the command can be planned again.
-    /// `folders` is true when every candidate is a folder, so the pick can be
-    /// remembered as the user's name for it.
+    /// `remember_folder` is true when the pick can be saved as a folder nickname.
     Ambiguous {
         name: String,
         candidates: Vec<String>,
-        folders: bool,
+        remember_folder: bool,
         reason: AmbiguityReason,
         #[serde(skip_serializing_if = "Option::is_none")]
         note: Option<String>,

@@ -1063,7 +1063,7 @@ fn plan_input_routed(
         Err(Stop::Ambiguous { name, candidates, reason, note, remember_folder }) => Outcome::Ambiguous {
             note,
             name,
-            remember_folder: remember_folder && !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
+            folders: remember_folder && !candidates.is_empty() && candidates.iter().all(|p| p.is_dir()),
             candidates: candidates.iter().map(|p| p.to_string_lossy().into_owned()).collect(),
             reason,
         },

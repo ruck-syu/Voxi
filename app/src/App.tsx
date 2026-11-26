@@ -23,7 +23,7 @@ type Phase =
 
 /** Waiting for the answer to "which one?": the command being planned and
  *  the picks made so far (one command can need several). */
-type Asking = { command: string; choices: Record<string, string>; name: string; candidates: string[]; rememberFolder: boolean; replaces?: number };
+type Asking = { command: string; choices: Record<string, string>; name: string; candidates: string[]; folders: boolean; replaces?: number };
 
 /** Something Voxi can learn from what just happened, offered once. */
 type Offer =
@@ -482,7 +482,7 @@ function CommandView({
         if (folderPick && (outcome.status === "plan" || outcome.status === "info")) setOffer({ k: "folder", ...folderPick });
         if (outcome.status === "ambiguous") {
           // The answer will be dictated too.
-          setAsking({ command, choices: picked, name: outcome.name, candidates: outcome.candidates, rememberFolder: outcome.rememberFolder, replaces });
+          setAsking({ command, choices: picked, name: outcome.name, candidates: outcome.candidates, folders: outcome.folders, replaces });
         } else {
           setAsking(null);
         }
@@ -504,7 +504,7 @@ function CommandView({
       if (!asking) return;
       const path = asking.candidates[index];
       if (!path) return;
-      if (asking.rememberFolder) pickedFolder.current = { name: asking.name, path };
+      if (asking.folders) pickedFolder.current = { name: asking.name, path };
       submit(asking.command, { ...asking.choices, [asking.name]: path }, undefined, asking.replaces);
     },
     [asking, submit],

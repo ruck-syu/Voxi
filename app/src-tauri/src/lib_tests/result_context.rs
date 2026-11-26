@@ -2009,12 +2009,12 @@ fn scoped_folder_choices_are_not_offered_as_nicknames() {
     ] {
         assert!(matches!(
             fixture.command(command),
-            Outcome::Ambiguous { name, remember_folder: false, candidates, .. } if name == label && candidates.len() >= 2
+            Outcome::Ambiguous { name, folders: false, candidates, .. } if name == label && candidates.len() >= 2
         ));
     }
     assert!(matches!(
         fixture.command("sort Voxi Demo by type"),
-        Outcome::Ambiguous { name, remember_folder: true, .. } if name == "Voxi Demo"
+        Outcome::Ambiguous { name, folders: true, .. } if name == "Voxi Demo"
     ));
 }
 

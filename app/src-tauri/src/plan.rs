@@ -417,7 +417,8 @@ impl<'a> Planner<'a> {
         } else if let Some(p) = self.roots.named(first) {
             p.clone()
         } else {
-            self.lookup_folder(first, first, &self.roots.search_roots(), create_in, read_only)?
+            let disk = self.search.isolated(self.search.remaining_time());
+            self.lookup_folder(first, first, &self.roots.search_roots(), create_in, read_only, &disk)?
         };
         let full = match rest {
             Some(r) => base.join(r),
@@ -431,18 +432,6 @@ impl<'a> Planner<'a> {
     }
 
     fn lookup_folder(
-        &self,
-        name: &str,
-        label: &str,
-        roots: &[PathBuf],
-        create_in: Option<&Path>,
-        read_only: bool,
-    ) -> Result<PathBuf, Stop> {
-        let disk = self.search.isolated(self.search.remaining_time());
-        self.lookup_folder_with_search(name, label, roots, create_in, read_only, &disk)
-    }
-
-    fn lookup_folder_with_search(
         &self,
         name: &str,
         label: &str,
@@ -501,7 +490,7 @@ impl<'a> Planner<'a> {
                 self.search.reuse_directory_reads();
                 // The optional global lookup must leave time for the explicit scope.
                 let probe = self.search.probe(self.search.remaining_time() / 4);
-                self.lookup_folder_with_search(name, &label, &self.roots.search_roots(), None, false, &probe)
+                self.lookup_folder(name, &label, &self.roots.search_roots(), None, false, &probe)
             }),
         };
         let root = self
@@ -509,7 +498,8 @@ impl<'a> Planner<'a> {
             .and_then(|path| if path.is_dir() { Ok(path) } else { problem(format!("Couldn't find a folder named “{parent}”.")) });
         let lookup_inside = |root: PathBuf| {
             if create_in.is_none() {
-                return self.lookup_folder(folder, &label, &[root], None, false);
+                let disk = self.search.isolated(self.search.remaining_time());
+                return self.lookup_folder(folder, &label, &[root], None, false, &disk);
             }
             let path = root.join(folder);
             self.check(&path)?;

@@ -264,6 +264,15 @@ fn scoped_folder_choices_are_not_offered_as_nicknames() {
 }
 
 #[test]
+fn archive_output_requires_a_filename_after_the_final_slash() {
+    let fixture = MessyMac::new();
+    assert!(matches!(
+        fixture.plan_command("compress all the screenshots into an archive named shots.zip../", ENTRY_LIMIT),
+        Err(Stop::Problem(message)) if message == "Name the output file after the final “/”."
+    ));
+}
+
+#[test]
 fn demo_move_resolves_destination_in_named_parent() {
     demo_move_to_receipts("move these to Receipts in Voxi Demo");
 }

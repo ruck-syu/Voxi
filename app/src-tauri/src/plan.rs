@@ -1567,6 +1567,9 @@ impl<'a> Planner<'a> {
 
     /// Where a new output file goes: a bare name lands next to the inputs.
     fn output_path(&mut self, name: &str, next_to: &Path, ext: &str) -> Result<(PathBuf, Option<String>), Stop> {
+        if name.ends_with('/') {
+            return problem("Name the output file after the final “/”.");
+        }
         let name = if split_name(name).1.is_some_and(|e| e.eq_ignore_ascii_case(ext)) { name.to_string() } else { format!("{name}.{ext}") };
         let (dir, file) = match name.rsplit_once('/') {
             Some((d, f)) => (self.resolve_folder(d, Some(next_to))?, f.to_string()),

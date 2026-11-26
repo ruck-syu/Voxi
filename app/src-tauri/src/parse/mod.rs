@@ -47,9 +47,11 @@ use std::sync::LazyLock;
 /// and the expansion at eight commands before parsing any command (T5).
 pub const MAX_COMMAND_BYTES: usize = 16_384;
 
+type Build = dyn Fn(&Captures) -> Option<Result<Intent, RefusalReason>> + Send + Sync;
+
 pub struct Pattern {
     pub re: Regex,
-    build: Box<dyn Fn(&Captures) -> Option<Result<Intent, RefusalReason>> + Send + Sync>,
+    build: Box<Build>,
 }
 
 pub fn pat(name: &'static str, re: &str, build: fn(&Captures) -> Option<Intent>) -> Pattern {

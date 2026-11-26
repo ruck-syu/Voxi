@@ -899,7 +899,7 @@ fn plan_input_routed(
     // A saved shortcut ("run my usuals") wins over the built-in commands.
     enum Work {
         Shortcut(String, Vec<(String, model::Intent)>),
-        Command(model::Intent),
+        Command(Box<model::Intent>),
         UndoEntry(u64),
     }
     let mut use_scope = false;
@@ -910,7 +910,7 @@ fn plan_input_routed(
             match parsed {
                 // A shortcut holding one read-only command runs it as if typed.
                 Ok(mut commands) if commands.len() == 1 && settings::shortcut_read_only(&commands[0].1) => {
-                    Work::Command(commands.remove(0).1)
+                    Work::Command(Box::new(commands.remove(0).1))
                 }
                 Ok(commands) => Work::Shortcut(s.phrase, commands),
                 Err(bad) => {
@@ -920,11 +920,13 @@ fn plan_input_routed(
                 }
             }
         }
-        (None, None) if model_intent.is_some() => Work::Command(model_intent.expect("is_some match guard establishes model intent")),
+        (None, None) if model_intent.is_some() => {
+            Work::Command(Box::new(model_intent.expect("is_some match guard establishes model intent")))
+        }
         (None, None) => match scope::prepare(&text, previous_scope.as_ref()) {
             Ok((intent, scoped)) => {
                 use_scope = scoped;
-                Work::Command(intent)
+                Work::Command(Box::new(intent))
             }
             Err(scope::PrepareError::NotUnderstood(raw)) => {
                 #[cfg(feature = "tiny-model")]
@@ -937,7 +939,7 @@ fn plan_input_routed(
                 #[cfg(not(feature = "tiny-model"))]
                 let recovered: Option<model::Intent> = None;
                 match recovered {
-                    Some(intent) => Work::Command(intent),
+                    Some(intent) => Work::Command(Box::new(intent)),
                     None => return Outcome::NotUnderstood { text: raw },
                 }
             }
@@ -960,7 +962,7 @@ fn plan_input_routed(
         }
         (context.generation, if use_scope { context.current.clone() } else { None })
     };
-    let listing = matches!(&work, Work::Command(model::Intent::List { .. }));
+    let listing = matches!(&work, Work::Command(intent) if matches!(**intent, model::Intent::List { .. }));
     let roots =
         checked_state!(state.roots.read(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }).clone();
     let choices: HashMap<String, PathBuf> = choices.into_iter().map(|(k, v)| (k, PathBuf::from(v))).collect();
@@ -1950,7 +1952,7 @@ fn write_settings(app: &AppHandle, state: &AppState, mut settings: Settings) -> 
     // The list's notice goes with it, including a pre-setup "Finish setting up" one.
     *state.selection_notice.lock().map_err(|_| "Results unavailable. Restart Voxi.")? = None;
     settings.hotkey = installed.clone();
-    show_menu_bar_icon(&app, settings.show_menu_bar_icon, !installed.is_empty());
+    show_menu_bar_icon(app, settings.show_menu_bar_icon, !installed.is_empty());
     Ok(settings)
 }
 

@@ -1608,10 +1608,17 @@ impl<'a> Planner<'a> {
         if name.ends_with('/') {
             return problem("Name the output file after the final “/”.");
         }
-        let name = if split_name(name).1.is_some_and(|e| e.eq_ignore_ascii_case(ext)) { name.to_string() } else { format!("{name}.{ext}") };
-        let (dir, file) = match name.rsplit_once('/') {
-            Some((d, f)) => (self.resolve_folder(d, Some(next_to))?, f.to_string()),
-            None => (next_to.to_path_buf(), name),
+        let (parent, file) = name.rsplit_once('/').map_or((None, name), |(parent, file)| (Some(parent), file));
+        if file.trim().is_empty() {
+            return problem("Name the output file.");
+        }
+        if file.starts_with('.') {
+            return problem("Choose an output filename that doesn't start with “.”.");
+        }
+        let file = if split_name(file).1.is_some_and(|e| e.eq_ignore_ascii_case(ext)) { file.to_string() } else { format!("{file}.{ext}") };
+        let dir = match parent {
+            Some(dir) => self.resolve_folder(dir, Some(next_to))?,
+            None => next_to.to_path_buf(),
         };
         self.check(&dir.join(&file))?;
         self.ensure_dir(&dir)?;

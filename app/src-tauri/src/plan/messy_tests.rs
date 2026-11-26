@@ -377,6 +377,55 @@ fn archive_output_requires_a_filename_after_the_final_slash() {
 }
 
 #[test]
+fn archive_output_rejects_hidden_and_blank_filenames() {
+    let fixture = MessyMac::new();
+    for (output, expected) in [
+        (r#""Downloads/.zip""#, "Choose an output filename that doesn't start with “.”."),
+        ("Downloads/.", "Name the output file after the final “/”."),
+        ("Downloads/..", "Name the output file after the final “/”."),
+        (r#""Downloads/.""#, "Choose an output filename that doesn't start with “.”."),
+        (r#""Downloads/..""#, "Choose an output filename that doesn't start with “.”."),
+        (r#""Downloads/ ""#, "Name the output file."),
+        (r#""""#, "Name the output file."),
+    ] {
+        let command = format!("zip report.pdf as {output}");
+        let result = fixture.plan_command(&command, ENTRY_LIMIT);
+        assert!(matches!(&result, Err(Stop::Problem(message)) if message == expected), "{command}: {:?}", result.err());
+    }
+}
+
+#[test]
+fn archive_output_adds_the_extension_to_the_filename_only() {
+    let fixture = MessyMac::new();
+    for (name, relative) in [
+        ("shots", "Desktop/shots.zip"),
+        ("Downloads/shots", "Downloads/shots.zip"),
+        ("Downloads/shots.zip", "Downloads/shots.zip"),
+        ("foo.zip/bar", "Desktop/foo.zip/bar.zip"),
+    ] {
+        let command = format!("zip report.pdf as {name}");
+        let Planned::Steps { actions, .. } = complete_plan(&fixture, &command, ENTRY_LIMIT) else { panic!("{command}") };
+        assert!(matches!(actions.last(), Some(Action::Zip { output, .. }) if *output == fixture.roots().home.join(relative)), "{command}");
+    }
+}
+
+#[test]
+fn merge_output_accepts_a_pdf_filename_with_spaces() {
+    let fixture = MessyMac::new();
+    let receipts = fixture.roots().downloads().join("Receipts");
+    fs::create_dir(&receipts).unwrap();
+    for name in ["first.pdf", "second.pdf"] {
+        fs::write(receipts.join(name), b"pdf").unwrap();
+    }
+    let command = "merge PDFs in Downloads/Receipts into March receipts.pdf";
+    let Planned::Steps { actions, .. } = complete_plan(&fixture, command, ENTRY_LIMIT) else { panic!("{command}") };
+    assert!(
+        matches!(actions.as_slice(), [Action::MergePdf { output, .. }] if *output == receipts.join("March receipts.pdf")),
+        "{actions:?}"
+    );
+}
+
+#[test]
 fn demo_move_resolves_destination_in_named_parent() {
     demo_move_to_receipts("move these to Receipts in Voxi Demo");
 }

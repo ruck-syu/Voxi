@@ -502,14 +502,21 @@ impl<'a> Planner<'a> {
             return problem(format!("“{folder}” isn't a valid folder name."));
         }
         let label = literal.map(str::to_owned).unwrap_or_else(|| format!("{folder} in {parent}"));
-        if literal.is_some() {
-            self.search.reuse_directory_reads();
-        }
-        // The optional global lookup must leave time for the explicit scope.
-        let literal_lookup = literal.map(|name| {
-            let probe = self.search.probe(self.search.remaining_time() / 4);
-            self.lookup_folder_with_search(name, &label, &self.roots.search_roots(), None, false, &probe)
-        });
+        let literal_lookup = match literal.and_then(|name| self.roots.named(name)) {
+            Some(path) => {
+                self.check(path)?;
+                if !path.is_dir() {
+                    return problem(format!("Couldn't find a folder named “{label}”."));
+                }
+                Some(Ok(path.clone()))
+            }
+            None => literal.map(|name| {
+                self.search.reuse_directory_reads();
+                // The optional global lookup must leave time for the explicit scope.
+                let probe = self.search.probe(self.search.remaining_time() / 4);
+                self.lookup_folder_with_search(name, &label, &self.roots.search_roots(), None, false, &probe)
+            }),
+        };
         let root = self
             .resolve_folder(parent, None)
             .and_then(|path| if path.is_dir() { Ok(path) } else { problem(format!("Couldn't find a folder named “{parent}”.")) });

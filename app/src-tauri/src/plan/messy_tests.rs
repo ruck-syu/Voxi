@@ -193,6 +193,34 @@ fn unquoted_folder_location_uses_an_existing_literal_name() {
 }
 
 #[test]
+fn literal_located_destination_uses_a_configured_nickname() {
+    let mut fixture = MessyMac::new();
+    let wip = fixture.roots().home.join("Documents/WIP");
+    fs::create_dir(&wip).unwrap();
+    fs::create_dir(fixture.roots().downloads().join("Progress")).unwrap();
+    fixture.roots = fixture.roots.with_nicknames(vec![("work in progress".into(), wip.clone())]);
+
+    let Planned::Steps { actions, .. } = complete_plan(&fixture, "move report.pdf to work in progress", ENTRY_LIMIT) else {
+        panic!("expected a move to the nicknamed folder")
+    };
+    assert_eq!(actions, [Action::Move { from: fixture.roots().desktop().join("report.pdf"), to: wip.join("report.pdf") }]);
+}
+
+#[test]
+fn literal_located_destination_uses_an_extra_root() {
+    let mut fixture = MessyMac::new();
+    let home = &fixture.roots().home;
+    let extra = home.join("Projects/Things in Progress");
+    fs::create_dir_all(&extra).unwrap();
+    fixture.roots = Roots::new(home, None, std::slice::from_ref(&extra)).with_exclusions(&[home.join("Documents/Private")]);
+
+    let Planned::Steps { actions, .. } = complete_plan(&fixture, "move report.pdf to Things in Progress", ENTRY_LIMIT) else {
+        panic!("expected a move to the extra root")
+    };
+    assert_eq!(actions, [Action::Move { from: fixture.roots().desktop().join("report.pdf"), to: extra.join("report.pdf") }]);
+}
+
+#[test]
 fn transfer_with_a_named_parent_creates_only_the_leaf() {
     let fixture = MessyMac::new();
     let roots = fixture.roots();

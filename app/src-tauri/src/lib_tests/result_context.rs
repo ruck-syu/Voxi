@@ -1306,7 +1306,7 @@ fn repeating_shortcut_checks_the_approved_snapshot_before_each_run() {
         let store = scheduler::Store::load(path.clone());
         assert_eq!(
             store.jobs[0].repeat.as_ref().unwrap().approved_source,
-            Some(scheduler::RuleSource::Shortcut { phrase: phrase.into(), commands })
+            Some(scheduler::RuleSource::Shortcut { phrase: phrase.into(), commands, expanded_commands: None })
         );
 
         let make_due = || f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::minutes(2);
@@ -1687,6 +1687,75 @@ fn stored_recurring_model_intent_is_never_replayed_unattended() {
     let jobs = f.state.schedules.lock().unwrap();
     assert!(jobs.jobs[1].summary.contains("Skipped: Voxi doesn't understand"), "{}", jobs.jobs[1].summary);
     assert_eq!(jobs.jobs[1].series, scheduler::SeriesState::Active);
+}
+
+#[test]
+fn scheduled_vocabulary_commands_keep_the_expansion_approved_in_the_preview() {
+    const SPOKEN: &str = "relay report.pdf toward Desktop";
+    const ORIGIN: &str = r#"{
+        "schema":1,"version":10,"minAppVersion":"0.0.0","rules":[{
+            "id":"relay","intent":"copy","pattern":"^relay (.+) toward (.+)$","replace":"copy $1 to $2",
+            "examples":[{"input":"relay report.pdf toward Desktop","expect":"copy report.pdf to Desktop"}]
+        }]
+    }"#;
+    const UPDATE: &str = r#"{
+        "schema":1,"version":11,"minAppVersion":"0.0.0","rules":[{
+            "id":"relay","intent":"move","pattern":"^relay (.+) toward (.+)$","replace":"move $1 to $2",
+            "examples":[{"input":"relay report.pdf toward Desktop","expect":"move report.pdf to Desktop"}]
+        }]
+    }"#;
+    for (text, shortcut, recurring) in [
+        ("relay report.pdf toward Desktop every day at 9 pm", None, true),
+        ("run archive routine every day at 9 pm", Some(false), true),
+        ("run archive routine every day at 9 pm", Some(true), true),
+        ("relay report.pdf toward Desktop in 5 minutes", None, false),
+    ] {
+        let f = Fixture::new();
+        let report = f.write("Downloads/report.pdf");
+        vocab::with_test_pack(ORIGIN, || {
+            if let Some(save) = shortcut {
+                let mut settings = f.state.settings.lock().unwrap();
+                settings.shortcuts.push(settings::Shortcut { phrase: "run archive routine".into(), commands: vec![SPOKEN.into()] });
+                if save {
+                    settings.validate_shortcuts().unwrap();
+                    assert_eq!(settings.shortcuts[0].commands, ["copy report.pdf to Desktop"]);
+                }
+            }
+            let outcome = f.command(text);
+            let Outcome::Plan { id, .. } = outcome else { panic!("{outcome:?}") };
+            assert!(matches!(f.actions().as_slice(), [Action::Copy { .. }]));
+            // Swap before approval as well as execution. The stored job must
+            // keep the expansion from the preview that the user approves.
+            vocab::with_test_pack(UPDATE, || {
+                assert!(matches!(parse::parse_builtin(SPOKEN), Err(parse::ParseFailure::GrammarMiss)));
+                assert!(matches!(parse::parse(SPOKEN), Ok(model::Intent::Move { .. })));
+                assert_eq!(confirm_input(&f.state, id).unwrap().done, 0);
+                let store = scheduler::Store::load(f.home.join("schedules.json"));
+                if recurring && shortcut.is_none() {
+                    assert_eq!(store.jobs[0].repeat.as_ref().unwrap().command, "copy report.pdf to Desktop");
+                }
+                f.state.schedules.lock().unwrap().jobs[0].due = chrono::Local::now() - chrono::Duration::seconds(1);
+                run_due_tasks(&f.state).unwrap();
+                assert!(report.exists(), "{text}");
+                assert!(f.home.join("Desktop/report.pdf").exists(), "{text}");
+            });
+        });
+    }
+    let legacy = Fixture::new();
+    let report = legacy.write("Downloads/report.pdf");
+    let (_, when) = scheduler::extract_schedule(&format!("{SPOKEN} every day at 9 pm"), chrono::Local::now()).unwrap();
+    let rule = when.unwrap().rule.unwrap();
+    legacy
+        .state
+        .schedules
+        .lock()
+        .unwrap()
+        .add(scheduler::Job::recurring_later(SPOKEN.into(), chrono::Local::now() - chrono::Duration::seconds(1), rule))
+        .unwrap();
+    vocab::with_test_pack(UPDATE, || run_due_tasks(&legacy.state).unwrap());
+    assert!(report.exists());
+    assert!(!legacy.home.join("Desktop/report.pdf").exists());
+    assert!(legacy.state.schedules.lock().unwrap().jobs[0].summary.contains("Skipped: Voxi doesn't understand"));
 }
 
 #[test]

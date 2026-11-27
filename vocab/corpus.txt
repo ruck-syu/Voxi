@@ -1,5 +1,8 @@
 # Wording covered by the pack. Keep these cases when updating its rules.
 make one PDF from images in Scans named receipts => {"intent":"images_to_pdf","src":{"kind":"set","folder":"Scans","filter":{"type":"images","nameContains":"receipts"}}}
 break report.pdf into pages => {"intent":"split_pdf","src":{"kind":"item","name":"report.pdf"}}
-pull pages 2 to 5 out of report.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5}
 uncompress archive.zip into Downloads/archive => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"},"destination":"Downloads/archive"}
+BREAK "Quarterly Report.PDF" INTO PAGES => {"intent":"split_pdf","src":{"kind":"item","name":"Quarterly Report.PDF"}}
+relay PDFs older than 90 days from Scans to Desktop => !miss
+make one PDF from images in Pictures => {"intent":"images_to_pdf","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}}}
+uncompress archive.zip into Documents => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"},"destination":"Documents"}

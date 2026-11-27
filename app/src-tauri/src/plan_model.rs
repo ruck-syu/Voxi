@@ -218,7 +218,7 @@ fn destructive_miss(text: &str) -> bool {
 /// `text` is the user's original command; `classified` is the caller's single
 /// parse of the command base (the text with any trailing schedule removed),
 /// shared with the rule/intent paths so the same command isn't parsed again.
-pub fn eligible(text: &str, classified: &Result<Intent, parse::ParseFailure>) -> bool {
+pub fn eligible(text: &str, classified: Result<&Intent, parse::ParseFailure>) -> bool {
     match classified {
         // Destructive/outward GrammarMiss commands are too lossy for the schema.
         Err(parse::ParseFailure::GrammarMiss) => !destructive_miss(text),
@@ -875,7 +875,7 @@ mod tests {
     }
     fn eligible_text(text: &str) -> bool {
         let base = scheduler::extract_schedule(text, Local::now()).ok().map(|(base, _)| base);
-        eligible(text, &parse::parse_classified(base.as_deref().unwrap_or(text)))
+        eligible(text, parse::parse_classified(base.as_deref().unwrap_or(text)).as_ref().map_err(|failure| *failure))
     }
 
     #[test]

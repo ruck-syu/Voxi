@@ -224,7 +224,13 @@ const LEGACY_UNVERIFIED: &str =
 #[serde(rename_all = "camelCase")]
 pub enum RuleSource {
     Command,
-    Shortcut { phrase: String, commands: Vec<String> },
+    Shortcut {
+        phrase: String,
+        commands: Vec<String>,
+        // A vocabulary expansion used in the preview of an older saved shortcut.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expanded_commands: Option<Vec<String>>,
+    },
 }
 
 #[derive(Deserialize)]
@@ -306,7 +312,7 @@ fn reads_modified_date(intent: &crate::model::Intent) -> bool {
 impl Rule {
     pub fn check_approval(&self, settings: &crate::settings::Settings, command: &str) -> Result<(), String> {
         let commands = match &self.approved_source {
-            Some(RuleSource::Shortcut { commands, .. }) => commands.as_slice(),
+            Some(RuleSource::Shortcut { commands, expanded_commands, .. }) => expanded_commands.as_ref().unwrap_or(commands),
             Some(RuleSource::Command) => std::slice::from_ref(&self.command),
             // Legacy shortcut definitions may explain a changed date or scope rule,
             // but they can never be treated as approved execution inputs.
@@ -316,7 +322,7 @@ impl Rule {
             return Err(format!("Skipped: Voxi now reads “subfolders” differently. Review “{command}” to keep this task."));
         }
         if self.approved_version < 1
-            && commands.iter().any(|text| crate::parse::parse(text).is_ok_and(|intent| reads_modified_date(&intent)))
+            && commands.iter().any(|text| crate::parse::parse_builtin(text).is_ok_and(|intent| reads_modified_date(&intent)))
         {
             return Err(format!("Skipped: “modified” now means the date a file was last edited. Review “{command}” to keep this task."));
         }
@@ -336,7 +342,7 @@ impl Rule {
         }
         match &self.approved_source {
             Some(RuleSource::Command) => Ok(()),
-            Some(RuleSource::Shortcut { phrase, commands })
+            Some(RuleSource::Shortcut { phrase, commands, .. })
                 if settings.shortcuts.iter().any(|s| s.phrase == *phrase && s.commands == *commands) =>
             {
                 Ok(())

@@ -630,7 +630,7 @@ impl Settings {
             crate::parse::check_length(&s.phrase).map_err(|_| "That command is too long.".to_string())?;
             check_shortcut_commands(&s.commands)?;
             let phrase = s.phrase.trim().to_string();
-            let commands: Vec<String> = s.commands.iter().map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect();
+            let mut commands: Vec<String> = s.commands.iter().map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect();
             if phrase.is_empty() && commands.is_empty() {
                 continue;
             }
@@ -643,20 +643,25 @@ impl Settings {
             if shortcut_key(&phrase).is_empty() || !seen.insert(shortcut_key(&phrase)) {
                 return Err(format!("There is already a shortcut called “{phrase}”."));
             }
-            for c in &commands {
-                match crate::parse::parse(c) {
+            let multiple = commands.len() > 1;
+            for c in &mut commands {
+                match crate::parse::parse_resolved(c) {
                     Err(_) => return Err(format!("In “{phrase}”, Voxi doesn't understand “{c}”.")),
-                    Ok(Intent::RecentActions | Intent::Undo) => return Err(format!("In “{phrase}”, “{c}” can't be part of a shortcut.")),
+                    Ok((Intent::RecentActions | Intent::Undo, _)) => {
+                        return Err(format!("In “{phrase}”, “{c}” can't be part of a shortcut."));
+                    }
                     // A lone read-only command runs as if typed. Mixed with
                     // others it can't join the single preview a shortcut makes.
-                    Ok(ref intent) if shortcut_read_only(intent) && commands.len() > 1 => {
+                    Ok((ref intent, _)) if shortcut_read_only(intent) && multiple => {
                         return Err(format!(
                             "In “{phrase}”, “{c}” only shows information. A shortcut can show information with one command on its own, or hold commands that change files."
                         ));
                     }
-                    Ok(_) => {}
+                    Ok((_, Some(expansion))) => *c = expansion,
+                    Ok((_, None)) => {}
                 }
             }
+            check_shortcut_commands(&commands)?;
             kept.push(Shortcut { phrase, commands });
         }
         self.shortcuts = kept;

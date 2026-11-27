@@ -59,6 +59,43 @@ fn vocab_wordings_plan_existing_pdf_and_archive_actions() {
 }
 
 #[test]
+fn vocab_rejects_a_dropped_filter_before_planning_and_preserves_type_aliases() {
+    let fixture = MessyMac::new();
+    let scans = fixture.roots().downloads().join("Scans");
+    fs::create_dir(&scans).unwrap();
+    for name in ["receipt.jpg", "receipt.jpeg", "receipt.png", "report.pdf"] {
+        fs::write(scans.join(name), b"scan").unwrap();
+    }
+    crate::vocab::with_test_pack(
+        r#"{
+        "schema":1,"version":1,"minAppVersion":"0.0.0","rules":[{
+            "id":"unsafe-runtime-variant","intent":"copy",
+            "pattern":"^relay (?:from|pdfs older than 90 days from) (.+) to (.+)$",
+            "replace":"copy files from $1 to $2",
+            "examples":[{"input":"relay from Scans to Desktop","expect":"copy files from Scans to Desktop"}]
+        },{
+            "id":"copy-filtered","intent":"copy",
+            "pattern":"^duplicate (.+) toward (.+)$","replace":"copy $1 to $2",
+            "examples":[{"input":"duplicate JPGs in Scans toward Desktop","expect":"copy JPGs in Scans to Desktop"}]
+        }]
+    }"#,
+        || {
+            assert!(parse("relay PDFs older than 90 days from Scans to Desktop").is_err());
+            assert_eq!(action_plan(&fixture, "relay from Scans to Desktop", ENTRY_LIMIT).len(), 4);
+            let actions = action_plan(&fixture, "duplicate JPGs in Scans toward Desktop", ENTRY_LIMIT);
+            let names: std::collections::BTreeSet<_> = actions
+                .iter()
+                .map(|action| {
+                    let Action::Copy { from, .. } = action else { panic!("{action:?}") };
+                    from.file_name().unwrap().to_str().unwrap()
+                })
+                .collect();
+            assert_eq!(names, ["receipt.jpeg", "receipt.jpg"].into());
+        },
+    );
+}
+
+#[test]
 fn demo_sort_scopes_lookup_away_from_unreadable_pictures() {
     let fixture = MessyMac::new();
     let base = &fixture.roots().home;

@@ -1,10 +1,11 @@
 {
   "schema": 1,
-  "version": 1,
+  "version": 2,
   "minAppVersion": "0.0.0",
   "rules": [
     {
       "id": "make-one-pdf",
+      "intent": "images_to_pdf",
       "pattern": "^make 1 pdf from (.+)$",
       "replace": "make a pdf from $1",
       "examples": [
@@ -13,6 +14,7 @@
     },
     {
       "id": "break-pdf-into-pages",
+      "intent": "split_pdf",
       "pattern": "^break (.+?\\.pdf|\"[^\"]+\\.pdf\"|'[^']+\\.pdf') into pages$",
       "replace": "split $1 into pages",
       "examples": [
@@ -20,15 +22,8 @@
       ]
     },
     {
-      "id": "pull-pdf-pages",
-      "pattern": "^pull pages (\\d+) to (\\d+) out of (.+?\\.pdf|\"[^\"]+\\.pdf\"|'[^']+\\.pdf')$",
-      "replace": "extract pages $1 to $2 from $3",
-      "examples": [
-        { "input": "pull pages 2 to 5 out of report.pdf", "expect": "extract pages 2 to 5 from report.pdf" }
-      ]
-    },
-    {
       "id": "uncompress-zip",
+      "intent": "unzip",
       "pattern": "^uncompress (.+?\\.zip) into (.+)$",
       "replace": "unzip $1 into $2",
       "examples": [

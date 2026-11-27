@@ -146,13 +146,18 @@ pub fn parse(text: &str) -> Result<Intent, String> {
 /// The policy-aware parser entry point for fallback callers. `parse` retains
 /// the existing UI error contract; its string error must not authorize fallback.
 pub fn parse_classified(text: &str) -> Result<Intent, ParseFailure> {
-    parse_with_vocab(text, crate::vocab::rewrite)
+    parse_resolved(text).map(|(intent, _)| intent)
 }
 
-pub(super) fn parse_with_vocab(text: &str, rewrite: impl FnOnce(&str) -> Option<Intent>) -> Result<Intent, ParseFailure> {
+/// Returns the built-in text of a vocabulary expansion alongside its intent.
+/// Callers that persist commands must keep the expansion used for the preview.
+pub(crate) fn parse_resolved(text: &str) -> Result<(Intent, Option<String>), ParseFailure> {
     match parse_builtin(text) {
-        Err(ParseFailure::GrammarMiss) => rewrite(&phrase::normalize(text)).ok_or(ParseFailure::GrammarMiss),
-        result => result,
+        Err(ParseFailure::GrammarMiss) => {
+            let (intent, expansion) = crate::vocab::rewrite(&phrase::normalize(text)).ok_or(ParseFailure::GrammarMiss)?;
+            Ok((intent, Some(expansion)))
+        }
+        result => result.map(|intent| (intent, None)),
     }
 }
 

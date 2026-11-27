@@ -121,7 +121,7 @@ pub(crate) fn map_unquoted(s: &str, f: impl Fn(&str) -> String) -> String {
 }
 
 /// Quoted names are literal. Apostrophes inside words aren't quote delimiters.
-fn quoted_ranges(s: &str) -> Result<Vec<(usize, usize)>, ()> {
+pub(crate) fn quoted_ranges(s: &str) -> Result<Vec<(usize, usize)>, ()> {
     let mut ranges = Vec::new();
     let mut open = None;
     for (i, ch) in s.char_indices() {
@@ -398,7 +398,7 @@ static WHO_CLAUSE: LazyLock<Regex> = re!(
 );
 
 /// A month spelled out in full: "October", not "Oct" or "marketing".
-fn full_month(name: &str) -> Option<u32> {
+pub(crate) fn full_month(name: &str) -> Option<u32> {
     const MONTHS: [&str; 12] =
         ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
     let n = name.to_ascii_lowercase();
@@ -764,6 +764,15 @@ fn extract_filters(phrase: &str) -> Option<(Filter, String)> {
         }
     }
     filters_consistent(&f).then_some((f, s))
+}
+
+/// Read explicit vocabulary qualifiers independently of the command verb.
+pub(crate) fn vocab_qualifiers(text: &str) -> Option<(Filter, String)> {
+    let (text, subfolders) = super::split_subfolders(text);
+    let (mut filter, rest) = extract_filters(&text)?;
+    filter.include_subfolders = subfolders != super::Subfolders::None;
+    filter.only_subfolders = subfolders == super::Subfolders::Only;
+    Some((filter, rest))
 }
 
 /// True when unquoted `s` has a bare full month directly before a type word

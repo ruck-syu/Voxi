@@ -229,13 +229,22 @@ impl std::fmt::Display for PrepareError {
     }
 }
 
+#[cfg(test)]
 pub fn prepare(text: &str, snapshot: Option<&Snapshot>) -> Result<(Intent, bool), PrepareError> {
     crate::parse::check_length(text).map_err(|_| PrepareError::Problem("That command is too long.".to_string()))?;
-    if let Ok(intent @ Intent::Chain { .. }) = parse::parse(text) {
+    prepare_parsed(text, snapshot, parse::parse_classified(text).as_ref().map_err(|failure| *failure))
+}
+
+pub(crate) fn prepare_parsed(
+    text: &str,
+    snapshot: Option<&Snapshot>,
+    parsed: Result<&Intent, parse::ParseFailure>,
+) -> Result<(Intent, bool), PrepareError> {
+    if let Ok(intent @ Intent::Chain { .. }) = parsed {
         if snapshot.is_some() {
             return Err(PrepareError::Problem("Clear the previous result list before chaining commands.".into()));
         }
-        return Ok((intent, false));
+        return Ok((intent.clone(), false));
     }
     if let Some(snapshot) = snapshot
         && let Some(intent) = parse_followup(text, snapshot).map_err(PrepareError::Problem)?
@@ -243,7 +252,7 @@ pub fn prepare(text: &str, snapshot: Option<&Snapshot>) -> Result<(Intent, bool)
         return Ok((intent, true));
     }
     // Same split as `parse::parse`, kept as a type instead of an echoed string.
-    let intent = parse::parse_classified(text).map_err(|failure| match failure.message() {
+    let intent = parsed.map_err(|failure| match failure.message() {
         Some(message) => PrepareError::Problem(message.into()),
         None => PrepareError::NotUnderstood(text.trim().to_string()),
     })?;
@@ -254,7 +263,7 @@ pub fn prepare(text: &str, snapshot: Option<&Snapshot>) -> Result<(Intent, bool)
         }
         _ => false,
     });
-    Ok((intent, scoped))
+    Ok((intent.clone(), scoped))
 }
 
 #[cfg(test)]

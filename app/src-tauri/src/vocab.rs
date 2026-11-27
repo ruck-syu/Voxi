@@ -1,7 +1,7 @@
 //! Signed aliases for existing parser commands. Only grammar misses reach this
 //! module, and every expanded command goes back through the built-in parser.
 use crate::{
-    model::{Destination, Intent, Source},
+    model::Intent,
     parse::{self, ParseFailure, phrase},
     settings::{
         atomic_write,
@@ -10,6 +10,7 @@ use crate::{
 };
 use minisign_verify::{PublicKey, Signature};
 use regex::{Regex, RegexBuilder};
+use regex_syntax::ast::{Ast, GroupKind, parse::Parser};
 use semver::Version;
 use serde::Deserialize;
 use std::{
@@ -44,9 +45,20 @@ const KEYWORDS: &str = "a actions add all an and as by called combine convert co
 
 static APP_VERSION: LazyLock<Version> = LazyLock::new(|| Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package version"));
 static ACTIVE: LazyLock<RwLock<Arc<Pack>>> = LazyLock::new(|| {
-    let pack = verified_pack(BUNDLED, BUNDLED_SIGNATURE).and_then(|pack| pack.compile(&APP_VERSION, 0));
-    RwLock::new(Arc::new(pack.unwrap_or_else(|_| Pack { version: 0, rules: Vec::new() })))
+    #[cfg(test)]
+    let pack = bundled();
+    #[cfg(not(test))]
+    let pack = Pack::default();
+    RwLock::new(Arc::new(pack))
 });
+
+#[path = "vocab/validate.rs"]
+mod validate;
+use validate::{IntentKind, checked_output};
+
+fn bundled() -> Pack {
+    verified_pack(BUNDLED, BUNDLED_SIGNATURE).and_then(|pack| pack.compile(&APP_VERSION, 0)).unwrap_or_default()
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum Invalid {
@@ -72,6 +84,7 @@ struct PackFile {
 #[serde(deny_unknown_fields)]
 struct RuleFile {
     id: String,
+    intent: IntentKind,
     pattern: String,
     replace: String,
     examples: Vec<Example>,
@@ -84,12 +97,14 @@ struct Example {
     expect: String,
 }
 
+#[derive(Default)]
 struct Pack {
     version: u64,
     rules: Vec<Rule>,
 }
 
 struct Rule {
+    intent: IntentKind,
     pattern: Regex,
     template: Vec<Part>,
 }
@@ -103,11 +118,18 @@ fn verified_pack(bytes: &[u8], signature: &[u8]) -> Result<PackFile, Invalid> {
     if bytes.len() > MAX_PACK_BYTES || signature.len() > MAX_SIGNATURE_BYTES {
         return Err(Invalid::Size);
     }
+    // The cache uses NUL as its separator. Minisign does not authenticate its
+    // untrusted comment, so reject NUL anywhere in the detached signature.
+    if signature.contains(&0) {
+        return Err(Invalid::Signature);
+    }
     let key = PublicKey::decode(PUBLIC_KEY).map_err(|_| Invalid::Signature)?;
     let signature = std::str::from_utf8(signature).map_err(|_| Invalid::Signature)?;
     let signature = Signature::decode(signature).map_err(|_| Invalid::Signature)?;
     key.verify(bytes, &signature, false).map_err(|_| Invalid::Signature)?;
-    PackFile::decode(bytes)
+    let pack = PackFile::decode(bytes)?;
+    pack.check_comment(signature.trusted_comment())?;
+    Ok(pack)
 }
 
 impl PackFile {
@@ -122,8 +144,18 @@ impl PackFile {
         Ok(pack)
     }
 
+    fn check_comment(&self, comment: &str) -> Result<(), Invalid> {
+        if comment != format!("Voxi vocabulary schema={} version={}", self.schema, self.version) {
+            return Err(Invalid::Signature);
+        }
+        Ok(())
+    }
+
     fn compile(self, app: &Version, floor: u64) -> Result<Pack, Invalid> {
-        if !self.min_app_version.pre.is_empty() || !self.min_app_version.build.is_empty() || self.min_app_version > *app {
+        if !self.min_app_version.pre.is_empty()
+            || !self.min_app_version.build.is_empty()
+            || (*app != Version::new(0, 0, 0) && self.min_app_version > *app)
+        {
             return Err(Invalid::AppVersion);
         }
         if self.version <= floor {
@@ -159,7 +191,11 @@ impl Rule {
         {
             return None;
         }
-        let pattern = RegexBuilder::new(&file.pattern)
+        let body = &file.pattern[1..file.pattern.len() - 1];
+        if !pattern_allowed(&Parser::new().parse(body).ok()?, false) {
+            return None;
+        }
+        let pattern = RegexBuilder::new(&format!(r"\A(?:{body})\z"))
             .case_insensitive(true)
             .size_limit(REGEX_SIZE_LIMIT)
             .dfa_size_limit(REGEX_SIZE_LIMIT)
@@ -178,18 +214,20 @@ impl Rule {
                 }
             })
             .collect::<Option<Vec<_>>>()?;
-        let rule = Self { pattern, template };
+        if used.is_empty() || used.len() != pattern.captures_len() - 1 {
+            return None;
+        }
+        let rule = Self { intent: file.intent, pattern, template };
         for example in &file.examples {
             let baseline = parse::parse_builtin(&example.input);
             if matches!(baseline, Err(ParseFailure::HardRefusal(_))) {
                 return None;
             }
             let input = phrase::normalize(&example.input);
-            let output = rule.expand(&input)?;
+            let (intent, output) = rule.rewrite(&input)?;
             if output != example.expect {
                 return None;
             }
-            let intent = checked_output(&input, &output)?;
             if baseline.is_ok_and(|builtin| builtin != intent) {
                 return None;
             }
@@ -197,18 +235,30 @@ impl Rule {
         Some(rule)
     }
 
-    fn expand(&self, input: &str) -> Option<String> {
+    fn rewrite(&self, input: &str) -> Option<(Intent, String)> {
         let captures = self.pattern.captures(input)?;
-        // Anchors can bind to only one branch of an alternation. Require a
-        // whole-command match independently of the pattern's anchor placement.
-        if captures.get(0)?.range() != (0..input.len()) {
-            return None;
-        }
+        let quotes = phrase::quoted_ranges(input).ok()?;
         let mut output = String::new();
         for part in &self.template {
             let text = match part {
                 Part::Literal(word) => word,
-                Part::Capture(index) => captures.get(*index)?.as_str(),
+                Part::Capture(index) => {
+                    let capture = captures.get(*index)?;
+                    let range = capture.range();
+                    // Whitespace boundaries also keep filenames, decimal values
+                    // and paths indivisible. A quoted name is one argument.
+                    if capture.as_str().is_empty()
+                        || capture.as_str().trim() != capture.as_str()
+                        || (range.start > 0 && !input[..range.start].ends_with(char::is_whitespace))
+                        || (range.end < input.len() && !input[range.end..].starts_with(char::is_whitespace))
+                        || quotes
+                            .iter()
+                            .any(|&(start, end)| (start < range.start && range.start < end) || (start < range.end && range.end < end))
+                    {
+                        return None;
+                    }
+                    capture.as_str()
+                }
             };
             if output.len() + text.len() + usize::from(!output.is_empty()) > parse::MAX_COMMAND_BYTES {
                 return None;
@@ -218,63 +268,31 @@ impl Rule {
             }
             output.push_str(text);
         }
-        Some(output)
+        Some((checked_output(self.intent, input, &output)?, output))
     }
 }
 
-fn checked_output(input: &str, output: &str) -> Option<Intent> {
-    let intent = parse::parse_vocab_output(output)?;
-    // The built-in parser can also consume a keyword as a name in an argument
-    // position. Check those values against the original normalized input.
-    let input = input.to_lowercase();
-    let tokens: HashSet<_> = name_tokens(&input).collect();
-    let present = |name: &str| name_tokens(&name.to_lowercase()).all(|token| tokens.contains(token));
-    let destination = |dest: &Destination| match dest {
-        Destination::Path(path) => present(path),
-        Destination::InFolder { folder, parent, literal, .. } => {
-            present(folder) && present(parent) && literal.as_deref().is_none_or(present)
-        }
-    };
-    let source_ok = match intent.source() {
-        Some(Source::Item { name, folder }) => present(name) && folder.as_deref().is_none_or(present),
-        Some(Source::Set { folder, filter }) => {
-            [folder.as_deref(), filter.name_contains.as_deref(), filter.name_starts_with.as_deref()].into_iter().flatten().all(present)
-                && filter.ext.iter().flatten().all(|ext| present(ext))
-        }
-        None => true,
-    };
-    let arguments_ok = match &intent {
-        Intent::Move { to, .. }
-        | Intent::Copy { to, .. }
-        | Intent::SortByType { folder: to, .. }
-        | Intent::SortByMonth { folder: to, .. } => destination(to),
-        Intent::Rename { new_name: name, .. }
-        | Intent::AddPrefix { prefix: name, .. }
-        | Intent::Number { base: name, .. }
-        | Intent::Size { folder: name }
-        | Intent::Duplicates { folder: name }
-        | Intent::Reveal { target: name } => present(name),
-        Intent::ReplaceInNames { find, replace, .. } => present(find) && present(replace),
-        Intent::CreateFolders { names, parent } => names.iter().all(|name| present(name)) && parent.as_deref().is_none_or(present),
-        Intent::MergePdf { output, .. } => output == "merged.pdf" || present(output), // Built-in default.
-        Intent::ExtractPages { output, .. }
-        | Intent::ImagesToPdf { output, .. }
-        | Intent::Zip { output, .. }
-        | Intent::Unzip { destination: output, .. } => output.as_deref().is_none_or(present),
-        _ => true,
-    };
-    (source_ok && arguments_ok).then_some(intent)
-}
-
-fn name_tokens(text: &str) -> impl Iterator<Item = &str> {
-    static TOKEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{L}\p{M}\p{N}_]+(?:[./-][\p{L}\p{M}\p{N}_]+)*").unwrap());
-    TOKEN.find_iter(text).map(|m| m.as_str())
+/// Outside a capture, the pattern can only consume literal words and spaces.
+/// Repetition is allowed inside a capture, where all consumed text is copied.
+fn pattern_allowed(ast: &Ast, in_capture: bool) -> bool {
+    match ast {
+        Ast::Group(group) => match group.kind {
+            GroupKind::CaptureIndex(_) => !in_capture && pattern_allowed(&group.ast, true),
+            GroupKind::NonCapturing(_) => pattern_allowed(&group.ast, in_capture),
+            GroupKind::CaptureName { .. } => false,
+        },
+        Ast::Alternation(alt) => alt.asts.iter().all(|ast| pattern_allowed(ast, in_capture)),
+        Ast::Concat(concat) => concat.asts.iter().all(|ast| pattern_allowed(ast, in_capture)),
+        Ast::Repetition(rep) => in_capture && pattern_allowed(&rep.ast, true),
+        Ast::Empty(_) => true,
+        Ast::Literal(literal) => in_capture || literal.c.is_alphanumeric() || literal.c.is_whitespace(),
+        node => in_capture && !matches!(node, Ast::Flags(_)),
+    }
 }
 
 impl Pack {
-    fn rewrite(&self, input: &str) -> Option<Intent> {
-        let output = self.rules.iter().find_map(|rule| rule.expand(input))?;
-        checked_output(input, &output)
+    fn rewrite(&self, input: &str) -> Option<(Intent, String)> {
+        self.rules.iter().find_map(|rule| rule.rewrite(input))
     }
 }
 
@@ -282,9 +300,21 @@ fn active() -> Arc<Pack> {
     Arc::clone(&ACTIVE.read().unwrap_or_else(|error| error.into_inner()))
 }
 
-pub(crate) fn rewrite(input: &str) -> Option<Intent> {
+pub(crate) fn rewrite(input: &str) -> Option<(Intent, String)> {
+    #[cfg(test)]
+    if let Some(result) = TEST_PACK.with_borrow(|pack| pack.as_ref().map(|pack| pack.rewrite(input))) {
+        return result;
+    }
     active().rewrite(input)
 }
+
+#[cfg(test)]
+thread_local! {
+    static TEST_PACK: std::cell::RefCell<Option<Pack>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) use tests::with_test_pack;
 
 fn activate(pack: Pack) {
     let mut active = ACTIVE.write().unwrap_or_else(|error| error.into_inner());
@@ -308,20 +338,27 @@ fn read_limited(path: &Path, limit: usize) -> io::Result<Vec<u8>> {
 }
 
 // One atomic cache entry keeps the detached signature paired with its payload.
-fn load_cache(dir: &Path) -> u64 {
-    let floor = active().version;
-    let Ok(cache) = read_limited(&dir.join(CACHE), MAX_PACK_BYTES + MAX_SIGNATURE_BYTES + 1) else { return floor };
-    let Some(separator) = cache.iter().position(|byte| *byte == 0) else { return floor };
-    let Ok(pack) = verified_pack(&cache[separator + 1..], &cache[..separator]) else { return floor };
+fn load_cache(dir: &Path, floor: u64) -> (Option<Pack>, u64) {
+    let Ok(cache) = read_limited(&dir.join(CACHE), MAX_PACK_BYTES + MAX_SIGNATURE_BYTES + 1) else { return (None, floor) };
+    let Some(separator) = cache.iter().position(|byte| *byte == 0) else { return (None, floor) };
+    let Ok(pack) = verified_pack(&cache[separator + 1..], &cache[..separator]) else { return (None, floor) };
     let version = pack.version;
     match pack.compile(&APP_VERSION, floor) {
-        Ok(pack) => activate(pack),
+        Ok(pack) => (Some(pack), version),
         // An older app may need its fallback, but it must not overwrite a pack
         // saved by a newer installation with a lower version.
-        Err(Invalid::AppVersion) => return floor.max(version),
-        Err(_) => {}
+        Err(Invalid::AppVersion) => (None, floor.max(version)),
+        Err(_) => (None, floor),
     }
-    active().version
+}
+
+fn initialize(dir: &Path) -> u64 {
+    let bundled = bundled();
+    let (cached, floor) = load_cache(dir, bundled.version);
+    let pack = cached.unwrap_or(bundled);
+    report_version(pack.version);
+    *ACTIVE.write().unwrap_or_else(|error| error.into_inner()) = Arc::new(pack);
+    floor
 }
 
 async fn download(client: &reqwest::Client, asset: &str, limit: usize) -> Option<Vec<u8>> {
@@ -348,18 +385,26 @@ fn check_due(dir: &Path, now: u64) -> Duration {
     last.map_or(Duration::ZERO, |last| CHECK_INTERVAL.saturating_sub(Duration::from_secs(now.saturating_sub(last))))
 }
 
-fn refresh(dir: &Path) -> Duration {
+fn refresh(dir: &Path, first: bool) -> Duration {
     let lock = (|| {
         fs::create_dir_all(dir)?;
         OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("vocab.lock"))
     })();
-    let Ok(lock) = lock else { return CHECK_INTERVAL };
+    let Ok(lock) = lock else {
+        if first {
+            initialize(dir);
+        }
+        return CHECK_INTERVAL;
+    };
     // Hold the lock through caching to serialize separate instances, and record
     // the attempt before making a request even if the network is offline.
     if lock.try_lock().is_err() {
+        if first {
+            initialize(dir);
+        }
         return Duration::from_secs(60);
     }
-    let floor = load_cache(dir);
+    let initial_floor = first.then(|| initialize(dir));
     let now = seconds_since_epoch();
     let delay = check_due(dir, now);
     if !delay.is_zero() {
@@ -368,6 +413,13 @@ fn refresh(dir: &Path) -> Duration {
     if atomic_write(&dir.join("vocab.last-check"), now.to_string().as_bytes()).and_then(|write| write.require_durable()).is_err() {
         return CHECK_INTERVAL;
     }
+    let floor = initial_floor.unwrap_or_else(|| {
+        let (cached, floor) = load_cache(dir, active().version);
+        if let Some(pack) = cached {
+            activate(pack);
+        }
+        floor
+    });
     tauri::async_runtime::block_on(refresh_pack(dir, floor));
     check_due(dir, seconds_since_epoch()).max(Duration::from_secs(1))
 }
@@ -393,12 +445,11 @@ fn client() -> reqwest::Result<reqwest::Client> {
 }
 
 pub(crate) fn start(dir: &Path) {
-    load_cache(dir);
-    report_version(active().version);
     let dir = dir.to_owned();
     let _ = std::thread::Builder::new().name("voxi-vocab".into()).spawn(move || {
+        std::thread::sleep(refresh(&dir, true));
         loop {
-            std::thread::sleep(refresh(&dir));
+            std::thread::sleep(refresh(&dir, false));
         }
     });
 }

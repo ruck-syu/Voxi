@@ -807,9 +807,11 @@ fn plan_input_routed(
     let found = rule_when.as_ref();
     let rule_base = rule_schedule.as_ref().ok().map(|(base, _)| base.clone());
     let probe = rule_base.as_deref().unwrap_or(&text);
-    let classified = parse::parse_classified(probe);
+    let parsed = parse::parse_resolved(probe);
+    let classified = parsed.as_ref().map(|(intent, _)| intent).map_err(|failure| *failure);
+    let expanded_command = parsed.as_ref().ok().and_then(|(_, expansion)| expansion.as_ref());
     #[cfg(feature = "tiny-model")]
-    let rule_intent = classified.clone().ok();
+    let rule_intent = classified.ok();
 
     // A saved shortcut wins over both the rule parser and the model. Resolve
     // it up front, exact phrase and near miss, before any model inference.
@@ -841,7 +843,7 @@ fn plan_input_routed(
         let mut model_error: Option<String> = None;
         let rule_intent_present = rule_intent.is_some();
         let grammar_miss = matches!(classified, Err(parse::ParseFailure::GrammarMiss));
-        let eligible = can_ask_model && (!model_fallback || grammar_miss) && plan_model::eligible(&text, &classified);
+        let eligible = can_ask_model && (!model_fallback || grammar_miss) && plan_model::eligible(&text, classified);
         if eligible && model_fallback && rule_recurring && grammar_miss {
             return Outcome::Problem { message: RULE_ONLY_REPEAT.into() };
         }
@@ -853,7 +855,7 @@ fn plan_input_routed(
             None
         } else if eligible {
             match (model.interpret)(&text, control, now) {
-                Ok(Some(value)) if rule_intent.as_ref() == Some(&value.intent) || plan_model::accounts_for(probe, &value.intent, None) => {
+                Ok(Some(value)) if rule_intent == Some(&value.intent) || plan_model::accounts_for(probe, &value.intent, None) => {
                     let model_recurring = value.when.as_ref().is_some_and(|w| w.rule.is_some());
                     match recurring_route(rule_recurring, rule_intent_present, model_recurring) {
                         Route::Rule => None,
@@ -906,8 +908,7 @@ fn plan_input_routed(
             Err(message) => return Outcome::Problem { message },
         },
     };
-    let approved_shortcut =
-        shortcut.as_ref().map(|s| scheduler::RuleSource::Shortcut { phrase: s.phrase.clone(), commands: s.commands.clone() });
+    let mut approved_shortcut = None;
     let approved_nicknames = {
         let settings =
             checked_state!(state.settings.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() });
@@ -923,7 +924,26 @@ fn plan_input_routed(
     let work = match (undo_entry_id, shortcut) {
         (Some(id), _) => Work::UndoEntry(id),
         (None, Some(s)) => {
-            let parsed: Result<Vec<_>, _> = s.commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect();
+            let parsed: Result<Vec<_>, _> = s
+                .commands
+                .iter()
+                .map(|c| {
+                    parse::parse_resolved(c).map(|(intent, expansion)| (expansion.unwrap_or_else(|| c.clone()), intent)).map_err(|_| c)
+                })
+                .collect();
+            if let Ok(commands) = &parsed
+                && when.as_ref().is_some_and(|w| w.rule.is_some())
+            {
+                let expanded: Vec<_> = commands.iter().map(|(command, _)| command.clone()).collect();
+                if let Err(message) = settings::check_shortcut_commands(&expanded) {
+                    return Outcome::Problem { message };
+                }
+                approved_shortcut = Some(scheduler::RuleSource::Shortcut {
+                    phrase: s.phrase.clone(),
+                    expanded_commands: (expanded != s.commands).then_some(expanded),
+                    commands: s.commands.clone(),
+                });
+            }
             match parsed {
                 // A shortcut holding one read-only command runs it as if typed.
                 Ok(mut commands) if commands.len() == 1 && settings::shortcut_read_only(&commands[0].1) => {
@@ -940,7 +960,7 @@ fn plan_input_routed(
         (None, None) if model_intent.is_some() => {
             Work::Command(Box::new(model_intent.expect("is_some match guard establishes model intent")))
         }
-        (None, None) => match scope::prepare(&text, previous_scope.as_ref()) {
+        (None, None) => match scope::prepare_parsed(&text, previous_scope.as_ref(), classified) {
             Ok((intent, scoped)) => {
                 use_scope = scoped;
                 Work::Command(Box::new(intent))
@@ -1056,6 +1076,7 @@ fn plan_input_routed(
                             choices: choices.clone(),
                             approved_source: approved_shortcut.or(Some(scheduler::RuleSource::Command)),
                             approved_nicknames: Some(approved_nicknames),
+                            command: expanded_command.cloned().unwrap_or_else(|| rule.command.clone()),
                             ..rule.clone()
                         },
                     )
@@ -1563,12 +1584,14 @@ fn execute_recurring_rule(
         // Legacy model intent is ignored. Use the approved shortcut snapshot
         // or parse the approved standalone command against the current files.
         match &rule.approved_source {
-            Some(scheduler::RuleSource::Shortcut { phrase, commands }) => {
+            Some(scheduler::RuleSource::Shortcut { phrase, commands, expanded_commands }) => {
+                let commands = expanded_commands.as_ref().unwrap_or(commands);
                 if let Err(message) = settings::check_shortcut_commands(commands) {
                     sched_skip(job);
                     return Completion::Recurring(message);
                 }
-                match commands.iter().map(|c| parse::parse(c).map(|i| (c.clone(), i))).collect::<Result<Vec<_>, _>>() {
+                match commands.iter().map(|c| parse::parse_builtin(c).map(|i| (c.clone(), i)).map_err(|_| c)).collect::<Result<Vec<_>, _>>()
+                {
                     Ok(commands) => planner.plan_shortcut(phrase, &commands, &history),
                     Err(bad) => {
                         parsed_miss();
@@ -1577,7 +1600,7 @@ fn execute_recurring_rule(
                     }
                 }
             }
-            _ => match parse::parse(&rule.command) {
+            _ => match parse::parse_builtin(&rule.command) {
                 Ok(intent) => planner.plan(&intent, &history),
                 Err(_) => {
                     parsed_miss();

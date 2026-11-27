@@ -1060,7 +1060,7 @@ impl<'a> Planner<'a> {
 
     /// "Trash", "the bin", "Recycle Bin": a destination that names the Trash
     /// itself rather than a folder path.
-    fn names_the_trash(to: &str) -> bool {
+    pub(crate) fn names_the_trash(to: &str) -> bool {
         let to = to.trim().to_lowercase();
         let to = to.strip_prefix("the ").unwrap_or(&to).trim();
         !to.contains(['/', '~']) && matches!(to, "trash" | "bin" | "recycle bin")

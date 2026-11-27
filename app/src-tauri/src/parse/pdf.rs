@@ -58,7 +58,7 @@ pub fn patterns() -> Vec<Pattern> {
         ),
         pat(
             "images_to_pdf",
-            r"^(?:make|create|build|generate)\s+(?:a\s+)?(?:single\s+)?pdf\s+(?:from|of|out\s+of|with)\s+(.+?)(?:\s+(?:into|as|called)\s+(.+\.pdf))?$",
+            r"^(?:(?:make|create|build|generate)\s+(?:a\s+)?|create\s+1\s+)(?:single\s+)?pdf\s+(?:from|of|out\s+of|with)\s+(.+?)(?:\s+(?:into|as|called)\s+(.+\.pdf))?$",
             |c| Some(Intent::ImagesToPdf { src: typed_src(c, 1, FileType::Images)?, output: cap(c, 2).map(|s| clean_name(&s)) }),
         ),
         pat(

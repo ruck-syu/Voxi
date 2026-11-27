@@ -28,8 +28,7 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: bash .github/scripts/check-vocab-version.sh "$BASE" "$GITHUB_SHA"
+        run: bash .github/scripts/check-vocab-version.sh --pull-request "$GITHUB_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -45,6 +44,7 @@ jobs:
           env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib vocab::tests
           env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib plan::tests::messy::vocab_
           env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib parse::corpus_tests::corpus_commands_build_the_intended_intent
+          env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib messy_mac_plans_every_accepted_corpus_command
 
   publish:
     needs: validate

@@ -1,15 +1,15 @@
 {
   "schema": 1,
-  "version": 2,
+  "version": 3,
   "minAppVersion": "0.0.0",
   "rules": [
     {
       "id": "make-one-pdf",
       "intent": "images_to_pdf",
-      "pattern": "^make 1 pdf from (.+)$",
-      "replace": "make a pdf from $1",
+      "pattern": "^make (1) pdf from (.+)$",
+      "replace": "create $1 pdf from $2",
       "examples": [
-        { "input": "make one PDF from images in Scans named receipts", "expect": "make a pdf from images in Scans named receipts" }
+        { "input": "make one PDF from images in Scans named receipts", "expect": "create 1 pdf from images in Scans named receipts" }
       ]
     },
     {

@@ -6,6 +6,10 @@ base="$1"
 head="$2"
 pack=vocab/vocab.json
 
+if [[ "$base" == --pull-request ]]; then
+  base=$(git rev-parse "$head^1")
+fi
+
 if [[ "$base" != 0000000000000000000000000000000000000000 ]]; then
   git cat-file -e "$base^{commit}"
   if git diff --quiet "$base" "$head" -- "$pack"; then

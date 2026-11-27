@@ -55,7 +55,7 @@ fn one_bad_rule_rejects_the_whole_pack() {
     for invalid in [
         rule(IntentKind::Move, "^relocate (.+)$", "move $1 to Archive", "relocate x.pdf", "move x.pdf to Archive"),
         rule(IntentKind::Move, "^relocate (.+)$", "move $1 to 1", "relocate x.pdf", "move x.pdf to 1"),
-        rule(IntentKind::Rename, "^relabel (.+)$", "rename $1 to pages", "relabel x.pdf", "rename x.pdf to pages"),
+        rule(IntentKind::Rename, "^relabel (.+)$", "rename $1 to $1", "relabel x.pdf", "rename x.pdf to x.pdf"),
         rule(IntentKind::SplitPdf, "^chop (.+)$", "split $1", "chop", "split x.pdf"),
         rule(IntentKind::Copy, "^demonstrate (.+)$", "copy $1", "demonstrate x.pdf", "copy x.pdf"),
         rule(IntentKind::SplitPdf, "^chop (.+)$", "split $2", "chop x.pdf", "split x.pdf"),
@@ -68,8 +68,13 @@ fn one_bad_rule_rejects_the_whole_pack() {
 
 #[test]
 fn signature_binds_version_and_schema_and_rejects_nul() {
-    for comment in ["Voxi vocabulary", "Voxi vocabulary schema=2 version=2", "Voxi vocabulary schema=1 version=1"] {
-        assert_eq!(candidate().check_comment(comment), Err(Invalid::Signature));
+    let pack = candidate();
+    for comment in [
+        "Voxi vocabulary".into(),
+        format!("Voxi vocabulary schema=2 version={}", pack.version),
+        format!("Voxi vocabulary schema=1 version={}", pack.version - 1),
+    ] {
+        assert_eq!(pack.check_comment(&comment), Err(Invalid::Signature));
     }
     let mut signature = BUNDLED_SIGNATURE.to_vec();
     signature.insert(20, 0);
@@ -79,7 +84,7 @@ fn signature_binds_version_and_schema_and_rejects_nul() {
 #[test]
 fn compile_rejects_destructive_rewrites_and_invalid_capture_shapes() {
     let invalid = [
-        rule(IntentKind::ImagesToPdf, r"^make 1 pdf from (.+)$", "delete $1", "make one PDF from x.pdf", "delete x.pdf"),
+        rule(IntentKind::ImagesToPdf, r"^build pdf from (.+)$", "delete $1", "build pdf from x.pdf", "delete x.pdf"),
         rule(IntentKind::ResizeImage, r"^squeeze (.+?(\d+)\.jpg)$", "resize $1 to $2", "squeeze scan800.jpg", "resize scan800.jpg to 800"),
         rule(
             IntentKind::ExtractPages,
@@ -112,40 +117,94 @@ fn compile_rejects_destructive_rewrites_and_invalid_capture_shapes() {
 }
 
 #[test]
-fn runtime_rejects_split_tokens_and_tries_the_next_rule() {
-    let first = rule(
-        IntentKind::ExtractPages,
-        r"^pluck (\d)(?:2|) to (\d)(?:4|) from (.+)$",
-        "extract pages $1 to $2 from $3",
-        "pluck 1 to 3 from report.pdf",
-        "extract pages 1 to 3 from report.pdf",
+fn rejects_alternation_quantifiers_digits_and_flags_outside_captures() {
+    for body in [
+        "gather (?:report|taxes) in (.+)",
+        "gather files in (?:scans|archive) toward (.+)",
+        "gather (?:invoice files|files) in (.+)",
+        "gather (.+) toward (?:archive|backup)",
+        "squeeze (.+) from (?:800|1200) to (1)",
+        "squeeze (.+) from 800 to (1)",
+        "gather (?:all )?(.+)",
+        "gather (?:all )+(.+)",
+        "gather (?x:files in )(.+)",
+        "gather (?-i:files in) (.+)",
+        "gather ((?x:.+))",
+        "gather ((?-i:.+))",
+    ] {
+        assert!(!pattern_allowed(&Parser::new().parse(body).unwrap(), false), "{body}");
+    }
+    assert!(pattern_allowed(&Parser::new().parse(r"gather (?:files in) ((?:Scans|Archive)\d*)").unwrap(), false));
+}
+
+#[test]
+fn rejects_swapped_source_and_destination_captures() {
+    let mut file = rule(
+        IntentKind::Move,
+        r"^relay (.+) from (.+) toward (.+)$",
+        "move $1 from $2 to $3",
+        "relay report.pdf from Scans toward Desktop",
+        "move report.pdf from Scans to Desktop",
     );
-    let second = rule(
-        IntentKind::ExtractPages,
-        r"^pluck (\d+) to (\d+) from (.+)$",
-        "extract pages $1 to $2 from $3",
-        "pluck 12 to 34 from report.pdf",
-        "extract pages 12 to 34 from report.pdf",
-    );
-    // Even fixed suffix digits outside a capture cannot sever a whole token.
-    let first = Rule::compile(&first).unwrap();
-    assert!(first.rewrite("pluck 12 to 34 from report.pdf").is_none());
-    let pack = Pack { version: 1, rules: vec![first, Rule::compile(&second).unwrap()] };
-    assert_eq!(pack.rewrite("pluck 12 to 34 from report.pdf").unwrap().1, "extract pages 12 to 34 from report.pdf");
-    let quote =
+    assert!(Rule::compile(&file).is_some());
+    file.replace = "move $1 from $3 to $2".into();
+    file.examples[0].expect = "move report.pdf from Desktop to Scans".into();
+    assert!(Rule::compile(&file).is_none());
+}
+
+#[test]
+fn rejects_trash_destinations_in_examples_and_at_runtime() {
+    for (kind, verb) in [(IntentKind::Move, "move"), (IntentKind::Copy, "copy")] {
+        let mut file = rule(
+            kind,
+            r"^relay (.+) toward (.+)$",
+            &format!("{verb} $1 to $2"),
+            "relay report.pdf toward Documents",
+            &format!("{verb} report.pdf to Documents"),
+        );
+        let compiled = Rule::compile(&file).unwrap();
+        for destination in ["Documents/Trash", "\"Trash\""] {
+            assert!(compiled.rewrite(&format!("relay report.pdf toward {destination}")).is_some());
+        }
+        for destination in ["trash", "the bin", "Recycle Bin"] {
+            let input = format!("relay report.pdf toward {destination}");
+            assert!(compiled.rewrite(&input).is_none(), "{verb}: {input}");
+            file.examples[0] = Example { input, expect: format!("{verb} report.pdf to {destination}") };
+            assert!(Rule::compile(&file).is_none(), "{verb}: {destination}");
+        }
+    }
+
+    let input = "check trash for PDFs in Downloads older than 90 days";
+    let output = "move PDFs in Downloads to trash older than 90 days";
+    assert!(matches!(parse::parse_vocab_output(output), Some(Intent::Move { .. })));
+    let file = rule(IntentKind::Move, r"^check trash for (.+) (older than .+)$", "move $1 to trash $2", input, output);
+    assert!(Rule::compile(&file).is_none());
+    let captures = Regex::new(&file.pattern).unwrap().captures(input).unwrap();
+    assert!(checked_output(IntentKind::Move, input, output, &captures).is_none());
+}
+
+#[test]
+fn runtime_preserves_token_and_quote_boundaries_and_tries_the_next_rule() {
+    let first =
+        rule(IntentKind::Rename, r"^relabel (.+?) as (.+)$", "rename $1 to $2", "relabel x.pdf as final.pdf", "rename x.pdf to final.pdf");
+    let second =
         rule(IntentKind::Rename, r"^relabel (.+) as (.+)$", "rename $1 to $2", "relabel x.pdf as final.pdf", "rename x.pdf to final.pdf");
-    assert!(Rule::compile(&quote).unwrap().rewrite(r#"relabel "old as name.pdf" as final.pdf"#).is_some());
-    assert!(Rule::compile(&quote).unwrap().rewrite(r#"relabel "old as name.pdf""#).is_none());
+    let first = Rule::compile(&first).unwrap();
+    let pack = Pack { version: 1, rules: vec![first, Rule::compile(&second).unwrap()] };
+    assert!(pack.rules[0].rewrite(r#"relabel "old as name.pdf" as final.pdf"#).is_none());
+    assert_eq!(pack.rewrite(r#"relabel "old as name.pdf" as final.pdf"#).unwrap().1, r#"rename "old as name.pdf" to final.pdf"#);
+    assert!(pack.rewrite(r#"relabel "old as name.pdf""#).is_none());
+
+    let split = rule(IntentKind::SplitPdf, r"^chop (.+\.pdf)s?$", "split $1", "chop x.pdf", "split x.pdf");
+    assert!(Rule::compile(&split).is_none());
+    let split = rule(IntentKind::SplitPdf, r"^chop (.+\.pdf)s$", "split $1", "chop x.pdfs", "split x.pdf");
+    assert!(Rule::compile(&split).is_none());
 }
 
 #[test]
 fn hard_refusals_remain_terminal() {
-    let file = rule(IntentKind::SplitPdf, r"^(?:chop|permanently delete) (.+)$", "split $1", "chop x.pdf", "split x.pdf");
-    let rule = Rule::compile(&file).unwrap();
-    assert!(rule.rewrite("permanently delete x.pdf").is_some());
-    for original in ["permanently delete x.pdf", "Please permanently delete x.pdf."] {
-        assert!(matches!(parse::parse_classified(original), Err(ParseFailure::HardRefusal(_))));
-    }
+    let refused = rule(IntentKind::SplitPdf, r"^permanently delete (.+)$", "split $1", "permanently delete x.pdf", "split x.pdf");
+    assert!(Rule::compile(&refused).is_none());
 }
 
 #[test]
@@ -154,6 +213,7 @@ fn filter_semantics_are_preserved_and_use_parser_aliases() {
     for subject in [
         "jpg in Scans",
         "jpg in Documents",
+        "PDFs in Documents named Documents",
         "heic in Scans",
         "raw in Scans",
         "pngs in Scans",
@@ -174,11 +234,45 @@ fn filter_semantics_are_preserved_and_use_parser_aliases() {
         let file = rule(IntentKind::List, r"^survey (.+)$", "list $1", &input, &output);
         let compiled = Rule::compile(&file).unwrap_or_else(|| panic!("should compile: {input}"));
         assert!(compiled.rewrite(&input).is_some());
-        let folder = if subject.ends_with("in Documents") { "Documents" } else { "Scans" };
-        assert!(checked_output(IntentKind::List, &input, &format!("list files in {folder}")).is_none(), "{input}");
+        let folder = if subject.contains("in Documents") { "Documents" } else { "Scans" };
+        let captures = compiled.pattern.captures(&input).unwrap();
+        assert!(checked_output(IntentKind::List, &input, &format!("list files in {folder}"), &captures).is_none(), "{input}");
     }
-    assert!(checked_output(IntentKind::ConvertImage, "recode image.png in Scans to webp", "convert image.png in Scans to png").is_none());
-    assert!(checked_output(IntentKind::List, "survey files in Scans", "list PDFs in Scans").is_none());
+    let input = "survey files in Scans";
+    let pattern = Regex::new(r"^survey (.+)$").unwrap();
+    let captures = pattern.captures(input).unwrap();
+    assert!(checked_output(IntentKind::List, input, "list PDFs in Scans", &captures).is_none());
+}
+
+#[test]
+fn accepts_folder_captures_number_templates_and_spoken_characters() {
+    for file in [
+        rule(
+            IntentKind::Move,
+            r"^relay (.+) toward (.+)$",
+            "move $1 to $2",
+            "relay report.pdf toward Documents",
+            "move report.pdf to Documents",
+        ),
+        rule(
+            IntentKind::Number,
+            r"^enumerate (.+) like (.+)$",
+            "number $1 as $2",
+            "enumerate images in Trip like trip-001",
+            "number images in Trip as trip-001",
+        ),
+        rule(
+            IntentKind::ReplaceInNames,
+            r"^substitute (.+) for (.+) across (.+)$",
+            "replace $1 with $2 in $3",
+            "substitute spaces for dashes across files in Downloads",
+            "replace spaces with dashes in files in Downloads",
+        ),
+    ] {
+        let compiled = Rule::compile(&file).unwrap_or_else(|| panic!("should compile: {}", file.pattern));
+        let example = &file.examples[0];
+        assert_eq!(compiled.rewrite(&example.input).unwrap().0, parse::parse_builtin(&example.expect).unwrap());
+    }
 }
 
 pub(crate) fn with_test_pack<T>(json: &str, run: impl FnOnce() -> T) -> T {

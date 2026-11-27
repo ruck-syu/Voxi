@@ -10,7 +10,7 @@ use crate::{
 };
 use minisign_verify::{PublicKey, Signature};
 use regex::{Regex, RegexBuilder};
-use regex_syntax::ast::{Ast, GroupKind, parse::Parser};
+use regex_syntax::ast::{AssertionKind, Ast, GroupKind, parse::Parser};
 use semver::Version;
 use serde::Deserialize;
 use std::{
@@ -38,10 +38,10 @@ const CHECK_INTERVAL: Duration = Duration::from_secs(86_400);
 
 // Only parser keywords can be literal template parts. Names, paths, extensions
 // and numbers must be copied from a whole capture, without concatenation.
-const KEYWORDS: &str = "a actions add all an and as by called combine convert copy count create date delete duplicates \
-    every extract files find finder folder folders for from images in including into list lowercase make merge month move \
-    name named number of open organize out pages pdf prefix recent remove rename replace resize reveal show size sort \
-    split the to trash type undo unzip with zip";
+const KEYWORDS: &str = "a add all an and as by called combine convert copy count create date duplicates \
+    every extract files find folder folders for from images in into list lowercase make merge month move \
+    name named number of organize out pages pdf prefix rename replace resize show size sort \
+    split the to type unzip with zip";
 
 static APP_VERSION: LazyLock<Version> = LazyLock::new(|| Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package version"));
 static ACTIVE: LazyLock<RwLock<Arc<Pack>>> = LazyLock::new(|| {
@@ -201,20 +201,24 @@ impl Rule {
             .dfa_size_limit(REGEX_SIZE_LIMIT)
             .build()
             .ok()?;
-        let mut used = HashSet::new();
+        let mut next_capture = 1;
         let template = file
             .replace
             .split(' ')
             .map(|part| {
                 if let Some(index) = part.strip_prefix('$') {
                     let index = index.parse::<usize>().ok()?;
-                    (index > 0 && index < pattern.captures_len() && used.insert(index)).then_some(Part::Capture(index))
+                    if index != next_capture || index >= pattern.captures_len() {
+                        return None;
+                    }
+                    next_capture += 1;
+                    Some(Part::Capture(index))
                 } else {
                     KEYWORDS.split_ascii_whitespace().any(|keyword| keyword == part).then(|| Part::Literal(part.to_owned()))
                 }
             })
             .collect::<Option<Vec<_>>>()?;
-        if used.is_empty() || used.len() != pattern.captures_len() - 1 {
+        if next_capture == 1 || next_capture != pattern.captures_len() {
             return None;
         }
         let rule = Self { intent: file.intent, pattern, template };
@@ -268,24 +272,31 @@ impl Rule {
             }
             output.push_str(text);
         }
-        Some((checked_output(self.intent, input, &output)?, output))
+        Some((checked_output(self.intent, input, &output, &captures)?, output))
     }
 }
 
-/// Outside a capture, the pattern can only consume literal words and spaces.
-/// Repetition is allowed inside a capture, where all consumed text is copied.
+/// Outside captures, only literal letters, whitespace, and anchors are allowed.
+/// Alternatives and repetitions belong inside the text copied to the output.
 fn pattern_allowed(ast: &Ast, in_capture: bool) -> bool {
     match ast {
         Ast::Group(group) => match group.kind {
             GroupKind::CaptureIndex(_) => !in_capture && pattern_allowed(&group.ast, true),
-            GroupKind::NonCapturing(_) => pattern_allowed(&group.ast, in_capture),
+            GroupKind::NonCapturing(ref flags) => flags.items.is_empty() && pattern_allowed(&group.ast, in_capture),
             GroupKind::CaptureName { .. } => false,
         },
-        Ast::Alternation(alt) => alt.asts.iter().all(|ast| pattern_allowed(ast, in_capture)),
+        Ast::Alternation(alt) => in_capture && alt.asts.iter().all(|ast| pattern_allowed(ast, true)),
         Ast::Concat(concat) => concat.asts.iter().all(|ast| pattern_allowed(ast, in_capture)),
         Ast::Repetition(rep) => in_capture && pattern_allowed(&rep.ast, true),
         Ast::Empty(_) => true,
-        Ast::Literal(literal) => in_capture || literal.c.is_alphanumeric() || literal.c.is_whitespace(),
+        Ast::Literal(literal) => in_capture || (literal.c.is_alphabetic() && !literal.c.is_numeric()) || literal.c.is_whitespace(),
+        Ast::Assertion(assertion) => {
+            in_capture
+                || matches!(
+                    assertion.kind,
+                    AssertionKind::StartLine | AssertionKind::EndLine | AssertionKind::StartText | AssertionKind::EndText
+                )
+        }
         node => in_capture && !matches!(node, Ast::Flags(_)),
     }
 }

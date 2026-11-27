@@ -1,7 +1,9 @@
 use crate::{
     model::{Destination, FileType, Filter, ImageFormat, Intent, Source},
     parse::{self, phrase},
+    plan::Planner,
 };
+use regex::Captures;
 use serde::Deserialize;
 
 /// Explicit opt-in. New intent variants have to be reviewed against their
@@ -65,56 +67,17 @@ impl IntentKind {
     }
 }
 
-pub(super) fn checked_output(kind: IntentKind, input: &str, output: &str) -> Option<Intent> {
+pub(super) fn checked_output(kind: IntentKind, input: &str, output: &str, captures: &Captures<'_>) -> Option<Intent> {
     let intent = parse::parse_vocab_output(output)?;
     if IntentKind::of(&intent)? != kind {
         return None;
     }
-    let lower = input.to_lowercase();
-    let present = |name: &str| contains_whole(&lower, &name.to_lowercase());
-    let destination = |dest: &Destination| match dest {
-        Destination::Path(path) => present(path),
-        Destination::InFolder { folder, parent, literal, .. } => {
-            present(folder) && present(parent) && literal.as_deref().is_none_or(present)
-        }
-    };
-    let unquoted = phrase::unquoted_text(&lower)?;
-    let number = |n: u32| unquoted.split_whitespace().any(|token| token.parse::<u32>() == Ok(n));
-    let source_ok = match intent.source() {
-        Some(Source::Item { name, folder }) => present(name) && folder.as_deref().is_none_or(present),
-        Some(Source::Set { folder, .. }) => folder.as_deref().is_none_or(present),
-        None => true,
-    };
-    let arguments_ok = match &intent {
-        Intent::Move { to, .. }
-        | Intent::Copy { to, .. }
-        | Intent::SortByType { folder: to, .. }
-        | Intent::SortByMonth { folder: to, .. } => destination(to),
-        Intent::Rename { new_name: name, .. }
-        | Intent::AddPrefix { prefix: name, .. }
-        | Intent::Size { folder: name }
-        | Intent::Duplicates { folder: name } => present(name),
-        Intent::ReplaceInNames { find, replace, .. } => present(find) && (replace.is_empty() || present(replace)),
-        Intent::CreateFolders { names, parent } => names.iter().all(|name| present(name)) && parent.as_deref().is_none_or(present),
-        Intent::Number { base, width, .. } => present(base) && u32::try_from(*width).is_ok_and(number),
-        Intent::ConvertImage { format, .. } => unquoted.split_whitespace().any(|token| format_word(token, *format)),
-        Intent::ResizeImage { width, .. } => number(*width),
-        Intent::MergePdf { output, .. } => output == "merged.pdf" || present(output),
-        Intent::ExtractPages { from, to, output, .. } => number(*from) && number(*to) && output.as_deref().is_none_or(present),
-        Intent::ImagesToPdf { output, .. } | Intent::Zip { output, .. } | Intent::Unzip { destination: output, .. } => {
-            output.as_deref().is_none_or(present)
-        }
-        _ => true,
-    };
-    (source_ok && arguments_ok && preserves_filter(input, &intent)).then_some(intent)
-}
-
-fn contains_whole(input: &str, value: &str) -> bool {
-    let boundary = |ch: char| ch.is_whitespace() || matches!(ch, '"' | '\'' | ',');
-    !value.is_empty()
-        && input.match_indices(value).any(|(start, matched)| {
-            input[..start].chars().next_back().is_none_or(boundary) && input[start + matched.len()..].chars().next().is_none_or(boundary)
-        })
+    if let Intent::Move { to, .. } | Intent::Copy { to, .. } = &intent
+        && to.path().is_some_and(Planner::names_the_trash)
+    {
+        return None;
+    }
+    preserves_filter(input, &intent, captures).then_some(intent)
 }
 
 fn format_word(token: &str, format: ImageFormat) -> bool {
@@ -124,8 +87,19 @@ fn format_word(token: &str, format: ImageFormat) -> bool {
 /// Interpret the original qualifiers using the same parser helpers as the
 /// built-in grammar. Equality binds the normalized filter values (including
 /// days, units, date bounds and name clauses) and catches discarded clauses.
-fn preserves_filter(input: &str, intent: &Intent) -> bool {
-    let Some((mut stated, rest)) = phrase::vocab_qualifiers(input) else { return false };
+fn preserves_filter(input: &str, intent: &Intent, captures: &Captures<'_>) -> bool {
+    let mut input = input.to_owned();
+    let mut compound_folders = Vec::new();
+    let groups: Vec<_> = captures.iter().skip(1).flatten().collect();
+    for folder in literal_folders(intent) {
+        if let Some(capture) = groups.iter().rev().find(|capture| phrase::clean_name(&input[capture.range()]) == folder) {
+            let span = capture.range();
+            input.replace_range(span.clone(), &" ".repeat(span.len()));
+        } else if groups.iter().any(|capture| input[capture.range()].contains(folder)) {
+            compound_folders.push(folder);
+        }
+    }
+    let Some((mut stated, rest)) = phrase::vocab_qualifiers(&input) else { return false };
     let mut actual = match intent {
         Intent::SortByType { include_subfolders, .. } | Intent::SortByMonth { include_subfolders, .. } => {
             Filter { include_subfolders: *include_subfolders, ..Filter::default() }
@@ -141,18 +115,15 @@ fn preserves_filter(input: &str, intent: &Intent) -> bool {
     let Some(rest) = phrase::unquoted_text(&rest) else { return false };
     let lower = rest.to_lowercase();
     let mut words: Vec<_> = lower.split_whitespace().collect();
-    let folders = literal_folders(intent);
-    for folder in &folders {
+    // A capture can hold a whole subject such as "PDFs in Documents named
+    // Documents". Strip qualifiers before looking for the location in it.
+    for folder in compound_folders {
         let folder = folder.to_lowercase();
-        let folder: Vec<_> = folder.split_whitespace().collect();
-        for start in 1..words.len() {
-            if matches!(words[start - 1], "in" | "from" | "on" | "inside" | "within" | "under" | "into" | "to")
-                && words[start..].starts_with(&folder)
-            {
-                // A location such as Pictures or Documents is also a type
-                // word. Ignore it only in an explicit location in the input.
-                words[start..start + folder.len()].fill("");
-            }
+        let parts: Vec<_> = folder.split_whitespace().collect();
+        if !parts.is_empty()
+            && let Some(start) = words.windows(parts.len()).rposition(|window| window == parts)
+        {
+            words[start..start + parts.len()].fill("");
         }
     }
     let mut words = words.as_slice();

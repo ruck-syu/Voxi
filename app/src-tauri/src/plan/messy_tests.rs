@@ -59,7 +59,7 @@ fn vocab_wordings_plan_existing_pdf_and_archive_actions() {
 }
 
 #[test]
-fn vocab_rejects_a_dropped_filter_before_planning_and_preserves_type_aliases() {
+fn vocab_preserves_type_aliases_in_planned_actions() {
     let fixture = MessyMac::new();
     let scans = fixture.roots().downloads().join("Scans");
     fs::create_dir(&scans).unwrap();
@@ -69,19 +69,12 @@ fn vocab_rejects_a_dropped_filter_before_planning_and_preserves_type_aliases() {
     crate::vocab::with_test_pack(
         r#"{
         "schema":1,"version":1,"minAppVersion":"0.0.0","rules":[{
-            "id":"unsafe-runtime-variant","intent":"copy",
-            "pattern":"^relay (?:from|pdfs older than 90 days from) (.+) to (.+)$",
-            "replace":"copy files from $1 to $2",
-            "examples":[{"input":"relay from Scans to Desktop","expect":"copy files from Scans to Desktop"}]
-        },{
             "id":"copy-filtered","intent":"copy",
             "pattern":"^duplicate (.+) toward (.+)$","replace":"copy $1 to $2",
             "examples":[{"input":"duplicate JPGs in Scans toward Desktop","expect":"copy JPGs in Scans to Desktop"}]
         }]
     }"#,
         || {
-            assert!(parse("relay PDFs older than 90 days from Scans to Desktop").is_err());
-            assert_eq!(action_plan(&fixture, "relay from Scans to Desktop", ENTRY_LIMIT).len(), 4);
             let actions = action_plan(&fixture, "duplicate JPGs in Scans toward Desktop", ENTRY_LIMIT);
             let names: std::collections::BTreeSet<_> = actions
                 .iter()
@@ -91,6 +84,81 @@ fn vocab_rejects_a_dropped_filter_before_planning_and_preserves_type_aliases() {
                 })
                 .collect();
             assert_eq!(names, ["receipt.jpeg", "receipt.jpg"].into());
+        },
+    );
+}
+
+#[test]
+fn vocab_alias_cannot_plan_trash_but_can_plan_an_explicit_folder_path() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let report = roots.downloads().join("vocab-report.pdf");
+    fs::write(&report, b"report").unwrap();
+    assert!(!roots.home.join("Desktop/Trash").exists());
+
+    crate::vocab::with_test_pack(
+        r#"{
+        "schema":1,"version":1,"minAppVersion":"0.0.0","rules":[{
+            "id":"relay","intent":"move",
+            "pattern":"^relay (.+) toward (.+)$","replace":"move $1 to $2",
+            "examples":[{"input":"relay vocab-report.pdf toward Documents","expect":"move vocab-report.pdf to Documents"}]
+        },{
+            "id":"check","intent":"move",
+            "pattern":"^check (.+) for (.+) aged (.+)$","replace":"move $1 to $2 $3",
+            "examples":[{"input":"check PDFs in Downloads for Desktop aged older than 90 days","expect":"move PDFs in Downloads to Desktop older than 90 days"}]
+        }]
+    }"#,
+        || {
+            assert!(parse("relay vocab-report.pdf toward Trash").is_err());
+            assert!(parse("check PDFs in Downloads for Trash aged older than 90 days").is_err());
+            assert!(parse("check trash for PDFs in Downloads older than 90 days").is_err());
+            for destination in ["Documents", "Documents/Trash"] {
+                let actions = action_plan(&fixture, &format!("relay vocab-report.pdf toward {destination}"), ENTRY_LIMIT);
+                assert!(actions.iter().any(|action| matches!(action, Action::Move { from, .. } if from == &report)));
+                assert!(!actions.iter().any(|action| matches!(action, Action::Trash { .. })));
+            }
+        },
+    );
+    // The same filtered transfer remains available as an explicit command.
+    let intent = parse("move PDFs in Downloads to Trash older than 90 days").unwrap();
+    assert!(matches!(intent, Intent::Move { .. }));
+    let choices = HashMap::new();
+    let mut planner = Planner::new(roots, &choices);
+    planner.now = Local::now() + chrono::TimeDelta::days(91);
+    let planned = planner.plan(&intent, &History::load(roots.home.join("history.json"))).unwrap();
+    assert!(matches!(planned, Planned::Steps { actions, .. } if actions.iter().any(|action|
+        matches!(action, Action::Trash { path } if path == &report))));
+}
+
+#[test]
+fn vocab_numbering_and_spoken_character_replacement_plan_renames() {
+    let fixture = MessyMac::new();
+    let trip = fixture.roots().downloads().join("Vocab Trip");
+    fs::create_dir(&trip).unwrap();
+    let image = trip.join("beach photo.jpg");
+    fs::write(&image, b"image").unwrap();
+    crate::vocab::with_test_pack(
+        r#"{
+        "schema":1,"version":1,"minAppVersion":"0.0.0","rules":[{
+            "id":"enumerate","intent":"number",
+            "pattern":"^enumerate (.+) like (.+)$","replace":"number $1 as $2",
+            "examples":[{"input":"enumerate images in Vocab Trip like trip-001","expect":"number images in Vocab Trip as trip-001"}]
+        },{
+            "id":"substitute","intent":"replace_in_names",
+            "pattern":"^substitute (.+) for (.+) across (.+)$","replace":"replace $1 with $2 in $3",
+            "examples":[{"input":"substitute spaces for dashes across files in Vocab Trip","expect":"replace spaces with dashes in files in Vocab Trip"}]
+        }]
+    }"#,
+        || {
+            for (command, new_name) in [
+                ("enumerate images in Vocab Trip like trip-001", "trip-001.jpg"),
+                ("substitute spaces for dashes across files in Vocab Trip", "beach-photo.jpg"),
+            ] {
+                assert_eq!(
+                    action_plan(&fixture, command, ENTRY_LIMIT),
+                    [Action::Rename { path: image.clone(), new_name: new_name.into() }]
+                );
+            }
         },
     );
 }

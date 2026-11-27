@@ -1,6 +1,6 @@
 name: Release
 
-# Docs, website and vocabulary-only changes skip app release CI.
+# Docs, website and vocabulary-only changes skip app release CI. Website checks run separately.
 # The audits that read docs/testing are #[ignore] tests CI never runs.
 on:
   pull_request:

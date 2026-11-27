@@ -2,6 +2,7 @@ use settings::diagnostics;
 /// Report-only audits over the parser and planner; test builds only.
 #[cfg(test)]
 mod audits;
+mod command_request;
 mod exec;
 #[cfg(any(test, feature = "tiny-model"))]
 mod fallback_guard;
@@ -2364,6 +2365,7 @@ pub fn run() {
             pause_scheduled_task,
             resume_scheduled_task,
             report_wrong,
+            command_request::send_command_request,
             reports_summary,
             clear_reports,
             reveal_reports,

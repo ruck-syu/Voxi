@@ -774,9 +774,109 @@ function CommandView({
         onToggleSkip={toggleSkip}
       />
       {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={(settings, text) => { onSettingsChanged(settings); setOffer((current) => (current === offer ? { ...offer, saved: text } : current)); }} onDone={() => { setOffer(null); focusInput(); }} />}
+      {phase.k === "outcome" && phase.outcome.status === "not_understood" && (
+        <CommandRequestRow key={requestId.current} original={lastCommand.current} onCancel={focusInput} />
+      )}
       {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
       <Footer phase={phase} asking={!!asking} onSettings={onSettings} />
     </>
+  );
+}
+
+function CommandRequestRow({ original, onCancel }: { original: string; onCancel: () => void }) {
+  const [mode, setMode] = useState<"idle" | "editing" | "sending" | "sent">("idle");
+  const [command, setCommand] = useState(original);
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+  const [commandInvalid, setCommandInvalid] = useState(false);
+  const commandField = useRef<HTMLTextAreaElement>(null);
+  const sending = mode === "sending";
+
+  const send = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (mode !== "editing") return;
+    if (!command.trim() || command.trim().length > 300) {
+      setError("Use 1–300 characters for the command.");
+      setCommandInvalid(true);
+      commandField.current?.focus();
+      return;
+    }
+    setError("");
+    setMode("sending");
+    try {
+      const result = await api.sendCommandRequest(command, note.trim() ? note : undefined);
+      if (result.status === "sent") {
+        setMode("sent");
+        return;
+      }
+      setError(result.status === "failed" ? result.message : "Too many requests. Try again in a few minutes.");
+    } catch {
+      setError("Couldn't send the request. Try again.");
+    }
+    setMode("editing");
+  };
+
+  if (mode === "idle") return (
+    <div className="learn">
+      <button className="link" onClick={() => setMode("editing")}>Request this command</button>
+    </div>
+  );
+
+  return (
+    <div className="learn command-request">
+      {mode !== "sent" && (
+        <form aria-label="Request this command" method="post" onSubmit={send}>
+          <p id="request-public">Your command and note will be posted publicly on GitHub. File and folder names will be visible, so remove any you want to keep private.</p>
+          <label htmlFor="request-command">Command (required, up to 300 characters)</label>
+          <textarea
+            ref={commandField}
+            className="path"
+            id="request-command"
+            name="command"
+            rows={2}
+            required
+            autoFocus
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={command}
+            readOnly={sending}
+            aria-invalid={commandInvalid || undefined}
+            aria-describedby="request-public request-error"
+            onChange={(event) => {
+              setCommand(event.target.value);
+              setError("");
+              setCommandInvalid(false);
+            }}
+          />
+          <label htmlFor="request-note">Note (optional, up to 500 characters)</label>
+          <textarea
+            className="path"
+            id="request-note"
+            name="note"
+            rows={2}
+            maxLength={500}
+            aria-describedby="request-public request-error"
+            value={note}
+            readOnly={sending}
+            onChange={(event) => { setNote(event.target.value); setError(""); }}
+          />
+          <div id="request-error" className="warn" role="alert">{error}</div>
+          <div className="learn-buttons">
+            <button className="secondary small" type="submit" disabled={sending}>Send</button>
+            <button className="link" type="button" disabled={sending} onClick={() => {
+              setMode("idle");
+              setCommand(original);
+              setNote("");
+              setError("");
+              setCommandInvalid(false);
+              onCancel();
+            }}>Cancel</button>
+          </div>
+        </form>
+      )}
+      <div role="status">{sending ? "Sending…" : mode === "sent" ? "Request sent. Thanks!" : ""}</div>
+    </div>
   );
 }
 

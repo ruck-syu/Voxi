@@ -1,0 +1,27 @@
+name: Website
+
+on:
+  pull_request:
+    paths:
+      - "website/**"
+      - "app/scripts/command-request.test.mjs"
+      - ".github/workflows/website.yml"
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "app/scripts/command-request.test.mjs"
+      - ".github/workflows/website.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  command-requests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test app/scripts/command-request.test.mjs

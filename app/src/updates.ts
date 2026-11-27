@@ -5,9 +5,9 @@
 import { useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { errorMessage, inTauri } from "./api";
+import { api, errorMessage, inTauri } from "./api";
 
-export type UpdateState =
+type UpdatePhase =
   | { k: "idle" }
   | { k: "checking" }
   | { k: "latest" }
@@ -16,15 +16,18 @@ export type UpdateState =
   | { k: "relaunchFailed"; notes: string[] }
   | { k: "error"; message: string };
 
-let state: UpdateState = { k: "idle" };
+export type UpdateState = UpdatePhase & { commandsAdded: boolean };
+
+let state: UpdateState = { k: "idle", commandsAdded: false };
+let checkId = 0;
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 };
 const snapshot = () => state;
-function setState(next: UpdateState) {
-  state = next;
+function setState(next: UpdatePhase, commandsAdded = state.commandsAdded) {
+  state = { ...next, commandsAdded };
   for (const listener of listeners) listener();
 }
 
@@ -57,7 +60,12 @@ export async function appVersion(): Promise<string> {
 
 export async function checkAndInstall(): Promise<void> {
   if (!canCheckForUpdates(state)) return;
-  setState({ k: "checking" });
+  const id = ++checkId;
+  setState({ k: "checking" }, false);
+  // A vocabulary result can arrive after the updater finishes or a new check starts.
+  void api.refreshVocabulary().then((result) => {
+    if (result === "updated" && id === checkId) setState(state, true);
+  }).catch(() => {});
   if (!inTauri) return fakeUpdate();
   try {
     const { check } = await import("@tauri-apps/plugin-updater");

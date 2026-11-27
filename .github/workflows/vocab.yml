@@ -1,0 +1,106 @@
+name: Vocabulary
+
+on:
+  pull_request:
+    paths:
+      - "vocab/**"
+      - "app/src-tauri/**"
+      - ".github/workflows/vocab.yml"
+      - ".github/scripts/check-vocab-version.sh"
+  push:
+    branches: [main]
+    paths:
+      - "vocab/vocab.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check changed PR pack version
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/check-vocab-version.sh --pull-request "$GITHUB_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Build frontend
+        working-directory: app
+        run: npm ci && npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test signed pack, plans, and parser corpus
+        working-directory: app/src-tauri
+        run: |
+          env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib vocab::tests
+          env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib plan::tests::messy::vocab_
+          env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib parse::corpus_tests::corpus_commands_build_the_intended_intent
+          env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib messy_mac_plans_every_accepted_corpus_command
+
+  publish:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-voxi-vocabulary
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check published version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.before }}
+        run: bash .github/scripts/check-vocab-version.sh "$BASE" "$GITHUB_SHA"
+
+      - name: Install minisign
+        if: steps.version.outputs.pack == 'true'
+        run: sudo apt-get update && sudo apt-get install -y minisign
+
+      - name: Sign and verify vocabulary
+        if: steps.version.outputs.pack == 'true'
+        env:
+          VOCAB_SIGNING_KEY: ${{ secrets.VOCAB_SIGNING_KEY }}
+          VOCAB_SIGNING_KEY_PASSWORD: ${{ secrets.VOCAB_SIGNING_KEY_PASSWORD }}
+        run: |
+          : "${VOCAB_SIGNING_KEY:?Missing VOCAB_SIGNING_KEY}"
+          : "${VOCAB_SIGNING_KEY_PASSWORD:?Missing VOCAB_SIGNING_KEY_PASSWORD}"
+          umask 077
+          key=$(mktemp "$RUNNER_TEMP/voxi-vocab-key.XXXXXX")
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$VOCAB_SIGNING_KEY" > "$key"
+          mkdir "$RUNNER_TEMP/voxi-vocab"
+          cp vocab/vocab.json "$RUNNER_TEMP/voxi-vocab/vocab.json"
+          schema=$(jq -r '.schema' vocab/vocab.json)
+          version=$(jq -r '.version' vocab/vocab.json)
+          printf '%s\n' "$VOCAB_SIGNING_KEY_PASSWORD" | minisign -S -s "$key" \
+            -t "Voxi vocabulary schema=$schema version=$version" -m "$RUNNER_TEMP/voxi-vocab/vocab.json"
+          minisign -V -q -p vocab/vocab.pub -m "$RUNNER_TEMP/voxi-vocab/vocab.json"
+
+      - name: Publish vocabulary assets
+        if: steps.version.outputs.pack == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets="$RUNNER_TEMP/voxi-vocab"
+          if [[ "${VOCAB_RELEASE_EXISTS:-}" == true ]]; then
+            gh release upload vocab-latest "$assets/vocab.json.minisig" "$assets/vocab.json" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create vocab-latest "$assets/vocab.json" "$assets/vocab.json.minisig" \
+              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Voxi vocabulary" \
+              --notes "Signed vocabulary updates for Voxi." --prerelease --latest=false
+          fi

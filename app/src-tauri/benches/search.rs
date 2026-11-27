@@ -25,6 +25,8 @@ mod scheduler;
 mod scope;
 #[path = "../src/settings.rs"]
 mod settings;
+#[path = "../src/vocab.rs"]
+mod vocab;
 
 use serde_json::{Value, json};
 use std::{collections::HashMap, fs, hint::black_box, path::Path, time::Instant};

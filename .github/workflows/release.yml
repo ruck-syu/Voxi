@@ -1,11 +1,13 @@
 name: Release
 
-# Docs and website-only changes skip CI. The audits that read docs/testing are #[ignore] tests CI never runs.
+# Docs, website and vocabulary-only changes skip app release CI.
+# The audits that read docs/testing are #[ignore] tests CI never runs.
 on:
   pull_request:
     paths-ignore:
       - "website/**"
       - "docs/**"
+      - "vocab/**"
       - "**.md"
       - ".claude/**"
   push:
@@ -13,6 +15,7 @@ on:
     paths-ignore:
       - "website/**"
       - "docs/**"
+      - "vocab/**"
       - "**.md"
       - ".claude/**"
   workflow_dispatch:
@@ -60,7 +63,7 @@ jobs:
           components: clippy, rustfmt
       - run: npm ci
       - run: node scripts/check-versions.mjs
-      - run: node --test scripts/next-version.test.mjs
+      - run: node --test scripts/*.test.mjs
       - run: npm run lint
       - run: npm run test:finder-handoff
       - run: npm run build

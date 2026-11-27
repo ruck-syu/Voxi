@@ -542,7 +542,10 @@ function UpdatesRow() {
             : state.k === "error"
               ? state.message
               : null;
-  const statusWithVocabulary = state.commandsAdded ? `${status ?? "Voxi is up to date."} New commands added.` : status;
+  // Only on a settled result: in-progress states would read "Checking… New commands added."
+  const showCommands = state.commandsAdded && (state.k === "latest" || state.k === "error" || state.k === "relaunchFailed");
+  const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`);
+  const statusWithVocabulary = showCommands ? `${sentence(status ?? "Voxi is up to date.")} New commands added.` : status;
   const fraction = state.k === "downloading" && state.total ? Math.min(state.done / state.total, 1) : null;
   const notes = "notes" in state ? state.notes : [];
 

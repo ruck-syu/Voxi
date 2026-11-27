@@ -1,0 +1,97 @@
+name: Vocabulary
+
+on:
+  pull_request:
+    paths:
+      - "vocab/**"
+      - "app/src-tauri/**"
+      - ".github/workflows/vocab.yml"
+  push:
+    branches: [main]
+    paths:
+      - "vocab/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test signed pack and parser regression corpus
+        working-directory: app/src-tauri
+        run: |
+          env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib vocab::tests
+          env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib parse::corpus_tests::corpus_commands_build_the_intended_intent
+
+  publish:
+    needs: validate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-voxi-vocabulary
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check published version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == "vocab-latest") | [.prerelease, .draft] | @tsv')
+          if [[ -z "$release" ]]; then
+            exit 0
+          fi
+          if [[ "$release" != $'true\tfalse' ]]; then
+            echo "::error::vocab-latest must be a published prerelease"
+            exit 1
+          fi
+          gh release download vocab-latest --repo "$GITHUB_REPOSITORY" --pattern vocab.json --dir "$RUNNER_TEMP"
+          python3 - "$RUNNER_TEMP/vocab.json" <<'PY'
+          import json, pathlib, sys
+          current = json.loads(pathlib.Path(sys.argv[1]).read_bytes())["version"]
+          candidate = json.loads(pathlib.Path("vocab/vocab.json").read_bytes())["version"]
+          if type(current) is not int or current < 1 or candidate <= current:
+              sys.exit(f"Vocabulary version {candidate} must exceed published version {current}")
+          PY
+          echo "VOCAB_RELEASE_EXISTS=true" >> "$GITHUB_ENV"
+
+      - name: Install minisign
+        run: sudo apt-get update && sudo apt-get install -y minisign
+
+      - name: Sign and verify vocabulary
+        env:
+          VOCAB_SIGNING_KEY: ${{ secrets.VOCAB_SIGNING_KEY }}
+          VOCAB_SIGNING_KEY_PASSWORD: ${{ secrets.VOCAB_SIGNING_KEY_PASSWORD }}
+        run: |
+          : "${VOCAB_SIGNING_KEY:?Missing VOCAB_SIGNING_KEY}"
+          : "${VOCAB_SIGNING_KEY_PASSWORD:?Missing VOCAB_SIGNING_KEY_PASSWORD}"
+          umask 077
+          key=$(mktemp "$RUNNER_TEMP/voxi-vocab-key.XXXXXX")
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$VOCAB_SIGNING_KEY" > "$key"
+          mkdir "$RUNNER_TEMP/voxi-vocab"
+          cp vocab/vocab.json "$RUNNER_TEMP/voxi-vocab/vocab.json"
+          printf '%s\n' "$VOCAB_SIGNING_KEY_PASSWORD" | minisign -S -s "$key" -t "Voxi vocabulary" \
+            -m "$RUNNER_TEMP/voxi-vocab/vocab.json"
+          minisign -V -q -p vocab/vocab.pub -m "$RUNNER_TEMP/voxi-vocab/vocab.json"
+
+      - name: Publish vocabulary assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets="$RUNNER_TEMP/voxi-vocab"
+          if [[ "${VOCAB_RELEASE_EXISTS:-}" == true ]]; then
+            gh release upload vocab-latest "$assets/vocab.json.minisig" "$assets/vocab.json" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create vocab-latest "$assets/vocab.json" "$assets/vocab.json.minisig" \
+              --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Voxi vocabulary" \
+              --notes "Signed vocabulary updates for Voxi." --prerelease --latest=false
+          fi

@@ -53,6 +53,7 @@ fn vocab_wordings_plan_existing_pdf_and_archive_actions() {
         ("break report.pdf into pages", "split report.pdf into pages"),
         ("pull pages 2 to 5 out of report.pdf", "extract pages 2 to 5 from report.pdf"),
         ("uncompress archive.zip into Downloads/archive", "unzip archive.zip into Downloads/archive"),
+        ("make one PDF from images in Scans called receipts.pdf", "make a PDF from images in Scans called receipts.pdf"),
     ] {
         assert_eq!(action_plan(&fixture, wording, ENTRY_LIMIT), action_plan(&fixture, canonical, ENTRY_LIMIT), "{wording}");
     }

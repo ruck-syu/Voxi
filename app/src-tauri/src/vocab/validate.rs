@@ -77,7 +77,91 @@ pub(super) fn checked_output(kind: IntentKind, input: &str, output: &str, captur
     {
         return None;
     }
-    preserves_filter(input, &intent, captures).then_some(intent)
+    (arguments_captured(&intent, captures) && preserves_filter(input, &intent, captures)).then_some(intent)
+}
+
+/// Every name, folder, prefix and output the intent carries must come from the
+/// person's words inside a capture. Template keywords such as "out", "date" or
+/// "images" are grammar; the parser would also accept them as names, so a
+/// template could otherwise supply an argument nobody said.
+fn arguments_captured(intent: &Intent, captures: &Captures<'_>) -> bool {
+    let words: Vec<Vec<String>> = captures
+        .iter()
+        .skip(1)
+        .flatten()
+        .map(|capture| {
+            capture
+                .as_str()
+                .split_whitespace()
+                .map(|word| word.trim_matches(|c: char| matches!(c, '"' | '\'' | ',' | ';' | ':' | '!' | '?')).to_lowercase())
+                .collect()
+        })
+        .collect();
+    let windows = || {
+        words.iter().flat_map(|tokens| {
+            (0..tokens.len()).flat_map(move |start| (start + 1..=tokens.len()).map(move |end| tokens[start..end].join(" ")))
+        })
+    };
+    let said = |arg: &str| {
+        let arg = arg.trim().trim_end_matches('/').to_lowercase();
+        // A parser-added extension ("backup" -> "backup.zip") keeps the stem.
+        let stem = arg.rsplit_once('.').map(|(stem, _)| stem).filter(|stem| !stem.is_empty());
+        arg.is_empty()
+            || windows().any(|window| {
+                window == arg
+                    || stem.is_some_and(|stem| window == stem)
+                    || phrase::known_folder(&window).is_some_and(|folder| folder == arg)
+                    || phrase::clean_name(&window).to_lowercase() == arg
+            })
+    };
+    let spoken = |value: &str| said(value) || windows().any(|window| parse::spoken_chars(&window) == value);
+
+    let mut args: Vec<&str> = literal_folders(intent);
+    if let Some(Source::Item { name, .. }) = intent.source() {
+        args.push(name);
+    }
+    match intent {
+        Intent::Move { to: Destination::InFolder { literal: Some(name), .. }, .. }
+        | Intent::Copy { to: Destination::InFolder { literal: Some(name), .. }, .. } => args.push(name),
+        Intent::Rename { new_name: name, .. } | Intent::AddPrefix { prefix: name, .. } => args.push(name),
+        Intent::CreateFolders { names, .. } => args.extend(names.iter().map(String::as_str)),
+        Intent::MergePdf { output, .. } if output != "merged.pdf" => args.push(output), // Built-in default.
+        Intent::ExtractPages { output: Some(output), .. }
+        | Intent::ImagesToPdf { output: Some(output), .. }
+        | Intent::Zip { output: Some(output), .. } => args.push(output),
+        Intent::Number { base, .. } => {
+            let stem = base.trim_end_matches(['-', '_', '.', ' ']).to_lowercase();
+            if !said(&stem) && !words.iter().flatten().any(|word| !stem.is_empty() && word.starts_with(&stem)) {
+                return false;
+            }
+        }
+        Intent::ReplaceInNames { find, replace, .. } if !spoken(find) || !spoken(replace) => return false,
+        _ => {}
+    }
+    args.into_iter().all(said)
+}
+
+/// The output name of an intent that writes a new file, when one was named.
+fn output_of(intent: &Intent) -> Option<&str> {
+    match intent {
+        Intent::MergePdf { output, .. } => Some(output),
+        Intent::ExtractPages { output, .. } | Intent::ImagesToPdf { output, .. } | Intent::Zip { output, .. } => output.as_deref(),
+        _ => None,
+    }
+}
+
+/// Drops a trailing "called receipts.pdf" (or into/as/named) output clause, so
+/// the output name is not read as a name filter on the source.
+fn strip_output_clause(input: &mut String, output: &str) {
+    let lower = input.to_ascii_lowercase();
+    for connector in [" into ", " as ", " called ", " named ", " to "] {
+        if let Some(pos) = lower.rfind(connector)
+            && phrase::clean_name(&input[pos + connector.len()..]).eq_ignore_ascii_case(output)
+        {
+            input.truncate(pos);
+            return;
+        }
+    }
 }
 
 fn format_word(token: &str, format: ImageFormat) -> bool {
@@ -98,6 +182,9 @@ fn preserves_filter(input: &str, intent: &Intent, captures: &Captures<'_>) -> bo
         } else if groups.iter().any(|capture| input[capture.range()].contains(folder)) {
             compound_folders.push(folder);
         }
+    }
+    if let Some(output) = output_of(intent) {
+        strip_output_clause(&mut input, output);
     }
     let Some((mut stated, rest)) = phrase::vocab_qualifiers(&input) else { return false };
     let mut actual = match intent {

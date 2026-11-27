@@ -36,6 +36,7 @@ mod pdf;
 pub mod phrase;
 mod refusal;
 mod rename;
+pub(crate) use rename::spoken_chars;
 mod rewrite;
 
 use crate::model::{FileType, Intent, Source};

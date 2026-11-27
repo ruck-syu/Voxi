@@ -331,3 +331,37 @@ fn refresh_interval_is_shared_across_launches() {
     assert_eq!(check_due(dir.path(), 90_000), Duration::ZERO);
     assert!(client().is_ok(), "the TLS client must work before the app updater runs");
 }
+
+#[test]
+fn template_keywords_cannot_supply_arguments() {
+    use IntentKind::*;
+    for (intent, pattern, replace, input, expect) in [
+        (Move, "^stash (.+)$", "move $1 to out", "stash report.pdf", "move report.pdf to out"),
+        (Move, "^stash (.+)$", "move $1 to images", "stash report.pdf", "move report.pdf to images"),
+        (List, "^survey (.+)$", "list $1 in date", "survey pdfs", "list pdfs in date"),
+        (Number, "^enumerate (.+)$", "number $1 as date", "enumerate images in Trip", "number images in Trip as date"),
+        (Rename, "^relabel (.+)$", "rename $1 to out", "relabel report.pdf", "rename report.pdf to out"),
+        (AddPrefix, "^prepend (.+)$", "add prefix date to $1", "prepend files in Scans", "add prefix date to files in Scans"),
+        (Zip, "^pack (.+)$", "zip $1 into out", "pack report.pdf", "zip report.pdf into out"),
+        (CreateFolders, "^spawn (.+)$", "create folder out in $1", "spawn Desktop", "create folder out in Desktop"),
+        (Unzip, "^uncompress (.+?\\.zip)$", "unzip $1 into out", "uncompress archive.zip", "unzip archive.zip into out"),
+    ] {
+        assert!(Rule::compile(&rule(intent, pattern, replace, input, expect)).is_none(), "{replace}");
+    }
+}
+
+#[test]
+fn canonical_capture_references_and_no_mid_pattern_anchors() {
+    for (pattern, replace) in
+        [("^chop (.+)$", "split $01"), ("^chop (.+)$", "split $+1"), ("^chop^ (.+)$", "split $1"), ("^chop\\A (.+)$", "split $1")]
+    {
+        assert!(Rule::compile(&rule(IntentKind::SplitPdf, pattern, replace, "chop x.pdf", "split x.pdf")).is_none(), "{pattern} {replace}");
+    }
+}
+
+#[test]
+fn seed_keeps_called_output_names() {
+    let expected = parse::parse_builtin("make a PDF from images in Scans called receipts.pdf").unwrap();
+    assert!(matches!(&expected, Intent::ImagesToPdf { output: Some(output), .. } if output == "receipts.pdf"));
+    assert_eq!(parse::parse_classified("make one PDF from images in Scans called receipts.pdf"), Ok(expected));
+}

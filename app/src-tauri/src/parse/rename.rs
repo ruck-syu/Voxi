@@ -39,7 +39,7 @@ fn number_template(target: &str) -> Option<(String, usize)> {
 }
 
 /// "spaces" -> " ", "dashes" -> "-", anything else unchanged.
-fn spoken_chars(s: &str) -> String {
+pub(crate) fn spoken_chars(s: &str) -> String {
     let s = s.trim();
     if s.starts_with(['"', '\'']) {
         return clean_name(s);

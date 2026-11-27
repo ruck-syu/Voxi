@@ -10,7 +10,7 @@ use crate::{
 };
 use minisign_verify::{PublicKey, Signature};
 use regex::{Regex, RegexBuilder};
-use regex_syntax::ast::{AssertionKind, Ast, GroupKind, parse::Parser};
+use regex_syntax::ast::{Ast, GroupKind, parse::Parser};
 use semver::Version;
 use serde::Deserialize;
 use std::{
@@ -207,7 +207,8 @@ impl Rule {
             .split(' ')
             .map(|part| {
                 if let Some(index) = part.strip_prefix('$') {
-                    let index = index.parse::<usize>().ok()?;
+                    // Only the canonical "$1" form: no "$01", "$+1" or "${1}".
+                    let index = index.parse::<usize>().ok().filter(|i| i.to_string() == index)?;
                     if index != next_capture || index >= pattern.captures_len() {
                         return None;
                     }
@@ -290,13 +291,9 @@ fn pattern_allowed(ast: &Ast, in_capture: bool) -> bool {
         Ast::Repetition(rep) => in_capture && pattern_allowed(&rep.ast, true),
         Ast::Empty(_) => true,
         Ast::Literal(literal) => in_capture || (literal.c.is_alphabetic() && !literal.c.is_numeric()) || literal.c.is_whitespace(),
-        Ast::Assertion(assertion) => {
-            in_capture
-                || matches!(
-                    assertion.kind,
-                    AssertionKind::StartLine | AssertionKind::EndLine | AssertionKind::StartText | AssertionKind::EndText
-                )
-        }
+        // The outer ^ and $ are stripped before parsing, so any anchor left
+        // outside a capture is a mid-pattern assertion.
+        Ast::Assertion(_) => in_capture,
         node => in_capture && !matches!(node, Ast::Flags(_)),
     }
 }

@@ -248,6 +248,7 @@ export default function App() {
             open={open}
             onClose={close}
             onBusy={setBusy}
+            beginOperation={beginOperation}
             onSettings={() => setView("settings")}
             onSettingsChanged={setSettings}
             showExamples={settings ? !settings.ranFirstCommand : false}
@@ -337,6 +338,7 @@ function CommandView({
   open,
   onClose,
   onBusy,
+  beginOperation,
   onSettings,
   onSettingsChanged,
   showExamples,
@@ -349,6 +351,8 @@ function CommandView({
   open: boolean;
   onClose: () => void;
   onBusy: (busy: boolean, executing?: boolean) => void;
+  /** Keeps the window open (and mounted) while a side operation runs. */
+  beginOperation: () => () => void;
   onSettings: () => void;
   onSettingsChanged: (s: Settings) => void;
   /** Cycle example commands in the empty box: only until the first command runs. */
@@ -775,7 +779,7 @@ function CommandView({
       />
       {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={(settings, text) => { onSettingsChanged(settings); setOffer((current) => (current === offer ? { ...offer, saved: text } : current)); }} onDone={() => { setOffer(null); focusInput(); }} />}
       {phase.k === "outcome" && phase.outcome.status === "not_understood" && (
-        <CommandRequestRow key={requestId.current} original={lastCommand.current} onCancel={focusInput} />
+        <CommandRequestRow key={requestId.current} original={lastCommand.current} onCancel={focusInput} beginOperation={beginOperation} />
       )}
       {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
       <Footer phase={phase} asking={!!asking} onSettings={onSettings} />
@@ -783,8 +787,10 @@ function CommandView({
   );
 }
 
-function CommandRequestRow({ original, onCancel }: { original: string; onCancel: () => void }) {
+function CommandRequestRow({ original, onCancel, beginOperation }: { original: string; onCancel: () => void; beginOperation: () => () => void }) {
   const [mode, setMode] = useState<"idle" | "editing" | "sending" | "sent">("idle");
+  // Synchronous guard: two clicks in one tick both see mode === "editing".
+  const inFlight = useRef(false);
   const [command, setCommand] = useState(original);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -792,9 +798,26 @@ function CommandRequestRow({ original, onCancel }: { original: string; onCancel:
   const commandField = useRef<HTMLTextAreaElement>(null);
   const sending = mode === "sending";
 
+  // While sending, Escape must not reset the view: the request still posts.
+  useEffect(() => {
+    if (!sending) return;
+    const swallow = (event: KeyboardEvent) => { if (event.key === "Escape") event.preventDefault(); };
+    window.addEventListener("keydown", swallow, true);
+    return () => window.removeEventListener("keydown", swallow, true);
+  }, [sending]);
+
+  const cancel = () => {
+    setMode("idle");
+    setCommand(original);
+    setNote("");
+    setError("");
+    setCommandInvalid(false);
+    onCancel();
+  };
+
   const send = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (mode !== "editing") return;
+    if (mode !== "editing" || inFlight.current) return;
     if (!command.trim() || command.trim().length > 300) {
       setError("Use 1–300 characters for the command.");
       setCommandInvalid(true);
@@ -803,17 +826,25 @@ function CommandRequestRow({ original, onCancel }: { original: string; onCancel:
     }
     setError("");
     setMode("sending");
+    inFlight.current = true;
+    // Blur, outside clicks and reopening the window leave the view alone until this settles.
+    const release = beginOperation();
     try {
       const result = await api.sendCommandRequest(command, note.trim() ? note : undefined);
       if (result.status === "sent") {
         setMode("sent");
+        onCancel();
         return;
       }
       setError(result.status === "failed" ? result.message : "Too many requests. Try again in a few minutes.");
     } catch {
       setError("Couldn't send the request. Try again.");
+    } finally {
+      inFlight.current = false;
+      release();
     }
     setMode("editing");
+    requestAnimationFrame(() => commandField.current?.focus());
   };
 
   if (mode === "idle") return (
@@ -825,7 +856,12 @@ function CommandRequestRow({ original, onCancel }: { original: string; onCancel:
   return (
     <div className="learn command-request">
       {mode !== "sent" && (
-        <form aria-label="Request this command" method="post" onSubmit={send}>
+        <form aria-label="Request this command" method="post" noValidate onSubmit={send} onKeyDown={(event) => {
+          // Escape closes only this form, not the whole result.
+          if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+          event.preventDefault();
+          if (!sending) cancel();
+        }}>
           <p id="request-public">Your command and note will be posted publicly on GitHub. File and folder names will be visible, so remove any you want to keep private.</p>
           <label htmlFor="request-command">Command (required, up to 300 characters)</label>
           <textarea
@@ -834,7 +870,7 @@ function CommandRequestRow({ original, onCancel }: { original: string; onCancel:
             id="request-command"
             name="command"
             rows={2}
-            required
+            aria-required="true"
             autoFocus
             autoCorrect="off"
             autoCapitalize="off"
@@ -864,14 +900,7 @@ function CommandRequestRow({ original, onCancel }: { original: string; onCancel:
           <div id="request-error" className="warn" role="alert">{error}</div>
           <div className="learn-buttons">
             <button className="secondary small" type="submit" disabled={sending}>Send</button>
-            <button className="link" type="button" disabled={sending} onClick={() => {
-              setMode("idle");
-              setCommand(original);
-              setNote("");
-              setError("");
-              setCommandInvalid(false);
-              onCancel();
-            }}>Cancel</button>
+            <button className="link" type="button" disabled={sending} onClick={cancel}>Cancel</button>
           </div>
         </form>
       )}

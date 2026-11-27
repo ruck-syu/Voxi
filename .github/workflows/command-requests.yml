@@ -1,0 +1,45 @@
+name: Command requests
+
+# Folds request comments queued by website/api/command-request.js into the
+# tracking issue's checklist. Run it once by hand to create the issue.
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+  schedule:
+    # Safety net for anything a failed run left queued.
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+  issues: write
+
+# One run at a time. A newer queued run replaces an older queued one, which is
+# safe because every run folds all queued comments.
+concurrency:
+  group: command-requests
+  cancel-in-progress: false
+
+jobs:
+  fold:
+    if: >-
+      github.event_name != 'issue_comment' || (
+        contains(github.event.issue.labels.*.name, 'command-requests') &&
+        github.event.comment.user.login == (vars.COMMAND_REQUESTS_AUTHOR || github.repository_owner) &&
+        startsWith(github.event.comment.body, '<!-- voxi-command-request:')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/scripts
+            website/api
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node .github/scripts/fold-command-requests.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUEST_AUTHOR: ${{ vars.COMMAND_REQUESTS_AUTHOR || github.repository_owner }}

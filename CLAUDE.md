@@ -27,6 +27,7 @@ For every user-reported failure, add a planner test in `app/src-tauri/src/plan/m
 Run the same gate as the `quality` job in `.github/workflows/release.yml`. Use rustup stable for Cargo (`rustup run stable cargo …`), because Homebrew's `rustc` may come first on PATH and CI uses the latest stable.
 
 - Frontend, from `app/`: `npm ci && node scripts/check-versions.mjs && node --test scripts/*.test.mjs && npm run lint && npm run test:finder-handoff && npm run build`
+- Command requests, from the repo root: `node --test .github/scripts/command-requests.test.mjs`
 - Rust, from `app/src-tauri/`, each with `env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR`:
   - `cargo test --locked --lib` and `cargo test --locked --lib --features tiny-model`
   - `cargo test --locked --test rule_only_equivalence`, with and without `--features tiny-model`. Run both `--lib` suites first, in the same target directory: the equivalence test reads their builds and fails on a missing or stale one.

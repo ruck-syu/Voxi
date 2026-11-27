@@ -4,14 +4,16 @@ on:
   pull_request:
     paths:
       - "website/**"
-      - "app/scripts/command-request.test.mjs"
+      - ".github/scripts/*command-requests*"
       - ".github/workflows/website.yml"
+      - ".github/workflows/command-requests.yml"
   push:
     branches: [main]
     paths:
       - "website/**"
-      - "app/scripts/command-request.test.mjs"
+      - ".github/scripts/*command-requests*"
       - ".github/workflows/website.yml"
+      - ".github/workflows/command-requests.yml"
 
 permissions:
   contents: read
@@ -19,9 +21,10 @@ permissions:
 jobs:
   command-requests:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --test app/scripts/command-request.test.mjs
+      - run: node --test .github/scripts/command-requests.test.mjs

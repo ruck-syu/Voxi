@@ -83,6 +83,7 @@ export type CommandReply = { outcome: Outcome; scope: ResultScope | null; genera
 export type Opening = { scope: ResultScope | null; generation: number; notice: string | null };
 
 export const api = {
+  refreshVocabulary: () => invoke<"updated" | "unchanged" | "failed">("refresh_vocabulary"),
   /** The command box changed: the menu bar face talks along. Fire and forget. */
   trayTyping: () => invoke<void>("tray_typing").catch(() => {}),
   recoveryStatus: () => invoke<RecoveryStatus>("recovery_status"),

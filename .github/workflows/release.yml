@@ -63,7 +63,7 @@ jobs:
           components: clippy, rustfmt
       - run: npm ci
       - run: node scripts/check-versions.mjs
-      - run: node --test scripts/next-version.test.mjs
+      - run: node --test scripts/*.test.mjs
       - run: npm run lint
       - run: npm run test:finder-handoff
       - run: npm run build

@@ -542,12 +542,13 @@ function UpdatesRow() {
             : state.k === "error"
               ? state.message
               : null;
+  const statusWithVocabulary = state.commandsAdded ? `${status ?? "Voxi is up to date."} New commands added.` : status;
   const fraction = state.k === "downloading" && state.total ? Math.min(state.done / state.total, 1) : null;
   const notes = "notes" in state ? state.notes : [];
 
   return (
     <Row icon="update" className="updates" label={<>Voxi {version} {state.k === "latest" && <span className="pill ok">Up to date</span>}</>}
-      description={status ? <span className={state.k === "error" || state.k === "relaunchFailed" ? "warn" : undefined} role="status">{status}</span> : "Your settings carry over."}>
+      description={<span className={state.k === "error" || state.k === "relaunchFailed" ? "warn" : undefined} role="status">{statusWithVocabulary ?? "Your settings carry over."}</span>}>
       <button className="secondary small" disabled={!canCheckForUpdates(state)} onClick={() => void checkAndInstall()}>
         Check for updates
       </button>

@@ -25,6 +25,7 @@ let pendingSchedule: (ScheduledTask & { runNow?: boolean; total?: number; interv
 //   permission-denied  request_folder_access resolves with every folder denied
 //   permission-flaky   first request rejects, the next succeeds -> Retry works
 //   settings-fail      open_privacy_settings rejects -> error + manual steps
+//   vocabulary-updated  refresh_vocabulary finds a new pack
 // These only affect the dev mock; the Tauri app never loads this file.
 const mockScenario = new URLSearchParams(location.search).get("mock");
 let permissionAttempts = 0;
@@ -96,6 +97,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
   await new Promise((r) => setTimeout(r, 250));
   switch (cmd) {
     case "updater_failed": return;
+    case "refresh_vocabulary": return mockScenario === "vocabulary-updated" ? "updated" : "unchanged";
     case "cancel_plan": pendingSchedule = null; activePlan = null; return;
     case "cancel_execution": return false;
     case "search_progress": return 0;

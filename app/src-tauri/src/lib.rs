@@ -2142,6 +2142,12 @@ fn updater_failed() {
     diagnostics::emit(Event::new(Code::Update, Stage::Failed));
 }
 
+#[tauri::command]
+async fn refresh_vocabulary(app: AppHandle) -> vocab::RefreshOutcome {
+    let Ok(dir) = app.path().app_data_dir() else { return vocab::RefreshOutcome::Failed };
+    tauri::async_runtime::spawn_blocking(move || vocab::refresh_now(&dir)).await.unwrap_or(vocab::RefreshOutcome::Failed)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut context = tauri::generate_context!();
@@ -2348,6 +2354,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             updater_failed,
+            refresh_vocabulary,
             plan_command,
             scheduled_tasks,
             scheduler_notice,

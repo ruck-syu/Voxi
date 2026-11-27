@@ -333,6 +333,25 @@ fn refresh_interval_is_shared_across_launches() {
 }
 
 #[test]
+fn manual_check_bypasses_interval_but_still_locks_and_records_attempt() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir = dir.path();
+    let stamp = dir.join("vocab.last-check");
+    let lock = begin_check(dir, false, 3600).unwrap();
+    assert_eq!(begin_check(dir, true, 3601).unwrap_err().1, RefreshOutcome::Unchanged);
+    assert_eq!(fs::read_to_string(&stamp).unwrap(), "3600");
+
+    drop(lock);
+    assert_eq!(begin_check(dir, false, 3601).unwrap_err(), (CHECK_INTERVAL - Duration::from_secs(1), RefreshOutcome::Unchanged));
+    let manual_lock = begin_check(dir, true, 3601).unwrap();
+    assert_eq!(fs::read_to_string(&stamp).unwrap(), "3601");
+    assert_eq!(begin_check(dir, true, 3602).unwrap_err().1, RefreshOutcome::Unchanged);
+
+    drop(manual_lock);
+    assert_eq!(begin_check(dir, false, 3602).unwrap_err().0, CHECK_INTERVAL - Duration::from_secs(1));
+}
+
+#[test]
 fn template_keywords_cannot_supply_arguments() {
     use IntentKind::*;
     for (intent, pattern, replace, input, expect) in [

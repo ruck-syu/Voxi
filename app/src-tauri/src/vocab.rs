@@ -12,13 +12,13 @@ use minisign_verify::{PublicKey, Signature};
 use regex::{Regex, RegexBuilder};
 use regex_syntax::ast::{Ast, GroupKind, parse::Parser};
 use semver::Version;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{self, Read},
     path::Path,
-    sync::{Arc, LazyLock, RwLock},
+    sync::{Arc, LazyLock, OnceLock, RwLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -44,6 +44,7 @@ const KEYWORDS: &str = "a add all an and as by called combine convert copy count
     split the to type unzip with zip";
 
 static APP_VERSION: LazyLock<Version> = LazyLock::new(|| Version::parse(env!("CARGO_PKG_VERSION")).expect("Cargo package version"));
+static INITIAL_FLOOR: OnceLock<u64> = OnceLock::new();
 static ACTIVE: LazyLock<RwLock<Arc<Pack>>> = LazyLock::new(|| {
     #[cfg(test)]
     let pack = bundled();
@@ -324,12 +325,14 @@ thread_local! {
 #[cfg(test)]
 pub(crate) use tests::with_test_pack;
 
-fn activate(pack: Pack) {
+fn activate(pack: Pack) -> bool {
     let mut active = ACTIVE.write().unwrap_or_else(|error| error.into_inner());
     if pack.version > active.version {
         *active = Arc::new(pack);
         report_version(active.version);
+        return true;
     }
+    false
 }
 
 fn report_version(version: u64) {
@@ -393,57 +396,73 @@ fn check_due(dir: &Path, now: u64) -> Duration {
     last.map_or(Duration::ZERO, |last| CHECK_INTERVAL.saturating_sub(Duration::from_secs(now.saturating_sub(last))))
 }
 
-fn refresh(dir: &Path, first: bool) -> Duration {
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum RefreshOutcome {
+    Updated,
+    Unchanged,
+    Failed,
+}
+
+fn begin_check(dir: &Path, force: bool, now: u64) -> Result<File, (Duration, RefreshOutcome)> {
     let lock = (|| {
         fs::create_dir_all(dir)?;
         OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("vocab.lock"))
     })();
     let Ok(lock) = lock else {
-        if first {
-            initialize(dir);
-        }
-        return CHECK_INTERVAL;
+        return Err((CHECK_INTERVAL, RefreshOutcome::Failed));
     };
     // Hold the lock through caching to serialize separate instances, and record
     // the attempt before making a request even if the network is offline.
-    if lock.try_lock().is_err() {
-        if first {
-            initialize(dir);
-        }
-        return Duration::from_secs(60);
+    match lock.try_lock() {
+        Ok(()) => {}
+        Err(std::fs::TryLockError::WouldBlock) => return Err((Duration::from_secs(60), RefreshOutcome::Unchanged)),
+        Err(std::fs::TryLockError::Error(_)) => return Err((CHECK_INTERVAL, RefreshOutcome::Failed)),
     }
-    let initial_floor = first.then(|| initialize(dir));
-    let now = seconds_since_epoch();
-    let delay = check_due(dir, now);
-    if !delay.is_zero() {
-        return delay;
+    if !force {
+        let delay = check_due(dir, now);
+        if !delay.is_zero() {
+            return Err((delay, RefreshOutcome::Unchanged));
+        }
     }
     if atomic_write(&dir.join("vocab.last-check"), now.to_string().as_bytes()).and_then(|write| write.require_durable()).is_err() {
-        return CHECK_INTERVAL;
+        return Err((CHECK_INTERVAL, RefreshOutcome::Failed));
     }
-    let floor = initial_floor.unwrap_or_else(|| {
-        let (cached, floor) = load_cache(dir, active().version);
-        if let Some(pack) = cached {
-            activate(pack);
-        }
-        floor
-    });
-    tauri::async_runtime::block_on(refresh_pack(dir, floor));
-    check_due(dir, seconds_since_epoch()).max(Duration::from_secs(1))
+    Ok(lock)
 }
 
-async fn refresh_pack(dir: &Path, floor: u64) {
+fn refresh(dir: &Path, force: bool) -> (Duration, RefreshOutcome) {
+    // Either worker may get here first. Load the installed baseline once so a
+    // manual check at launch still compares against the bundled and cached packs.
+    let initial_floor = *INITIAL_FLOOR.get_or_init(|| initialize(dir));
+    let _lock = match begin_check(dir, force, seconds_since_epoch()) {
+        Ok(lock) => lock,
+        Err(result) => return result,
+    };
+    let (cached, floor) = load_cache(dir, active().version.max(initial_floor));
+    let cached_updated = cached.is_some_and(activate);
+    let fetched = tauri::async_runtime::block_on(refresh_pack(dir, floor));
+    let outcome = if cached_updated { RefreshOutcome::Updated } else { fetched };
+    (check_due(dir, seconds_since_epoch()).max(Duration::from_secs(1)), outcome)
+}
+
+async fn refresh_pack(dir: &Path, floor: u64) -> RefreshOutcome {
     // Separate, cookie-less client with no app metadata or command data.
-    let Ok(client) = client() else { return };
-    let Some(bytes) = download(&client, "vocab.json", MAX_PACK_BYTES).await else { return };
-    let Some(signature) = download(&client, "vocab.json.minisig", MAX_SIGNATURE_BYTES).await else { return };
-    let Ok(pack) = verified_pack(&bytes, &signature).and_then(|pack| pack.compile(&APP_VERSION, floor)) else { return };
+    let Ok(client) = client() else { return RefreshOutcome::Failed };
+    let Some(bytes) = download(&client, "vocab.json", MAX_PACK_BYTES).await else { return RefreshOutcome::Failed };
+    let Some(signature) = download(&client, "vocab.json.minisig", MAX_SIGNATURE_BYTES).await else { return RefreshOutcome::Failed };
+    let pack = match verified_pack(&bytes, &signature).and_then(|pack| pack.compile(&APP_VERSION, floor)) {
+        Ok(pack) => pack,
+        Err(Invalid::AppVersion | Invalid::Rollback) => return RefreshOutcome::Unchanged,
+        Err(_) => return RefreshOutcome::Failed,
+    };
     let mut cache = signature;
     cache.push(0);
     cache.extend_from_slice(&bytes);
-    if atomic_write(&dir.join(CACHE), &cache).and_then(|write| write.require_durable()).is_ok() {
-        activate(pack);
+    if atomic_write(&dir.join(CACHE), &cache).and_then(|write| write.require_durable()).is_err() {
+        return RefreshOutcome::Failed;
     }
+    if activate(pack) { RefreshOutcome::Updated } else { RefreshOutcome::Unchanged }
 }
 
 fn client() -> reqwest::Result<reqwest::Client> {
@@ -455,11 +474,14 @@ fn client() -> reqwest::Result<reqwest::Client> {
 pub(crate) fn start(dir: &Path) {
     let dir = dir.to_owned();
     let _ = std::thread::Builder::new().name("voxi-vocab".into()).spawn(move || {
-        std::thread::sleep(refresh(&dir, true));
         loop {
-            std::thread::sleep(refresh(&dir, false));
+            std::thread::sleep(refresh(&dir, false).0);
         }
     });
+}
+
+pub(crate) fn refresh_now(dir: &Path) -> RefreshOutcome {
+    refresh(dir, true).1
 }
 
 #[cfg(test)]

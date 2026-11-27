@@ -14,12 +14,6 @@ permissions:
   contents: read
   issues: write
 
-# One run at a time. A newer queued run replaces an older queued one, which is
-# safe because every run folds all queued comments.
-concurrency:
-  group: command-requests
-  cancel-in-progress: false
-
 jobs:
   fold:
     if: >-
@@ -30,6 +24,13 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # One fold at a time. A newer queued run replaces an older queued one, which
+    # is safe because every run folds all queued comments. On the job, not the
+    # workflow: skipped runs (any other comment on the repo) never join the
+    # group, so they can't cancel a pending fold.
+    concurrency:
+      group: command-requests
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:

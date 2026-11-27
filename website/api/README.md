@@ -11,7 +11,7 @@ People can send a command Voxi didn't understand from the app. It ends up as a l
    - Notes go on an indented line.
    - Everything else you wrote in the issue is kept.
 3. Runs never overlap, and each run folds everything still queued, so cancelled or failed runs lose nothing. A scheduled run every six hours picks up anything a failed run left behind. Folded comment ids are recorded in the issue body, so a retry never counts a request twice.
-4. At about 60,000 characters the workflow opens "Command requests (2)", and so on. It links the new issue from the old one. It stops at 20 issues.
+4. At about 60,000 characters the workflow opens "Command requests (2)", and so on. It locks each new issue and links it from the old one, repairing the link if a run fails midway. It stops at 20 issues.
 
 Shared validation and formatting live in `_requests.js`. Vercel doesn't turn files starting with `_` into functions.
 
@@ -19,8 +19,8 @@ Shared validation and formatting live in `_requests.js`. Vercel doesn't turn fil
 
 1. Create a fine-grained GitHub personal access token scoped to `ruck-syu/Voxi`, with **Issues: Read and write** as its only permission.
 2. In Vercel, open the website project and add the token under **Settings → Environment Variables** as `GITHUB_TOKEN_COMMAND_REQUESTS`. `COMMAND_REQUESTS_REPO` overrides the default repo, `ruck-syu/Voxi`. Redeploy.
-3. Run the **Command requests** workflow once from the Actions tab. It creates the label and the "Command requests" issue.
-4. Pin the issue, then **lock its conversation**. Locking stops anyone else from commenting. The token still can, because you own the repo.
+3. Run the **Command requests** workflow once from the Actions tab. It creates the label and the "Command requests" issue, and locks the issue so only collaborators can comment. The token can still comment, because you own the repo. Check that once: send one request and confirm it lands.
+4. Pin the issue.
 5. If the token belongs to an account other than the repo owner, set the repository variable `COMMAND_REQUESTS_AUTHOR` to that login. Only comments from that account are folded.
 
 Tick a line when its command ships. A new wording for an existing action ships through the vocabulary pack (`vocab/vocab.json`) without an app release. A new kind of action needs one.

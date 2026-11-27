@@ -11,14 +11,19 @@ const PER_INSTANCE = 60;
 const ISSUE_CACHE_MS = 5 * 60_000;
 
 /** One key per IPv4 address, or per IPv6 /64 (one home network). */
-function ipKey(ip) {
+function ipKey(raw) {
+  const ip = raw.trim().replace(/%.*$/, "").toLowerCase(); // drop a zone id
   if (!ip.includes(":")) return ip;
-  if (ip.includes(".")) return ip.slice(ip.lastIndexOf(":") + 1); // IPv4-mapped
-  const [head, tail = ""] = ip.split("::");
-  const left = head ? head.split(":") : [];
-  const right = ip.includes("::") && tail ? tail.split(":") : [];
-  const groups = ip.includes("::") ? [...left, ...Array(8 - left.length - right.length).fill("0"), ...right] : left;
-  return `${groups.slice(0, 4).map((group) => group.toLowerCase().replace(/^0+(?=.)/, "")).join(":")}::/64`;
+  const mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) return mapped[1];
+  const halves = ip.split("::");
+  const valid = /^[\da-f:.]+$/.test(ip) && halves.length <= 2;
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const missing = 8 - left.length - right.length;
+  if (!valid || (halves.length === 2 ? missing < 1 : missing !== 0)) return ip; // malformed: its own bucket
+  const groups = [...left, ...Array(halves.length === 2 ? missing : 0).fill("0"), ...right];
+  return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
 function createHandler({ env = process.env, fetch = globalThis.fetch, now = Date.now } = {}) {

@@ -798,10 +798,15 @@ function CommandRequestRow({ original, onCancel, beginOperation }: { original: s
   const commandField = useRef<HTMLTextAreaElement>(null);
   const sending = mode === "sending";
 
-  // While sending, Escape must not reset the view: the request still posts.
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  // While sending, Escape and Cmd+, must not leave the view: the request still posts.
   useEffect(() => {
     if (!sending) return;
-    const swallow = (event: KeyboardEvent) => { if (event.key === "Escape") event.preventDefault(); };
+    const swallow = (event: KeyboardEvent) => {
+      if (event.key === "Escape" || (event.key === "," && event.metaKey)) event.preventDefault();
+    };
     window.addEventListener("keydown", swallow, true);
     return () => window.removeEventListener("keydown", swallow, true);
   }, [sending]);
@@ -831,6 +836,7 @@ function CommandRequestRow({ original, onCancel, beginOperation }: { original: s
     const release = beginOperation();
     try {
       const result = await api.sendCommandRequest(command, note.trim() ? note : undefined);
+      if (!mounted.current) return;
       if (result.status === "sent") {
         setMode("sent");
         onCancel();
@@ -843,6 +849,7 @@ function CommandRequestRow({ original, onCancel, beginOperation }: { original: s
       inFlight.current = false;
       release();
     }
+    if (!mounted.current) return;
     setMode("editing");
     requestAnimationFrame(() => commandField.current?.focus());
   };

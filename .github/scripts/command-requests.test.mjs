@@ -41,13 +41,19 @@ function fakeGitHub({ issues = [], label = true } = {}) {
     }
     const target = issue(Number(parts[1]));
     if (!target) return fail(404);
+    if (parts[2] === "lock") {
+      target.locked = true;
+      return null;
+    }
     if (parts[2] === "comments") {
       if (method === "POST") {
         const comment = { id: state.nextComment++, issue: target.number, body: data.body, user: { login: AUTHOR } };
         state.comments.push(comment);
         return comment;
       }
-      return state.comments.filter((comment) => comment.issue === target.number);
+      const page = Number(url.searchParams.get("page") ?? 1);
+      const size = Number(url.searchParams.get("per_page") ?? 30);
+      return state.comments.filter((comment) => comment.issue === target.number).slice((page - 1) * size, page * size);
     }
     if (method === "PATCH") {
       state.beforePatch?.(target);
@@ -225,6 +231,11 @@ test("rate limits group an IPv6 /64 and cap each instance", async () => {
   assert.equal(ipKey("2001:0db8:0001:0002:ffff:ffff:ffff:ffff"), "2001:db8:1:2::/64");
   assert.equal(ipKey("::ffff:198.51.100.4"), "198.51.100.4");
   assert.equal(ipKey("198.51.100.4"), "198.51.100.4");
+  assert.equal(ipKey("FE80::1%eth0"), "fe80:0:0:0::/64");
+  assert.equal(ipKey("::FFFF:198.51.100.4"), "198.51.100.4");
+  assert.equal(ipKey("2001:db8::192.0.2.1"), "2001:db8:0:0::/64");
+  assert.equal(ipKey("2001:db8:1:2:3:4:5:6:7::8"), "2001:db8:1:2:3:4:5:6:7::8", "malformed input never throws");
+  assert.equal(ipKey("1::2::3"), "1::2::3");
 
   const github = fakeGitHub({ issues: tracked() });
   const handler = endpoint(github, { now: () => 1_000_000 });
@@ -248,4 +259,58 @@ test("the endpoint never leaks the token or the request in errors", async () => 
   const res = await call(handler, { command: "tidy my desk" });
   assert.equal(res.statusCode, 502);
   assert.doesNotMatch(JSON.stringify(res.body), /secret|tidy/);
+});
+
+test("a rollover that fails midway never folds a request twice", async () => {
+  const issues = tracked();
+  issues[0].body = `${shared.HEADER}\n${"x".repeat(shared.BODY_LIMIT - 120)}`;
+  const github = fakeGitHub({ issues });
+  for (const command of ["fits in one", "needs the next issue"]) await call(endpoint(github), { command });
+  const original = github.api;
+  let failed = false;
+  github.api = async (path, method, ...rest) => {
+    // The new issue's first write fails once, after the old issue was saved.
+    if (method === "PATCH" && path === "/issues/2" && !failed) {
+      failed = true;
+      throw new Error("GitHub returned 502");
+    }
+    return original(path, method, ...rest);
+  };
+  await assert.rejects(fold(github));
+  github.api = original;
+  await fold(github);
+  const all = github.state.issues.map((issue) => issue.body).join("\n");
+  assert.equal(all.match(/`fits in one`/g).length, 1);
+  assert.equal(all.match(/`needs the next issue`/g).length, 1);
+  assert.equal(github.state.comments.length, 0);
+  assert.match(github.state.issues[0].body, /^Continued in \[#2\]/m);
+});
+
+test("issues the workflow opens are locked, and a missing rollover link is repaired", async () => {
+  const github = fakeGitHub({ label: false });
+  await fold(github);
+  assert.equal(github.state.issues[0].locked, true);
+  github.state.issues.push({ number: 2, title: "Command requests (2)", body: shared.HEADER, state: "open" });
+  await fold(github);
+  assert.match(github.state.issues[0].body, /^Continued in \[#2\]/m);
+});
+
+test("a large batch rolls over as often as it needs to", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  // Backticks need a longer fence, so these expand to about 1,400 characters each.
+  const command = "`".repeat(290);
+  for (let i = 0; i < 100; i++) {
+    github.state.comments.push({ id: 5000 + i, issue: 1, user: { login: AUTHOR }, body: shared.encodeComment(`${command}${i}`, "n".repeat(500)) });
+  }
+  assert.deepEqual(await fold(github), { folded: 100, dropped: 0 });
+  assert.ok(github.state.issues.length >= 3, `${github.state.issues.length} issues`);
+  assert.equal(github.state.comments.length, 0);
+  assert.ok(github.state.issues.every((issue) => issue.body.length <= shared.BODY_LIMIT));
+});
+
+test("the author match ignores case", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await call(endpoint(github), { command: "tidy my desk" });
+  await run({ github: github.api, author: "Ruck-Syu", repo: REPO });
+  assert.match(github.state.issues[0].body, /`tidy my desk`/);
 });

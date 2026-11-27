@@ -169,3 +169,7 @@ For CI checks, release notes, and macOS signing/notarization, see
 [docs/RELEASING.md](docs/RELEASING.md).
 For the parser corpus, held-out evaluations, opt-in experimental local model
 (`dev:model`), and website setup, see [docs/DEVELOPING.md](docs/DEVELOPING.md).
+
+## License
+
+Voxi is free to use, modify, and share under the [MIT License](LICENSE).

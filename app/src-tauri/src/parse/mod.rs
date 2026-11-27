@@ -146,12 +146,30 @@ pub fn parse(text: &str) -> Result<Intent, String> {
 /// The policy-aware parser entry point for fallback callers. `parse` retains
 /// the existing UI error contract; its string error must not authorize fallback.
 pub fn parse_classified(text: &str) -> Result<Intent, ParseFailure> {
+    parse_with_vocab(text, crate::vocab::rewrite)
+}
+
+pub(super) fn parse_with_vocab(text: &str, rewrite: impl FnOnce(&str) -> Option<Intent>) -> Result<Intent, ParseFailure> {
+    match parse_builtin(text) {
+        Err(ParseFailure::GrammarMiss) => rewrite(&phrase::normalize(text)).ok_or(ParseFailure::GrammarMiss),
+        result => result,
+    }
+}
+
+pub(super) fn parse_builtin(text: &str) -> Result<Intent, ParseFailure> {
     check_length(text)?;
     let cleaned = phrase::normalize(text);
     if let Some(chain) = chain::parse(&cleaned) {
         return chain;
     }
     parse_single_classified(text)
+}
+
+pub(super) fn parse_vocab_output(text: &str) -> Option<Intent> {
+    match parse_builtin(text).ok()? {
+        Intent::Chain { .. } => None,
+        intent => Some(intent),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -303,7 +321,7 @@ fn parse_canonical(cleaned: &str) -> Result<Option<Intent>, ParseFailure> {
     if let Some(c) = LEADING_SCOPE.captures(cleaned)
         && !phrase::bad_destination(&c[1])
     {
-        let mut intent = match parse_classified(&c[2]) {
+        let mut intent = match parse_builtin(&c[2]) {
             Ok(intent) => intent,
             Err(error @ ParseFailure::HardRefusal(_)) => return Err(error),
             Err(ParseFailure::GrammarMiss) => return Ok(None),

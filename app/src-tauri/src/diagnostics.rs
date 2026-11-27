@@ -43,6 +43,7 @@ pub(crate) enum Code {
     JournalRecovered,
     LoginItem,
     Update,
+    Vocabulary,
     ParseMiss,
     PlanningFailed,
     SearchIncomplete,
@@ -66,6 +67,7 @@ impl Code {
             Self::JournalRecovered => "E_JOURNAL_RECOVERED",
             Self::LoginItem => "E_LOGIN_ITEM",
             Self::Update => "E_UPDATE",
+            Self::Vocabulary => "E_VOCABULARY",
             Self::ParseMiss => "E_PARSE_MISS",
             Self::PlanningFailed => "E_PLANNING_FAILED",
             Self::SearchIncomplete => "E_SEARCH_INCOMPLETE",
@@ -86,6 +88,7 @@ pub(crate) enum Stage {
     BackupFailed,
     Interrupted,
     Recovered,
+    Active,
     Skipped,
 }
 
@@ -121,10 +124,21 @@ pub(crate) struct Event {
     step: Option<usize>,
     io: Option<(io::ErrorKind, Option<i32>)>,
     search: Option<(usize, ElapsedMsBucket)>,
+    vocab_version: Option<u64>,
 }
 impl Event {
     pub(crate) fn new(code: Code, stage: Stage) -> Self {
-        Self { code, stage, operation: SEQUENCE.fetch_add(1, Ordering::Relaxed), store: None, count: 0, step: None, io: None, search: None }
+        Self {
+            code,
+            stage,
+            operation: SEQUENCE.fetch_add(1, Ordering::Relaxed),
+            store: None,
+            count: 0,
+            step: None,
+            io: None,
+            search: None,
+            vocab_version: None,
+        }
     }
     pub(crate) fn operation(mut self, id: u64) -> Self {
         self.operation = id;
@@ -151,11 +165,17 @@ impl Event {
         self
     }
 
+    pub(crate) fn vocab_version(mut self, version: u64) -> Self {
+        self.vocab_version = Some(version);
+        self
+    }
+
     fn line(self) -> String {
-        let level = if matches!(self.stage, Stage::Begin | Stage::Preserved | Stage::Recovered) { "INFO" } else { "WARN" };
+        let level = if matches!(self.stage, Stage::Begin | Stage::Preserved | Stage::Recovered | Stage::Active) { "INFO" } else { "WARN" };
         let search = self.search.map_or_else(String::new, |(visited, bucket)| format!(" visited={visited} elapsed_ms_bucket={bucket:?}"));
+        let vocab = self.vocab_version.map_or_else(String::new, |version| format!(" vocab_version={version}"));
         format!(
-            "{} level={} code={} op={}-{}-{} stage={:?} store={:?} count={} step={:?} io={:?}{search}\n",
+            "{} level={} code={} op={}-{}-{} stage={:?} store={:?} count={} step={:?} io={:?}{search}{vocab}\n",
             chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
             level,
             self.code.label(),

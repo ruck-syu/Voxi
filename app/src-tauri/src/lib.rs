@@ -32,6 +32,7 @@ mod skip;
 mod tiny_model;
 mod trash;
 mod tray_face;
+mod vocab;
 
 use diagnostics::{Code, Event, Stage};
 use fsx::{Roots, file_name};
@@ -2155,6 +2156,7 @@ pub fn run() {
             }
             let config_dir = app.path().app_config_dir()?;
             let data_dir = app.path().app_data_dir()?;
+            vocab::start(&data_dir);
             let settings_path = config_dir.join("settings.json");
             let (settings, settings_warning) = Settings::load_with_warning(&settings_path);
             let settings_blocked = settings_warning.as_ref().filter(|w| w.write_blocked).map(|w| w.message.clone());

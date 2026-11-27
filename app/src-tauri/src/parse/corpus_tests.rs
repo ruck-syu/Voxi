@@ -24,18 +24,20 @@ fn strip_nulls(v: Value) -> Value {
 fn cases_in(dir: &Path) -> Vec<(String, String, String)> {
     let mut files: Vec<PathBuf> = fs::read_dir(dir).expect("command folder").flatten().map(|e| e.path()).collect();
     files.sort();
+    files.iter().flat_map(|path| cases_from_file(path)).collect()
+}
+
+fn cases_from_file(file: &Path) -> Vec<(String, String, String)> {
+    let name = file.file_name().unwrap().to_string_lossy();
+    let text = fs::read_to_string(file).unwrap();
     let mut out = Vec::new();
-    for file in files {
-        let name = file.file_name().unwrap().to_string_lossy().into_owned();
-        let text = fs::read_to_string(&file).unwrap();
-        for (i, line) in text.lines().enumerate() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let (command, expected) = line.rsplit_once(" => ").unwrap_or_else(|| panic!("{name}:{}: missing \" => \"", i + 1));
-            out.push((command.to_string(), expected.trim().to_string(), format!("{name}:{}", i + 1)));
+    for (i, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
         }
+        let (command, expected) = line.rsplit_once(" => ").unwrap_or_else(|| panic!("{name}:{}: missing \" => \"", i + 1));
+        out.push((command.to_string(), expected.trim().to_string(), format!("{name}:{}", i + 1)));
     }
     out
 }
@@ -69,7 +71,10 @@ fn crate_root() -> PathBuf {
 }
 
 pub(crate) fn regression_cases() -> Vec<(String, String, String)> {
-    cases_in(&crate_root().join("src/parse/corpus"))
+    let root = crate_root();
+    let mut cases = cases_in(&root.join("src/parse/corpus"));
+    cases.extend(cases_from_file(&root.join("../../vocab/corpus.txt")));
+    cases
 }
 
 pub(crate) const REGRESSION_DATE: NaiveDate = NaiveDate::from_ymd_opt(2026, 10, 28).unwrap();

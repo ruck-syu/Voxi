@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "version": 1,
+  "minAppVersion": "0.0.0",
+  "rules": [
+    {
+      "id": "make-one-pdf",
+      "pattern": "^make 1 pdf from (.+)$",
+      "replace": "make a pdf from $1",
+      "examples": [
+        { "input": "make one PDF from images in Scans named receipts", "expect": "make a pdf from images in Scans named receipts" }
+      ]
+    },
+    {
+      "id": "break-pdf-into-pages",
+      "pattern": "^break (.+?\\.pdf|\"[^\"]+\\.pdf\"|'[^']+\\.pdf') into pages$",
+      "replace": "split $1 into pages",
+      "examples": [
+        { "input": "break report.pdf into pages", "expect": "split report.pdf into pages" }
+      ]
+    },
+    {
+      "id": "pull-pdf-pages",
+      "pattern": "^pull pages (\\d+) to (\\d+) out of (.+?\\.pdf|\"[^\"]+\\.pdf\"|'[^']+\\.pdf')$",
+      "replace": "extract pages $1 to $2 from $3",
+      "examples": [
+        { "input": "pull pages 2 to 5 out of report.pdf", "expect": "extract pages 2 to 5 from report.pdf" }
+      ]
+    },
+    {
+      "id": "uncompress-zip",
+      "pattern": "^uncompress (.+?\\.zip) into (.+)$",
+      "replace": "unzip $1 into $2",
+      "examples": [
+        { "input": "uncompress archive.zip into Downloads/archive", "expect": "unzip archive.zip into Downloads/archive" }
+      ]
+    }
+  ]
+}

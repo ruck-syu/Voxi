@@ -37,6 +37,28 @@ fn regression_noon() -> DateTime<Local> {
 }
 
 #[test]
+fn vocab_wordings_plan_existing_pdf_and_archive_actions() {
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let scans = roots.downloads().join("Scans");
+    fs::create_dir(&scans).unwrap();
+    let image = scans.join("receipts.png");
+    fs::write(&image, include_bytes!("../../icons/32x32.png")).unwrap();
+    fs::write(scans.join("unrelated.png"), b"image").unwrap();
+    let report = roots.home.join("Desktop/report.pdf");
+    pdf::images_to_pdf(&vec![image.clone(); 5], &report, &|| Ok(())).unwrap();
+
+    for (wording, canonical) in [
+        ("make one PDF from images in Scans named receipts", "make a PDF from images in Scans named receipts"),
+        ("break report.pdf into pages", "split report.pdf into pages"),
+        ("pull pages 2 to 5 out of report.pdf", "extract pages 2 to 5 from report.pdf"),
+        ("uncompress archive.zip into Downloads/archive", "unzip archive.zip into Downloads/archive"),
+    ] {
+        assert_eq!(action_plan(&fixture, wording, ENTRY_LIMIT), action_plan(&fixture, canonical, ENTRY_LIMIT), "{wording}");
+    }
+}
+
+#[test]
 fn demo_sort_scopes_lookup_away_from_unreadable_pictures() {
     let fixture = MessyMac::new();
     let base = &fixture.roots().home;

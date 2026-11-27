@@ -19,6 +19,15 @@ fn normalize(value: &mut Value) {
             }
         }
         Value::Array(items) => items.iter_mut().for_each(normalize),
+        // A relative schedule renders the wall-clock minute, and the two
+        // binaries run at different moments ("8:58 AM" vs "8:59 AM").
+        Value::String(text) => {
+            if let Some(rest) = text.strip_prefix("Scheduled for ")
+                && let Some(end) = rest.find(". ")
+            {
+                *text = format!("Scheduled for <time>{}", &rest[end..]);
+            }
+        }
         _ => {}
     }
 }

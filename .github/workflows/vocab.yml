@@ -6,10 +6,11 @@ on:
       - "vocab/**"
       - "app/src-tauri/**"
       - ".github/workflows/vocab.yml"
+      - ".github/scripts/check-vocab-version.sh"
   push:
     branches: [main]
     paths:
-      - "vocab/**"
+      - "vocab/vocab.json"
   workflow_dispatch:
 
 permissions:
@@ -21,16 +22,33 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check changed PR pack version
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: bash .github/scripts/check-vocab-version.sh "$BASE" "$GITHUB_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Build frontend
+        working-directory: app
+        run: npm ci && npm run build
       - uses: dtolnay/rust-toolchain@stable
-      - name: Test signed pack and parser regression corpus
+      - name: Test signed pack, plans, and parser corpus
         working-directory: app/src-tauri
         run: |
           env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib vocab::tests
+          env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib plan::tests::messy::vocab_
           env -u VOXI_PLAN_MODEL_DIR -u VOXI_TINY_MODEL_DIR cargo test --locked --lib parse::corpus_tests::corpus_commands_build_the_intended_intent
 
   publish:
     needs: validate
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -40,33 +58,21 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Check published version
+        id: version
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          release=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq '.[] | select(.tag_name == "vocab-latest") | [.prerelease, .draft] | @tsv')
-          if [[ -z "$release" ]]; then
-            exit 0
-          fi
-          if [[ "$release" != $'true\tfalse' ]]; then
-            echo "::error::vocab-latest must be a published prerelease"
-            exit 1
-          fi
-          gh release download vocab-latest --repo "$GITHUB_REPOSITORY" --pattern vocab.json --dir "$RUNNER_TEMP"
-          python3 - "$RUNNER_TEMP/vocab.json" <<'PY'
-          import json, pathlib, sys
-          current = json.loads(pathlib.Path(sys.argv[1]).read_bytes())["version"]
-          candidate = json.loads(pathlib.Path("vocab/vocab.json").read_bytes())["version"]
-          if type(current) is not int or current < 1 or candidate <= current:
-              sys.exit(f"Vocabulary version {candidate} must exceed published version {current}")
-          PY
-          echo "VOCAB_RELEASE_EXISTS=true" >> "$GITHUB_ENV"
+          BASE: ${{ github.event.before }}
+        run: bash .github/scripts/check-vocab-version.sh "$BASE" "$GITHUB_SHA"
 
       - name: Install minisign
+        if: steps.version.outputs.pack == 'true'
         run: sudo apt-get update && sudo apt-get install -y minisign
 
       - name: Sign and verify vocabulary
+        if: steps.version.outputs.pack == 'true'
         env:
           VOCAB_SIGNING_KEY: ${{ secrets.VOCAB_SIGNING_KEY }}
           VOCAB_SIGNING_KEY_PASSWORD: ${{ secrets.VOCAB_SIGNING_KEY_PASSWORD }}
@@ -79,11 +85,14 @@ jobs:
           printf '%s\n' "$VOCAB_SIGNING_KEY" > "$key"
           mkdir "$RUNNER_TEMP/voxi-vocab"
           cp vocab/vocab.json "$RUNNER_TEMP/voxi-vocab/vocab.json"
-          printf '%s\n' "$VOCAB_SIGNING_KEY_PASSWORD" | minisign -S -s "$key" -t "Voxi vocabulary" \
-            -m "$RUNNER_TEMP/voxi-vocab/vocab.json"
+          schema=$(jq -r '.schema' vocab/vocab.json)
+          version=$(jq -r '.version' vocab/vocab.json)
+          printf '%s\n' "$VOCAB_SIGNING_KEY_PASSWORD" | minisign -S -s "$key" \
+            -t "Voxi vocabulary schema=$schema version=$version" -m "$RUNNER_TEMP/voxi-vocab/vocab.json"
           minisign -V -q -p vocab/vocab.pub -m "$RUNNER_TEMP/voxi-vocab/vocab.json"
 
       - name: Publish vocabulary assets
+        if: steps.version.outputs.pack == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

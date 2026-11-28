@@ -1,4 +1,4 @@
-{
+export default {
   "outcomes": [
     "plan",
     "info",
@@ -27,4 +27,4 @@
   "maxCommand": 300,
   "maxNote": 500,
   "versionPattern": "^\\d{1,9}\\.\\d{1,9}\\.\\d{1,9}$(?![\\s\\S])"
-}
+};

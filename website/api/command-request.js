@@ -1,6 +1,6 @@
 // Adds a command request to the append-only tracking issue queue.
-const { commandRequests, createHandler, ipKey } = require("./_requests.js");
+import { commandRequests, createHandler as createRequestHandler } from "./_requests.js";
 
-module.exports = createHandler(commandRequests);
-module.exports.createHandler = (options) => createHandler(commandRequests, options);
-module.exports.ipKey = ipKey;
+export default createRequestHandler(commandRequests);
+export const createHandler = (options) => createRequestHandler(commandRequests, options);
+export { ipKey } from "./_requests.js";

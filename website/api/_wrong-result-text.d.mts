@@ -1,3 +1,4 @@
 export const URL_TEXT: RegExp;
 
-export function wrongResultTextError(text: string, field: "command" | "note"): string | undefined;
+export function canonicalWrongResultText(text: string): string;
+export function validateWrongResultText(text: string, field: "command" | "note"): { value: string } | { error: string };

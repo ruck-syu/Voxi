@@ -2,8 +2,8 @@
 // the GitHub Action that folds them into the checklist. Vercel does not turn
 // files starting with "_" into functions.
 
-const schema = require("./_wrong-result-schema.json");
-const { URL_TEXT, wrongResultTextError } = require("./_wrong-result-text.mjs");
+import schema from "./_wrong-result-schema.mjs";
+import { canonicalWrongResultText, URL_TEXT, validateWrongResultText } from "./_wrong-result-text.mjs";
 
 const LABEL = "command-requests";
 const TITLE = "Command requests";
@@ -46,8 +46,10 @@ function validateWrongResult(input) {
   if (typeof command !== "string" || typeof note !== "string") {
     return { error: "Send the command and note as text." };
   }
-  const error = wrongResultTextError(command, "command") ?? wrongResultTextError(note, "note");
-  if (error) return { error };
+  const checkedCommand = validateWrongResultText(command, "command");
+  if ("error" in checkedCommand) return checkedCommand;
+  const checkedNote = validateWrongResultText(note, "note");
+  if ("error" in checkedNote) return checkedNote;
   if (!schema.outcomes.includes(outcome) || typeof appVersion !== "string" || !APP_VERSION.test(appVersion) ||
       !Array.isArray(actions) || actions.length > schema.actionKinds.length ||
       ((outcome !== "plan" && outcome !== "done") && actions.length)) {
@@ -66,7 +68,7 @@ function validateWrongResult(input) {
     counts.push({ kind: action.kind, count: action.count });
   }
   counts.sort((a, b) => a.kind.localeCompare(b.kind));
-  return { command, note, outcome, actions: counts, appVersion };
+  return { command: checkedCommand.value, note: checkedNote.value, outcome, actions: counts, appVersion };
 }
 
 /** Base64 prevents user text from closing the HTML comment. */
@@ -137,7 +139,7 @@ function findOpenTask(lines, matches) {
 }
 
 /** Bump an open checkbox or append a fresh one, then record the comment id. */
-function foldTask(body, title, matches, detail, id, { skipRepeatedDetail = false } = {}) {
+function foldTask(body, title, matches, detail, id, matchesDetail) {
   const lines = body.split("\n").filter((line) => !RECEIPT_LINE.test(line));
   const index = findOpenTask(lines, matches);
   if (index === -1) {
@@ -146,7 +148,7 @@ function foldTask(body, title, matches, detail, id, { skipRepeatedDetail = false
   } else {
     const [, prefix, text, count, trailing] = lines[index].match(TASK);
     lines[index] = `${prefix}${text} (+${BigInt(count) + 1n})${trailing}`;
-    if (detail && !(skipRepeatedDetail && lines[index + 1]?.replace(/\r$/, "") === detail)) {
+    if (detail && !matchesDetail?.(lines[index + 1]?.replace(/\r$/, ""))) {
       lines.splice(index + 1, 0, detail);
     }
   }
@@ -166,9 +168,18 @@ function fold(body, { command, note }, id) {
 function foldWrongResult(body, { command, outcome, actions, note, appVersion }, id) {
   const title = `${inlineCode(command)} · ${inlineCode(outcome)}`;
   const counts = actions.map(({ kind, count }) => `${kind} ×${count}`).join(", ") || "None";
-  const noteText = note ? ` · Note: ${inlineCode(note)}` : "";
-  const detail = `  - Planned actions: ${inlineCode(counts)} · Voxi ${inlineCode(appVersion)}${noteText}`;
-  return foldTask(body, title, (text) => text === title, detail, id, { skipRepeatedDetail: true });
+  const summary = `  - Planned actions: ${inlineCode(counts)} · Voxi ${inlineCode(appVersion)}`;
+  const detail = note ? `${summary} · Note: ${inlineCode(note)}` : summary;
+  const matches = (text) => {
+    const row = text.match(/^`([^`]*)` · `([^`]*)`$/);
+    return row && row[2] === outcome && canonicalWrongResultText(row[1]) === command;
+  };
+  const matchesDetail = (text) => {
+    if (text === detail) return true;
+    const row = text?.match(/^(.*) · Note: `([^`]*)`$/);
+    return row && row[1] === summary && canonicalWrongResultText(row[2]) === note;
+  };
+  return foldTask(body, title, matches, detail, id, matchesDetail);
 }
 
 const commandRequests = {
@@ -332,7 +343,9 @@ function createHandler(config, { env = process.env, fetch = globalThis.fetch, no
   };
 }
 
-module.exports = {
+const decodeComment = commandCodec.decode;
+
+export {
   commandRequests,
   wrongResults,
   createHandler,
@@ -344,7 +357,7 @@ module.exports = {
   BODY_LIMIT,
   validate,
   encodeComment,
-  decodeComment: commandCodec.decode,
+  decodeComment,
   inlineCode,
   receipts,
   fold,

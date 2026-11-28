@@ -3,10 +3,7 @@
 // folds everything still queued, so a cancelled pending run loses nothing.
 // Each comment id is recorded in the body before the comment is deleted, so
 // a retry after a partial failure never counts a request twice.
-import { createRequire } from "node:module";
-
-const require = createRequire(import.meta.url);
-const { commandRequests, wrongResults, BODY_LIMIT, receipts } = require("../../website/api/_requests.js");
+import { commandRequests, wrongResults, BODY_LIMIT, receipts } from "../../website/api/_requests.js";
 
 const MAX_PER_RUN = 100;
 const MAX_PARTS = 20;

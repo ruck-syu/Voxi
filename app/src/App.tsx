@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { api, errorMessage, inTauri, isConfirmError, tildify, type CommandRequestResult, type Outcome, type PreviewRow, type ResultScope, type Review, type RunResult, type SearchStats, type Settings } from "./api";
 import { readChoice } from "./choice";
+import { version as appVersion } from "../package.json";
 import examples from "./examples.json";
 import { AccessView } from "./access";
 import { SettingsView } from "./settings";
@@ -1038,7 +1039,7 @@ function WrongReportReview({ command, note, outcome, close, delivery }: {
   const [publicCommand, setPublicCommand] = useState(command);
   const [publicNote, setPublicNote] = useState(note);
   const [fieldErrors, setFieldErrors] = useState<WrongReportFieldErrors>({});
-  const { actions, appVersion, outcome: status } = reportFields(outcome);
+  const { actions, outcome: status } = reportFields(outcome);
   const { sending, error, setError, submit } = delivery;
   const commandField = useRef<HTMLTextAreaElement>(null);
   const noteField = useRef<HTMLTextAreaElement>(null);
@@ -1057,7 +1058,7 @@ function WrongReportReview({ command, note, outcome, close, delivery }: {
   const send = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (sending) return;
-    const report = sanitizeWrongReport(publicCommand, outcome, publicNote);
+    const report = sanitizeWrongReport(publicCommand, outcome, publicNote, appVersion);
     if ("error" in report) {
       setFieldErrors(report.fields);
       setError("");
@@ -1066,6 +1067,12 @@ function WrongReportReview({ command, note, outcome, close, delivery }: {
       return;
     }
     setFieldErrors({});
+    setPublicCommand(report.command);
+    setPublicNote(report.note);
+    if (report.command !== publicCommand.trim() || report.note !== publicNote.trim()) {
+      setError("The text was normalized. Review the updated fields, then select Send this report again.");
+      return;
+    }
     void submit(() => api.sendWrongResult(report), close, () => requestAnimationFrame(() => errorRef.current?.focus()));
   };
 

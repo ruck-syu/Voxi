@@ -40,9 +40,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          sparse-checkout-cone-mode: false
           sparse-checkout: |
-            .github/scripts
-            website/api
+            /.github/scripts/
+            /website/api/
+            /website/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22

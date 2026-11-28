@@ -6,11 +6,11 @@ Voxi can send requests for commands it did not understand and reports about wron
 
 1. `POST /api/command-request` validates the command and note, then posts a comment to the newest open issue labelled `command-requests`.
 2. **Wrong result? → Save report** saves the full report locally. **Review report to send → Send this report** posts the public copy to `/api/wrong-result`. The function validates the command, outcome kind, planned action kinds and counts, note, and app version. Both the app and the function reject path-like text, including common filename forms. Only user-entered text and the displayed summary fields can be sent. The function posts a comment to the configured, locked `wrong-results` issue.
-3. The **Voxi feedback** workflow (`.github/workflows/command-requests.yml`) folds comments from the configured author into the appropriate checklist. A command request matches an unticked command regardless of case or spacing. A wrong-result report matches by exact command text and outcome kind. On a match, the count increases and the submission details are kept. A repeat of a ticked entry starts a fresh checkbox.
+3. The **Voxi feedback** workflow (`.github/workflows/command-requests.yml`) folds comments from the configured author into the appropriate checklist. A command request matches an unticked command regardless of case or spacing. A wrong-result report matches by canonical command text and outcome kind. On a match, the count increases and the submission details are kept. A repeat of a ticked entry starts a fresh checkbox.
 4. Both functions append comments. One workflow run at a time edits the issue bodies and deletes verified comments. Each run reads both queues. A scheduled run every six hours picks up any comments a failed run left behind. The issue body records comment IDs so a retry can skip reports it already folded.
 5. At about 60,000 characters, the workflow creates and locks a continuation issue and links it from the previous issue. Each checklist can span up to 20 issues. Keep the configured **Wrong results** issue open as the queue even when the checklist continues elsewhere.
 
-The endpoints share validation and submission code in `_requests.js`. The app and endpoint share the report schema in `_wrong-result-schema.json`.
+The endpoints share validation and submission code in `_requests.js`. The app and endpoint share the report schema in `_wrong-result-schema.mjs`.
 
 ## Owner setup
 

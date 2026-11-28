@@ -284,6 +284,34 @@ jobs:
             spctl --assess --type execute --verbose=4 "$APP"
           fi
 
+      - name: Leave distribution DMG unsigned in self-signed mode
+        if: env.NOTARIZE != 'true'
+        run: |
+          # Gatekeeper blocks mounting a quarantined DMG that carries an untrusted
+          # (self-signed) signature, forcing users through Privacy & Security twice.
+          # An unsigned DMG mounts cleanly while Voxi.app inside keeps its stable
+          # self-signed identity for TCC folder permissions across updates.
+          DMG="$CARGO_TARGET_DIR/universal-apple-darwin/release/bundle/dmg/Voxi_${VERSION}_universal.dmg"
+          UNSIGNED_DMG="$RUNNER_TEMP/Voxi_${VERSION}_universal.unsigned.dmg"
+          rm -f "$UNSIGNED_DMG"
+          hdiutil convert "$DMG" -format UDZO -o "$UNSIGNED_DMG"
+          mv -f "$UNSIGNED_DMG" "$DMG"
+          if codesign -dv "$DMG" > "$RUNNER_TEMP/voxi-dmg-codesign.txt" 2>&1; then
+            cat "$RUNNER_TEMP/voxi-dmg-codesign.txt"
+            echo '::error::Expected self-signed release DMG to be unsigned'
+            exit 1
+          fi
+          grep -F 'code object is not signed at all' "$RUNNER_TEMP/voxi-dmg-codesign.txt"
+          MOUNT="$RUNNER_TEMP/voxi-dmg-check"
+          mkdir -p "$MOUNT"
+          trap 'hdiutil detach "$MOUNT" -quiet 2>/dev/null || true; rmdir "$MOUNT" 2>/dev/null || true' EXIT
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT"
+          codesign --verify --deep --strict --verbose=2 "$MOUNT/Voxi.app"
+          codesign -d --verbose=4 "$MOUNT/Voxi.app" 2> "$RUNNER_TEMP/voxi-dmg-app-codesign.txt"
+          grep -F "Authority=$SIGNING_IDENTITY" "$RUNNER_TEMP/voxi-dmg-app-codesign.txt"
+          cmp "$MOUNT/Voxi.app/Contents/MacOS/voxi" "$CARGO_TARGET_DIR/universal-apple-darwin/release/bundle/macos/Voxi.app/Contents/MacOS/voxi"
+          hdiutil detach "$MOUNT" -quiet
+
       - name: Notarize, staple, and verify the distribution DMG
         if: env.NOTARIZE == 'true'
         env:

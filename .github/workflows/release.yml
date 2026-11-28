@@ -1,17 +1,11 @@
 name: Release
 
-# Docs, website and vocabulary-only changes skip app release CI. Website checks run separately.
+# Pull requests run the quality gate. Releases are manual: run this workflow on
+# main (workflow_dispatch). Docs, website and vocabulary-only PRs skip it; website
+# checks run separately.
 # The audits that read docs/testing are #[ignore] tests CI never runs.
 on:
   pull_request:
-    paths-ignore:
-      - "website/**"
-      - "docs/**"
-      - "vocab/**"
-      - "**.md"
-      - ".claude/**"
-  push:
-    branches: [main]
     paths-ignore:
       - "website/**"
       - "docs/**"
@@ -90,11 +84,10 @@ jobs:
         working-directory: app/src-tauri
         run: cargo clippy --locked --all-targets --features tiny-model -- -D warnings
 
-  # Release only when shipped code changed since the last release tag (and not
-  # marked [skip release]). Workflow, docs and other repo-only edits pass CI
-  # without a new version. A manual run (workflow_dispatch) always releases.
+  # Only a manual run on main releases, and it always releases. The version
+  # and notes come from the PR titles merged since the last release tag.
   changes:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       release: ${{ steps.plan.outputs.should_release }}

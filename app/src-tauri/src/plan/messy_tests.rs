@@ -378,6 +378,49 @@ fn finder_transfers_resolve_existing_folders_and_create_only_the_leaf() {
 }
 
 #[test]
+fn finder_selected_images_become_one_pdf_named_images() {
+    // Issue #29: "create pdf using these images" with images selected in Finder.
+    let fixture = MessyMac::new();
+    let roots = fixture.roots();
+    let trip = roots.downloads().join("Trip");
+    fs::create_dir(&trip).unwrap();
+    let selected = [trip.join("beach.jpg"), trip.join("sunset.png"), trip.join("ticket.pdf")];
+    for path in &selected {
+        fs::write(path, b"demo").unwrap();
+    }
+    let (paths, _) = crate::finder_selection::accept(roots, selected.to_vec()).unwrap();
+    let snapshot = crate::scope::Snapshot::capture(paths, crate::finder_selection::LABEL.into()).unwrap();
+    let choices = HashMap::new();
+    let history = History::load(roots.home.join("history.json"));
+    let expected = [Action::ImagesToPdf { paths: selected[..2].to_vec(), output: trip.join("images.pdf") }];
+    for command in [
+        "create pdf using these images",
+        "create a pdf from these images",
+        "make a PDF from these images",
+        "create pdf using these",
+        "make a pdf from these",
+        "make a pdf from the selected photos",
+    ] {
+        let (intent, uses_selection) = crate::scope::prepare(command, Some(&snapshot)).unwrap();
+        assert!(uses_selection, "{command}");
+        let planned = Planner::new(roots, &choices).with_scope(Some(snapshot.clone())).plan(&intent, &history);
+        let Ok(Planned::Steps { actions, .. }) = planned else { panic!("{command}: {:?}", planned.err()) };
+        assert_eq!(actions, expected, "{command}");
+    }
+    // A typed reference narrows the selection; "these files" keeps all of it.
+    let plan_moves = |command: &str| {
+        let (intent, _) = crate::scope::prepare(command, Some(&snapshot)).unwrap();
+        let Ok(Planned::Steps { actions, .. }) = Planner::new(roots, &choices).with_scope(Some(snapshot.clone())).plan(&intent, &history)
+        else {
+            panic!("{command}")
+        };
+        actions.len()
+    };
+    assert_eq!(plan_moves("move these images to Documents"), 2);
+    assert_eq!(plan_moves("move these files to Documents"), 3);
+}
+
+#[test]
 fn folder_creation_hint_can_be_used_as_the_transfer_destination() {
     let fixture = MessyMac::new();
     let stuff = fixture.roots().downloads().join("Stuff");

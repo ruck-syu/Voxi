@@ -1645,6 +1645,8 @@ impl<'a> Planner<'a> {
         images.iter().try_for_each(|p| self.check(p))?;
         let default = match src {
             Source::Set { filter: Filter { name_contains: Some(n), .. }, .. } => n.clone(),
+            // A result list or Finder selection has no folder name to borrow.
+            Source::Set { folder: None, .. } if self.scope.is_some() => "images".into(),
             _ => format!("{label} images"),
         };
         let (out, note) = self.output_path(output.unwrap_or(&default), images[0].parent().unwrap(), "pdf")?;

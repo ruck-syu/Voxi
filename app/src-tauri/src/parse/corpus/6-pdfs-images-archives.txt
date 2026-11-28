@@ -30,3 +30,5 @@ decompress my zip in Downloads => !miss
 unzip archive.zip => {"intent":"unzip","src":{"kind":"item","name":"archive.zip"}}
 make a PDF from the photos in Downloads named trip => {"intent":"images_to_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"images","nameContains":"trip"}}}
 pull pages 2 to 5 out of report.pdf => {"intent":"extract_pages","src":{"kind":"item","name":"report.pdf"},"from":2,"to":5}
+create pdf using images in Pictures => {"intent":"images_to_pdf","src":{"kind":"set","folder":"Pictures","filter":{"type":"images"}}}
+create a PDF using the photos in Downloads => {"intent":"images_to_pdf","src":{"kind":"set","folder":"Downloads","filter":{"type":"images"}}}

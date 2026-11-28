@@ -1,4 +1,5 @@
 import schema from "../../website/api/_wrong-result-schema.json" with { type: "json" };
+import { wrongResultTextError } from "../../website/api/_wrong-result-text.mjs";
 import pkg from "../package.json" with { type: "json" };
 
 const { version } = pkg;
@@ -16,8 +17,8 @@ export type WrongResultReport = {
   appVersion: string;
 };
 
-const privateText = new RegExp(schema.privateTextPattern, "iu");
-const control = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+export type WrongReportFieldErrors = Partial<Record<"command" | "note", string>>;
+
 export const { maxCommand, maxNote } = schema;
 
 /** Project the outcome onto a fixed list of identifiers and integer counts. */
@@ -32,12 +33,12 @@ export function reportFields(outcome: ReportOutcome): Pick<WrongResultReport, "o
 }
 
 /** User text can cross the network only after the public copy passes this check. */
-export function sanitizeWrongReport(command: string, outcome: ReportOutcome, note: string): WrongResultReport | { error: string } {
-  if (!command.trim() || command.length > maxCommand || note.length > maxNote) {
-    return { error: `Use 1–${maxCommand} characters for the command and up to ${maxNote} for the note.` };
-  }
-  if ([command, note].some((text) => privateText.test(text.normalize("NFKC")) || control.test(text))) {
-    return { error: "Remove paths, filenames, usernames and line breaks from the command and note." };
-  }
+export function sanitizeWrongReport(command: string, outcome: ReportOutcome, note: string): WrongResultReport | { error: string; fields: WrongReportFieldErrors } {
+  const fields = {
+    command: wrongResultTextError(command, "command"),
+    note: wrongResultTextError(note, "note"),
+  };
+  const error = fields.command ?? fields.note;
+  if (error) return { error, fields };
   return { command, ...reportFields(outcome), note };
 }

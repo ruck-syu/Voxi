@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import pkg from "../package.json" with { type: "json" };
+import textCases from "../../.github/scripts/fixtures/wrong-result-text.json" with { type: "json" };
 import { sanitizeWrongReport } from "../src/wrong-report.ts";
 
 test("the public report keeps only the typed text and allowlisted plan counts", () => {
@@ -48,4 +49,25 @@ test("the public copy rejects path-like text and out-of-bounds fields before sen
   assert.ok(sanitizeWrongReport(" ", outcome, "").error);
   assert.ok(sanitizeWrongReport("x".repeat(301), outcome, "").error);
   assert.ok(sanitizeWrongReport("sort downloads", outcome, "x".repeat(501)).error);
+});
+
+test("the public copy rejects unsafe text in either field before sending", () => {
+  const outcome = { status: "plan" };
+  for (const text of textCases.rejected) {
+    const message = "Remove file names, paths, links, and unsupported characters from the";
+    assert.deepEqual(
+      sanitizeWrongReport(text, outcome, text),
+      { error: `${message} command.`, fields: { command: `${message} command.`, note: `${message} note.` } },
+      JSON.stringify(text),
+    );
+    assert.equal(sanitizeWrongReport("sort Downloads", outcome, text).error, `${message} note.`, JSON.stringify(text));
+  }
+});
+
+test("the public copy preserves supported commands and notes verbatim", () => {
+  for (const text of textCases.accepted) {
+    const result = sanitizeWrongReport(text, { status: "plan" }, text);
+    assert.equal(result.command, text);
+    assert.equal(result.note, text);
+  }
 });

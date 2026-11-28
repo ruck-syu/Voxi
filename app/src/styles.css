@@ -486,6 +486,11 @@ button {
   color: var(--card);
 }
 
+.primary-button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
 .primary-button.request-command {
   background: color-mix(in srgb, var(--ink) 80%, var(--margin));
   box-shadow: inset 0 -2px var(--margin);

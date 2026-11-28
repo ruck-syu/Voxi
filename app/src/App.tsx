@@ -6,7 +6,7 @@ import { readChoice } from "./choice";
 import examples from "./examples.json";
 import { AccessView } from "./access";
 import { SettingsView } from "./settings";
-import { maxCommand, maxNote, reportFields, sanitizeWrongReport, type ReportedActions, type ReportOutcome } from "./wrong-report";
+import { maxCommand, maxNote, reportFields, sanitizeWrongReport, type ReportedActions, type ReportOutcome, type WrongReportFieldErrors } from "./wrong-report";
 import { MAX_COMMAND_BYTES, TOO_LONG, row, utf8Bytes } from "./ui";
 
 type View = "command" | "settings" | "welcome";
@@ -435,7 +435,7 @@ function CommandView({
     // Focus after the window has become key, or macOS drops it.
     requestAnimationFrame(() => {
       const el = inputRef.current;
-      if (!el) return;
+      if (!el || el.closest("[hidden]")) return;
       el.focus({ preventScroll: true });
       el.setSelectionRange(el.value.length, el.value.length);
     });
@@ -444,6 +444,7 @@ function CommandView({
   // Each native show request mounts a fresh command session before layout is
   // measured. Focus events only focus the input; they do not reset a live session.
   useEffect(() => {
+    if (reviewingReport) return;
     window.addEventListener("voxi-focus", focusInput);
     window.addEventListener("focus", focusInput);
     focusInput();
@@ -451,7 +452,7 @@ function CommandView({
       window.removeEventListener("voxi-focus", focusInput);
       window.removeEventListener("focus", focusInput);
     };
-  }, [focusInput]);
+  }, [focusInput, reviewingReport]);
 
   // Grow the text box with multi-line commands.
   useLayoutEffect(() => {
@@ -968,6 +969,13 @@ function ReportRow({ command, phase, onDone, reviewing, onReviewing, beginOperat
 }) {
   const [state, setState] = useState<{ k: "idle" } | { k: "writing"; note: string } | { k: "saving" } | { k: "saved"; count: number; note: string } | { k: "error"; message: string }>({ k: "idle" });
   const delivery = useFeedbackSend(beginOperation, "Couldn't send the report. Try again.");
+  const { setError } = delivery;
+  // A replaced result unmounts this row and any review it owns.
+  useLayoutEffect(() => () => onReviewing(false), [onReviewing]);
+  const closeReview = useCallback(() => {
+    onReviewing(false);
+    setError("");
+  }, [onReviewing, setError]);
   if (!command) return null;
   const save = async (note: string) => {
     if (state.k !== "writing") return;
@@ -987,21 +995,16 @@ function ReportRow({ command, phase, onDone, reviewing, onReviewing, beginOperat
     </div>
   );
   if (state.k === "saved") {
-    const review = (open: boolean) => {
-      onReviewing(open);
-      delivery.setError("");
-      if (!open) onDone();
-    };
     const outcome = phase.k === "done" ? { status: "done", actionCounts: phase.actionCounts } :
       phase.k === "outcome" ? phase.outcome : { status: "problem" };
     return (
       <div className={reviewing ? "learn command-request wrong-result-review" : "learn report-saved"}>
         {reviewing ? (
-          <WrongReportReview command={command} note={state.note} outcome={outcome} close={() => review(false)} delivery={delivery} />
+          <WrongReportReview command={command} note={state.note} outcome={outcome} close={closeReview} delivery={delivery} />
         ) : (
           <>
             <span role="status">Saved on this Mac. {state.count} {state.count === 1 ? "report" : "reports"} so far.</span>
-            {delivery.mode !== "sent" && <button type="button" className="secondary small" onClick={() => review(true)}>Review report to send</button>}
+            {delivery.mode !== "sent" && <button type="button" className="secondary small" onClick={() => onReviewing(true)}>Review report to send</button>}
           </>
         )}
         <FeedbackStatus mode={delivery.mode} sent="Report sent. Thanks!" />
@@ -1034,47 +1037,73 @@ function WrongReportReview({ command, note, outcome, close, delivery }: {
 }) {
   const [publicCommand, setPublicCommand] = useState(command);
   const [publicNote, setPublicNote] = useState(note);
+  const [fieldErrors, setFieldErrors] = useState<WrongReportFieldErrors>({});
   const { actions, appVersion, outcome: status } = reportFields(outcome);
   const { sending, error, setError, submit } = delivery;
+  const commandField = useRef<HTMLTextAreaElement>(null);
+  const noteField = useRef<HTMLTextAreaElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      if (!sending && !event.repeat) close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close, sending]);
 
   const send = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (sending) return;
     const report = sanitizeWrongReport(publicCommand, outcome, publicNote);
     if ("error" in report) {
-      setError(report.error);
-      requestAnimationFrame(() => errorRef.current?.focus());
+      setFieldErrors(report.fields);
+      setError("");
+      const field = report.fields.command ? commandField : noteField;
+      requestAnimationFrame(() => field.current?.focus());
       return;
     }
+    setFieldErrors({});
     void submit(() => api.sendWrongResult(report), close, () => requestAnimationFrame(() => errorRef.current?.focus()));
   };
 
   return (
-    <form aria-labelledby="wrong-report-title" method="post" onSubmit={send} onKeyDown={(event) => {
-      if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
-      event.preventDefault();
-      if (!sending) close();
-    }}>
+    <form aria-labelledby="wrong-report-title" method="post" noValidate onSubmit={send}>
       <h2 id="wrong-report-title">Review report</h2>
-      <p id="wrong-report-public">The fields below will be posted publicly on GitHub if you send this report. Remove private names from the command and note. Edits apply to the public copy.</p>
+      <p id="wrong-report-public">The fields below will be posted publicly on GitHub if you send this report. Remove private file, folder, user, and device names from the command and note. Edits apply to the public copy.</p>
       <label htmlFor="wrong-report-command">Command (required, up to {maxCommand} characters)</label>
-      <textarea id="wrong-report-command" name="command" className="path" rows={2} autoFocus required
+      <textarea ref={commandField} id="wrong-report-command" name="command" className="path" rows={2} autoFocus aria-required="true"
         autoCorrect="off" autoCapitalize="off" spellCheck={false}
-        aria-describedby="wrong-report-public wrong-report-error"
+        aria-invalid={!!fieldErrors.command}
+        aria-describedby={fieldErrors.command ? "wrong-report-public wrong-report-command-error" : "wrong-report-public"}
         value={publicCommand} readOnly={sending}
-        onChange={(event) => { setPublicCommand(event.target.value); setError(""); }} />
+        onChange={(event) => {
+          setPublicCommand(event.target.value);
+          setFieldErrors((current) => ({ ...current, command: undefined }));
+          setError("");
+        }} />
       <label htmlFor="wrong-report-note">Note (optional, up to {maxNote} characters)</label>
-      <textarea id="wrong-report-note" name="note" className="path" rows={2}
-        aria-describedby="wrong-report-public wrong-report-error"
+      <textarea ref={noteField} id="wrong-report-note" name="note" className="path" rows={2}
+        aria-invalid={!!fieldErrors.note}
+        aria-describedby={fieldErrors.note ? "wrong-report-public wrong-report-note-error" : "wrong-report-public"}
         value={publicNote} readOnly={sending}
-        onChange={(event) => { setPublicNote(event.target.value); setError(""); }} />
+        onChange={(event) => {
+          setPublicNote(event.target.value);
+          setFieldErrors((current) => ({ ...current, note: undefined }));
+          setError("");
+        }} />
       <dl>
         <dt>Outcome</dt><dd>{status}</dd>
         <dt>Planned actions</dt><dd>{actions.map(({ kind, count }) => `${kind} ×${count}`).join(", ") || "None"}</dd>
         <dt>Voxi version</dt><dd>{appVersion}</dd>
       </dl>
-      <div id="wrong-report-error" className="warn" role="alert" ref={errorRef} tabIndex={-1}>{error}</div>
+      <div className="warn" role="alert" ref={errorRef} tabIndex={-1}>
+        {fieldErrors.command && <div id="wrong-report-command-error">{fieldErrors.command}</div>}
+        {fieldErrors.note && <div id="wrong-report-note-error">{fieldErrors.note}</div>}
+        {error}
+      </div>
       <div className="learn-buttons">
         <button className="primary-button" type="submit" disabled={sending}>Send this report</button>
         <button className="link" type="button" disabled={sending} onClick={close}>Cancel</button>

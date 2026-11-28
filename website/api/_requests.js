@@ -3,6 +3,7 @@
 // files starting with "_" into functions.
 
 const schema = require("./_wrong-result-schema.json");
+const { URL_TEXT, wrongResultTextError } = require("./_wrong-result-text.mjs");
 
 const LABEL = "command-requests";
 const TITLE = "Command requests";
@@ -16,10 +17,6 @@ const RECEIPT_LINE = /^<!-- voxi-folded: ([\d,]*) -->\r?$/;
 // Cf covers bidi overrides and zero-width characters that could disguise text.
 const CONTROL = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 const CONTROL_GLOBAL = new RegExp(CONTROL.source, "gu");
-// Bare hosts that look like links, without treating filenames like report.pdf,
-// Safari.app or logo.ai as links. Inline code already stops autolinking.
-const URL = /[a-z][a-z\d+.-]*:\/\/|\b(?:https?|ftp|file|mailto|tel|data|javascript):|\bwww\.|\b[\w-]+\.(?:com|org|net|edu|gov|io|dev|info|biz|co|uk|me|xyz|test|example|local)\b|(?:^|[\s(<])\/\/[\w\d-]+|\b(?:\d{1,3}\.){3}\d{1,3}(?=[:/])/i;
-const PRIVATE_TEXT = new RegExp(schema.privateTextPattern, "iu");
 const APP_VERSION = new RegExp(schema.versionPattern);
 const TASK = /^([-*+] \[ \] )(.*?) \(\+([1-9]\d*)\)([ \t]*\r?)$/;
 
@@ -33,7 +30,7 @@ function validate(rawCommand, rawNote = "") {
   if (!command || command.length > MAX_COMMAND || note.length > MAX_NOTE) {
     return { error: "Use 1–300 characters for the command and up to 500 for the note." };
   }
-  if ([rawCommand, rawNote].some((text) => CONTROL.test(text) || URL.test(text))) {
+  if ([rawCommand, rawNote].some((text) => CONTROL.test(text) || URL_TEXT.test(text))) {
     return { error: "Remove links and line breaks from the command and note." };
   }
   return { command, note };
@@ -49,14 +46,8 @@ function validateWrongResult(input) {
   if (typeof command !== "string" || typeof note !== "string") {
     return { error: "Send the command and note as text." };
   }
-  if (command.length > MAX_COMMAND || note.length > MAX_NOTE) {
-    return { error: "Use 1–300 characters for the command and up to 500 for the note." };
-  }
-  if ([command, note].some((text) => PRIVATE_TEXT.test(text.normalize("NFKC")))) {
-    return { error: "Remove paths, filenames and usernames from the command and note." };
-  }
-  const text = validate(command, note);
-  if (text.error) return text;
+  const error = wrongResultTextError(command, "command") ?? wrongResultTextError(note, "note");
+  if (error) return { error };
   if (!schema.outcomes.includes(outcome) || typeof appVersion !== "string" || !APP_VERSION.test(appVersion) ||
       !Array.isArray(actions) || actions.length > schema.actionKinds.length ||
       ((outcome !== "plan" && outcome !== "done") && actions.length)) {
@@ -75,7 +66,7 @@ function validateWrongResult(input) {
     counts.push({ kind: action.kind, count: action.count });
   }
   counts.sort((a, b) => a.kind.localeCompare(b.kind));
-  return { ...text, outcome, actions: counts, appVersion };
+  return { command, note, outcome, actions: counts, appVersion };
 }
 
 /** Base64 prevents user text from closing the HTML comment. */
@@ -146,14 +137,18 @@ function findOpenTask(lines, matches) {
 }
 
 /** Bump an open checkbox or append a fresh one, then record the comment id. */
-function foldTask(body, title, matches, detail, id) {
+function foldTask(body, title, matches, detail, id, { skipRepeatedDetail = false } = {}) {
   const lines = body.split("\n").filter((line) => !RECEIPT_LINE.test(line));
   const index = findOpenTask(lines, matches);
   if (index === -1) {
-    lines.push("", `- [ ] ${title} (+1)`, ...detail);
+    lines.push("", `- [ ] ${title} (+1)`);
+    if (detail) lines.push(detail);
   } else {
     const [, prefix, text, count, trailing] = lines[index].match(TASK);
-    lines.splice(index, 1, `${prefix}${text} (+${BigInt(count) + 1n})${trailing}`, ...detail);
+    lines[index] = `${prefix}${text} (+${BigInt(count) + 1n})${trailing}`;
+    if (detail && !(skipRepeatedDetail && lines[index + 1]?.replace(/\r$/, "") === detail)) {
+      lines.splice(index + 1, 0, detail);
+    }
   }
   const kept = [...receipts(body), id].slice(-KEEP_RECEIPTS);
   return `${lines.join("\n").replace(/\n+$/, "")}\n<!-- voxi-folded: ${kept.join(",")} -->`;
@@ -165,7 +160,7 @@ function fold(body, { command, note }, id) {
     const code = title.match(/^(`+)(.*?)\1$/);
     return code && normalized(code[2].replaceAll("@​", "@")) === key;
   };
-  return foldTask(body, inlineCode(command), matches, note ? [`  Note: ${inlineCode(note)}`] : [], id);
+  return foldTask(body, inlineCode(command), matches, note ? `  Note: ${inlineCode(note)}` : "", id);
 }
 
 function foldWrongResult(body, { command, outcome, actions, note, appVersion }, id) {
@@ -173,7 +168,7 @@ function foldWrongResult(body, { command, outcome, actions, note, appVersion }, 
   const counts = actions.map(({ kind, count }) => `${kind} ×${count}`).join(", ") || "None";
   const noteText = note ? ` · Note: ${inlineCode(note)}` : "";
   const detail = `  - Planned actions: ${inlineCode(counts)} · Voxi ${inlineCode(appVersion)}${noteText}`;
-  return foldTask(body, title, (text) => text === title, [detail], id);
+  return foldTask(body, title, (text) => text === title, detail, id, { skipRepeatedDetail: true });
 }
 
 const commandRequests = {
@@ -308,7 +303,7 @@ function createHandler(config, { env = process.env, fetch = globalThis.fetch, no
       const response = await github(config.issueEnv
         ? `/issues/${number}`
         : `/issues?state=open&labels=${config.label}&sort=created&direction=desc&per_page=10`);
-      if (config.issueEnv && response.status === 404) return undefined;
+      if (config.issueEnv && [404, 410].includes(response.status)) return undefined;
       if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
       const data = await response.json();
       const issue = config.issueEnv
@@ -328,6 +323,7 @@ function createHandler(config, { env = process.env, fetch = globalThis.fetch, no
         // The cached issue was closed, deleted or moved: look it up again once.
         if (![404, 410, 422].includes(response.status)) break;
         cachedIssue = null;
+        if (config.issueEnv && response.status !== 422) return fail(503, config.setupError);
       }
     } catch {
       // Network errors and timeouts fall through to the generic message.

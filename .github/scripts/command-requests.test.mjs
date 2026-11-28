@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { test } from "node:test";
+import textCases from "./fixtures/wrong-result-text.json" with { type: "json" };
 import { run } from "./fold-command-requests.mjs";
 
 const require = createRequire(import.meta.url);
@@ -406,6 +407,47 @@ test("wrong-result validation rejects private text, unknown fields and unbounded
   assert.doesNotMatch(github.state.issues[1].body, /alex/);
 });
 
+test("the wrong-result endpoint checks both text fields before contacting GitHub", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  const handler = wrongEndpoint(github);
+  const initialCalls = github.state.calls.length;
+  for (const text of textCases.rejected) {
+    for (const field of ["command", "note"]) {
+      const res = await call(handler, { ...report, [field]: text });
+      assert.equal(res.statusCode, 400, JSON.stringify(text));
+      assert.match(res.body.error, new RegExp(`Remove file names, paths, links, and unsupported characters from the ${field}\\.$`));
+    }
+  }
+  assert.equal(github.state.calls.length, initialCalls);
+
+  for (const [index, text] of textCases.accepted.entries()) {
+    const res = await call(handler, { ...report, command: text, note: text }, { "x-vercel-forwarded-for": `203.0.113.${index + 1}` });
+    assert.equal(res.statusCode, 200, text);
+    const queued = wrongResults.decode(github.state.comments.at(-1).body);
+    assert.equal(queued.command, text);
+    assert.equal(queued.note, text);
+  }
+  assert.deepEqual(shared.validate("move report.pdf"), { command: "move report.pdf", note: "" });
+});
+
+test("consecutive identical wrong-result details update only the count", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  const handler = wrongEndpoint(github);
+  const changed = { ...report, note: "Sort by month first" };
+  for (const input of [report, report, changed, changed, report]) {
+    assert.equal((await call(handler, input)).statusCode, 200);
+  }
+  assert.deepEqual(await wrongFold(github), { folded: 5, dropped: 0 });
+  const { body } = github.state.issues[1];
+  assert.match(body, /^- \[ \] `Move the screenshots to Documents` · `plan` \(\+5\)$/m);
+  assert.deepEqual([...body.matchAll(/Note: `([^`]+)`/g)].map((match) => match[1]), [
+    report.note, changed.note, report.note,
+  ]);
+  assert.equal(github.state.comments.length, 0);
+});
+
 test("wrong-result setup errors and failed GitHub writes use the feedback error contract", async () => {
   const github = fakeGitHub({ issues: tracked() });
   const missing = wrongEndpoint(github, { env: { GITHUB_TOKEN_COMMAND_REQUESTS: "test-token" } });
@@ -423,6 +465,23 @@ test("wrong-result setup errors and failed GitHub writes use the feedback error 
   const response = await call(refused, report);
   assert.equal(response.statusCode, 502);
   assert.deepEqual(response.body, { ok: false, error: "Couldn't send the report. Try again." });
+});
+
+test("a gone wrong-result issue returns the setup error during lookup and after caching", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  let gone = false;
+  const handler = wrongEndpoint(github, {
+    fetch: (href, options) => gone ? Promise.resolve(Response.json({}, { status: 410 })) : github.fetch(href, options),
+  });
+  assert.equal((await call(handler, report)).statusCode, 200);
+  gone = true;
+  for (const stage of ["cached write", "lookup"]) {
+    const res = await call(handler, report);
+    assert.equal(res.statusCode, 503, stage);
+    assert.deepEqual(res.body, { ok: false, error: "Wrong-result reports aren't set up yet." });
+  }
+  assert.equal(github.state.comments.length, 1);
 });
 
 test("wrong-result rollover keeps draining the configured issue and repairs a failed lock", async () => {

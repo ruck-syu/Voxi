@@ -26,6 +26,5 @@
   ],
   "maxCommand": 300,
   "maxNote": 500,
-  "versionPattern": "^\\d{1,9}\\.\\d{1,9}\\.\\d{1,9}$(?![\\s\\S])",
-  "privateTextPattern": "[/\\\\~@]|%(?:25|2e|2f|5c|7e|u)|\\b[a-z]:[^\\s]|\\.[\\p{L}\\p{N}_-]"
+  "versionPattern": "^\\d{1,9}\\.\\d{1,9}\\.\\d{1,9}$(?![\\s\\S])"
 }

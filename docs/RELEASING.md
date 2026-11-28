@@ -1,7 +1,10 @@
 # Releases
 
-Every pull request and every push to `main` that touches the app runs
-[`.github/workflows/release.yml`](../.github/workflows/release.yml).
+Every pull request that touches the app runs the quality gate in
+[`.github/workflows/release.yml`](../.github/workflows/release.yml). Releases
+are manual: merging to `main` never publishes one. Run the **Release**
+workflow on `main` (Actions tab, or `gh workflow run release.yml --ref main`)
+when you want to ship.
 
 ## CI quality gate and publishing
 
@@ -13,7 +16,7 @@ On pull requests, the `quality` job:
 - runs the rule-only cross-build equivalence suite in both feature sets, and
 - runs strict Clippy in both feature sets.
 
-On `main`, the release job requires that gate, assigns one version to every
+On a manual run on `main`, the release job requires that gate, assigns one version to every
 manifest and lockfile, builds a universal app for Apple silicon and Intel with
 `--no-default-features`, signs it, verifies signatures, effective entitlements,
 and both CPU slices, and only then publishes:
@@ -22,19 +25,17 @@ and both CPU slices, and only then publishes:
 - a signed update bundle and `latest.json` for in-app updates, and
 - release notes listing every change since the previous version.
 
-Pushes that only touch `website/` or `docs/` don't build a new app.
+Pull requests that only touch `website/`, `docs/` or `vocab/` skip this workflow.
 
 ## Versioning
 
 [`app/scripts/next-version.mjs`](../app/scripts/next-version.mjs) is the single source of truth for release gating, SemVer bumping, and release notes:
 
-- **Guard:** pushes to `main` skip the release unless `app/` or `crates/` changed since the newest published `vX.Y.Z` tag (and the change is not marked `[skip release]`).
 - **Automatic bump:** computed from PR titles (first line of GitHub merge commit bodies) and direct commits since the newest `vX.Y.Z` tag:
   - Default (any unprefixed or `fix:` / `chore:` / etc. title): **patch** (`0.0.3` → `0.0.4`)
   - `feat:` or `feat(scope):`: **minor** (`0.0.3` → `0.1.0`)
   - `<type>!:` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer: **major** from 1.0 on; before 1.0 it bumps **minor** (`0.1.4` → `0.2.0`). Cut 1.0.0 with a manual `major` run.
-  - `[skip release]` in the PR title or commit message: skips publishing on that push
-- **Manual trigger:** running the workflow via `workflow_dispatch` always releases and accepts an optional `bump` input (`auto`, `patch`, `minor`, or `major`).
+- **Manual trigger:** a run on `main` (`workflow_dispatch`) always releases and accepts an optional `bump` input (`auto`, `patch`, `minor`, or `major`).
 - **Monotonicity & failed runs:** release tags are only created when a release is published, so pull request runs and failed runs never burn a version.
 - **Release notes:** generated once from the PR titles / commits since the previous tag and used for both the GitHub release body and the in-app updater's `latest.json` `notes` field.
 

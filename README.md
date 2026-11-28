@@ -157,13 +157,12 @@ cd app && npm run dev                  # UI in a browser with a mock backend (ap
 
 ### Releases and versioning
 
-Pushes to `main` automatically publish a release whenever `app/` or `crates/` changed since the latest `vX.Y.Z` tag. The next version is derived from the PR titles (or direct commit subjects) merged since that tag:
+Releases are manual. Merging to `main` never publishes one. To release, run the **Release** workflow on `main` from the Actions tab, or `gh workflow run release.yml --ref main`. With the default `auto` bump, the version comes from the PR titles (or direct commit subjects) merged since the latest `vX.Y.Z` tag:
 
 - **Patch (default):** normal PR titles and commits (`0.0.3` → `0.0.4`)
 - **Minor:** prefix the PR title with `feat:` or `feat(scope):` (`0.0.3` → `0.1.0`)
 - **Breaking:** prefix with `<type>!:` (e.g. `feat!:`) or add a `BREAKING CHANGE:` line. Before 1.0 this bumps the minor version (`0.1.4` → `0.2.0`); from 1.0 on it bumps major. To cut 1.0.0, run the workflow manually with `major`.
-- **Skip a release:** include `[skip release]` in the PR title (or commit message)
-- **Manual release / override:** run the **Release** workflow manually (`workflow_dispatch`) and pick `auto`, `patch`, `minor`, or `major`
+- **Override:** pick `patch`, `minor`, or `major` instead of `auto` when you run the workflow (`-f bump=minor`)
 
 For CI checks, release notes, and macOS signing/notarization, see
 [docs/RELEASING.md](docs/RELEASING.md).

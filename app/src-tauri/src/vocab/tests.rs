@@ -332,6 +332,23 @@ fn refresh_interval_is_shared_across_launches() {
     assert!(client().is_ok(), "the TLS client must work before the app updater runs");
 }
 
+/// Waits until no handle holds the refresh lock. A child process that another
+/// test is spawning can inherit the lock's descriptor for a moment before exec
+/// closes it, so a dropped lock isn't always free straight away.
+fn wait_for_lock_release(dir: &Path) {
+    let file = OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("vocab.lock")).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        match file.try_lock() {
+            Ok(()) => return file.unlock().unwrap(),
+            Err(std::fs::TryLockError::WouldBlock) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("the refresh lock was never released: {error:?}"),
+        }
+    }
+}
+
 #[test]
 fn manual_check_bypasses_interval_but_still_locks_and_records_attempt() {
     let dir = tempfile::tempdir().unwrap();
@@ -342,12 +359,14 @@ fn manual_check_bypasses_interval_but_still_locks_and_records_attempt() {
     assert_eq!(fs::read_to_string(&stamp).unwrap(), "3600");
 
     drop(lock);
+    wait_for_lock_release(dir);
     assert_eq!(begin_check(dir, false, 3601).unwrap_err(), (CHECK_INTERVAL - Duration::from_secs(1), RefreshOutcome::Unchanged));
     let manual_lock = begin_check(dir, true, 3601).unwrap();
     assert_eq!(fs::read_to_string(&stamp).unwrap(), "3601");
     assert_eq!(begin_check(dir, true, 3602).unwrap_err().1, RefreshOutcome::Unchanged);
 
     drop(manual_lock);
+    wait_for_lock_release(dir);
     assert_eq!(begin_check(dir, false, 3602).unwrap_err().0, CHECK_INTERVAL - Duration::from_secs(1));
 }
 

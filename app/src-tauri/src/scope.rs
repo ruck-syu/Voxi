@@ -136,7 +136,7 @@ pub(crate) fn is_nested_in(path: &Path, folder: &Path) -> bool {
 const MARKER: &str = "__voxi_result_reference__";
 static REFERENCES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-    r"(?i)\b(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(?:st|nd|rd|th))\s+(?:files?|items?|ones?|1)|(?:file|item|number)\s+\d+|(?:these|those|listed|search)\s+(?:files|items|results)|them|these|those|results|everything|all|it|file|\d+)\b"
+    r"(?i)\b(?:(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|\d+(?:st|nd|rd|th))\s+(?:files?|items?|ones?|1)|(?:file|item|number)\s+\d+|(?:these|those|listed|search|selected)\s+(?:files|items|results|images|photos|pictures|pics|pdfs|videos|documents|docs|screenshots)|them|these|those|results|everything|all|it|file|\d+)\b"
 ).unwrap()
 });
 
@@ -195,10 +195,17 @@ pub fn parse_followup(text: &str, snapshot: &Snapshot) -> Result<Option<Intent>,
             }
             Source::item(&entry.path.to_string_lossy())
         } else {
+            // "these images" keeps only the listed images; "these files" keeps all.
+            let file_type = reference
+                .split_whitespace()
+                .nth(1)
+                .filter(|noun| !matches!(*noun, "files" | "items" | "results"))
+                .and_then(parse::phrase::type_word)
+                .map_or(FileType::Files, |(file_type, _)| file_type);
             Source::Set {
                 folder: None,
                 filter: Filter {
-                    file_type: Some(FileType::Files),
+                    file_type: Some(file_type),
                     include_subfolders: subfolders != parse::Subfolders::None,
                     only_subfolders,
                     ..Default::default()

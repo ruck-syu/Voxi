@@ -2,7 +2,9 @@ use reqwest::{Client, StatusCode, redirect::Policy};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-const ENDPOINT: &str = "https://tryvoxi.vercel.app/api/command-request";
+const COMMAND_REQUEST_ENDPOINT: &str = "https://tryvoxi.vercel.app/api/command-request";
+const WRONG_RESULT_ENDPOINT: &str = "https://tryvoxi.vercel.app/api/wrong-result";
+const REPORT_FAILED: &str = "Couldn't send the report. Try again.";
 const SEND_FAILED: &str = "Couldn't send the request. Try again.";
 
 #[derive(Serialize)]
@@ -10,6 +12,23 @@ struct Request<'a> {
     command: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     note: Option<&'a str>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct WrongResult {
+    command: String,
+    outcome: String,
+    actions: Vec<ReportedAction>,
+    note: String,
+    app_version: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReportedAction {
+    kind: String,
+    count: u64,
 }
 
 #[derive(Deserialize)]
@@ -30,10 +49,15 @@ pub(crate) enum RequestResult {
 #[tauri::command]
 pub(crate) async fn send_command_request(command: String, note: Option<String>) -> RequestResult {
     let request = Request { command: &command, note: note.as_deref() };
-    send(request).await.unwrap_or_else(|_| RequestResult::Failed { message: SEND_FAILED.into() })
+    send(COMMAND_REQUEST_ENDPOINT, &request, SEND_FAILED).await.unwrap_or_else(|_| RequestResult::Failed { message: SEND_FAILED.into() })
 }
 
-async fn send(request: Request<'_>) -> reqwest::Result<RequestResult> {
+#[tauri::command]
+pub(crate) async fn send_wrong_result(report: WrongResult) -> RequestResult {
+    send(WRONG_RESULT_ENDPOINT, &report, REPORT_FAILED).await.unwrap_or_else(|_| RequestResult::Failed { message: REPORT_FAILED.into() })
+}
+
+async fn send(endpoint: &str, request: &impl Serialize, failed: &str) -> reqwest::Result<RequestResult> {
     // The updater uses the same TLS provider and may not have run yet.
     let _ = rustls::crypto::ring::default_provider().install_default();
     let response = Client::builder()
@@ -41,8 +65,8 @@ async fn send(request: Request<'_>) -> reqwest::Result<RequestResult> {
         .redirect(Policy::none())
         .timeout(Duration::from_secs(10))
         .build()?
-        .post(ENDPOINT)
-        .json(&request)
+        .post(endpoint)
+        .json(request)
         .send()
         .await?;
 
@@ -59,7 +83,7 @@ async fn send(request: Request<'_>) -> reqwest::Result<RequestResult> {
             return Ok(RequestResult::Failed { message });
         }
     }
-    Ok(RequestResult::Failed { message: SEND_FAILED.into() })
+    Ok(RequestResult::Failed { message: failed.into() })
 }
 
 #[cfg(test)]

@@ -41,7 +41,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
   const t = text.toLowerCase();
   if (t.includes("usuals"))
     return {
-      status: "plan", modelInterpreted: false, firstRun: "immediate", id: 4, title: "Run my usuals: 1 of 2 commands", total: 3, noted: 0, isUndo: false,
+      status: "plan", modelInterpreted: false, firstRun: "immediate", actionCounts: { create_folder: 1, move: 2 }, id: 4, title: "Run my usuals: 1 of 2 commands", total: 3, noted: 0, isUndo: false,
       warnings: ["Skipped “delete installers from Downloads”: No files match in Downloads."],
       items: [
         { kind: "create_folder", primary: "Screenshots", detail: "new folder in ~/Desktop" },
@@ -51,7 +51,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("pdf"))
     return {
-      status: "plan", modelInterpreted: false, firstRun: "immediate", id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
+      status: "plan", modelInterpreted: false, firstRun: "immediate", actionCounts: { move: 26 }, id: 1, title: "Move 26 files to Documents", total: 26, noted: 2, isUndo: false,
       warnings: ["2 already in Documents, left alone."],
       items: [
         { kind: "move", primary: "Q3 board deck.pdf", detail: "→ ~/Documents", skippable: true },
@@ -63,7 +63,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("clean"))
     return {
-      status: "plan", modelInterpreted: false, firstRun: "immediate", id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, noted: 0, isUndo: false, warnings: [],
+      status: "plan", modelInterpreted: false, firstRun: "immediate", actionCounts: { trash: 3 }, id: 2, title: "Move 3 files from Downloads to the Trash", total: 3, noted: 0, isUndo: false, warnings: [],
       items: [
         { kind: "trash", primary: "Zoom.pkg", detail: "→ Trash" },
         { kind: "trash", primary: "Figma-124.3.dmg", detail: "→ Trash" },
@@ -72,7 +72,7 @@ function plan(text: string, choices: Record<string, string> = {}): Outcome {
     };
   if (t.includes("claude") && choices.claude)
     return {
-      status: "plan", modelInterpreted: false, firstRun: "immediate", id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, noted: 0, isUndo: false, warnings: [],
+      status: "plan", modelInterpreted: false, firstRun: "immediate", actionCounts: { trash: 1 }, id: 3, title: `Move ${choices.claude.split("/").pop()} from Downloads to the Trash`, total: 1, noted: 0, isUndo: false, warnings: [],
       items: [{ kind: "trash", primary: choices.claude.split("/").pop()!, detail: "→ Trash" }],
     };
   if (t.includes("claude"))
@@ -226,6 +226,7 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     case "report_wrong":
       return { count: ++reports, path: "~/Library/Application Support/voxi/reports.jsonl" };
     case "send_command_request":
+    case "send_wrong_result":
       return { status: "sent" };
     case "reports_summary":
       return { count: reports, path: "~/Library/Application Support/voxi/reports.jsonl" };

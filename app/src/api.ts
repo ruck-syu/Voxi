@@ -1,5 +1,6 @@
 // Types and calls shared with the Rust backend (src-tauri/src/model.rs).
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import type { ReportedActions, WrongResultReport } from "./wrong-report";
 
 const inTauri = "__TAURI_INTERNALS__" in window;
 const invoke = <T,>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
@@ -35,7 +36,7 @@ export type InfoRow = { name: string; detail: string };
 export type FirstRunPolicy = "immediate" | "oneTimeDeferred" | "repeatLater" | "runNowAndRepeat";
 
 export type Outcome =
-  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; noted: number; scopeNotice?: string; warnings: string[]; modelInterpreted: boolean; isUndo: boolean; firstRun: FirstRunPolicy; scheduledFor?: string | null; repeats?: string | null }
+  | { status: "plan"; id: number; title: string; total: number; items: PreviewItem[]; actionCounts: ReportedActions; noted: number; scopeNotice?: string; warnings: string[]; modelInterpreted: boolean; isUndo: boolean; firstRun: FirstRunPolicy; scheduledFor?: string | null; repeats?: string | null }
   | { status: "ambiguous"; name: string; candidates: string[]; folders: boolean; reason: "multiple_matches" | "suggested_match" | "incomplete_search"; note?: string }
   | { status: "info"; title: string; summary: string; rows: InfoRow[]; total: number; numbered?: boolean }
   | { status: "problem"; message: string }
@@ -114,6 +115,8 @@ export const api = {
   reportWrong: (command: string, outcome: unknown, note: string, searchStats?: SearchStats) => invoke<Reports>("report_wrong", { command, outcome, note, searchStats }),
   sendCommandRequest: (command: string, note?: string) =>
     invoke<CommandRequestResult>("send_command_request", { command, note }),
+  sendWrongResult: (report: WrongResultReport) =>
+    invoke<CommandRequestResult>("send_wrong_result", { report }),
   reportsSummary: () => invoke<Reports>("reports_summary"),
   clearReports: () => invoke<Reports>("clear_reports"),
   revealReports: () => invoke<void>("reveal_reports"),

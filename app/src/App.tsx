@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorMessage, inTauri, isConfirmError, tildify, type Outcome, type PreviewRow, type ResultScope, type Review, type RunResult, type SearchStats, type Settings } from "./api";
+import { api, errorMessage, inTauri, isConfirmError, tildify, type CommandRequestResult, type Outcome, type PreviewRow, type ResultScope, type Review, type RunResult, type SearchStats, type Settings } from "./api";
 import { readChoice } from "./choice";
+import { version as appVersion } from "../package.json";
 import examples from "./examples.json";
 import { AccessView } from "./access";
 import { SettingsView } from "./settings";
+import { maxCommand, maxNote, reportFields, sanitizeWrongReport, type ReportedActions, type ReportOutcome, type WrongReportFieldErrors } from "./wrong-report";
 import { MAX_COMMAND_BYTES, TOO_LONG, row, utf8Bytes } from "./ui";
 
 type View = "command" | "settings" | "welcome";
@@ -18,7 +20,7 @@ type Phase =
   | { k: "parsing" }
   | { k: "outcome"; outcome: Outcome; refused?: string; searchStats?: SearchStats }
   | { k: "running"; title: string; canStop: boolean; stopping: boolean; stopError?: string }
-  | { k: "done"; result: RunResult; wasUndo: boolean; searchStats?: SearchStats }
+  | { k: "done"; result: RunResult; actionCounts: ReportedActions; wasUndo: boolean; searchStats?: SearchStats }
   | { k: "error"; message: string };
 
 /** Waiting for the answer to "which one?": the command being planned and
@@ -365,6 +367,7 @@ function CommandView({
 }) {
   const [text, setText] = useState("");
   const [phase, setPhase] = useState<Phase>({ k: "ready" });
+  const [reviewingReport, setReviewingReport] = useState(false);
   const [asking, setAsking] = useState<Asking | null>(null);
   // The last command, echoed above its result once the box is cleared.
   const [said, setSaid] = useState<string | null>(null);
@@ -433,7 +436,7 @@ function CommandView({
     // Focus after the window has become key, or macOS drops it.
     requestAnimationFrame(() => {
       const el = inputRef.current;
-      if (!el) return;
+      if (!el || el.closest("[hidden]")) return;
       el.focus({ preventScroll: true });
       el.setSelectionRange(el.value.length, el.value.length);
     });
@@ -442,6 +445,7 @@ function CommandView({
   // Each native show request mounts a fresh command session before layout is
   // measured. Focus events only focus the input; they do not reset a live session.
   useEffect(() => {
+    if (reviewingReport) return;
     window.addEventListener("voxi-focus", focusInput);
     window.addEventListener("focus", focusInput);
     focusInput();
@@ -449,7 +453,7 @@ function CommandView({
       window.removeEventListener("voxi-focus", focusInput);
       window.removeEventListener("focus", focusInput);
     };
-  }, [focusInput]);
+  }, [focusInput, reviewingReport]);
 
   // Grow the text box with multi-line commands.
   useLayoutEffect(() => {
@@ -553,7 +557,7 @@ function CommandView({
         setResultScope(after.scope);
         setSelectionNotice(after.notice);
       }
-      setPhase({ k: "done", result, wasUndo: plan.isUndo, searchStats });
+      setPhase({ k: "done", result, actionCounts: plan.actionCounts, wasUndo: plan.isUndo, searchStats });
       onFirstCommand();
       // A phrase Voxi missed, followed soon by a command that worked, can
       // be taught: next time the phrase runs this command.
@@ -615,7 +619,7 @@ function CommandView({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing) return;
+      if (e.defaultPrevented || e.isComposing || reviewingReport) return;
       if (e.key === "Escape") {
         e.preventDefault();
         if (e.repeat) return;
@@ -629,7 +633,7 @@ function CommandView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [phase, text, resultScope, reset, stop, onSettings, onClose]);
+  }, [phase, text, resultScope, reset, stop, onSettings, onClose, reviewingReport]);
 
   const answer = (said: string) => {
     if (!asking) return;
@@ -727,81 +731,84 @@ function CommandView({
 
   return (
     <>
-      <div className="head" data-busy={busy || undefined}>
-        <span className="rule" ref={ruleRef} aria-hidden="true" />
-        <textarea
-          ref={inputRef}
-          className="command"
-          rows={1}
-          value={text}
-          writingsuggestions="false"
-          spellCheck={false}
-          autoCorrect="off"
-          autoCapitalize="off"
-          placeholder={asking ? "Say or type a number" : placeholder}
-          aria-label={asking ? "Which one?" : "Command"}
-          aria-invalid={tooLong || undefined}
-          aria-describedby="command-length-error"
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={onInputKey}
+      <div hidden={reviewingReport}>
+        <div className="head" data-busy={busy || undefined}>
+          <span className="rule" ref={ruleRef} aria-hidden="true" />
+          <textarea
+            ref={inputRef}
+            className="command"
+            rows={1}
+            value={text}
+            writingsuggestions="false"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            placeholder={asking ? "Say or type a number" : placeholder}
+            aria-label={asking ? "Which one?" : "Command"}
+            aria-invalid={tooLong || undefined}
+            aria-describedby="command-length-error"
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={onInputKey}
+          />
+          <p className="command-error hint warn" id="command-length-error" role="alert">{tooLong ? TOO_LONG : ""}</p>
+        </div>
+        {said && phase.k !== "ready" && (
+          <p className="said" key={said}>
+            “{said}”
+          </p>
+        )}
+        {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
+          <span>{resultScope.count} {fromFinder ? (resultScope.count === 1 ? "file" : "files") : "results"} from {resultScope.label}{!fromFinder && resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
+          <button className="link" disabled={phase.k === "running"} onClick={reset}>Clear scope</button>
+        </div>}
+        {phase.k === "ready" && (fromFinder || selectionNotice) && (
+          <p className="quiet selection-hint" role="status">
+            {selectionNotice && <span className="warn">{selectionNotice} </span>}
+            {fromFinder && "Say what to do with them, such as “move these to Receipts”."}
+          </p>
+        )}
+        <Body
+          searched={searched}
+          key={`body-${phaseKey(phase)}`}
+          phase={phase}
+          asking={asking}
+          heard={heard}
+          onConfirm={confirm}
+          onCancel={reset}
+          onStop={stop}
+          onPick={pick}
+          onFill={fill}
+          onUndo={undo}
+          skipped={phase.k === "outcome" && phase.outcome.status === "plan" ? skippedFor(phase.outcome.id) : []}
+          onToggleSkip={toggleSkip}
         />
-        <p className="command-error hint warn" id="command-length-error" role="alert">{tooLong ? TOO_LONG : ""}</p>
+        {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={(settings, text) => { onSettingsChanged(settings); setOffer((current) => (current === offer ? { ...offer, saved: text } : current)); }} onDone={() => { setOffer(null); focusInput(); }} />}
+        {phase.k === "outcome" && phase.outcome.status === "not_understood" && (
+          <CommandRequestRow key={requestId.current} original={lastCommand.current} onCancel={focusInput} beginOperation={beginOperation} />
+        )}
       </div>
-      {said && phase.k !== "ready" && (
-        <p className="said" key={said}>
-          “{said}”
-        </p>
+      {reportable(phase) && (
+        <ReportRow key={`report-${requestId.current}-${phaseKey(phase)}`} command={lastCommand.current} phase={phase}
+          onDone={focusInput} reviewing={reviewingReport} onReviewing={setReviewingReport} beginOperation={beginOperation} />
       )}
-      {resultScope && phase.k !== "parsing" && <div className="result-scope" role="status">
-        <span>{resultScope.count} {fromFinder ? (resultScope.count === 1 ? "file" : "files") : "results"} from {resultScope.label}{!fromFinder && resultScope.visible < resultScope.count ? ` · ${resultScope.visible} displayed` : ""}</span>
-        <button className="link" disabled={phase.k === "running"} onClick={reset}>Clear scope</button>
-      </div>}
-      {phase.k === "ready" && (fromFinder || selectionNotice) && (
-        <p className="quiet selection-hint" role="status">
-          {selectionNotice && <span className="warn">{selectionNotice} </span>}
-          {fromFinder && "Say what to do with them, such as “move these to Receipts”."}
-        </p>
-      )}
-      <Body
-        searched={searched}
-        key={`body-${phaseKey(phase)}`}
-        phase={phase}
-        asking={asking}
-        heard={heard}
-        onConfirm={confirm}
-        onCancel={reset}
-        onStop={stop}
-        onPick={pick}
-        onFill={fill}
-        onUndo={undo}
-        skipped={phase.k === "outcome" && phase.outcome.status === "plan" ? skippedFor(phase.outcome.id) : []}
-        onToggleSkip={toggleSkip}
-      />
-      {!busy && offer && <OfferRow key={offer.k === "folder" ? offer.path : offer.phrase} offer={offer} onSaved={(settings, text) => { onSettingsChanged(settings); setOffer((current) => (current === offer ? { ...offer, saved: text } : current)); }} onDone={() => { setOffer(null); focusInput(); }} />}
-      {phase.k === "outcome" && phase.outcome.status === "not_understood" && (
-        <CommandRequestRow key={requestId.current} original={lastCommand.current} onCancel={focusInput} beginOperation={beginOperation} />
-      )}
-      {reportable(phase) && <ReportRow key={`report-${phaseKey(phase)}`} command={lastCommand.current} phase={phase} onDone={focusInput} />}
-      <Footer phase={phase} asking={!!asking} onSettings={onSettings} />
+      {!reviewingReport && <Footer phase={phase} asking={!!asking} onSettings={onSettings} />}
     </>
   );
 }
 
-function CommandRequestRow({ original, onCancel, beginOperation }: { original: string; onCancel: () => void; beginOperation: () => () => void }) {
-  const [mode, setMode] = useState<"idle" | "editing" | "sending" | "sent">("idle");
-  // Synchronous guard: two clicks in one tick both see mode === "editing".
-  const inFlight = useRef(false);
-  const [command, setCommand] = useState(original);
-  const [note, setNote] = useState("");
+/** One explicit submission, with the window held open until it settles. */
+function useFeedbackSend(beginOperation: () => () => void, failedMessage: string) {
+  const [mode, setMode] = useState<"editing" | "sending" | "sent">("editing");
   const [error, setError] = useState("");
-  const [commandInvalid, setCommandInvalid] = useState(false);
-  const commandField = useRef<HTMLTextAreaElement>(null);
+  const inFlight = useRef(false);
+  const mounted = useRef(false);
   const sending = mode === "sending";
 
-  const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
-  // While sending, Escape and Cmd+, must not leave the view: the request still posts.
   useEffect(() => {
     if (!sending) return;
     const swallow = (event: KeyboardEvent) => {
@@ -811,8 +818,49 @@ function CommandRequestRow({ original, onCancel, beginOperation }: { original: s
     return () => window.removeEventListener("keydown", swallow, true);
   }, [sending]);
 
+  const submit = async (post: () => Promise<CommandRequestResult>, onSent: () => void, onError?: () => void) => {
+    if (mode !== "editing" || inFlight.current) return;
+    inFlight.current = true;
+    setError("");
+    setMode("sending");
+    const release = beginOperation();
+    try {
+      const result = await post();
+      if (!mounted.current) return;
+      if (result.status === "sent") {
+        setMode("sent");
+        onSent();
+        return;
+      }
+      setError(result.status === "failed" ? result.message : "Too many requests. Try again in a few minutes.");
+    } catch {
+      if (mounted.current) setError(failedMessage);
+    } finally {
+      inFlight.current = false;
+      release();
+    }
+    if (!mounted.current) return;
+    setMode("editing");
+    onError?.();
+  };
+
+  return { mode, sending, error, setError, submit };
+}
+
+function FeedbackStatus({ mode, sent }: { mode: "editing" | "sending" | "sent"; sent: string }) {
+  return <div role="status">{mode === "sending" ? "Sending…" : mode === "sent" ? sent : ""}</div>;
+}
+
+function CommandRequestRow({ original, onCancel, beginOperation }: { original: string; onCancel: () => void; beginOperation: () => () => void }) {
+  const [open, setOpen] = useState(false);
+  const { mode, sending, error, setError, submit } = useFeedbackSend(beginOperation, "Couldn't send the request. Try again.");
+  const [command, setCommand] = useState(original);
+  const [note, setNote] = useState("");
+  const [commandInvalid, setCommandInvalid] = useState(false);
+  const commandField = useRef<HTMLTextAreaElement>(null);
+
   const cancel = () => {
-    setMode("idle");
+    setOpen(false);
     setCommand(original);
     setNote("");
     setError("");
@@ -820,43 +868,25 @@ function CommandRequestRow({ original, onCancel, beginOperation }: { original: s
     onCancel();
   };
 
-  const send = async (event: React.FormEvent<HTMLFormElement>) => {
+  const send = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (mode !== "editing" || inFlight.current) return;
+    if (mode !== "editing") return;
     if (!command.trim() || command.trim().length > 300) {
       setError("Use 1–300 characters for the command.");
       setCommandInvalid(true);
       commandField.current?.focus();
       return;
     }
-    setError("");
-    setMode("sending");
-    inFlight.current = true;
-    // Blur, outside clicks and reopening the window leave the view alone until this settles.
-    const release = beginOperation();
-    try {
-      const result = await api.sendCommandRequest(command, note.trim() ? note : undefined);
-      if (!mounted.current) return;
-      if (result.status === "sent") {
-        setMode("sent");
-        onCancel();
-        return;
-      }
-      setError(result.status === "failed" ? result.message : "Too many requests. Try again in a few minutes.");
-    } catch {
-      setError("Couldn't send the request. Try again.");
-    } finally {
-      inFlight.current = false;
-      release();
-    }
-    if (!mounted.current) return;
-    setMode("editing");
-    requestAnimationFrame(() => commandField.current?.focus());
+    void submit(
+      () => api.sendCommandRequest(command, note.trim() ? note : undefined),
+      onCancel,
+      () => requestAnimationFrame(() => commandField.current?.focus()),
+    );
   };
 
-  if (mode === "idle") return (
+  if (!open) return (
     <div className="learn">
-      <button className="link" onClick={() => setMode("editing")}>Request this command</button>
+      <button type="button" className="primary-button request-command" onClick={() => setOpen(true)}>Request this command</button>
     </div>
   );
 
@@ -911,7 +941,7 @@ function CommandRequestRow({ original, onCancel, beginOperation }: { original: s
           </div>
         </form>
       )}
-      <div role="status">{sending ? "Sending…" : mode === "sent" ? "Request sent. Thanks!" : ""}</div>
+      <FeedbackStatus mode={mode} sent="Request sent. Thanks!" />
     </div>
   );
 }
@@ -934,10 +964,19 @@ function reportOutcome(p: Phase): unknown {
   }
 }
 
-/** "Wrong result?": saves the command and what Voxi did with it on this Mac,
- *  with an optional note on what it should have done. Nothing is sent. */
-function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; onDone: () => void }) {
-  const [state, setState] = useState<{ k: "idle" } | { k: "writing"; note: string } | { k: "saving" } | { k: "saved"; count: number } | { k: "error"; message: string }>({ k: "idle" });
+/** Save a local report before offering a review of the public copy. */
+function ReportRow({ command, phase, onDone, reviewing, onReviewing, beginOperation }: {
+  command: string; phase: Phase; onDone: () => void; reviewing: boolean; onReviewing: (reviewing: boolean) => void; beginOperation: () => () => void;
+}) {
+  const [state, setState] = useState<{ k: "idle" } | { k: "writing"; note: string } | { k: "saving" } | { k: "saved"; count: number; note: string } | { k: "error"; message: string }>({ k: "idle" });
+  const delivery = useFeedbackSend(beginOperation, "Couldn't send the report. Try again.");
+  const { setError } = delivery;
+  // A replaced result unmounts this row and any review it owns.
+  useLayoutEffect(() => () => onReviewing(false), [onReviewing]);
+  const closeReview = useCallback(() => {
+    onReviewing(false);
+    setError("");
+  }, [onReviewing, setError]);
   if (!command) return null;
   const save = async (note: string) => {
     if (state.k !== "writing") return;
@@ -945,7 +984,7 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
     try {
       const searchStats = phase.k === "outcome" || phase.k === "done" ? phase.searchStats : undefined;
       const r = await api.reportWrong(command, reportOutcome(phase), note, searchStats);
-      setState({ k: "saved", count: r.count });
+      setState({ k: "saved", count: r.count, note });
     } catch (e) {
       setState({ k: "error", message: errorMessage(e) });
     }
@@ -956,7 +995,23 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
       <button className="link" onClick={() => setState({ k: "writing", note: "" })}>Wrong result?</button>
     </div>
   );
-  if (state.k === "saved") return <div className="learn" role="status"><span>Saved on this Mac. Nothing is sent. {state.count} {state.count === 1 ? "report" : "reports"} so far.</span></div>;
+  if (state.k === "saved") {
+    const outcome = phase.k === "done" ? { status: "done", actionCounts: phase.actionCounts } :
+      phase.k === "outcome" ? phase.outcome : { status: "problem" };
+    return (
+      <div className={reviewing ? "learn command-request wrong-result-review" : "learn report-saved"}>
+        {reviewing ? (
+          <WrongReportReview command={command} note={state.note} outcome={outcome} close={closeReview} delivery={delivery} />
+        ) : (
+          <>
+            <span role="status">Saved on this Mac. {state.count} {state.count === 1 ? "report" : "reports"} so far.</span>
+            {delivery.mode !== "sent" && <button type="button" className="secondary small" onClick={() => onReviewing(true)}>Review report to send</button>}
+          </>
+        )}
+        <FeedbackStatus mode={delivery.mode} sent="Report sent. Thanks!" />
+      </div>
+    );
+  }
   if (state.k === "error") return <div className="learn" role="alert"><span className="warn">{state.message}</span></div>;
   if (state.k === "saving") return <div className="learn" role="status"><span>Saving…</span></div>;
   return (
@@ -975,6 +1030,96 @@ function ReportRow({ command, phase, onDone }: { command: string; phase: Phase; 
       <button className="secondary small" onClick={() => save(state.note)}>Save report</button>
       <button className="link" onClick={() => { setState({ k: "idle" }); onDone(); }}>Cancel</button>
     </div>
+  );
+}
+
+function WrongReportReview({ command, note, outcome, close, delivery }: {
+  command: string; note: string; outcome: ReportOutcome; close: () => void; delivery: ReturnType<typeof useFeedbackSend>;
+}) {
+  const [publicCommand, setPublicCommand] = useState(command);
+  const [publicNote, setPublicNote] = useState(note);
+  const [fieldErrors, setFieldErrors] = useState<WrongReportFieldErrors>({});
+  const { actions, outcome: status } = reportFields(outcome);
+  const { sending, error, setError, submit } = delivery;
+  const commandField = useRef<HTMLTextAreaElement>(null);
+  const noteField = useRef<HTMLTextAreaElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      event.preventDefault();
+      if (!sending && !event.repeat) close();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close, sending]);
+
+  const send = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (sending) return;
+    const report = sanitizeWrongReport(publicCommand, outcome, publicNote, appVersion);
+    if ("error" in report) {
+      setFieldErrors(report.fields);
+      setError("");
+      const field = report.fields.command ? commandField : noteField;
+      requestAnimationFrame(() => field.current?.focus());
+      return;
+    }
+    setFieldErrors({});
+    setPublicCommand(report.command);
+    setPublicNote(report.note);
+    const commandChanged = report.command !== publicCommand.trim();
+    if (commandChanged || report.note !== publicNote.trim()) {
+      setError("The text was normalized. Review the updated fields, then select Send this report again.");
+      // Move off the button so a second press can't send the rewrite unseen.
+      const changed = commandChanged ? commandField : noteField;
+      requestAnimationFrame(() => changed.current?.focus());
+      return;
+    }
+    void submit(() => api.sendWrongResult(report), close, () => requestAnimationFrame(() => errorRef.current?.focus()));
+  };
+
+  return (
+    <form aria-labelledby="wrong-report-title" method="post" noValidate onSubmit={send}>
+      <h2 id="wrong-report-title">Review report</h2>
+      <p id="wrong-report-public">The fields below will be posted publicly on GitHub if you send this report. Remove private file, folder, user, and device names from the command and note. Edits apply to the public copy.</p>
+      <label htmlFor="wrong-report-command">Command (required, up to {maxCommand} characters)</label>
+      <textarea ref={commandField} id="wrong-report-command" name="command" className="path" rows={2} autoFocus aria-required="true"
+        autoCorrect="off" autoCapitalize="off" spellCheck={false}
+        aria-invalid={!!fieldErrors.command}
+        aria-describedby={fieldErrors.command ? "wrong-report-public wrong-report-command-error" : "wrong-report-public"}
+        value={publicCommand} readOnly={sending}
+        onChange={(event) => {
+          setPublicCommand(event.target.value);
+          setFieldErrors((current) => ({ ...current, command: undefined }));
+          setError("");
+        }} />
+      <label htmlFor="wrong-report-note">Note (optional, up to {maxNote} characters)</label>
+      <textarea ref={noteField} id="wrong-report-note" name="note" className="path" rows={2}
+        aria-invalid={!!fieldErrors.note}
+        aria-describedby={fieldErrors.note ? "wrong-report-public wrong-report-note-error" : "wrong-report-public"}
+        value={publicNote} readOnly={sending}
+        onChange={(event) => {
+          setPublicNote(event.target.value);
+          setFieldErrors((current) => ({ ...current, note: undefined }));
+          setError("");
+        }} />
+      <dl>
+        <dt>Outcome</dt><dd>{status}</dd>
+        <dt>Planned actions</dt><dd>{actions.map(({ kind, count }) => `${kind} ×${count}`).join(", ") || "None"}</dd>
+        <dt>Voxi version</dt><dd>{appVersion}</dd>
+      </dl>
+      <div className="warn" role="alert" ref={errorRef} tabIndex={-1}>
+        {fieldErrors.command && <div id="wrong-report-command-error">{fieldErrors.command}</div>}
+        {fieldErrors.note && <div id="wrong-report-note-error">{fieldErrors.note}</div>}
+        {error}
+      </div>
+      <div className="learn-buttons">
+        <button className="primary-button" type="submit" disabled={sending}>Send this report</button>
+        <button className="link" type="button" disabled={sending} onClick={close}>Cancel</button>
+      </div>
+    </form>
   );
 }
 

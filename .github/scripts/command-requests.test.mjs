@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { test } from "node:test";
+import textCases from "./fixtures/wrong-result-text.mjs";
 import { run } from "./fold-command-requests.mjs";
-
-const require = createRequire(import.meta.url);
-const shared = require("../../website/api/_requests.js");
-const { createHandler, ipKey } = require("../../website/api/command-request.js");
+import * as shared from "../../website/api/_requests.js";
+import commandRequest, { createHandler, ipKey } from "../../website/api/command-request.js";
+import wrongResult, { createHandler as createWrongResultHandler } from "../../website/api/wrong-result.js";
+const { wrongResults } = shared;
 
 const REPO = "ruck-syu/Voxi";
 const AUTHOR = "ruck-syu";
@@ -31,12 +31,14 @@ function fakeGitHub({ issues = [], label = true } = {}) {
     }
     if (parts[0] === "issues" && parts.length === 1) {
       if (method === "POST") {
-        const created = { ...data, number: Math.max(0, ...state.issues.map((item) => item.number)) + 1, state: "open", labels: [{ name: shared.LABEL }] };
+        const created = { ...data, number: Math.max(0, ...state.issues.map((item) => item.number)) + 1, state: "open", labels: data.labels.map((name) => ({ name })), locked: false };
         state.issues.push(created);
         return created;
       }
       const direction = url.searchParams.get("direction");
-      const open = state.issues.filter((item) => item.state === "open").sort((a, b) => (direction === "asc" ? a.number - b.number : b.number - a.number));
+      const label = url.searchParams.get("labels");
+      const open = state.issues.filter((item) => item.state === "open" &&
+        (item.labels ?? [{ name: shared.LABEL }]).some(({ name }) => name === label)).sort((a, b) => (direction === "asc" ? a.number - b.number : b.number - a.number));
       return open;
     }
     const target = issue(Number(parts[1]));
@@ -78,7 +80,7 @@ function fakeGitHub({ issues = [], label = true } = {}) {
   return { state, api, fetch };
 }
 
-function call(handler, body, headers = {}) {
+function call(handler, body, headers = {}, method = "POST") {
   const res = {
     statusCode: 0,
     headers: {},
@@ -86,8 +88,27 @@ function call(handler, body, headers = {}) {
     json(data) { this.body = data; return this; },
     setHeader(name, value) { this.headers[name] = value; },
   };
-  return handler({ method: "POST", headers: { "content-type": "application/json", "x-vercel-forwarded-for": "203.0.113.7", ...headers }, body }, res).then(() => res);
+  return handler({ method, headers: { "content-type": "application/json", "x-vercel-forwarded-for": "203.0.113.7", ...headers }, body }, res).then(() => res);
 }
+
+test("deployed ESM default handlers return 405 and 503", async (t) => {
+  const token = process.env.GITHUB_TOKEN_COMMAND_REQUESTS;
+  t.after(() => {
+    if (token !== undefined) process.env.GITHUB_TOKEN_COMMAND_REQUESTS = token;
+  });
+  delete process.env.GITHUB_TOKEN_COMMAND_REQUESTS;
+
+  for (const [handler, config] of [[commandRequest, shared.commandRequests], [wrongResult, wrongResults]]) {
+    const get = await call(handler, undefined, {}, "GET");
+    assert.equal(get.statusCode, 405);
+    assert.equal(get.headers.Allow, "POST");
+    assert.deepEqual(get.body, { ok: false, error: config.methodError });
+
+    const post = await call(handler, {});
+    assert.equal(post.statusCode, 503);
+    assert.deepEqual(post.body, { ok: false, error: config.setupError });
+  }
+});
 
 const tracked = () => [{ number: 1, title: "Command requests", body: shared.HEADER, state: "open" }];
 const endpoint = (github, extra = {}) => createHandler({ env: { GITHUB_TOKEN_COMMAND_REQUESTS: "test-token" }, fetch: github.fetch, ...extra });
@@ -313,4 +334,219 @@ test("the author match ignores case", async () => {
   await call(endpoint(github), { command: "tidy my desk" });
   await run({ github: github.api, author: "Ruck-Syu", repo: REPO });
   assert.match(github.state.issues[0].body, /`tidy my desk`/);
+});
+
+const report = {
+  command: "Move the screenshots to Documents",
+  outcome: "plan",
+  actions: [{ kind: "move", count: 3 }, { kind: "create_folder", count: 1 }],
+  note: "Keep them by month",
+  appVersion: "1.2.3",
+};
+const wrongFold = (github) => run({ github: github.api, author: AUTHOR, repo: REPO, config: wrongResults });
+const wrongEndpoint = (github, extra = {}) => createWrongResultHandler({
+  env: { GITHUB_TOKEN_COMMAND_REQUESTS: "test-token", WRONG_RESULTS_ISSUE_NUMBER: "2" }, fetch: github.fetch, ...extra,
+});
+
+test("wrong results use a separate locked issue and fold by identical command and outcome", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  const [commands, wrong] = github.state.issues;
+  assert.equal(wrong.title, "Wrong results");
+  assert.equal(wrong.locked, true);
+  const handler = wrongEndpoint(github);
+  const submissions = [
+    report,
+    { ...report, note: "Ignore last month", actions: [{ kind: "move", count: 2 }] },
+    { ...report, outcome: "problem", note: "", actions: [] },
+    { ...report, command: report.command.toLowerCase(), note: "" },
+  ];
+  const responses = await Promise.all(submissions.map((input) => call(handler, input)));
+  assert.ok(responses.every(({ statusCode }) => statusCode === 200));
+  assert.deepEqual(github.state.comments.map(({ issue }) => issue), [2, 2, 2, 2]);
+  assert.ok(!github.state.calls.some((c) => c.startsWith("PATCH")));
+  await fold(github);
+  assert.equal(commands.body, shared.HEADER);
+  assert.deepEqual(await wrongFold(github), { folded: 4, dropped: 0 });
+  assert.match(wrong.body, /^- \[ \] `Move the screenshots to Documents` · `plan` \(\+2\)$/m);
+  assert.match(wrong.body, /^- \[ \] `Move the screenshots to Documents` · `problem` \(\+1\)$/m);
+  assert.match(wrong.body, /^- \[ \] `move the screenshots to documents` · `plan` \(\+1\)$/m);
+  assert.match(wrong.body, /Planned actions: `create_folder ×1, move ×3` · Voxi `1.2.3`/);
+  assert.match(wrong.body, /Planned actions: `move ×2`/);
+  assert.match(wrong.body, /Note: `Keep them by month`/);
+  assert.match(wrong.body, /Note: `Ignore last month`/);
+  assert.equal(github.state.comments.length, 0);
+  wrong.body = wrong.body.replace("- [ ]", "- [x]");
+  await call(wrongEndpoint(github), report);
+  assert.deepEqual(await wrongFold(github), { folded: 1, dropped: 0 });
+  assert.match(wrong.body, /^- \[x\] `Move the screenshots to Documents` · `plan` \(\+2\)$/m);
+  assert.match(wrong.body, /^- \[ \] `Move the screenshots to Documents` · `plan` \(\+1\)$/m);
+});
+
+test("wrong-result validation rejects private text, unknown fields and unbounded values", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  const handler = wrongEndpoint(github);
+  for (const invalid of [
+    { ...report, command: "/Users/alex/Desktop" },
+    { ...report, command: "C:\\Users\\alex" },
+    { ...report, command: "move %252fUsers" },
+    { ...report, note: "move ~/Downloads" },
+    { ...report, note: "see folder／file" },
+    { ...report, note: "private.pdf" },
+    { ...report, note: "two\nlines" },
+    { ...report, note: null },
+    { ...report, searchStats: { path: "/Users/alex" } },
+    { ...report, command: "x".repeat(301) },
+    { ...report, note: "x".repeat(501) },
+    { ...report, outcome: "private.pdf" },
+    { ...report, outcome: "info" },
+    { ...report, appVersion: "1.2.3\n" },
+    { ...report, appVersion: "/Users/alex" },
+    { ...report, actions: [{ kind: "move", count: 1, path: "/Users/alex" }] },
+    { ...report, actions: [{ kind: "/Users/alex", count: 1 }] },
+    { ...report, actions: [{ kind: "move", count: "1" }] },
+    { ...report, actions: [{ kind: "move", count: Number.MAX_SAFE_INTEGER + 1 }] },
+    { ...report, actions: [{ kind: "move", count: 1 }, { kind: "move", count: 2 }] },
+  ]) {
+    assert.equal((await call(handler, invalid)).statusCode, 400, JSON.stringify(invalid));
+  }
+  assert.equal(github.state.comments.length, 0);
+  assert.equal((await call(handler, report)).statusCode, 200);
+  const [comment] = github.state.comments;
+  assert.deepEqual(wrongResults.decode(comment.body), { ...report, actions: [...report.actions].reverse() });
+
+  github.state.comments.push({
+    id: 3000, issue: 2, user: { login: AUTHOR }, body: wrongResults.encode({ ...report, note: "/Users/alex" }),
+  });
+  assert.deepEqual(await wrongFold(github), { folded: 1, dropped: 1 });
+  assert.doesNotMatch(github.state.issues[1].body, /alex/);
+});
+
+function queuedWrongResult(comment) {
+  // Decode the actual bytes queued to GitHub without running validation a second time.
+  const payload = comment.body.slice(wrongResults.marker.length).split(" ")[0];
+  return JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+}
+
+test("the wrong-result endpoint checks both text fields before contacting GitHub", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  const handler = wrongEndpoint(github);
+  const initialCalls = github.state.calls.length;
+  for (const text of textCases.rejected) {
+    for (const field of ["command", "note"]) {
+      const res = await call(handler, { ...report, [field]: text });
+      assert.equal(res.statusCode, 400, JSON.stringify(text));
+      assert.match(res.body.error, new RegExp(`^Remove .+ from the ${field}\\.$`));
+    }
+  }
+  assert.equal(github.state.calls.length, initialCalls);
+
+  const accepted = [...textCases.accepted.map((text) => [text, text]), ...textCases.canonical];
+  for (const [index, [text, expected]] of accepted.entries()) {
+    const res = await call(handler, { ...report, command: text, note: text }, { "x-vercel-forwarded-for": `203.0.113.${index + 1}` });
+    assert.equal(res.statusCode, 200, text);
+    const queued = queuedWrongResult(github.state.comments.at(-1));
+    assert.equal(queued.command, expected);
+    assert.equal(queued.note, expected);
+  }
+  assert.deepEqual(shared.validate("move report.pdf"), { command: "move report.pdf", note: "" });
+});
+
+test("historical wrong-result rows match canonical commands and notes", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  const wrong = github.state.issues[1];
+  wrong.body += "\n\n- [ ] ` move\u00a0PDFs ` · `plan` (+1)\n" +
+    "  - Planned actions: `None` · Voxi `1.2.3` · Note: ` Keep\u00a0  copies `";
+  const handler = wrongEndpoint(github);
+  for (const [note, expected] of [["Keep copies", "Keep copies"], [" Keep  copies ", "Keep copies"], ["\u00a0 ", ""], ["   ", ""]]) {
+    const res = await call(handler, { ...report, command: "ｍｏｖｅ  PDFs", actions: [], note });
+    assert.equal(res.statusCode, 200);
+    assert.equal(queuedWrongResult(github.state.comments.at(-1)).note, expected);
+  }
+
+  assert.deepEqual(await wrongFold(github), { folded: 4, dropped: 0 });
+  assert.equal([...wrong.body.matchAll(/^- \[ \]/gm)].length, 1);
+  assert.match(wrong.body, /· `plan` \(\+5\)/);
+  assert.equal([...wrong.body.matchAll(/Planned actions:/g)].length, 2);
+  assert.equal([...wrong.body.matchAll(/Note:/g)].length, 1);
+});
+
+test("consecutive identical wrong-result details update only the count", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  const handler = wrongEndpoint(github);
+  const changed = { ...report, note: "Sort by month first" };
+  for (const input of [report, report, changed, changed, report]) {
+    assert.equal((await call(handler, input)).statusCode, 200);
+  }
+  assert.deepEqual(await wrongFold(github), { folded: 5, dropped: 0 });
+  const { body } = github.state.issues[1];
+  assert.match(body, /^- \[ \] `Move the screenshots to Documents` · `plan` \(\+5\)$/m);
+  assert.deepEqual([...body.matchAll(/Note: `([^`]+)`/g)].map((match) => match[1]), [
+    report.note, changed.note, report.note,
+  ]);
+  assert.equal(github.state.comments.length, 0);
+});
+
+test("wrong-result setup errors and failed GitHub writes use the feedback error contract", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  const missing = wrongEndpoint(github, { env: { GITHUB_TOKEN_COMMAND_REQUESTS: "test-token" } });
+  assert.deepEqual((await call(missing, report)).body, { ok: false, error: "Wrong-result reports aren't set up yet." });
+  assert.equal((await call(wrongEndpoint(github), report)).statusCode, 503);
+  await wrongFold(github);
+  assert.equal((await call(wrongEndpoint(github, {
+    env: { GITHUB_TOKEN_COMMAND_REQUESTS: "test-token", WRONG_RESULTS_ISSUE_NUMBER: "1" },
+  }), report)).statusCode, 503, "does not queue wrong results on the command-request issue");
+
+  const refused = wrongEndpoint(github, {
+    fetch: (href, options) => options.method === "POST" ?
+      Promise.resolve(Response.json({}, { status: 403 })) : github.fetch(href, options),
+  });
+  const response = await call(refused, report);
+  assert.equal(response.statusCode, 502);
+  assert.deepEqual(response.body, { ok: false, error: "Couldn't send the report. Try again." });
+});
+
+test("a gone wrong-result issue returns the setup error during lookup and after caching", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  let gone = false;
+  const handler = wrongEndpoint(github, {
+    fetch: (href, options) => gone ? Promise.resolve(Response.json({}, { status: 410 })) : github.fetch(href, options),
+  });
+  assert.equal((await call(handler, report)).statusCode, 200);
+  gone = true;
+  for (const stage of ["cached write", "lookup"]) {
+    const res = await call(handler, report);
+    assert.equal(res.statusCode, 503, stage);
+    assert.deepEqual(res.body, { ok: false, error: "Wrong-result reports aren't set up yet." });
+  }
+  assert.equal(github.state.comments.length, 1);
+});
+
+test("wrong-result rollover keeps draining the configured issue and repairs a failed lock", async () => {
+  const github = fakeGitHub({ issues: tracked() });
+  await wrongFold(github);
+  const base = github.state.issues[1];
+  base.body += "\n" + "x".repeat(shared.BODY_LIMIT);
+  const handler = wrongEndpoint(github);
+  await call(handler, report);
+  const request = github.api;
+  github.api = async (path, method, ...args) => {
+    if (path === "/issues/3/lock") throw new Error("lock interrupted");
+    return request(path, method, ...args);
+  };
+  await assert.rejects(wrongFold(github), /lock interrupted/);
+  github.api = request;
+  await wrongFold(github);
+  assert.equal(github.state.issues[2].locked, true);
+  assert.equal(github.state.issues[2].title, "Wrong results (2)");
+  assert.match(base.body, /^Continued in \[#3\]/);
+  await call(handler, report);
+  assert.equal(github.state.comments[0].issue, base.number);
+  await wrongFold(github);
+  assert.match(github.state.issues[2].body, /· `plan` \(\+2\)/);
 });

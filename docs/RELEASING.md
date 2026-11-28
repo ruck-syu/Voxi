@@ -50,8 +50,9 @@ Signing has two modes, chosen by which secrets exist:
 - **Self-signed (current):** `VOXI_SIGNING_CERT` and
   `VOXI_SIGNING_CERT_PASSWORD` hold the "Voxi Self-Signed" certificate and its
   `.p12` password. The app keeps one identity across versions, so macOS
-  remembers its folder access, but it is not notarized and Gatekeeper asks once
-  on first launch.
+  remembers its folder access, while the `.dmg` container is left unsigned so
+  macOS mounts it without a separate Gatekeeper block; only `Voxi.app` asks
+  once on first launch.
 - **Developer ID:** also set `APPLE_SIGNING_IDENTITY` and `APPLE_TEAM_ID` (the
   signing identity and team), and `APPLE_API_KEY`, `APPLE_API_ISSUER`, and
   `APPLE_API_KEY_P8` (notarization API credentials), and replace

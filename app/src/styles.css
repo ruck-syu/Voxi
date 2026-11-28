@@ -486,6 +486,11 @@ button {
   color: var(--card);
 }
 
+.primary-button.request-command {
+  background: color-mix(in srgb, var(--ink) 80%, var(--margin));
+  box-shadow: inset 0 -2px var(--margin);
+}
+
 .secondary {
   border: 1px solid var(--rule);
   background: transparent;
@@ -1065,6 +1070,19 @@ fieldset.tab-panel {
 .command-request form p { margin: 0 0 4px; }
 .command-request .path { height: auto; padding: 6px 10px; resize: vertical; }
 .command-request :is([role="status"], [role="alert"]):empty { margin-top: -6px; }
+
+.report-saved [role="status"]:empty { position: absolute; }
+.wrong-result-review { padding-block: 16px; color: var(--ink); }
+.wrong-result-review h2 { margin: 0; font-size: 16px; }
+.wrong-result-review .path { max-height: 100px; }
+.wrong-result-review dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+}
+.wrong-result-review dt { font-weight: 600; }
+.wrong-result-review dd { margin: 0; overflow-wrap: anywhere; }
 
 /* ---- Settings refresh: grouped cards, icons, pills, empty states ---- */
 

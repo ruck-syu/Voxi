@@ -605,7 +605,7 @@ function ReportsRow() {
   return (
     <Row icon="shield" label="Wrong-result reports"
       description={note ? <span className="warn" role="alert">{note}</span>
-        : `${count === 0 ? "None" : count} saved. Nothing leaves this Mac.`}>
+        : `${count === 0 ? "None" : count} saved on this Mac.`}>
       <button className="secondary small" disabled={!count} onClick={() => reportAction(api.revealReports)}>Show in Finder</button>
       <button className="link remove" disabled={!count} onClick={() => reportAction(api.clearReports)}>Clear</button>
     </Row>

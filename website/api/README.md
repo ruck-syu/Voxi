@@ -1,37 +1,33 @@
-# Command requests
+# Voxi feedback
 
-People can send a command Voxi didn't understand from the app. It ends up as a line in one public checklist issue, which you tick when the command ships.
+Voxi can send requests for commands it did not understand and reports about wrong results. GitHub tracks each in its own public checklist.
 
 ## How it works
 
-1. `POST /api/command-request` (`command-request.js`) validates the command and note. It then adds them as a comment on the newest open issue labelled `command-requests`. The function only ever adds comments, so two requests at once can't overwrite each other or your ticks.
-2. The **Command requests** workflow (`.github/workflows/command-requests.yml`) runs when such a comment appears. It folds every queued comment into the checklist and deletes the folded comments:
-   - A repeat of an unticked command bumps its `(+N)`.
-   - A repeat of a ticked command adds a fresh line.
-   - Notes go on an indented line.
-   - Everything else you wrote in the issue is kept.
-3. Runs never overlap, and each run folds everything still queued, so cancelled or failed runs lose nothing. A scheduled run every six hours picks up anything a failed run left behind. Folded comment ids are recorded in the issue body, so a retry never counts a request twice.
-4. At about 60,000 characters the workflow opens "Command requests (2)", and so on. It locks each new issue and links it from the old one, repairing the link if a run fails midway. It stops at 20 issues.
+1. `POST /api/command-request` validates the command and note, then posts a comment to the newest open issue labelled `command-requests`.
+2. **Wrong result? → Save report** saves the full report locally. **Review report to send → Send this report** posts the public copy to `/api/wrong-result`. The function validates the command, outcome kind, planned action kinds and counts, note, and app version. Both the app and the function reject path-like text, including common filename forms. Only user-entered text and the displayed summary fields can be sent. The function posts a comment to the configured, locked `wrong-results` issue.
+3. The **Voxi feedback** workflow (`.github/workflows/command-requests.yml`) folds comments from the configured author into the appropriate checklist. A command request matches an unticked command regardless of case or spacing. A wrong-result report matches by exact command text and outcome kind. On a match, the count increases and the submission details are kept. A repeat of a ticked entry starts a fresh checkbox.
+4. Both functions append comments. One workflow run at a time edits the issue bodies and deletes verified comments. Each run reads both queues. A scheduled run every six hours picks up any comments a failed run left behind. The issue body records comment IDs so a retry can skip reports it already folded.
+5. At about 60,000 characters, the workflow creates and locks a continuation issue and links it from the previous issue. Each checklist can span up to 20 issues. Keep the configured **Wrong results** issue open as the queue even when the checklist continues elsewhere.
 
-Shared validation and formatting live in `_requests.js`. Vercel doesn't turn files starting with `_` into functions.
+The endpoints share validation and submission code in `_requests.js`. The app and endpoint share the report schema in `_wrong-result-schema.json`.
 
 ## Owner setup
 
-1. Create a fine-grained GitHub personal access token scoped to `ruck-syu/Voxi`, with **Issues: Read and write** as its only permission.
-2. In Vercel, open the website project and add the token under **Settings → Environment Variables** as `GITHUB_TOKEN_COMMAND_REQUESTS`. `COMMAND_REQUESTS_REPO` overrides the default repo, `ruck-syu/Voxi`. Redeploy.
-3. Run the **Command requests** workflow once from the Actions tab. It creates the label and the "Command requests" issue, and locks the issue so only collaborators can comment. The token can still comment, because you own the repo. Check that once: send one request and confirm it lands.
-4. Pin the issue.
-5. If the token belongs to an account other than the repo owner, set the repository variable `COMMAND_REQUESTS_AUTHOR` to that login. Only comments from that account are folded.
+1. Use the existing fine-grained `GITHUB_TOKEN_COMMAND_REQUESTS` in the Vercel website project. It needs **Issues: Read and write** on `ruck-syu/Voxi` and must belong to an account that can comment on locked issues. For another repo, set `COMMAND_REQUESTS_REPO` to `owner/repo`. For a token owned by another account, set the GitHub repository variable `COMMAND_REQUESTS_AUTHOR` to that account's login. It applies to both feedback types.
+2. Once the updated workflow is on the default branch, run **Voxi feedback** from the Actions tab. It creates and locks missing tracking issues and keeps the existing command-request checklist.
+3. Pin **Wrong results**. Keep **Command requests** pinned.
+4. In Vercel, set `WRONG_RESULTS_ISSUE_NUMBER` to the number of the original **Wrong results** issue, without the `#`. Redeploy the website with the updated function and environment variables.
+5. From the updated app, save a report with sample text, review it, and send it. Check that the public checklist gets the report and that the workflow deletes the queued comment.
 
-Tick a line when its command ships. A new wording for an existing action ships through the vocabulary pack (`vocab/vocab.json`) without an app release. A new kind of action needs one.
+Tick a command when it ships or a wrong-result report when it is fixed. A new wording for an existing action can ship through the vocabulary pack (`vocab/vocab.json`).
 
 ## Limits
 
-- **Per IP:** five requests every ten minutes for each IP address. An IPv6 address counts as its whole /64 network.
-- **Per function instance:** 60 requests every ten minutes in total.
-- **Resets:** both limits live in memory, so a cold start resets them. For a hard limit, add a rate-limit rule for `/api/command-request` in Vercel Firewall.
-- **Per run:** the workflow folds at most 100 requests. The rest wait for the next run.
-- **Overwrites:** GitHub can't make a conditional issue update. The workflow reads the issue immediately before writing it and verifies the write afterwards. If you edit the issue at that same moment, the run fails and the next run retries the request.
-- **Logging:** neither the function nor the workflow logs the token or the request text.
+- **Per IP:** five submissions every ten minutes per endpoint. IPv6 addresses are grouped by /64.
+- **Per function instance:** 60 submissions every ten minutes. A cold start resets the in-memory limits. For a hard limit, add Vercel Firewall rules for the feedback endpoints.
+- **Per workflow run:** at most 100 comments per checklist.
+- **Issue edits:** GitHub supports unconditional issue body updates. The workflow reads immediately before writing and checks the receipt IDs afterwards.
+- **Logging:** the functions and workflow omit tokens and submission text from logs.
 
-Tests: from the repository root, run `node --test .github/scripts/command-requests.test.mjs`.
+From the repository root, run `node --test .github/scripts/command-requests.test.mjs` for the endpoint and folding tests. From `app/`, run `node --test scripts/wrong-report.test.mjs` for the client sanitizer.

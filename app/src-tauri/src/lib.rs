@@ -404,6 +404,28 @@ struct InstalledHotkey(Mutex<String>);
 
 // ---- Preview -----------------------------------------------------------------
 
+fn action_kind(action: &Action) -> &'static str {
+    match action {
+        Action::Move { .. } => "move",
+        Action::Copy { .. } => "copy",
+        Action::Rename { .. } => "rename",
+        Action::Trash { .. } => "trash",
+        Action::RestoreFromTrash { .. } => "restore",
+        Action::CreateFolder { .. } => "create_folder",
+        Action::ConvertImage { .. } => "convert_image",
+        Action::ResizeImage { .. } => "resize_image",
+        Action::ImagesToPdf { .. } => "images_to_pdf",
+        Action::MergePdf { .. } => "merge_pdf",
+        Action::SplitPdf { .. } => "split_pdf",
+        Action::ExtractPages { .. } => "extract_pages",
+        Action::Zip { .. } => "zip",
+        Action::Unzip { .. } => "unzip",
+        Action::OpenInFinder { .. } => "open_in_finder",
+        Action::RemoveEmptyFolder { .. } => "remove_folder",
+        Action::Restore { .. } => "restore",
+    }
+}
+
 fn describe(a: &Action, roots: &Roots) -> (String, String, String) {
     let name = |p: &PathBuf| file_name(p);
     let dir = |p: &PathBuf| p.parent().map(|d| roots.display(d)).unwrap_or_default();
@@ -411,29 +433,26 @@ fn describe(a: &Action, roots: &Roots) -> (String, String, String) {
         if name(from) == name(to) { format!("→ {}", dir(to)) } else { format!("→ {}/{}", dir(to), name(to)) }
     };
     let many = |paths: &Vec<PathBuf>, what: &str| format!("{} {what}", paths.len());
-    match a {
-        Action::Move { from, to } => ("move".into(), name(from), format!("from {} {}", dir(from), dest(from, to))),
-        Action::Copy { from, to } => ("copy".into(), name(from), format!("from {} {}", dir(from), dest(from, to))),
-        Action::Rename { path, new_name } => ("rename".into(), name(path), format!("→ {new_name}")),
-        Action::Trash { path } => ("trash".into(), name(path), format!("from {} → Trash", dir(path))),
-        Action::RestoreFromTrash { to, .. } => ("restore".into(), name(to), format!("back from the Trash to {}", dir(to))),
-        Action::CreateFolder { path } => ("create_folder".into(), name(path), format!("new folder in {}", dir(path))),
-        Action::ConvertImage { path, output, .. } => ("convert_image".into(), name(path), format!("→ {}", name(output))),
-        Action::ResizeImage { path, max_width_px, .. } => ("resize_image".into(), name(path), format!("→ {max_width_px} px wide")),
-        Action::ImagesToPdf { paths, output } => {
-            ("images_to_pdf".into(), many(paths, "images"), dest(paths.first().unwrap_or(output), output))
-        }
-        Action::MergePdf { paths, output } => ("merge_pdf".into(), many(paths, "PDFs"), format!("→ {}/{}", dir(output), name(output))),
-        Action::SplitPdf { path, output_dir } => ("split_pdf".into(), name(path), format!("→ {}/ (one PDF per page)", name(output_dir))),
-        Action::ExtractPages { path, from, to, output } => {
-            ("extract_pages".into(), name(path), format!("pages {from}–{to} → {}", name(output)))
-        }
-        Action::Zip { path, output } => ("zip".into(), name(path), format!("→ {}", name(output))),
-        Action::Unzip { path, destination } => ("unzip".into(), name(path), format!("→ {}", roots.display(destination))),
-        Action::OpenInFinder { path, .. } => ("open_in_finder".into(), name(path), "open in Finder".into()),
-        Action::RemoveEmptyFolder { path } => ("remove_folder".into(), name(path), "remove this folder if it's empty".into()),
-        Action::Restore { from: _, to } => ("restore".into(), name(to), "restore the original".into()),
-    }
+    let (primary, detail) = match a {
+        Action::Move { from, to } => (name(from), format!("from {} {}", dir(from), dest(from, to))),
+        Action::Copy { from, to } => (name(from), format!("from {} {}", dir(from), dest(from, to))),
+        Action::Rename { path, new_name } => (name(path), format!("→ {new_name}")),
+        Action::Trash { path } => (name(path), format!("from {} → Trash", dir(path))),
+        Action::RestoreFromTrash { to, .. } => (name(to), format!("back from the Trash to {}", dir(to))),
+        Action::CreateFolder { path } => (name(path), format!("new folder in {}", dir(path))),
+        Action::ConvertImage { path, output, .. } => (name(path), format!("→ {}", name(output))),
+        Action::ResizeImage { path, max_width_px, .. } => (name(path), format!("→ {max_width_px} px wide")),
+        Action::ImagesToPdf { paths, output } => (many(paths, "images"), dest(paths.first().unwrap_or(output), output)),
+        Action::MergePdf { paths, output } => (many(paths, "PDFs"), format!("→ {}/{}", dir(output), name(output))),
+        Action::SplitPdf { path, output_dir } => (name(path), format!("→ {}/ (one PDF per page)", name(output_dir))),
+        Action::ExtractPages { path, from, to, output } => (name(path), format!("pages {from}–{to} → {}", name(output))),
+        Action::Zip { path, output } => (name(path), format!("→ {}", name(output))),
+        Action::Unzip { path, destination } => (name(path), format!("→ {}", roots.display(destination))),
+        Action::OpenInFinder { path, .. } => (name(path), "open in Finder".into()),
+        Action::RemoveEmptyFolder { path } => (name(path), "remove this folder if it's empty".into()),
+        Action::Restore { from: _, to } => (name(to), "restore the original".into()),
+    };
+    (action_kind(a).into(), primary, detail)
 }
 
 /// The files a step reads.
@@ -1175,6 +1194,10 @@ fn plan_input_routed(
             let items = (0..actions.len().min(PREVIEW_LIMIT)).filter_map(|step| source.item(&actions, step)).collect();
             let noted = source.noted();
             let total = actions.len();
+            let mut action_counts = std::collections::BTreeMap::new();
+            for action in &actions {
+                *action_counts.entry(action_kind(action)).or_insert(0) += 1;
+            }
             *checked_state!(state.pending.lock(), Outcome::Problem { message: "Voxi state is unavailable. Restart the app.".into() }) =
                 Some(Pending {
                     id,
@@ -1198,6 +1221,7 @@ fn plan_input_routed(
                 title,
                 total,
                 items,
+                action_counts,
                 noted,
                 scope_notice,
                 warnings,
@@ -2366,6 +2390,7 @@ pub fn run() {
             resume_scheduled_task,
             report_wrong,
             command_request::send_command_request,
+            command_request::send_wrong_result,
             reports_summary,
             clear_reports,
             reveal_reports,

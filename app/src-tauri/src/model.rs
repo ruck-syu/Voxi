@@ -541,6 +541,8 @@ pub enum Outcome {
         total: usize,
         /// The first 20 steps, for the preview. The rest load page by page.
         items: Vec<PreviewItem>,
+        /// Counts across the entire plan, for the opt-in report preview.
+        action_counts: std::collections::BTreeMap<&'static str, usize>,
         /// How many steps carry a note, such as a name changed to avoid a clash.
         noted: usize,
         #[serde(skip_serializing_if = "Option::is_none")]

@@ -105,8 +105,11 @@ restarts.
   requests microphone or speech permissions.
 - **Local learning:** Voxi's parser is rule-based and runs locally. You can
   teach it rephrased commands (saved in Settings → Shortcuts), save folder
-  nicknames when a name matches several folders, and optionally record local
-  wrong-result reports (no filenames) in Settings.
+  nicknames when a name matches several folders, and save wrong-result reports
+  on your Mac. Settings lets you view or clear those reports. To share a report,
+  review the public copy and choose **Send this report**. The public copy only
+  includes the command and note you review, the outcome, planned action counts,
+  and the Voxi version. See [feedback setup](website/api/README.md).
 
 Full rules and edge cases are documented in [docs/COMMANDS.md](docs/COMMANDS.md).
 

@@ -1069,8 +1069,12 @@ function WrongReportReview({ command, note, outcome, close, delivery }: {
     setFieldErrors({});
     setPublicCommand(report.command);
     setPublicNote(report.note);
-    if (report.command !== publicCommand.trim() || report.note !== publicNote.trim()) {
+    const commandChanged = report.command !== publicCommand.trim();
+    if (commandChanged || report.note !== publicNote.trim()) {
       setError("The text was normalized. Review the updated fields, then select Send this report again.");
+      // Move off the button so a second press can't send the rewrite unseen.
+      const changed = commandChanged ? commandField : noteField;
+      requestAnimationFrame(() => changed.current?.focus());
       return;
     }
     void submit(() => api.sendWrongResult(report), close, () => requestAnimationFrame(() => errorRef.current?.focus()));

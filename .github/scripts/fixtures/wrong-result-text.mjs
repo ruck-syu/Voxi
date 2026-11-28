@@ -70,7 +70,26 @@ export default {
     "file;name",
     "file<name",
     "file>name",
-    "file`name"
+    "file`name",
+    "Figma-124.3",
+    "Zoom-5.17",
+    "invoice-2025.04",
+    "backup-2.1-final",
+    "report(1.5)",
+    "192.168-1.1",
+    "192.168 1.1",
+    "report. pdf",
+    "report.\u00a0pdf",
+    "passwords. txt",
+    "evil. de",
+    "my-host. lan",
+    "\u201cevil\u201d. com",
+    "1.2. 3",
+    "\u0661. \u0662. \u0663. \u0664",
+    "list files larger than 1.5 GB",
+    "resize to (1.5), 2.3 or 4.7.",
+    "Check \u201cPDFs\u201d. Then sort them.",
+    "It picked the wrong folder. Should only move PDFs."
   ],
   "accepted": [
     "sort Downloads by type",
@@ -86,14 +105,17 @@ export default {
     "D\u00e9placer les images vers Documents",
     "sort Documents by month.",
     "Show me the screenshots taken before July 2026.",
-    "list files larger than 1.5 GB",
     "It shouldn\u2019t touch folders \u2014 only PDFs.",
     "PDFs & PNGs",
     "every day at 9:30.",
     "Check \u2018photos\u2019 and \u201cscreenshots\u201d \u2013 two folders",
-    "PDFs + PNGs",
-    "resize to (1.5), 2.3 or 4.7.",
-    "Check \u201cPDFs\u201d. Then sort them."
+    "PDFs + PNGs"
+,
+    "between 9:30\u201310:30",
+    "between 9:30-10:30",
+    "at \u201c9:30\u201d",
+    "It picked the wrong folder, it should only move PDFs.",
+    "list files larger than 1536 MB."
   ],
   "canonical": [
     [

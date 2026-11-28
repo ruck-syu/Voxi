@@ -81,11 +81,13 @@ test("the public copy describes what to remove from each field", () => {
   const outcome = { status: "plan" };
   const result = sanitize("report.pdf", outcome, "a/b");
   assert.deepEqual(result.fields, {
-    command: "Remove file names or extensions from the command.",
+    command: "Remove file names, extensions and periods before the end from the command.",
     note: "Remove paths from the note.",
   });
   assert.equal(sanitize("evil. com", outcome, "").error, "Remove links or host names from the command.");
   assert.equal(sanitize("move PDFs", outcome, "@alex").error, "Remove the unsupported character “@” from the note.");
   assert.equal(sanitize("move PDFs", outcome, "file;name").error, "Remove the unsupported character “;” from the note.");
   assert.equal(sanitize("move PDFs", outcome, "Note: leave copies").error, "Remove the unsupported character “:” from the note.");
+  assert.equal(sanitize("sort PDFs\nmove them", outcome, "").error, "Remove line breaks from the command.");
+  assert.equal(sanitize("move PDFs", outcome, "a\tb").error, "Remove tabs from the note.");
 });

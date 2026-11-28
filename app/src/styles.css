@@ -1060,6 +1060,11 @@ fieldset.tab-panel {
 .learn.offer { justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--rule); margin: 4px 22px 0; padding-left: 0; padding-right: 0; color: var(--ink); }
 .learn.offer strong { font-weight: 600; }
 .learn-buttons { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.learn.command-request { display: grid; gap: 6px; }
+.command-request form { display: grid; gap: 6px; }
+.command-request form p { margin: 0 0 4px; }
+.command-request .path { height: auto; padding: 6px 10px; resize: vertical; }
+.command-request :is([role="status"], [role="alert"]):empty { margin-top: -6px; }
 
 /* ---- Settings refresh: grouped cards, icons, pills, empty states ---- */
 

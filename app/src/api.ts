@@ -69,6 +69,7 @@ export type Nickname = { name: string; path: string };
 export type Settings = { hotkey: string; extraFolders: string[]; excludedFolders: string[]; startAtLogin: boolean; showMenuBarIcon: boolean; onboarded: boolean; ranFirstCommand: boolean; shortcuts: Shortcut[]; nicknames: Nickname[] };
 /** "This was wrong" reports, saved only on this Mac. */
 export type Reports = { count: number; path: string };
+export type CommandRequestResult = { status: "sent" | "rate_limited" } | { status: "failed"; message: string };
 export type ResultScope = { count: number; visible: number; label: string };
 /** Counts and a time bucket from the request that produced the result. */
 export type SearchStats = {
@@ -111,6 +112,8 @@ export const api = {
   cancel: () => invoke<void>("cancel_plan"),
   hide: (requestId: number) => invoke<void>("hide_window", { requestId }),
   reportWrong: (command: string, outcome: unknown, note: string, searchStats?: SearchStats) => invoke<Reports>("report_wrong", { command, outcome, note, searchStats }),
+  sendCommandRequest: (command: string, note?: string) =>
+    invoke<CommandRequestResult>("send_command_request", { command, note }),
   reportsSummary: () => invoke<Reports>("reports_summary"),
   clearReports: () => invoke<Reports>("clear_reports"),
   revealReports: () => invoke<void>("reveal_reports"),

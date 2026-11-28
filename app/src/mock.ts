@@ -225,6 +225,8 @@ export async function mockInvoke(cmd: string, args: Record<string, unknown> = {}
     }
     case "report_wrong":
       return { count: ++reports, path: "~/Library/Application Support/voxi/reports.jsonl" };
+    case "send_command_request":
+      return { status: "sent" };
     case "reports_summary":
       return { count: reports, path: "~/Library/Application Support/voxi/reports.jsonl" };
     case "clear_reports":
